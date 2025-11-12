@@ -1,0 +1,109 @@
+version: '3.8'
+
+services:
+  # Base de Datos PostgreSQL
+  postgres:
+    image: postgres:16-alpine
+    container_name: auditor_db
+    environment:
+      POSTGRES_USER: auditor
+      POSTGRES_PASSWORD: auditor_password
+      POSTGRES_DB: auditor_db
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U auditor"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis (Caché y Cola de Tareas)
+  redis:
+    image: redis:7-alpine
+    container_name: auditor_redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Backend FastAPI
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: auditor_backend
+    environment:
+      DATABASE_URL: postgresql+psycopg2://auditor:auditor_password@postgres:5432/auditor_db
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER: redis://redis:6379/0
+      CELERY_BACKEND: redis://redis:6379/1
+      DEBUG: "False"
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      GOOGLE_API_KEY: ${GOOGLE_API_KEY}
+      CSE_ID: ${CSE_ID}
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./reports:/app/reports
+      - ./logs:/app/logs
+    networks:
+      - auditor_network
+
+  # Frontend
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    container_name: auditor_frontend
+    ports:
+      - "3000:3000"
+    environment:
+      API_URL: http://backend:8000
+    depends_on:
+      - backend
+    networks:
+      - auditor_network
+
+  # Celery Worker (Opcional - para tareas asincrónicas)
+  celery_worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: auditor_worker
+    command: celery -A app.workers.tasks worker --loglevel=info
+    environment:
+      DATABASE_URL: postgresql+psycopg2://auditor:auditor_password@postgres:5432/auditor_db
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER: redis://redis:6379/0
+      CELERY_BACKEND: redis://redis:6379/1
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      GOOGLE_API_KEY: ${GOOGLE_API_KEY}
+      CSE_ID: ${CSE_ID}
+    depends_on:
+      - postgres
+      - redis
+      - backend
+    volumes:
+      - ./reports:/app/reports
+      - ./logs:/app/logs
+    networks:
+      - auditor_network
+
+volumes:
+  postgres_data:
+
+networks:
+  auditor_network:
+    driver: bridge
