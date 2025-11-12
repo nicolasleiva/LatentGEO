@@ -1,0 +1,103 @@
+# ===================================================================
+# General
+# ===================================================================
+# Archivos de configuración de IDEs y editores
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Archivos de sistema operativo
+.DS_Store
+Thumbs.db
+
+# =adchivos de logs
+*.log
+logs/
+
+# ===================================================================
+# Python / FastAPI
+# ===================================================================
+# Entornos virtuales
+venv/
+.venv/
+env/
+
+# Archivos compilados de Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Archivos de distribución y empaquetado
+build/
+dist/
+*.egg-info/
+*.egg
+
+# Bases de datos locales (SQLite)
+*.db
+*.sqlite3
+auditor.db
+
+# Reportes de tests y cobertura
+.pytest_cache/
+htmlcov/
+.coverage
+.coverage.*
+
+# ===================================================================
+# Archivos de Entorno y Secretos
+# ¡MUY IMPORTANTE! Nunca subas tus secretos a Git.
+# ===================================================================
+.env
+.env.*
+*.env.local
+
+# ===================================================================
+# Node.js / Frontend
+# (Aunque uses un .html simple, es buena práctica incluirlo)
+# ===================================================================
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# ===================================================================
+# Docker
+# =================================com==================================
+# Archivos generados por Docker Compose que no son necesarios
+.docker/
+
+# ===================================================================
+# Celery / Redis
+# ===================================================================
+# Archivo de schedule de Celery Beat
+celerybeat-schedule
+
+# Dump de Redis
+dump.rdb
+
+# ===================================================================
+# Archivos generados por la aplicación
+# (Ej: reportes, PDFs, etc. si se guardan localmente)
+# ===================================================================
+reports/
+downloads/
+*.pdf
+
+# ===================================================================
+# Documentación generada
+# ===================================================================
+site/
+
+# ===================================================================
+# MyPy (Type checker)
+# ===================================================================
+.mypy_cache/
+
+# ===================================================================
+# Jupyter Notebook (si se usa para análisis)
+# ===================================================================
+.ipynb_checkpoints
