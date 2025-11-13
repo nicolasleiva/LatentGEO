@@ -7,10 +7,6 @@ from datetime import datetime, timezone
 from typing import List, Optional, Dict, Any
 import json
 import os
-import sys
-
-# Imports desde el proyecto anterior
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../"))
 
 from ..models import Audit, AuditedPage, Report, Competitor, AuditStatus, CrawlJob
 from ..schemas import AuditCreate, AuditSummary, AuditDetail
@@ -103,6 +99,17 @@ class AuditService:
         return audit
 
     @staticmethod
+    def set_audit_task_id(db: Session, audit_id: int, task_id: str):
+        """Guardar el ID de la tarea de Celery en la auditoría"""
+        audit = db.query(Audit).filter(Audit.id == audit_id).first()
+        if not audit:
+            return None
+        audit.task_id = task_id
+        db.commit()
+        db.refresh(audit)
+        return audit
+
+    @staticmethod
     def set_audit_results(
         db: Session,
         audit_id: int,
@@ -175,6 +182,35 @@ class AuditService:
         """Obtener páginas auditadas"""
         return db.query(AuditedPage).filter(AuditedPage.audit_id == audit_id).all()
 
+    @staticmethod
+    def delete_audit(db: Session, audit_id: int) -> bool:
+        """Eliminar una auditoría y sus datos asociados"""
+        audit = db.query(Audit).filter(Audit.id == audit_id).first()
+        if not audit:
+            return False
+        db.delete(audit)
+        db.commit()
+        logger.info(f"Auditoría {audit_id} eliminada")
+        return True
+
+    @staticmethod
+    def get_stats_summary(db: Session) -> Dict[str, Any]:
+        """Obtener resumen de estadísticas de auditorías"""
+        total = db.query(Audit).count()
+        completed = len(db.query(Audit).filter(Audit.status == AuditStatus.COMPLETED).all())
+        running = len(db.query(Audit).filter(Audit.status == AuditStatus.RUNNING).all())
+        failed = len(db.query(Audit).filter(Audit.status == AuditStatus.FAILED).all())
+        pending = len(db.query(Audit).filter(Audit.status == AuditStatus.PENDING).all())
+        
+        return {
+            "total_audits": total,
+            "completed": completed,
+            "running": running,
+            "failed": failed,
+            "pending": pending,
+            "success_rate": round((completed / max(1, total)) * 100, 2)
+        }
+
 
 class ReportService:
     """Servicio para gestionar reportes"""
@@ -209,6 +245,11 @@ class ReportService:
             .order_by(desc(Report.created_at))
             .all()
         )
+
+    @staticmethod
+    def get_report(db: Session, report_id: int) -> Optional[Report]:
+        """Obtener reporte por ID"""
+        return db.query(Report).filter(Report.id == report_id).first()
 
     @staticmethod
     def delete_old_reports(db: Session, audit_id: int) -> int:

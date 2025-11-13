@@ -205,7 +205,7 @@ GET    /info        → Información API
 
 ### Opción 1: Docker (Recomendado - 1 comando)
 ```bash
-docker-compose up --build
+docker compose up --build
 # Acceso:
 # Backend: http://localhost:8000
 # Frontend: http://localhost:3000
@@ -420,7 +420,7 @@ Has transformado un script monolítico en una **plataforma empresarial profesion
 
 **Para comenzar:**
 ```bash
-docker-compose up --build
+docker compose up --build
 # O
 start.bat  # Windows
 ./start.sh # Linux/Mac

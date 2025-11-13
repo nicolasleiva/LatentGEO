@@ -12,8 +12,8 @@ from fastapi.responses import FileResponse, JSONResponse
 from sqlalchemy.orm import Session
 from pathlib import Path
 import os, uuid, json
-from app.models import AuditStatus
 from ...core.database import get_db
+from ...models import AuditStatus
 from ...schemas import ReportResponse, PDFRequest, PDFResponse
 from ...services.audit_service import AuditService, ReportService
 from ...core.logger import get_logger
@@ -125,7 +125,7 @@ async def generate_pdf(
                 status_code=status.HTTP_404_NOT_FOUND, detail="Auditoría no encontrada"
             )
 
-        if audit.status != AuditStatus.completed or not audit.report_markdown:
+        if audit.status != AuditStatus.COMPLETED or not audit.report_markdown:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="La auditoría no está completada o no tiene reporte.",
@@ -202,7 +202,7 @@ async def get_markdown_report(audit_id: int, db: Session = Depends(get_db)):
                 status_code=status.HTTP_404_NOT_FOUND, detail="Auditoría no encontrada"
             )
 
-        if audit.status != AuditStatus.completed or not audit.report_markdown:
+        if audit.status != AuditStatus.COMPLETED or not audit.report_markdown:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="El reporte aún no está listo.",

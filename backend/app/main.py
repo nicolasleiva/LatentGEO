@@ -8,7 +8,7 @@ from fastapi.openapi.utils import get_openapi
 import os
 
 from .core.config import settings
-from .core.database import create_all_tables
+from .core.database import init_db
 from .core.logger import get_logger
 
 # Importar rutas
@@ -31,6 +31,14 @@ async def lifespan(app: FastAPI):
     )
     logger.info(f"API Documentation: http://localhost:8000/docs")
     logger.info(f"========================================")
+
+    try:
+        await init_db()
+    except Exception as e:
+        logger.critical(f"Fallo crítico al inicializar la base de datos: {e}", exc_info=True)
+        # En un entorno de producción, podrías querer que la aplicación falle aquí.
+        # raise
+
     yield
     logger.info(f"========================================")
     logger.info(f"Shutting down {settings.APP_NAME}...")
@@ -49,10 +57,6 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
         redirect_slashes=True,
     )
-
-    # Crear tablas de base de datos
-    create_all_tables()
-    logger.info("Tablas de base de datos creadas/verificadas")
 
     # ===== MIDDLEWARE =====
 
@@ -117,4 +121,4 @@ app = create_app()
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=settings.DEBUG)
+    uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=settings.DEBUG)

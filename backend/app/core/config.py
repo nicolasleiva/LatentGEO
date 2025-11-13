@@ -5,6 +5,7 @@ import os
 from dotenv import load_dotenv
 from typing import Optional
 
+
 load_dotenv()
 
 
@@ -26,6 +27,10 @@ class Settings:
     # Base de Datos
     DATABASE_URL: str = os.getenv("DATABASE_URL", "sqlite:///./auditor.db")
     SQLALCHEMY_ECHO: bool = DEBUG
+    DB_RETRIES: int = int(os.getenv("DB_RETRIES", "5"))
+    DB_RETRY_DELAY: int = int(os.getenv("DB_RETRY_DELAY", "2"))
+    FALLBACK_TO_SQLITE: bool = os.getenv("FALLBACK_TO_SQLITE", "False") == "True"
+
 
     # Redis (para caché y cola de tareas)
     REDIS_URL: str = os.getenv("REDIS_URL", "redis://localhost:6379/0")

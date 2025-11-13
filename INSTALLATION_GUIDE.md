@@ -93,10 +93,10 @@ Debería ver:
 
 ```bash
 # En la raíz del proyecto
-docker-compose up --build
+docker compose up --build
 
 # En background
-docker-compose up -d --build
+docker compose up -d --build
 ```
 
 Esto levantará:
