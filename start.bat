@@ -14,7 +14,7 @@ if %errorlevel% equ 0 (
     echo [1] Docker encontrado - Iniciando con Docker Compose...
     echo.
     cd /d "%~dp0"
-    docker-compose up --build
+    docker compose up --build
 ) else (
     echo [2] Docker no encontrado - Iniciando modo local Python...
     echo.

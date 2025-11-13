@@ -336,9 +336,8 @@ JSON de entrada:
             else:
                 # Llamar LLM (Gemini, OpenAI, etc.)
                 agent1_response_text = await llm_function(
-                    name="External_Analyst",
                     system_prompt=PipelineService.EXTERNAL_ANALYSIS_PROMPT,
-                    user_message=agent1_input,
+                    user_prompt=agent1_input,
                 )
 
                 agent1_json = PipelineService.parse_agent_json_or_raw(
@@ -472,9 +471,8 @@ Se requiere:
             else:
                 # Llamar LLM
                 report_text = await llm_function(
-                    name="Report_Synthesizer_V10",
                     system_prompt=PipelineService.REPORT_PROMPT_V10_PRO,
-                    user_message=final_context_input,
+                    user_prompt=final_context_input,
                 )
 
                 # Parsear respuesta (buscar delimitador)

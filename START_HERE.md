@@ -31,7 +31,7 @@ Se ha transformado exitosamente un proyecto de auditoría SEO/GEO en una **plata
 ### Opción 1: Docker (Recomendado - 1 comando)
 ```bash
 cd c:\Users\Dell\Documents\auditor
-docker-compose up --build
+docker compose up --build
 ```
 
 **Acceso:**

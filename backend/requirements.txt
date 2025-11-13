@@ -2,6 +2,7 @@
 
 sqlalchemy==2.0.44
 alembic==1.12.1
+psycopg2-binary==2.9.9
 
 # FastAPI y web
 fastapi==0.104.1

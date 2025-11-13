@@ -7,19 +7,19 @@ import sys
 from contextlib import contextmanager
 from sqlalchemy.orm import Session
 
-from backend.app.core.database import SessionLocal
-from backend.app.core.logger import get_logger
-from backend.app.models import AuditStatus
-from backend.app.services.audit_service import AuditService, ReportService
-from backend.app.services.pdf_service import PDFService
-from backend.app.services.audit_local_service import AuditLocalService
-from backend.app.services.pipeline_service import PipelineService
-from backend.app.core.config import settings
-from backend.app.workers.celery_app import celery_app
+from app.core.database import SessionLocal
+from app.core.logger import get_logger
+from app.models import AuditStatus
+from app.services.audit_service import AuditService, ReportService
+from app.services.pdf_service import PDFService
+from app.services.audit_local_service import AuditLocalService
+from app.services.pipeline_service import PipelineService
+from app.core.config import settings
+from app.workers.celery_app import celery_app
 
 # Importar la fábrica de LLM desde el endpoint de auditorías
 # Esto puede ser refactorizado a un módulo de utilidades común en el futuro
-from backend.app.core.llm import get_llm_function
+from app.core.llm import get_llm_function
 
 logger = get_logger(__name__)
 
@@ -34,15 +34,25 @@ def get_db_session():
         db.close()
 
 
-@celery_app.task(name="run_audit_task")
-def run_audit_task(audit_id: int):
+@celery_app.task(
+    name="run_audit_task",
+    bind=True,
+    autoretry_for=(Exception,),
+    retry_kwargs={"max_retries": 3, "countdown": 60},
+    soft_time_limit=300,  # 5 minutos
+    time_limit=360,  # 6 minutos
+)
+def run_audit_task(self, audit_id: int):
     """
     Celery task to run the complete audit pipeline in the background.
+    - Es idempotente en la práctica: si se reintenta, el pipeline se ejecuta de nuevo,
+      sobrescribiendo los resultados, lo cual es aceptable.
+    - Gestiona su propia sesión de BD.
     """
-    logger.info(f"Celery task 'run_audit_task' started for audit_id: {audit_id}")
+    logger.info(f"Celery task '{self.name}' [ID: {self.request.id}] started for audit_id: {audit_id}")
 
     with get_db_session() as db:
-        # 1. Marcar la auditoría como RUNNING
+        # 1. Marcar la auditoría como RUNNING (antes estaba PENDING)
         AuditService.update_audit_progress(
             db=db, audit_id=audit_id, progress=5, status=AuditStatus.RUNNING
         )
@@ -110,7 +120,7 @@ def run_audit_task(audit_id: int):
             AuditService.update_audit_progress(
                 db=db,
                 audit_id=audit_id,
-                progress=0,
+                progress=audit.progress,  # Mantener el último progreso conocido
                 status=AuditStatus.FAILED,
                 error_message=str(e),
             )

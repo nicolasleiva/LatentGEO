@@ -13,7 +13,7 @@ if command -v docker &> /dev/null; then
     echo "[1] Docker encontrado - Iniciando con Docker Compose..."
     echo ""
     cd "$(dirname "$0")"
-    docker-compose up --build
+    docker compose up --build
 else
     echo "[2] Docker no encontrado - Iniciando modo local Python..."
     echo ""

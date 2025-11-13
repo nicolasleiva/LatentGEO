@@ -4,14 +4,11 @@ Servicio para la generación de reportes en PDF.
 import os
 from datetime import datetime
 
-from backend.app.core.logger import get_logger
-from backend.app.core.config import settings
-from backend.app.models import Audit
+from ..core.config import settings
+from ..core.logger import get_logger
+from ..models import Audit
+from ..workers.pdf_generator import PDFReport
 
-# Asumimos que create_pdf.py está en una ruta importable o ha sido refactorizado.
-# Si create_pdf.py está en la raíz, necesitarás ajustar el path.
-# Por ahora, lo importamos asumiendo que está accesible.
-from backend.app.workers.pdf_generator import PDFReport
 
 
 logger = get_logger(__name__)
