@@ -1,53 +1,72 @@
-FROM node:18-slim AS builder
+# ------------------------------------------------------------
+# Dockerfile.frontend
+# Multistage build para Next.js + pnpm
+# ------------------------------------------------------------
 
+# Etapa: builder - compila la aplicación Next.js
+FROM node:20.9-slim AS builder
 WORKDIR /app
 
-# Copiar archivos de configuración
-COPY frontend/package*.json ./
-COPY frontend/tsconfig.json ./
-COPY frontend/next.config.mjs ./
-COPY frontend/postcss.config.mjs ./
-COPY frontend/tailwind.config.ts ./
+# Habilitar corepack (proporciona pnpm de forma reproducible)
+RUN corepack enable && corepack prepare pnpm@latest --activate
 
-# Instalar dependencias
-RUN npm ci
+# Copiar todo el frontend primero (evita problemas con workspaces/paths relativos)
+# Asegurate que el contexto de build contenga la carpeta 'frontend'
+COPY frontend/ ./
 
-# Copiar código fuente
-COPY frontend/app ./app
-COPY frontend/components ./components
-COPY frontend/hooks ./hooks
-COPY frontend/lib ./lib
-COPY frontend/public ./public
-COPY frontend/styles ./styles
+# Indicar que estamos en CI para evitar prompts interactivos durante pnpm install
+ENV CI=true
 
-# Build
-RUN npm run build
+# Instalar dependencias (NO usar --production aquí; el build necesita dev deps)
+RUN pnpm install --frozen-lockfile --strict-peer-dependencies=false
 
-# Etapa de producción
-FROM node:18-slim
+# Opcional: listar para debug (descomenta si necesitas inspeccionar la capa)
+# RUN echo ">>> /app" && ls -la /app && echo ">>> /app/node_modules/next/dist/bin" && ls -la /app/node_modules/next/dist/bin || true
 
+# Añadir node_modules/.bin al PATH (formato key=value)
+ENV PATH=/app/node_modules/.bin:$PATH
+
+# Construir la app Next.js
+RUN pnpm run build
+
+# ------------------------------------------------------------
+# Etapa: runner - imagen de producción
+# ------------------------------------------------------------
+FROM node:20.9-slim AS runner
 WORKDIR /app
 
-# Copiar package.json
-COPY frontend/package*.json ./
+# Habilitar corepack en runtime (por si el start usa pnpm)
+RUN corepack enable && corepack prepare pnpm@latest --activate
 
-# Instalar solo dependencias de producción
-RUN npm ci --only=production
-
-# Copiar build desde builder
+# Copiar artefactos desde builder
 COPY --from=builder /app/.next ./.next
 COPY --from=builder /app/public ./public
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/package.json ./package.json
 
-# Variables de entorno
+# Si usas next.config.js u otros archivos de config del frontend
+# descomenta la siguiente línea o añadelos según corresponda:
+# COPY --from=builder /app/next.config.js ./next.config.js
+
+# Crear usuario no-root y cambiar permisos
+RUN addgroup --system --gid 1001 nodejs \
+ && adduser --system --uid 1001 nextjs \
+ && chown -R nextjs:nodejs /app
+
+# Cambiar a usuario no-root
+USER nextjs
+
+# Variables de entorno para producción
 ENV NODE_ENV=production
 ENV PORT=3000
+ENV PATH=/app/node_modules/.bin:$PATH
 
-# Exponer puerto
 EXPOSE 3000
 
-# Health check
+# Healthcheck simple (ajusta la URL/puerto si usas custom server)
 HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
-    CMD wget --quiet --tries=1 --spider http://localhost:3000/ || exit 1
+  CMD ["node", "-e", "require('http').get('http://localhost:3000', (res) => process.exit(res.statusCode == 200 ? 0 : 1))"]
 
-# Comando de inicio
-CMD ["npm", "start"]
+# Nota: tu package.json debe tener:
+# "scripts": { "build": "next build", "start": "next start -p $PORT" }
+CMD ["pnpm", "start"]

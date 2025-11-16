@@ -114,6 +114,30 @@ def clean_string_for_pdf(text):
     """Asegura que el string esté en formato amigable para PDF."""
     if not isinstance(text, str):
         text = str(text)
+    # Reemplazar caracteres Unicode problemáticos
+    replacements = {
+        "•": "-",
+        "–": "-",
+        "—": "-",
+        "'": "'",
+        "'": "'",
+        "\"": '"',
+        "\"": '"',
+        "…": "...",
+        "→": "->",
+        "←": "<-",
+        "↑": "^",
+        "↓": "v",
+        "✓": "[OK]",
+        "✗": "[X]",
+        "★": "*",
+        "©": "(c)",
+        "®": "(R)",
+        "™": "(TM)",
+    }
+    for old, new in replacements.items():
+        text = text.replace(old, new)
+    
     return (
         text.replace("\r", "")
         .replace("\\r", "")

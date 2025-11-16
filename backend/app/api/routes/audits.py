@@ -6,7 +6,7 @@ import asyncio
 from app.core.database import get_db
 from app.core.config import settings
 from app.models import Audit, AuditStatus
-from app.schemas import AuditCreate, AuditResponse, AuditSummary
+from app.schemas import AuditCreate, AuditResponse, AuditSummary, AuditConfigRequest, ChatMessage
 from app.services.audit_service import AuditService
 from app.services.pipeline_service import PipelineService
 from app.services.audit_local_service import AuditLocalService
@@ -20,7 +20,6 @@ from app.workers.tasks import run_audit_task
 logger = get_logger(__name__)
 
 router = APIRouter(
-    prefix="/audits",
     tags=["audits"],
     responses={404: {"description": "No encontrado"}},
 )
@@ -30,7 +29,7 @@ async def run_audit_sync(audit_id: int):
     """
     Función auxiliar para ejecutar auditoría de forma síncrona como fallback.
     """
-    from app.core.llm import get_llm_function
+    from app.core.llm_kimi import get_llm_function
     from app.core.database import SessionLocal
     
     logger.info(f"Running audit {audit_id} synchronously (Redis unavailable)")
@@ -90,6 +89,23 @@ async def run_audit_sync(audit_id: int):
         )
         logger.info(f"Audit {audit_id} completed successfully (sync mode)")
         
+        # Generar PDF en modo síncrono
+        if report_markdown:
+            try:
+                from app.services.pdf_service import PDFService
+                from app.services.audit_service import ReportService
+                
+                logger.info(f"Generating PDF for audit {audit_id} (sync mode)")
+                pdf_file_path = PDFService.create_from_audit(
+                    audit=audit, markdown_content=report_markdown
+                )
+                ReportService.create_report(
+                    db=db, audit_id=audit_id, report_type="PDF", file_path=pdf_file_path
+                )
+                logger.info(f"PDF generated successfully for audit {audit_id}")
+            except Exception as pdf_error:
+                logger.error(f"Failed to generate PDF for audit {audit_id}: {pdf_error}", exc_info=True)
+        
     except Exception as e:
         logger.error(f"Error running sync audit {audit_id}: {e}", exc_info=True)
         AuditService.update_audit_progress(
@@ -111,29 +127,24 @@ async def create_audit(
     db: Session = Depends(get_db),
 ):
     """
-    Crea una nueva auditoría y la encola para su procesamiento en segundo plano.
-    Responde inmediatamente con un 202 Accepted.
-    
-    Si Redis/Celery no está disponible, ejecuta la auditoría en modo síncrono.
+    Crea auditoría. Si tiene competitors/market, inicia pipeline.
+    Si no, solo crea registro (espera configuración de chat).
     """
-    # 1. Crear el registro inicial en la base de datos
     audit = AuditService.create_audit(db, audit_create)
 
-    # 2. Intentar lanzar la tarea de Celery en segundo plano
-    try:
-        task = run_audit_task.delay(audit.id)
-        AuditService.set_audit_task_id(db, audit.id, task.id)
-        logger.info(f"Audit {audit.id} queued in Celery with task_id: {task.id}")
-    except Exception as e:
-        # Fallback: Si Redis no está disponible, ejecutar en modo síncrono
-        logger.warning(f"Celery unavailable (Redis not running): {e}")
-        logger.info(f"Falling back to synchronous execution for audit {audit.id}")
-        background_tasks.add_task(run_audit_sync, audit.id)
+    # Solo iniciar pipeline si tiene configuración completa
+    if audit_create.competitors or audit_create.market:
+        try:
+            task = run_audit_task.delay(audit.id)
+            AuditService.set_audit_task_id(db, audit.id, task.id)
+            logger.info(f"Audit {audit.id} queued with config")
+        except Exception as e:
+            logger.warning(f"Celery unavailable: {e}")
+            background_tasks.add_task(run_audit_sync, audit.id)
+    else:
+        logger.info(f"Audit {audit.id} created, waiting for chat config")
 
-    # 3. Establecer el header 'Location' para que el cliente pueda consultar el estado
     response.headers["Location"] = f"/audits/{audit.id}"
-
-    # 4. Devolver una respuesta inmediata al cliente con los datos iniciales
     return audit
 
 
@@ -159,6 +170,11 @@ def get_audit(audit_id: int, db: Session = Depends(get_db)):
     audit = AuditService.get_audit(db, audit_id)
     if not audit:
         raise HTTPException(status_code=404, detail="Auditoría no encontrada")
+    
+    # Cargar páginas auditadas
+    pages = AuditService.get_audited_pages(db, audit_id)
+    audit.pages = pages
+    
     return audit
 
 
@@ -227,3 +243,187 @@ def get_audits_summary(db: Session = Depends(get_db)):
     """
     stats = AuditService.get_stats_summary(db)
     return stats
+
+
+@router.get("/{audit_id}/pages", response_model=list)
+def get_audit_pages(audit_id: int, db: Session = Depends(get_db)):
+    """
+    Obtiene todas las páginas auditadas de una auditoría.
+    """
+    audit = AuditService.get_audit(db, audit_id)
+    if not audit:
+        raise HTTPException(status_code=404, detail="Auditoría no encontrada")
+    
+    pages = AuditService.get_audited_pages(db, audit_id)
+    return [
+        {
+            "id": p.id,
+            "url": p.url,
+            "path": p.path,
+            "overall_score": p.overall_score,
+            "h1_score": p.h1_score,
+            "structure_score": p.structure_score,
+            "content_score": p.content_score,
+            "eeat_score": p.eeat_score,
+            "schema_score": p.schema_score,
+            "critical_issues": p.critical_issues,
+            "high_issues": p.high_issues,
+            "medium_issues": p.medium_issues,
+            "low_issues": p.low_issues,
+            "audit_data": p.audit_data
+        }
+        for p in pages
+    ]
+
+
+@router.get("/{audit_id}/pages/{page_id}", response_model=dict)
+def get_page_details(audit_id: int, page_id: int, db: Session = Depends(get_db)):
+    """
+    Obtiene detalles de una página específica.
+    """
+    audit = AuditService.get_audit(db, audit_id)
+    if not audit:
+        raise HTTPException(status_code=404, detail="Auditoría no encontrada")
+    
+    pages = AuditService.get_audited_pages(db, audit_id)
+    page = next((p for p in pages if p.id == page_id), None)
+    
+    if not page:
+        raise HTTPException(status_code=404, detail="Página no encontrada")
+    
+    return {
+        "id": page.id,
+        "url": page.url,
+        "path": page.path,
+        "overall_score": page.overall_score,
+        "h1_score": page.h1_score,
+        "structure_score": page.structure_score,
+        "content_score": page.content_score,
+        "eeat_score": page.eeat_score,
+        "schema_score": page.schema_score,
+        "critical_issues": page.critical_issues,
+        "high_issues": page.high_issues,
+        "medium_issues": page.medium_issues,
+        "low_issues": page.low_issues,
+        "audit_data": page.audit_data
+    }
+
+
+@router.get("/{audit_id}/competitors", response_model=list)
+def get_competitors(audit_id: int, db: Session = Depends(get_db)):
+    """
+    Obtiene datos de competidores de una auditoría con GEO scores calculados.
+    """
+    from app.services.audit_service import CompetitorService
+    
+    audit = AuditService.get_audit(db, audit_id)
+    if not audit:
+        raise HTTPException(status_code=404, detail="Auditoría no encontrada")
+    
+    if audit.status != AuditStatus.COMPLETED:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Los datos de competidores aún no están listos. Estado actual: {audit.status.value}",
+        )
+    
+    # Obtener competidores de la base de datos
+    competitors_db = CompetitorService.get_competitors(db, audit_id)
+    
+    # Si hay competidores en la BD, usarlos
+    if competitors_db:
+        return [
+            {
+                "url": c.url,
+                "domain": c.domain,
+                "geo_score": c.geo_score,
+                "audit_data": c.audit_data
+            }
+            for c in competitors_db
+        ]
+    
+    # Fallback: usar competitor_audits del JSON y calcular scores
+    competitors = audit.competitor_audits or []
+    result = []
+    for comp in competitors:
+        if isinstance(comp, dict):
+            geo_score = comp.get("geo_score", 0)
+            # Si no tiene score, calcularlo
+            if geo_score == 0 or geo_score is None:
+                geo_score = CompetitorService._calculate_geo_score(comp)
+            result.append({
+                "url": comp.get("url"),
+                "domain": comp.get("url", "").replace("https://", "").replace("http://", "").split("/")[0],
+                "geo_score": geo_score,
+                "audit_data": comp
+            })
+    
+    return result
+
+
+@router.get("/{audit_id}/download-pdf")
+def download_audit_pdf(audit_id: int, db: Session = Depends(get_db)):
+    """
+    Descarga el PDF de una auditoría completada.
+    """
+    from fastapi.responses import FileResponse
+    import os
+    
+    audit = AuditService.get_audit(db, audit_id)
+    if not audit:
+        raise HTTPException(status_code=404, detail="Auditoría no encontrada")
+    
+    if audit.status != AuditStatus.COMPLETED:
+        raise HTTPException(
+            status_code=400,
+            detail=f"El PDF aún no está listo. Estado actual: {audit.status.value}",
+        )
+    
+    if not audit.report_pdf_path or not os.path.exists(audit.report_pdf_path):
+        raise HTTPException(
+            status_code=404,
+            detail="El archivo PDF no se encuentra disponible",
+        )
+    
+    return FileResponse(
+        path=audit.report_pdf_path,
+        media_type="application/pdf",
+        filename=f"audit_{audit_id}_report.pdf"
+    )
+
+
+@router.post("/chat/config", response_model=ChatMessage)
+async def configure_audit_chat(
+    config: AuditConfigRequest,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db)
+):
+    """
+    Configura auditoría y lanza pipeline.
+    """
+    audit = AuditService.get_audit(db, config.audit_id)
+    if not audit:
+        raise HTTPException(status_code=404, detail="Audit not found")
+    
+    if config.language:
+        audit.language = config.language
+    if config.competitors:
+        audit.competitors = config.competitors
+    if config.market:
+        audit.market = config.market
+    
+    db.commit()
+    db.refresh(audit)
+    
+    # Iniciar pipeline ahora que tenemos configuración
+    try:
+        task = run_audit_task.delay(audit.id)
+        AuditService.set_audit_task_id(db, audit.id, task.id)
+        logger.info(f"Audit {audit.id} pipeline started after chat config")
+    except Exception as e:
+        logger.warning(f"Celery unavailable: {e}")
+        background_tasks.add_task(run_audit_sync, audit.id)
+    
+    return ChatMessage(
+        role="assistant",
+        content="Configuration saved. Starting audit..."
+    )

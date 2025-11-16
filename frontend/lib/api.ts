@@ -1,52 +1,60 @@
-import type { Audit, CreateAuditRequest } from "./types"
+import type { AuditSummary, PageAudit, CompetitorData } from './types'
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
+// En el navegador usa localhost, en el servidor usa el nombre del servicio Docker
+const API_URL = typeof window !== 'undefined' 
+  ? (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000')
+  : (process.env.API_URL || 'http://backend:8000');
 
-export async function fetchAudits(): Promise<Audit[]> {
-  const response = await fetch(`${API_BASE_URL}/audits`)
-  if (!response.ok) {
-    throw new Error("Failed to fetch audits")
-  }
-  return response.json()
-}
+class APIService {
+  private baseUrl = API_URL;
 
-export async function createAudit(data: CreateAuditRequest): Promise<Audit> {
-  const response = await fetch(`${API_BASE_URL}/audits`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(data),
-  })
-
-  if (!response.ok) {
-    throw new Error("Failed to create audit")
+  async searchAI(query: string): Promise<{ response: string; suggestions: string[] }> {
+    const res = await fetch(`${this.baseUrl}/search`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query })
+    })
+    if (!res.ok) throw new Error(`API error: ${res.status}`)
+    return res.json()
   }
 
-  return response.json()
-}
-
-export async function fetchAudit(id: number): Promise<Audit> {
-  const response = await fetch(`${API_BASE_URL}/audits/${id}`)
-  if (!response.ok) {
-    throw new Error("Failed to fetch audit")
-  }
-  return response.json()
-}
-
-export async function downloadPDF(id: number): Promise<void> {
-  const response = await fetch(`${API_BASE_URL}/audits/${id}/download-pdf`)
-  if (!response.ok) {
-    throw new Error("Failed to download PDF")
+  async createAudit(config: {
+    url: string
+    maxPages?: number
+    competitors?: string[]
+  }): Promise<AuditSummary> {
+    const res = await fetch(`${this.baseUrl}/api/audits`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(config)
+    })
+    if (!res.ok) throw new Error(`API error: ${res.status}`)
+    return res.json()
   }
 
-  const blob = await response.blob()
-  const url = window.URL.createObjectURL(blob)
-  const a = document.createElement("a")
-  a.href = url
-  a.download = `audit-${id}-report.pdf`
-  document.body.appendChild(a)
-  a.click()
-  document.body.removeChild(a)
-  window.URL.revokeObjectURL(url)
+  async getAudit(id: string): Promise<AuditSummary> {
+    const res = await fetch(`${this.baseUrl}/api/audits/${id}`)
+    if (!res.ok) throw new Error(`API error: ${res.status}`)
+    return res.json()
+  }
+
+  async getAuditPages(auditId: string): Promise<PageAudit[]> {
+    const res = await fetch(`${this.baseUrl}/api/audits/${auditId}/pages`)
+    if (!res.ok) throw new Error(`API error: ${res.status}`)
+    return res.json()
+  }
+
+  async getPageDetails(auditId: string, pageId: string): Promise<PageAudit> {
+    const res = await fetch(`${this.baseUrl}/api/audits/${auditId}/pages/${pageId}`)
+    if (!res.ok) throw new Error(`API error: ${res.status}`)
+    return res.json()
+  }
+
+  async getCompetitorData(auditId: string): Promise<CompetitorData[]> {
+    const res = await fetch(`${this.baseUrl}/api/audits/${auditId}/competitors`)
+    if (!res.ok) throw new Error(`API error: ${res.status}`)
+    return res.json()
+  }
 }
+
+export const api = new APIService()

@@ -52,6 +52,7 @@ class Audit(Base):
     external_intelligence = Column(JSON, nullable=True)
     search_results = Column(JSON, nullable=True)
     competitor_audits = Column(JSON, nullable=True)
+    pagespeed_data = Column(JSON, nullable=True)
 
     # Resultados
     report_markdown = Column(Text, nullable=True)
@@ -60,6 +61,9 @@ class Audit(Base):
     # Metadata
     is_ymyl = Column(Boolean, default=False)
     category = Column(String(255), nullable=True)
+    language = Column(String(10), default="es")  # "en" o "es"
+    competitors = Column(JSON, nullable=True)  # Lista de URLs de competidores
+    market = Column(String(50), nullable=True)  # "us", "latam", "emea", etc.
 
     # Timestamps
     created_at = Column(
@@ -79,6 +83,17 @@ class Audit(Base):
     # Task ID de Celery
     task_id = Column(String(255), nullable=True, unique=True, index=True)
     error_message = Column(Text, nullable=True)
+    
+    # Propiedad dinámica para report_pdf_path (se calcula desde reports)
+    @property
+    def report_pdf_path(self):
+        if hasattr(self, '_report_pdf_path'):
+            return self._report_pdf_path
+        return None
+    
+    @report_pdf_path.setter
+    def report_pdf_path(self, value):
+        self._report_pdf_path = value
 
 
 class Report(Base):
