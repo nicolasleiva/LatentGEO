@@ -25,9 +25,14 @@ from typing import Optional, Set, List
 logger = logging.getLogger(__name__)
 
 # Headers para simular navegador
-HEADERS = {
+HEADERS_DESKTOP = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko)"
     " Chrome/91.0.4472.124 Safari/537.36"
+}
+
+HEADERS_MOBILE = {
+    "User-Agent": "Mozilla/5.0 (Linux; Android 10; SM-G973F) AppleWebKit/537.36 (KHTML, like Gecko)"
+    " Chrome/91.0.4472.120 Mobile Safari/537.36"
 }
 
 # Extensiones a ignorar
@@ -197,7 +202,7 @@ class CrawlerService:
             return set()
 
     @staticmethod
-    async def fetch_robots(base_url: str) -> urllib.robotparser.RobotFileParser:
+    async def fetch_robots(base_url: str, mobile: bool = True) -> urllib.robotparser.RobotFileParser:
         """
         Descarga y parsea robots.txt del sitio.
 
@@ -211,8 +216,9 @@ class CrawlerService:
             parsed = urlparse(base_url)
             robots_url = f"{parsed.scheme}://{parsed.hostname}/robots.txt"
             rp = urllib.robotparser.RobotFileParser()
+            headers = HEADERS_MOBILE if mobile else HEADERS_DESKTOP
 
-            async with aiohttp.ClientSession(headers=HEADERS) as s:
+            async with aiohttp.ClientSession(headers=headers) as s:
                 async with s.get(
                     robots_url, timeout=aiohttp.ClientTimeout(total=5)
                 ) as r:
@@ -234,6 +240,7 @@ class CrawlerService:
         max_pages: int = 1000,
         allow_subdomains: bool = False,
         callback: Optional[callable] = None,
+        mobile_first: bool = True,
     ) -> List[str]:
         """
         Rastrea un sitio web completo de forma asincrónica.
@@ -275,7 +282,7 @@ class CrawlerService:
                 raise ValueError("La URL base no es válida para el rastreo")
 
             # Descargar robots.txt
-            rp = await CrawlerService.fetch_robots(base_url)
+            rp = await CrawlerService.fetch_robots(base_url, mobile_first)
 
             await queue.put(start_url)
             visited.add(start_url)
@@ -291,9 +298,10 @@ class CrawlerService:
         # Configurar sesión con limites de concurrencia
         timeout = aiohttp.ClientTimeout(total=10)
         connector = aiohttp.TCPConnector(limit=10)
+        headers = HEADERS_MOBILE if mobile_first else HEADERS_DESKTOP
 
         async with aiohttp.ClientSession(
-            headers=HEADERS, timeout=timeout, connector=connector
+            headers=headers, timeout=timeout, connector=connector
         ) as session:
             tasks = []
             pages_count = 0
@@ -379,7 +387,7 @@ class CrawlerService:
         return sorted(visited)
 
     @staticmethod
-    async def get_page_content(url: str, timeout: int = 10) -> Optional[str]:
+    async def get_page_content(url: str, timeout: int = 10, mobile: bool = True) -> Optional[str]:
         """
         Obtiene el contenido HTML de una página.
 
@@ -392,8 +400,9 @@ class CrawlerService:
         """
         try:
             timeout_config = aiohttp.ClientTimeout(total=timeout)
+            headers = HEADERS_MOBILE if mobile else HEADERS_DESKTOP
             async with aiohttp.ClientSession(
-                headers=HEADERS, timeout=timeout_config
+                headers=headers, timeout=timeout_config
             ) as session:
                 async with session.get(url) as resp:
                     if resp.status == 200:

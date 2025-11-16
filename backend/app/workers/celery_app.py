@@ -1,10 +1,9 @@
 from celery import Celery
-from app.core.config import settings
 
 celery_app = Celery(
     "worker",
-    broker=settings.CELERY_BROKER,
-    backend=settings.CELERY_BACKEND,
+    broker='redis://redis:6379/0',
+    backend='redis://redis:6379/1',
     include=["app.workers.tasks"],
 )
 
