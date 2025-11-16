@@ -253,21 +253,54 @@ Tu respuesta DEBE tener DOS PARTES separadas por un delimitador claro.
 
 --- REQUISITOS DEL "fix_plan" (JSON Array) ---
 
-* Debe ser un (Array) de TODAS las tareas accionables de 'target_audit' (structure, content, eeat, schema) y los nuevos hallazgos (ej. 'SCHEMA_COMPETITOR_GAP').
-* Cada objeto debe tener: "page_path", "issue_code", "priority" ("CRITICAL", "HIGH", "MEDIUM"), "description", "snippet" (si aplica), y "suggestion" (si aplica).
+**IMPORTANTE:** Después del delimitador '---START_FIX_PLAN---', debes escribir ÚNICAMENTE un JSON Array válido.
 
---- JSON DE ENTRADA (ESTRUCTURA DE EJEMPLO) ---
-{
-  "target_audit": { ... (resumen agregado del cliente) ... },
-  "external_intelligence": { "is_ymyl": false, "category": "Software B2B" },
-  "search_results": {
-    "competitors": { "items": [ { "link": "rival1.com", "snippet": "..."} ] },
-    "authority": { "items": [ { "link": "techcrunch.com", "snippet": "..."} ] }
+* Debe ser un Array JSON de TODAS las tareas accionables encontradas en 'target_audit'.
+* Cada objeto del array debe tener estos campos:
+  - "page_path": (string) Ruta de la página afectada (ej. "/", "/es", "/es/consulting-team")
+  - "issue_code": (string) Código del problema (ej. "SCHEMA_MISSING", "H1_HIERARCHY_SKIP", "AUTHOR_MISSING", "FAQ_MISSING")
+  - "priority": (string) "CRITICAL", "HIGH" o "MEDIUM"
+  - "description": (string) Descripción clara del problema
+  - "snippet": (string, opcional) Fragmento de código HTML relevante si aplica
+  - "suggestion": (string) Sugerencia concreta de cómo solucionarlo
+
+**EJEMPLO DE fix_plan (SIGUE ESTE FORMATO EXACTO):**
+[
+  {
+    "page_path": "ALL_PAGES",
+    "issue_code": "SCHEMA_MISSING",
+    "priority": "CRITICAL",
+    "description": "No se detectó JSON-LD Schema en ninguna página (0/5 páginas)",
+    "snippet": "",
+    "suggestion": "Implementar Schema Organization + WebSite en el <head> de todas las páginas. Ver Anexo A del reporte."
   },
-  "competitor_audits": [
-    { "url": "rival1.com", "schema": { ... } }
-  ]
-}
+  {
+    "page_path": "/",
+    "issue_code": "H1_HIERARCHY_SKIP",
+    "priority": "HIGH",
+    "description": "Salto de jerarquía detectado: H2 -> H4 (se omitió H3)",
+    "snippet": "<h4 class='text-ana-blue-2'>Quiénes somos</h4>",
+    "suggestion": "Cambiar el H4 'Quiénes somos' por un H3 para mantener la jerarquía correcta."
+  },
+  {
+    "page_path": "ALL_PAGES",
+    "issue_code": "AUTHOR_MISSING",
+    "priority": "HIGH",
+    "description": "No se detectó información de autor en ninguna página (0/5 páginas)",
+    "snippet": "",
+    "suggestion": "Crear plantilla de autor con Schema Person. Añadir biografías de autores en artículos."
+  },
+  {
+    "page_path": "ALL_PAGES",
+    "issue_code": "FAQ_MISSING",
+    "priority": "MEDIUM",
+    "description": "No se detectaron FAQs estructuradas en ninguna página",
+    "snippet": "",
+    "suggestion": "Añadir secciones de FAQs con Schema FAQPage en páginas clave. Usar formato de pregunta-respuesta."
+  }
+]
+
+**GENERA EL fix_plan BASÁNDOTE EN LOS DATOS REALES DE 'target_audit' QUE RECIBIRÁS.**
 """
 
 

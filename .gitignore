@@ -68,7 +68,6 @@ pnpm-debug.log*
 # Docker
 # =================================com==================================
 # Archivos generados por Docker Compose que no son necesarios
-.docker/
 
 # ===================================================================
 # Celery / Redis

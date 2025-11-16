@@ -12,7 +12,11 @@ from .core.database import init_db
 from .core.logger import get_logger
 
 # Importar rutas
-from .api.routes import audits, reports, analytics, health
+from .api.routes import audits, reports, analytics, health, search, pagespeed
+try:
+    from .api.routes import content_analysis
+except ImportError:
+    content_analysis = None
 
 from contextlib import asynccontextmanager
 
@@ -60,10 +64,11 @@ def create_app() -> FastAPI:
 
     # ===== MIDDLEWARE =====
 
-    # CORS
+    # CORS - Permitir tanto localhost como el contenedor frontend
+    cors_origins = settings.CORS_ORIGINS + ["http://frontend:3000"]
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=settings.CORS_ORIGINS,
+        allow_origins=cors_origins,
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
@@ -79,14 +84,24 @@ def create_app() -> FastAPI:
     # Health y utilidades
     app.include_router(health.router)
 
+    # Búsqueda AI
+    app.include_router(search.router)
+
     # Auditorías
-    app.include_router(audits.router, tags=["audits"])
+    app.include_router(audits.router, prefix="/api/audits", tags=["audits"])
 
     # Reportes
     app.include_router(reports.router)
 
     # Analytics
     app.include_router(analytics.router)
+
+    # PageSpeed
+    app.include_router(pagespeed.router)
+
+    # Content Analysis
+    if content_analysis:
+        app.include_router(content_analysis.router)
 
     logger.info("Rutas registradas")
 

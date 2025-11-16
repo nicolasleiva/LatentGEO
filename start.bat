@@ -27,9 +27,11 @@ if %errorlevel% equ 0 (
         call venv\Scripts\activate.bat
         echo Instalando dependencias...
         pip install -r requirements.txt
+        cd ..
     ) else (
         cd backend
         call venv\Scripts\activate.bat
+        cd ..
     )
     
     REM Verificar .env
@@ -44,7 +46,7 @@ if %errorlevel% equ 0 (
     
     echo.
     echo Iniciando servidor FastAPI...
-    python main.py
+    python backend/main.py
 )
 
 echo.

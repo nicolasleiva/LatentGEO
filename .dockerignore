@@ -1,27 +1,43 @@
+# Node artifacts
 node_modules
 npm-debug.log
+
+# Git
 .git
 .gitignore
-README.md
+
+# Env files
 .env
 .env.local
+
+# OS files
 .DS_Store
+
+# Python artifacts
 __pycache__
 *.pyc
 .pytest_cache
 .venv
 venv
 *.egg-info
+
+# Build dirs (except .next)
 dist
 build
-.next
 .turbo
-coverage
-.vscode
-.idea
+
+# Logs
 *.log
 logs
+
+# App data
 reports
 uploads
+
+# DB files
 .db
 *.db
+
+# IDE
+.vscode
+.idea
