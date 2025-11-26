@@ -32,10 +32,10 @@ export function AISearchBar({ onSearch, placeholder = 'Ask AI about your site or
           placeholder={placeholder}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          className="h-14 pl-12 pr-32 text-base bg-white border-2 border-black"
+          className="h-14 pl-12 pr-32 text-base bg-background border border-border shadow-sm focus-visible:ring-1 focus-visible:ring-ring"
         />
-        <Button 
-          type="submit" 
+        <Button
+          type="submit"
           size="lg"
           className="absolute right-2 top-1/2 -translate-y-1/2"
         >

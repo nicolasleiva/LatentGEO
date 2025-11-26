@@ -231,11 +231,20 @@ class AuditService:
             pages_dir = os.path.join(reports_dir, "pages")
             os.makedirs(reports_dir, exist_ok=True)
             
-            # Limpiar carpeta pages si existe
+            # IMPORTANTE: NO limpiar carpeta pages si ya contiene archivos de páginas individuales
+            # Estos archivos fueron guardados previamente por save_page_audit
             if os.path.exists(pages_dir):
-                import shutil
-                shutil.rmtree(pages_dir)
-            os.makedirs(pages_dir, exist_ok=True)
+                existing_files = [f for f in os.listdir(pages_dir) if f.startswith('report_') and f.endswith('.json')]
+                if existing_files:
+                    logger.info(f"Preservando {len(existing_files)} archivos de páginas individuales en {pages_dir}")
+                else:
+                    logger.info(f"Carpeta pages existe pero está vacía, recreando")
+                    import shutil
+                    shutil.rmtree(pages_dir)
+                    os.makedirs(pages_dir, exist_ok=True)
+            else:
+                os.makedirs(pages_dir, exist_ok=True)
+                logger.info(f"Carpeta pages creada: {pages_dir}")
 
             # Guardar resumen agregado
             aggregated_path = os.path.join(reports_dir, "aggregated_summary.json")
@@ -662,6 +671,63 @@ class CompetitorService:
             return 5.0  # Score por defecto
 
     @staticmethod
+    def _format_competitor_data(audit_data: Dict[str, Any], geo_score: float, url: str = None) -> Dict[str, Any]:
+        """Formatear datos de competitor para el frontend con todos los campos necesarios"""
+        try:
+            # Extraer URL
+            comp_url = url or audit_data.get("url", "")
+            domain = comp_url.replace("https://", "").replace("http://", "").split("/")[0]
+            
+            # Extraer datos individuales de schema
+            schema_data = audit_data.get("schema", {})
+            schema_status = schema_data.get("schema_presence", {}).get("status")
+            schema_present = schema_status == "present"
+            
+            # Extraer semantic HTML score
+            structure_data = audit_data.get("structure", {})
+            semantic_html = structure_data.get("semantic_html", {})
+            structure_score = semantic_html.get("score_percent", 0)
+            
+            # Extraer E-E-A-T
+            eeat_data = audit_data.get("eeat", {})
+            author_status = eeat_data.get("author_presence", {}).get("status")
+            eeat_score = 100 if author_status == "pass" else 0
+            
+            # Extraer H1
+            h1_status = structure_data.get("h1_check", {}).get("status")
+            h1_present = h1_status == "pass"
+            
+            # Extraer conversational tone
+            content_data = audit_data.get("content", {})
+            conversational_tone = content_data.get("conversational_tone", {})
+            tone_score = conversational_tone.get("score", 0)
+            
+            return {
+                "url": comp_url,
+                "domain": domain,
+                "geo_score": geo_score,
+                "schema_present": schema_present,
+                "structure_score": structure_score,
+                "eeat_score": eeat_score,
+                "h1_present": h1_present,
+                "tone_score": tone_score,
+                "audit_data": audit_data  # Mantener datos completos para otros usos
+            }
+        except Exception as e:
+            logger.error(f"Error formateando datos de competidor: {e}")
+            return {
+                "url": url or audit_data.get("url", ""),
+                "domain": "",
+                "geo_score": geo_score,
+                "schema_present": False,
+                "structure_score": 0,
+                "eeat_score": 0,
+                "h1_present": False,
+                "tone_score": 0,
+                "audit_data": audit_data
+            }
+
+    @staticmethod
     def add_competitor(
         db: Session,
         audit_id: int,
@@ -675,6 +741,35 @@ class CompetitorService:
         # Si no se proporciona geo_score, calcularlo
         if geo_score == 0 or geo_score is None:
             geo_score = CompetitorService._calculate_geo_score(audit_data)
+
+        # NUEVO: Guardar archivo JSON del competidor
+        try:
+            from datetime import datetime
+            reports_dir = os.path.join(settings.REPORTS_DIR or "reports", f"audit_{audit_id}")
+            competitors_dir = os.path.join(reports_dir, "competitors")
+            os.makedirs(competitors_dir, exist_ok=True)
+            
+            # Generar nombre de archivo seguro
+            import re
+            safe_domain = re.sub(r'[^\w\-_.]', '_', domain)
+            competitor_json_path = os.path.join(competitors_dir, f"competitor_{safe_domain}.json")
+            
+            # Preparar datos completos del competidor
+            competitor_full_data = {
+                "url": url,
+                "domain": domain,
+                "geo_score": geo_score,
+                "audit_data": audit_data,
+                "analyzed_at": datetime.now().isoformat()
+            }
+            
+            # Guardar JSON
+            with open(competitor_json_path, 'w', encoding='utf-8') as f:
+                json.dump(competitor_full_data, f, ensure_ascii=False, indent=2)
+            
+            logger.info(f"Competidor guardado: {domain} -> {competitor_json_path} (GEO Score: {geo_score})")
+        except Exception as e:
+            logger.error(f"Error guardando archivo JSON del competidor {domain}: {e}")
 
         competitor = Competitor(
             audit_id=audit_id,

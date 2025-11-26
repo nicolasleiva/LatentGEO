@@ -3,29 +3,15 @@ import { Inter } from 'next/font/google'
 import { Analytics } from '@vercel/analytics/next'
 import './globals.css'
 
-const inter = Inter({ subsets: ['latin'] })
+const inter = Inter({
+  subsets: ['latin'],
+  variable: '--font-inter',
+  display: 'swap',
+})
 
 export const metadata: Metadata = {
-  title: 'AI Audit Studio - GEO & SEO Intelligence Platform',
-  description: 'Advanced AI-powered SEO and GEO auditing platform with real-time insights',
-  generator: 'v0.app',
-  icons: {
-    icon: [
-      {
-        url: '/icon-light-32x32.png',
-        media: '(prefers-color-scheme: light)',
-      },
-      {
-        url: '/icon-dark-32x32.png',
-        media: '(prefers-color-scheme: dark)',
-      },
-      {
-        url: '/icon.svg',
-        type: 'image/svg+xml',
-      },
-    ],
-    apple: '/apple-icon.png',
-  },
+  title: 'AI Audit Studio - GEO & SEO Intelligence',
+  description: 'Enterprise-grade AI auditing platform.',
 }
 
 export default function RootLayout({
@@ -34,8 +20,8 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="en">
-      <body className={inter.className}>
+    <html lang="en" className={`${inter.variable} dark`}>
+      <body className="font-sans antialiased min-h-screen selection:bg-white/20">
         {children}
         <Analytics />
       </body>
