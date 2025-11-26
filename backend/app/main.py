@@ -12,7 +12,7 @@ from .core.database import init_db
 from .core.logger import get_logger
 
 # Importar rutas
-from .api.routes import audits, reports, analytics, health, search, pagespeed
+from .api.routes import audits, reports, analytics, health, search, pagespeed, backlinks, keywords, rank_tracking, llm_visibility, ai_content, content_editor
 try:
     from .api.routes import content_analysis
 except ImportError:
@@ -99,9 +99,23 @@ def create_app() -> FastAPI:
     # PageSpeed
     app.include_router(pagespeed.router)
 
+    # New Features
+    app.include_router(backlinks.router, prefix="/api/backlinks", tags=["backlinks"])
+    app.include_router(keywords.router, prefix="/api/keywords", tags=["keywords"])
+    app.include_router(rank_tracking.router, prefix="/api/rank-tracking", tags=["rank-tracking"])
+    app.include_router(llm_visibility.router, prefix="/api/llm-visibility", tags=["llm-visibility"])
+    app.include_router(ai_content.router, prefix="/api/ai-content", tags=["ai-content"])
+    
+    # Tools
+    app.include_router(content_editor.router, prefix="/api/tools/content-editor", tags=["content-editor"])
+
     # Content Analysis
     if content_analysis:
         app.include_router(content_analysis.router)
+    
+    # GEO Features
+    from app.api.routes import geo
+    app.include_router(geo.router)
 
     logger.info("Rutas registradas")
 

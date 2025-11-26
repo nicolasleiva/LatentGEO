@@ -79,6 +79,21 @@ class Audit(Base):
     pages = relationship(
         "AuditedPage", back_populates="audit", cascade="all, delete-orphan"
     )
+    backlinks = relationship(
+        "Backlink", back_populates="audit", cascade="all, delete-orphan"
+    )
+    keywords = relationship(
+        "Keyword", back_populates="audit", cascade="all, delete-orphan"
+    )
+    rank_trackings = relationship(
+        "RankTracking", back_populates="audit", cascade="all, delete-orphan"
+    )
+    llm_visibilities = relationship(
+        "LLMVisibility", back_populates="audit", cascade="all, delete-orphan"
+    )
+    ai_content_suggestions = relationship(
+        "AIContentSuggestion", back_populates="audit", cascade="all, delete-orphan"
+    )
 
     # Task ID de Celery
     task_id = Column(String(255), nullable=True, unique=True, index=True)
@@ -181,3 +196,143 @@ class Competitor(Base):
     audit_data = Column(JSON, nullable=True)
 
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+
+class Backlink(Base):
+    """Modelo para backlinks"""
+    __tablename__ = "backlinks"
+
+    id = Column(Integer, primary_key=True, index=True)
+    audit_id = Column(Integer, ForeignKey("audits.id"), nullable=False)
+    
+    source_url = Column(String(500), nullable=False)
+    target_url = Column(String(500), nullable=False)
+    anchor_text = Column(String(500), nullable=True)
+    is_dofollow = Column(Boolean, default=True)
+    domain_authority = Column(Integer, nullable=True)
+    
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    
+    audit = relationship("Audit", back_populates="backlinks")
+
+
+class Keyword(Base):
+    """Modelo para keyword research"""
+    __tablename__ = "keywords"
+
+    id = Column(Integer, primary_key=True, index=True)
+    audit_id = Column(Integer, ForeignKey("audits.id"), nullable=False)
+    
+    term = Column(String(255), nullable=False)
+    volume = Column(Integer, default=0)
+    difficulty = Column(Integer, default=0)
+    cpc = Column(Float, default=0.0)
+    intent = Column(String(50), nullable=True) # informational, commercial, etc.
+    
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    
+    audit = relationship("Audit", back_populates="keywords")
+
+
+class RankTracking(Base):
+    """Modelo para seguimiento de rankings"""
+    __tablename__ = "rank_trackings"
+
+    id = Column(Integer, primary_key=True, index=True)
+    audit_id = Column(Integer, ForeignKey("audits.id"), nullable=False)
+    
+    keyword = Column(String(255), nullable=False)
+    position = Column(Integer, nullable=False)
+    url = Column(String(500), nullable=False)
+    device = Column(String(20), default="desktop") # desktop, mobile
+    location = Column(String(50), default="US")
+    top_results = Column(JSON, nullable=True)  # Top 10 results: [{position, url, title, domain}]
+    
+    tracked_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    
+    audit = relationship("Audit", back_populates="rank_trackings")
+
+
+
+class LLMVisibility(Base):
+    """Modelo para visibilidad en LLMs"""
+    __tablename__ = "llm_visibilities"
+
+    id = Column(Integer, primary_key=True, index=True)
+    audit_id = Column(Integer, ForeignKey("audits.id"), nullable=False)
+    
+    llm_name = Column(String(50), nullable=False) # ChatGPT, Perplexity, Gemini
+    query = Column(String(500), nullable=False)
+    is_visible = Column(Boolean, default=False)
+    rank = Column(Integer, nullable=True) # Si aparece en lista
+    citation_text = Column(Text, nullable=True)
+    
+    checked_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    
+    audit = relationship("Audit", back_populates="llm_visibilities")
+
+
+class AIContentSuggestion(Base):
+    """Modelo para sugerencias de contenido IA"""
+    __tablename__ = "ai_content_suggestions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    audit_id = Column(Integer, ForeignKey("audits.id"), nullable=False)
+    
+    page_url = Column(String(500), nullable=True)
+    topic = Column(String(255), nullable=False)
+    suggestion_type = Column(String(50), nullable=False) # new_content, optimization, faq
+    content_outline = Column(JSON, nullable=True)
+    priority = Column(String(20), default="medium")
+    
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    
+    audit = relationship("Audit", back_populates="ai_content_suggestions")
+
+
+class CitationTracking(Base):
+    """Modelo para tracking de citaciones en LLMs"""
+    __tablename__ = "citation_tracking"
+
+    id = Column(Integer, primary_key=True, index=True)
+    audit_id = Column(Integer, ForeignKey("audits.id"), nullable=False)
+    
+    query = Column(String(500), nullable=False)
+    llm_name = Column(String(50), nullable=False)  # kimi, chatgpt, perplexity
+    is_mentioned = Column(Boolean, default=False)
+    citation_text = Column(Text, nullable=True)
+    sentiment = Column(String(20), nullable=True)  # positive, neutral, negative
+    position = Column(Integer, nullable=True)  # Posición de la mención
+    full_response = Column(Text, nullable=True)
+    
+    tracked_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
+
+
+class DiscoveredQuery(Base):
+    """Modelo para queries descubiertas"""
+    __tablename__ = "discovered_queries"
+
+    id = Column(Integer, primary_key=True, index=True)
+    audit_id = Column(Integer, ForeignKey("audits.id"), nullable=False)
+    
+    query = Column(String(500), nullable=False)
+    intent = Column(String(50), nullable=True)  # informational, commercial, transactional
+    mentions_brand = Column(Boolean, default=False)
+    potential_score = Column(Integer, default=0)
+    sample_response = Column(Text, nullable=True)
+    
+    discovered_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+
+class CompetitorCitationAnalysis(Base):
+    """Modelo para análisis de citaciones de competidores"""
+    __tablename__ = "competitor_citation_analysis"
+
+    id = Column(Integer, primary_key=True, index=True)
+    audit_id = Column(Integer, ForeignKey("audits.id"), nullable=False)
+    
+    your_mentions = Column(Integer, default=0)
+    competitor_data = Column(JSON, nullable=True)  # Datos de competidores
+    gap_analysis = Column(JSON, nullable=True)  # Análisis de brechas
+    
+    analyzed_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))

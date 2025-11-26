@@ -1,43 +1,16 @@
-# Node artifacts
-node_modules
-npm-debug.log
-
-# Git
+frontend/node_modules
+frontend/.next
+frontend/.git
+frontend/.env*
+frontend/npm-debug.log*
+frontend/yarn-debug.log*
+frontend/yarn-error.log*
+frontend/pnpm-debug.log*
+frontend/.pnpm-store
+backend/__pycache__
+backend/.venv
+backend/venv
+backend/.env*
 .git
-.gitignore
-
-# Env files
-.env
-.env.local
-
-# OS files
-.DS_Store
-
-# Python artifacts
-__pycache__
-*.pyc
-.pytest_cache
-.venv
-venv
-*.egg-info
-
-# Build dirs (except .next)
-dist
-build
-.turbo
-
-# Logs
-*.log
-logs
-
-# App data
-reports
-uploads
-
-# DB files
-.db
-*.db
-
-# IDE
-.vscode
 .idea
+.vscode

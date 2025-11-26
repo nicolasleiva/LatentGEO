@@ -88,23 +88,7 @@ async def run_audit_sync(audit_id: int):
             db=db, audit_id=audit_id, progress=100, status=AuditStatus.COMPLETED
         )
         logger.info(f"Audit {audit_id} completed successfully (sync mode)")
-        
-        # Generar PDF en modo síncrono
-        if report_markdown:
-            try:
-                from app.services.pdf_service import PDFService
-                from app.services.audit_service import ReportService
-                
-                logger.info(f"Generating PDF for audit {audit_id} (sync mode)")
-                pdf_file_path = PDFService.create_from_audit(
-                    audit=audit, markdown_content=report_markdown
-                )
-                ReportService.create_report(
-                    db=db, audit_id=audit_id, report_type="PDF", file_path=pdf_file_path
-                )
-                logger.info(f"PDF generated successfully for audit {audit_id}")
-            except Exception as pdf_error:
-                logger.error(f"Failed to generate PDF for audit {audit_id}: {pdf_error}", exc_info=True)
+        logger.info(f"Dashboard ready! PDF can be generated manually from the dashboard.")
         
     except Exception as e:
         logger.error(f"Error running sync audit {audit_id}: {e}", exc_info=True)
@@ -323,7 +307,7 @@ def get_competitors(audit_id: int, db: Session = Depends(get_db)):
     if audit.status != AuditStatus.COMPLETED:
         raise HTTPException(
             status_code=400,
-            detail=f"Los datos de competidores aún no están listos. Estado actual: {audit.status.value}",
+            detail="La auditoría aún no está completada. Los datos de competidores estarán disponibles al finalizar."
         )
     
     # Obtener competidores de la base de datos
@@ -331,15 +315,15 @@ def get_competitors(audit_id: int, db: Session = Depends(get_db)):
     
     # Si hay competidores en la BD, usarlos
     if competitors_db:
-        return [
-            {
-                "url": c.url,
-                "domain": c.domain,
-                "geo_score": c.geo_score,
-                "audit_data": c.audit_data
-            }
-            for c in competitors_db
-        ]
+        result = []
+        for comp in competitors_db:
+            audit_data = comp.audit_data or {}
+            geo_score = comp.geo_score or 0
+            if geo_score == 0:
+                geo_score = CompetitorService._calculate_geo_score(audit_data)
+            formatted = CompetitorService._format_competitor_data(audit_data, geo_score, comp.url)
+            result.append(formatted)
+        return result
     
     # Fallback: usar competitor_audits del JSON y calcular scores
     competitors = audit.competitor_audits or []
@@ -350,12 +334,8 @@ def get_competitors(audit_id: int, db: Session = Depends(get_db)):
             # Si no tiene score, calcularlo
             if geo_score == 0 or geo_score is None:
                 geo_score = CompetitorService._calculate_geo_score(comp)
-            result.append({
-                "url": comp.get("url"),
-                "domain": comp.get("url", "").replace("https://", "").replace("http://", "").split("/")[0],
-                "geo_score": geo_score,
-                "audit_data": comp
-            })
+            formatted = CompetitorService._format_competitor_data(comp, geo_score)
+            result.append(formatted)
     
     return result
 
