@@ -33,21 +33,21 @@ export function ConversationPanel({ messages, isLoading, onSearch }: Conversatio
               )}
             >
               {message.role === 'assistant' && (
-                <div className="flex-shrink-0 w-8 h-8 rounded-full bg-black flex items-center justify-center">
-                  <Bot className="h-4 w-4 text-white" />
+                <div className="flex-shrink-0 w-8 h-8 rounded-full bg-primary flex items-center justify-center">
+                  <Bot className="h-4 w-4 text-primary-foreground" />
                 </div>
               )}
-              
+
               <div
                 className={cn(
                   'rounded-lg px-4 py-3 max-w-[80%]',
                   message.role === 'user'
-                    ? 'bg-black text-white'
-                    : 'bg-white border-2 border-black text-foreground'
+                    ? 'bg-primary text-primary-foreground'
+                    : 'bg-secondary text-secondary-foreground border border-border'
                 )}
               >
                 <p className="text-sm leading-relaxed">{message.content}</p>
-                
+
                 {message.suggestions && message.suggestions.length > 0 && (
                   <div className="mt-4 flex flex-wrap gap-2">
                     {message.suggestions.map((suggestion, idx) => (
@@ -56,7 +56,7 @@ export function ConversationPanel({ messages, isLoading, onSearch }: Conversatio
                         variant="outline"
                         size="sm"
                         onClick={() => onSearch(suggestion)}
-                        className="text-xs border-black"
+                        className="text-xs border-border hover:bg-accent"
                       >
                         {suggestion}
                       </Button>
@@ -66,7 +66,7 @@ export function ConversationPanel({ messages, isLoading, onSearch }: Conversatio
               </div>
 
               {message.role === 'user' && (
-                <div className="flex-shrink-0 w-8 h-8 rounded-full bg-secondary border-2 border-black flex items-center justify-center">
+                <div className="flex-shrink-0 w-8 h-8 rounded-full bg-secondary border border-border flex items-center justify-center">
                   <User className="h-4 w-4 text-foreground" />
                 </div>
               )}
@@ -75,10 +75,10 @@ export function ConversationPanel({ messages, isLoading, onSearch }: Conversatio
 
           {isLoading && (
             <div className="flex gap-4 justify-start">
-              <div className="flex-shrink-0 w-8 h-8 rounded-full bg-black flex items-center justify-center">
-                <Bot className="h-4 w-4 text-white" />
+              <div className="flex-shrink-0 w-8 h-8 rounded-full bg-primary flex items-center justify-center">
+                <Bot className="h-4 w-4 text-primary-foreground" />
               </div>
-              <div className="rounded-lg px-4 py-3 bg-white border-2 border-black">
+              <div className="rounded-lg px-4 py-3 bg-secondary border border-border">
                 <Loader2 className="h-4 w-4 animate-spin text-foreground" />
               </div>
             </div>
@@ -88,7 +88,7 @@ export function ConversationPanel({ messages, isLoading, onSearch }: Conversatio
         </div>
       </div>
 
-      <div className="border-t-2 border-black bg-background">
+      <div className="border-t border-border bg-background">
         <div className="max-w-3xl mx-auto px-4 py-4">
           <AISearchBar onSearch={onSearch} placeholder="Continue the conversation..." />
         </div>

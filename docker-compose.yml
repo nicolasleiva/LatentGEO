@@ -45,12 +45,15 @@ services:
       DATABASE_URL: postgresql+psycopg2://auditor:auditor_password@db:5432/auditor_db
       REDIS_URL: redis://redis:6379/0
       CELERY_BROKER: redis://redis:6379/0
-      DEBUG: "False"
+      DEBUG: ${DEBUG:-False}
       PYTHONUNBUFFERED: "1"
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
       CSE_ID: ${CSE_ID:-}
+      NVIDIA_API_KEY: ${NVIDIA_API_KEY:-}
+      GOOGLE_PAGESPEED_API_KEY: ${GOOGLE_PAGESPEED_API_KEY:-}
+      SECRET_KEY: ${SECRET_KEY:-}
     ports:
       - "8000:8000"
     depends_on:
@@ -62,6 +65,7 @@ services:
       - ./reports:/app/reports
       - ./logs:/app/logs
       - shared_db:/app/db
+      - ./fonts:/app/app/services/fonts
     networks:
       - auditor_network
     restart: unless-stopped
@@ -98,12 +102,16 @@ services:
       OPENAI_API_KEY: ${OPENAI_API_KEY}
       GOOGLE_API_KEY: ${GOOGLE_API_KEY}
       CSE_ID: ${CSE_ID}
+      NVIDIA_API_KEY: ${NVIDIA_API_KEY}
+      GOOGLE_PAGESPEED_API_KEY: ${GOOGLE_PAGESPEED_API_KEY}
+      C_FORCE_ROOT: '1'
     depends_on:
       - backend
     volumes:
       - ./reports:/app/reports
       - ./logs:/app/logs
       - shared_db:/app/db
+      - ./fonts:/app/app/services/fonts
     networks:
       - auditor_network
     restart: unless-stopped

@@ -1,8 +1,7 @@
 "use client"
 
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts"
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts"
 
 interface KeywordGapProps {
   data: {
@@ -22,49 +21,58 @@ export function KeywordGapChart({ data }: KeywordGapProps) {
   const { gap_analysis } = data
 
   const chartData = [
-    { name: 'Missing', value: gap_analysis.missing_keywords.length, fill: '#000000' },
-    { name: 'Common', value: gap_analysis.common_keywords.length, fill: '#6b7280' },
-    { name: 'Unique', value: gap_analysis.unique_keywords.length, fill: '#9ca3af' },
+    { name: 'Missing', value: gap_analysis.missing_keywords.length, fill: '#ef4444' }, // Red
+    { name: 'Common', value: gap_analysis.common_keywords.length, fill: '#3b82f6' },  // Blue
+    { name: 'Unique', value: gap_analysis.unique_keywords.length, fill: '#10b981' },  // Green
   ]
 
   return (
-    <div className="grid gap-4 md:grid-cols-2">
-      <Card>
-        <CardHeader>
-          <CardTitle>Keyword Distribution</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <ResponsiveContainer width="100%" height={300}>
-            <BarChart data={chartData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-              <XAxis dataKey="name" />
-              <YAxis />
-              <Tooltip />
-              <Bar dataKey="value" />
+    <div className="grid gap-6 md:grid-cols-2 h-full">
+      <div className="glass p-6 rounded-2xl flex flex-col">
+        <h3 className="text-lg font-medium mb-6 text-white">Keyword Distribution</h3>
+        <div className="h-[300px] w-full">
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.1)" vertical={false} />
+              <XAxis
+                dataKey="name"
+                stroke="rgba(255,255,255,0.5)"
+                tick={{ fill: 'rgba(255,255,255,0.5)', fontSize: 12 }}
+                axisLine={false}
+                tickLine={false}
+              />
+              <YAxis
+                stroke="rgba(255,255,255,0.5)"
+                tick={{ fill: 'rgba(255,255,255,0.5)', fontSize: 12 }}
+                axisLine={false}
+                tickLine={false}
+              />
+              <Tooltip
+                contentStyle={{ backgroundColor: 'rgba(0,0,0,0.8)', borderColor: 'rgba(255,255,255,0.1)', color: '#fff', borderRadius: '12px', backdropFilter: 'blur(10px)' }}
+                itemStyle={{ color: '#fff' }}
+                cursor={{ fill: 'rgba(255,255,255,0.05)' }}
+              />
+              <Bar dataKey="value" radius={[6, 6, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
-          <div className="mt-4 text-center">
-            <div className="text-3xl font-bold">{gap_analysis.gap_score.toFixed(1)}%</div>
-            <div className="text-sm text-muted-foreground">Gap Score</div>
-          </div>
-        </CardContent>
-      </Card>
+        </div>
+        <div className="mt-6 text-center p-4 bg-white/5 rounded-xl border border-white/5">
+          <div className="text-4xl font-bold text-white tracking-tight">{gap_analysis.gap_score.toFixed(1)}%</div>
+          <div className="text-xs text-white/40 uppercase tracking-widest font-medium mt-1">Gap Score</div>
+        </div>
+      </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Top Opportunities</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-2 max-h-[300px] overflow-y-auto">
-            {gap_analysis.opportunities.slice(0, 15).map((opp, i) => (
-              <div key={i} className="flex items-center justify-between p-2 bg-muted rounded">
-                <span className="font-medium">{opp.keyword}</span>
-                <Badge variant="secondary">{opp.competitor_frequency}</Badge>
-              </div>
-            ))}
-          </div>
-        </CardContent>
-      </Card>
+      <div className="glass p-6 rounded-2xl flex flex-col h-[500px] md:h-auto">
+        <h3 className="text-lg font-medium mb-6 text-white">Top Opportunities</h3>
+        <div className="space-y-2 flex-1 overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent">
+          {gap_analysis.opportunities.slice(0, 15).map((opp, i) => (
+            <div key={i} className="flex items-center justify-between p-3 bg-white/5 rounded-xl border border-white/5 hover:bg-white/10 transition-colors group">
+              <span className="font-medium text-white/80 group-hover:text-white transition-colors">{opp.keyword}</span>
+              <Badge variant="secondary" className="bg-white/10 text-white/50 border-none group-hover:bg-white/20 group-hover:text-white transition-colors">{opp.competitor_frequency}</Badge>
+            </div>
+          ))}
+        </div>
+      </div>
     </div>
   )
 }

@@ -46,6 +46,7 @@ Tu trabajo es (1) clasificar el sitio y (2) generar un plan de búsqueda (querie
 Tu respuesta DEBE ser un único bloque de código JSON con la siguiente estructura:
 {
   "is_ymyl": (bool),
+  "business_type": (string: "SOFTWARE", "LOCAL_SERVICE", "ECOMMERCE", "OTHER"),
   "category": (string),
   "queries_to_run": [
     { "id": "competitors", "query": (string) },
@@ -54,12 +55,172 @@ Tu respuesta DEBE ser un único bloque de código JSON con la siguiente estructu
 }
 
 Pasos a seguir:
-1.  **Clasificar YMYL:** Basado en 'target_audit.url' y el contenido del sitio, determina si es "YMYL" (Your Money Your Life - finanzas, salud, legal, noticias importantes).
-2.  **Clasificar Categoría:** Analiza H1, títulos, descripciones y contenido para identificar la categoría de negocio específica del sitio.
-3.  **Generar Query de Competidores:** Crea una query de Google Search específica para encontrar competidores directos basada en la categoría identificada.
-4.  **Generar Query de Autoridad:** Crea una query para encontrar menciones de la marca: '"[dominio]" -site:[dominio]'.
+1.  **Clasificar YMYL:** Determina si es "YMYL" (Your Money Your Life).
+2.  **Identificar Tipo de Negocio y Categoría:** Analiza el contenido para definir qué es.
+3.  **Generar Query de Competidores (SIMPLIFICADA):**
+    *   Simplemente busca la **CATEGORÍA PRINCIPAL** del negocio.
+    *   Ejemplo: "AI coding assistant", "Plomero en Madrid", "Zapatillas de running".
+    *   **NO** agregues palabras como "pricing", "software", "best", "top", "alternatives".
+    *   **EXCEPCIÓN:** Si es un negocio local, SIEMPRE incluye la ciudad/país.
+    *   El sistema se encargará de filtrar los resultados basura (blogs, directorios, etc.).
+4.  **Generar Query de Autoridad:** '"[dominio]" -site:[dominio]'.
 
 JSON de entrada:
+"""
+
+    PAGESPEED_ANALYSIS_PROMPT = """
+Eres un experto en Web Performance Optimization (WPO), Core Web Vitals y experiencia de usuario.
+Analiza los siguientes datos crudos de PageSpeed Insights (Mobile y Desktop) para el sitio auditado.
+
+Tu objetivo es generar un "Análisis Ejecutivo de Rendimiento Web" en formato Markdown que sea:
+- **Completo**: Cubre todas las métricas clave y su impacto en el negocio
+- **Ejecutivo**: Lenguaje claro, orientado a decisiones y ROI
+- **Accionable**: Recomendaciones priorizadas con impacto estimado
+
+Estructura del reporte Markdown:
+
+# Análisis de Rendimiento Web (PageSpeed Insights)
+
+## 📊 Resumen Ejecutivo
+* **Veredicto General**: Califica el rendimiento global (Excelente/Bueno/Necesita Mejora/Crítico)
+* **Impacto en el Negocio**: Explica cómo el rendimiento actual afecta conversiones, SEO y experiencia de usuario
+* **Prioridad de Acción**: Indica si requiere atención inmediata, planificada o monitoreo
+
+## 1. Puntuaciones Generales
+
+| Dispositivo | Puntuación | Evaluación | Impacto SEO |
+|-------------|------------|------------|-------------|
+| Mobile      | XX/100     | [Estado]   | [Alto/Medio/Bajo] |
+| Desktop     | XX/100     | [Estado]   | [Alto/Medio/Bajo] |
+
+**Interpretación**:
+* 90-100: Excelente - Rendimiento óptimo
+* 50-89: Necesita mejora - Oportunidades de optimización significativas
+* 0-49: Pobre - Requiere atención inmediata
+
+**Análisis**: [Explica la diferencia Mobile vs Desktop y su relevancia para el negocio]
+
+## 2. Core Web Vitals - Métricas de Experiencia Real
+
+### Largest Contentful Paint (LCP) - Velocidad de Carga Percibida
+* **Mobile**: X.Xs | **Desktop**: X.Xs
+* **Estado**: ✅ Aprobado / ⚠️ Necesita Mejora / ❌ Reprobado
+* **Umbral**: Bueno ≤ 2.5s | Necesita Mejora ≤ 4.0s | Pobre > 4.0s
+* **Impacto**: [Explica cómo afecta la percepción de velocidad y tasa de rebote]
+
+### Interaction to Next Paint (INP) - Capacidad de Respuesta
+* **Mobile**: XXXms | **Desktop**: XXXms
+* **Estado**: ✅ Aprobado / ⚠️ Necesita Mejora / ❌ Reprobado
+* **Umbral**: Bueno ≤ 200ms | Necesita Mejora ≤ 500ms | Pobre > 500ms
+* **Impacto**: [Explica cómo afecta la interactividad y frustración del usuario]
+
+### Cumulative Layout Shift (CLS) - Estabilidad Visual
+* **Mobile**: X.XXX | **Desktop**: X.XXX
+* **Estado**: ✅ Aprobado / ⚠️ Necesita Mejora / ❌ Reprobado
+* **Umbral**: Bueno ≤ 0.1 | Necesita Mejora ≤ 0.25 | Pobre > 0.25
+* **Impacto**: [Explica cómo afecta la usabilidad y clics accidentales]
+
+**Evaluación Core Web Vitals**: [Indica si el sitio pasa o falla la evaluación general]
+
+## 3. Métricas de Rendimiento Adicionales
+
+### First Contentful Paint (FCP)
+* **Mobile**: X.Xs | **Desktop**: X.Xs
+* **Significado**: Tiempo hasta que aparece el primer contenido visual
+
+### Speed Index
+* **Mobile**: X.Xs | **Desktop**: X.Xs
+* **Significado**: Velocidad con la que se muestra el contenido visible
+
+### Total Blocking Time (TBT)
+* **Mobile**: XXXms | **Desktop**: XXXms
+* **Significado**: Tiempo total que el hilo principal está bloqueado
+
+### Time to Interactive (TTI)
+* **Mobile**: X.Xs | **Desktop**: X.Xs
+* **Significado**: Tiempo hasta que la página es completamente interactiva
+
+## 4. Oportunidades de Mejora Priorizadas
+
+### 🔴 Prioridad Alta (Impacto Crítico)
+[Lista las 3 oportunidades con mayor ahorro potencial]
+
+**1. [Nombre de la oportunidad]**
+* **Ahorro estimado**: X.Xs
+* **Impacto**: [Alto/Medio/Bajo]
+* **Qué es**: [Explicación breve y clara]
+* **Cómo solucionarlo**: [Pasos concretos y accionables]
+* **Recursos necesarios**: [Estimación de esfuerzo: Bajo/Medio/Alto]
+
+### 🟡 Prioridad Media (Mejoras Significativas)
+[Lista 2-3 oportunidades adicionales importantes]
+
+### 🟢 Prioridad Baja (Optimizaciones Incrementales)
+[Lista otras oportunidades menores]
+
+## 5. Diagnóstico Técnico
+
+### Recursos y Carga
+* **Tamaño total de la página**: XXX KB
+* **Número de solicitudes**: XXX
+* **Recursos bloqueantes**: [Detalles]
+
+### Problemas Identificados
+* **DOM excesivo**: [Si aplica, detalles y recomendaciones]
+* **Cadena de solicitudes crítica**: [Si aplica, análisis]
+* **JavaScript no utilizado**: [Porcentaje y oportunidad de reducción]
+* **CSS no utilizado**: [Porcentaje y oportunidad de reducción]
+* **Imágenes sin optimizar**: [Detalles y formatos recomendados]
+
+## 6. Comparativa Mobile vs Desktop
+
+[Tabla comparativa de todas las métricas clave]
+
+**Análisis de Brecha**:
+* [Explica las diferencias significativas entre Mobile y Desktop]
+* [Identifica si hay problemas específicos de un dispositivo]
+* [Recomienda enfoque de optimización (Mobile-First, Desktop-First, o Ambos)]
+
+## 7. Impacto en SEO y Conversiones
+
+### Impacto en Rankings
+* **Page Experience Signal**: [Evaluación de cómo afecta al ranking de Google]
+* **Mobile-First Indexing**: [Análisis específico para indexación móvil]
+
+### Impacto en Conversiones
+* **Tasa de Rebote Estimada**: [Basado en velocidad de carga]
+* **Pérdida de Conversiones**: [Estimación basada en estudios de la industria]
+* **ROI de Optimización**: [Beneficio potencial de mejorar el rendimiento]
+
+## 8. Plan de Acción Recomendado
+
+### Fase 1: Quick Wins (1-2 semanas)
+[Optimizaciones de bajo esfuerzo y alto impacto]
+
+### Fase 2: Mejoras Estructurales (1-2 meses)
+[Cambios técnicos más profundos]
+
+### Fase 3: Optimización Continua (Ongoing)
+[Monitoreo y ajustes incrementales]
+
+## 9. Métricas de Éxito y Monitoreo
+
+**KPIs a Monitorear**:
+* Core Web Vitals (LCP, INP, CLS)
+* Puntuación PageSpeed (Mobile y Desktop)
+* Tiempo de carga promedio
+* Tasa de rebote
+* Conversiones
+
+**Herramientas Recomendadas**:
+* Google Search Console (Core Web Vitals Report)
+* PageSpeed Insights (Monitoreo mensual)
+* Chrome User Experience Report (CrUX)
+* Real User Monitoring (RUM) - [Herramienta específica recomendada]
+
+---
+
+Datos de entrada (JSON):
 """
 
     REPORT_PROMPT_V10_PRO = """
@@ -477,14 +638,14 @@ Tu respuesta DEBE tener DOS PARTES separadas por un delimitador claro.
         search_items: List[Dict], target_domain: str
     ) -> List[str]:
         """
-        Filtra una lista de resultados de Google Search y devuelve URLs limpias.
+        Filtra una lista de resultados de Google Search y devuelve URLs limpias (Home Pages).
 
         Args:
             search_items: Lista de items de Google Search API
             target_domain: Dominio objetivo (para excluir)
 
         Returns:
-            Lista de URLs filtradas y únicas
+            Lista de URLs filtradas y únicas (Home Pages)
         """
         if not search_items:
             return []
@@ -516,40 +677,101 @@ Tu respuesta DEBE tener DOS PARTES separadas por un delimitador claro.
             "mercadolibre.com",
             "clarin.com",
             "lanacion.com",
+            "stackoverflow.com",
+            "developers.google.com",
+            # Directorios de Software y Comparadores (Bloqueo Agresivo)
+            "sourceforge.net",
+            "capterra.com",
+            "g2.com",
+            "getapp.com",
+            "softwareadvice.com",
+            "trustradius.com",
+            "alternativeto.net",
+            "openalternative.co",
+            "tracxn.com",
+            "crunchbase.com",
+            "pitchbook.com",
+            "producthunt.com",
+            "appsumo.com",
+            "slashdot.org",
+            "techradar.com",
+            "pcmag.com",
+            "zapier.com",
+            "dev.to",
+            "hashnode.com",
+            "medium.com",
+            "softpedia.com",
+            "uptodown.com",
+            "softonic.com",
+            "softonic.com",
             target_domain,
+        ]
+        
+        bad_subdomains = [
+            "blog", "blogs", "forum", "forums", "community", "help", "support", 
+            "docs", "status", "dev", "developer", "developers", "learn", "academy",
+            "news", "press", "investors", "careers", "jobs", "shop"
+        ]
+        
+        bad_title_words = [
+            "review", "reviews", "alternative", "alternatives", " vs ", " versus ",
+            "top 10", "top 5", "top 20", "best of", "list of", "forum", "community", "blog"
         ]
 
         filtered_urls = []
+        seen_domains = set()
 
         for item in search_items:
             url = item.get("link") if isinstance(item, dict) else None
+            title = item.get("title", "").lower() if isinstance(item, dict) else ""
+            
             if not url:
                 continue
 
             try:
                 parsed_url = urlparse(url)
+                domain_parts = parsed_url.netloc.split('.')
+                
+                # Detectar subdominio (asumiendo estructura standard sub.dominio.com)
+                subdomain = ""
+                if len(domain_parts) > 2:
+                    # Ignorar www
+                    if domain_parts[0] == "www":
+                        if len(domain_parts) > 3:
+                            subdomain = domain_parts[1]
+                    else:
+                        subdomain = domain_parts[0]
+                
+                # 1. Filtrar por Subdominio prohibido
+                if subdomain in bad_subdomains:
+                    continue
+
                 domain = parsed_url.netloc.lstrip("www.")
+                
+                # 2. Filtrar por palabras en el Título (evita artículos de blogs y listas)
+                if any(word in title for word in bad_title_words):
+                    continue
+
+                # Normalizar a Home Page
+                home_url = f"{parsed_url.scheme}://{parsed_url.netloc}/"
+
+                if domain in seen_domains:
+                    continue
 
                 is_bad = False
                 for pattern in bad_patterns:
                     if pattern in domain or pattern in url:
                         is_bad = True
                         break
-
+                
                 if not is_bad:
-                    filtered_urls.append(url)
+                    filtered_urls.append(home_url)
+                    seen_domains.add(domain)
 
             except Exception:
                 continue
 
-        # Retornar únicos manteniendo orden (optimizado)
-        seen = set()
-        unique_urls = []
-        for url in filtered_urls:
-            if url not in seen:
-                seen.add(url)
-                unique_urls.append(url)
-        return unique_urls
+        return filtered_urls
 
     @staticmethod
     def parse_agent_json_or_raw(text: str, default_key: str = "raw") -> Dict[str, Any]:
@@ -622,17 +844,9 @@ Tu respuesta DEBE tener DOS PARTES separadas por un delimitador claro.
             return {default_key: text}
 
     @staticmethod
-    async def run_google_search(query: str, api_key: str, cx_id: str) -> Dict[str, Any]:
+    async def run_google_search(query: str, api_key: str, cx_id: str, num_results: int = 10) -> Dict[str, Any]:
         """
-        Ejecuta una búsqueda de Google Custom Search.
-
-        Args:
-            query: Query a buscar
-            api_key: API Key de Google
-            cx_id: Custom Search Engine ID
-
-        Returns:
-            Resultado de la API o error
+        Ejecuta una búsqueda de Google Custom Search con soporte para paginación.
         """
         if not api_key or not cx_id:
             logger.warning(
@@ -641,21 +855,52 @@ Tu respuesta DEBE tener DOS PARTES separadas por un delimitador claro.
             return {"error": "API Key o CX_ID no configurados"}
 
         endpoint = "https://www.googleapis.com/customsearch/v1"
-        params = {"key": api_key, "cx": cx_id, "q": query}
-
-        logger.info(f"Google Search: {query}")
+        all_items = []
+        
+        # Calcular cuántas páginas (max 10 por página)
+        max_pages = (num_results + 9) // 10
+        
+        logger.info(f"Google Search: {query} (Target: {num_results} results)")
+        
         try:
             async with aiohttp.ClientSession() as session:
-                async with session.get(endpoint, params=params, timeout=15) as resp:
-                    if resp.status == 200:
-                        return await resp.json()
-                    else:
-                        error_text = await resp.text()
-                        logger.error(
-                            f"Google Search API Error {resp.status}: {error_text}"
-                        )
-                        return {"error": f"Status {resp.status}", "details": error_text}
+                for page in range(max_pages):
+                    start_index = page * 10 + 1
+                    # Calcular cuántos pedir en esta página
+                    # Google permite 'num' entre 1 y 10
+                    current_num = min(10, num_results - len(all_items))
+                    
+                    if current_num <= 0:
+                        break
+
+                    params = {
+                        "key": api_key, 
+                        "cx": cx_id, 
+                        "q": query,
+                        "num": current_num,
+                        "start": start_index
+                    }
+                    
+                    async with session.get(endpoint, params=params, timeout=15) as resp:
+                        if resp.status == 200:
+                            data = await resp.json()
+                            items = data.get("items", [])
+                            if not items:
+                                break
+                            all_items.extend(items)
+                        else:
+                            error_text = await resp.text()
+                            logger.error(
+                                f"Google Search API Error {resp.status}: {error_text}"
+                            )
+                            # Si falla una página, devolvemos lo que tenemos
+                            break
+                            
+            return {"items": all_items}
+                            
         except Exception as e:
+            logger.error(f"Error en Google Search: {e}")
+            return {"error": str(e), "items": all_items}
             logger.exception(f"Excepción en Google Search: {e}")
             return {"error": str(e)}
 
@@ -759,9 +1004,9 @@ Tu respuesta DEBE tener DOS PARTES separadas por un delimitador claro.
             logger.warning("Sin URLs de competidores o función de auditoría.")
             return []
 
-        for i, comp_url in enumerate(competitor_urls[:3]):  # Max 3 competidores
+        for i, comp_url in enumerate(competitor_urls[:5]):  # Max 5 competidores
             logger.info(
-                f"Auditando competidor {i+1}/{min(len(competitor_urls), 3)}: {comp_url}"
+                f"Auditando competidor {i+1}/{min(len(competitor_urls), 5)}: {comp_url}"
             )
             try:
                 res = await audit_local_function(comp_url)
@@ -1017,6 +1262,57 @@ Se requiere:
             return markdown_report, []
 
     @staticmethod
+    async def generate_pagespeed_analysis(
+        pagespeed_data: Dict[str, Any], llm_function: Optional[callable] = None
+    ) -> str:
+        """
+        Genera un análisis ejecutivo de PageSpeed usando LLM.
+
+        Args:
+            pagespeed_data: Datos crudos de PageSpeed
+            llm_function: Función LLM
+
+        Returns:
+            Markdown con el análisis
+        """
+        if not pagespeed_data or not llm_function:
+            return ""
+
+        try:
+            # Preparar input minimizado para no exceder tokens
+            minimized_data = {
+                "mobile": {
+                    "score": pagespeed_data.get("mobile", {}).get("score"),
+                    "metrics": pagespeed_data.get("mobile", {}).get("metrics"),
+                    "issues": pagespeed_data.get("mobile", {}).get("issues", [])[:5]
+                },
+                "desktop": {
+                    "score": pagespeed_data.get("desktop", {}).get("score"),
+                    "metrics": pagespeed_data.get("desktop", {}).get("metrics"),
+                    "issues": pagespeed_data.get("desktop", {}).get("issues", [])[:5]
+                }
+            }
+            
+            input_json = json.dumps(minimized_data, ensure_ascii=False, indent=2)
+            
+            analysis_text = await llm_function(
+                system_prompt=PipelineService.PAGESPEED_ANALYSIS_PROMPT,
+                user_prompt=input_json,
+            )
+            
+            # Limpiar markdown
+            if analysis_text.startswith("```markdown"):
+                analysis_text = analysis_text[11:]
+            if analysis_text.endswith("```"):
+                analysis_text = analysis_text[:-3]
+                
+            return analysis_text.strip()
+            
+        except Exception as e:
+            logger.error(f"Error generando análisis PageSpeed: {e}")
+            return ""
+
+    @staticmethod
     async def run_complete_audit(
         url: str,
         target_audit: Dict[str, Any],
@@ -1074,7 +1370,9 @@ Se requiere:
                 
                 # Auditar cada página
                 all_summaries = []
-                for page_url in urls_to_audit:
+                individual_page_audits = []  # NUEVO: Guardar auditorías individuales
+                
+                for i, page_url in enumerate(urls_to_audit):
                     try:
                         audit_result = await audit_local_service(page_url)
                         if isinstance(audit_result, tuple):
@@ -1084,6 +1382,12 @@ Se requiere:
                         
                         if isinstance(summary, dict) and summary.get("status") == 200:
                             all_summaries.append(summary)
+                            # NUEVO: Guardar datos individuales con índice
+                            individual_page_audits.append({
+                                "index": i,
+                                "url": page_url,
+                                "data": summary
+                            })
                     except Exception as e:
                         logger.warning(f"Error auditando {page_url}: {e}")
                 
@@ -1101,6 +1405,11 @@ Se requiere:
                 else:
                     # Agregar múltiples páginas
                     target_audit = PipelineService._aggregate_summaries(all_summaries, url)
+                
+                # NUEVO: Guardar datos individuales de páginas
+                # Usamos deepcopy para evitar referencias circulares si target_audit es uno de los elementos
+                import copy
+                target_audit["_individual_page_audits"] = copy.deepcopy(individual_page_audits)
                 
                 logger.info("Auditoría local completada")
             except Exception as e:
@@ -1128,7 +1437,7 @@ Se requiere:
                 query = item.get("query")
                 if query_id and query:
                     results = await PipelineService.run_google_search(
-                        query, google_api_key, google_cx_id
+                        query, google_api_key, google_cx_id, num_results=30
                     )
                     search_results[query_id] = results
                     if query_id == "competitors" and results.get("items"):
@@ -1176,13 +1485,13 @@ Se requiere:
             logger.error(f"Error cargando competidores: {e}", exc_info=True)
         
         # PRIORIZAR competidores del usuario: primero los del usuario, luego los de Google
-        # Limitar a 3 total, pero si el usuario dio 3+, usar solo los del usuario
-        if len(user_competitors) >= 3:
-            all_competitor_urls = user_competitors[:3]
+        # Limitar a 5 total, pero si el usuario dio 5+, usar solo los del usuario
+        if len(user_competitors) >= 5:
+            all_competitor_urls = user_competitors[:5]
         else:
-            # Combinar: primero los del usuario, luego completar con Google hasta 3
+            # Combinar: primero los del usuario, luego completar con Google hasta 5
             all_competitor_urls = user_competitors + competitor_urls_filtradas
-            all_competitor_urls = list(dict.fromkeys(all_competitor_urls))[:3]
+            all_competitor_urls = list(dict.fromkeys(all_competitor_urls))[:5]
         
         logger.info(
             f"Competidores: {len(competitor_urls_raw)} de Google, "
@@ -1231,8 +1540,9 @@ Se requiere:
                     )
                     
                     # Guardar JSON
+                    import json as json_lib
                     with open(json_path, 'w', encoding='utf-8') as f:
-                        json.dump(comparative_analysis, f, indent=2, ensure_ascii=False)
+                        json_lib.dump(comparative_analysis, f, indent=2, ensure_ascii=False)
                     
                     logger.info(f"Reportes guardados: {html_path}, {json_path}")
                 except Exception as e:

@@ -1,6 +1,7 @@
 "use client"
 
 import { useState } from "react"
+import { api } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -16,8 +17,7 @@ export default function PageSpeedPage() {
     if (!url) return
     setLoading(true)
     try {
-      const res = await fetch(`http://localhost:8000/api/pagespeed/compare?url=${encodeURIComponent(url)}`)
-      const result = await res.json()
+      const result = await api.comparePageSpeed(url)
       setData(result)
     } catch (error) {
       console.error(error)
@@ -29,7 +29,7 @@ export default function PageSpeedPage() {
   return (
     <div className="container mx-auto p-6 space-y-6">
       <h1 className="text-3xl font-bold">Core Web Vitals & PageSpeed</h1>
-      
+
       <Card>
         <CardHeader>
           <CardTitle>Analizar URL</CardTitle>

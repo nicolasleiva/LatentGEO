@@ -11,7 +11,7 @@
 .DS_Store
 Thumbs.db
 
-# =adchivos de logs
+# Archivos de logs
 *.log
 logs/
 
@@ -56,17 +56,20 @@ htmlcov/
 
 # ===================================================================
 # Node.js / Frontend
-# (Aunque uses un .html simple, es buena práctica incluirlo)
 # ===================================================================
 node_modules/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
+.pnpm-store/
+.next/
+out/
+payload.json
 
 # ===================================================================
 # Docker
-# =================================com==================================
+# ===================================================================
 # Archivos generados por Docker Compose que no son necesarios
 
 # ===================================================================

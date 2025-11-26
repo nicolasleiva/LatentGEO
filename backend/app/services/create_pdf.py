@@ -394,11 +394,42 @@ class PDFReport(FPDF):
             pass
 
     # -------------------- Contenido: markdown y tablas --------------------
+    def clean_latin1(self, text):
+        """Reemplaza caracteres Unicode no soportados por Latin-1."""
+        if not isinstance(text, str):
+            return str(text)
+        
+        replacements = {
+            "\u201c": '"', "\u201d": '"',  # comillas curvas
+            "\u2018": "'", "\u2019": "'",  # comillas simples curvas
+            "\u2013": "-", "\u2014": "-",  # guiones
+            "\u2265": ">=", "\u2264": "<=", # mayor/menor igual
+            "\u2026": "...",               # elipsis
+            "\u2022": "-",                 # bullet
+            "≥": ">=", "≤": "<=",          # literales
+            "–": "-", "—": "-",
+        }
+        for k, v in replacements.items():
+            text = text.replace(k, v)
+        
+        # Fallback final: intentar codificar en latin-1, reemplazando errores
+        try:
+            text.encode('latin-1')
+            return text
+        except UnicodeEncodeError:
+            # Reemplazar caracteres restantes por '?' o similar
+            return text.encode('latin-1', 'replace').decode('latin-1')
+
     def write_markdown_text(self, text):
         """Render simple de markdown básico y tablas estilo markdown.
         Mantiene sangrías y márgenes consistentes con la portada y TOC.
         """
         text = clean_string_for_pdf(text or "")
+        
+        # --- FIX: Sanitizar si no hay fuentes Unicode ---
+        if "Roboto" not in self._fonts_added:
+            text = self.clean_latin1(text)
+
         fam = "Roboto" if "Roboto" in self._fonts_added else "helvetica"
         self.set_font(fam, "", BASE_FONT_SIZE)
 
@@ -630,145 +661,84 @@ class PDFReport(FPDF):
     # -------------------- JSON rendering (mejorada) --------------------
     def write_json_raw(self, data):
         """
-        Renderiza JSON completo tratando de:
-        1) Ajustar la fuente monoespaciada para intentar que el primer bloque entre
-           en la misma página que el título;
-        2) Si no cabe, partir el bloque y escribir la parte que sí entra.
+        Renderiza JSON completo de forma robusta, dividiendo en páginas si es necesario.
+        Evita páginas en blanco y bloques cortados incorrectamente.
         """
+        # Configurar fuente monoespaciada
         mono = (
             "RobotoMono"
             if "RobotoMono" in self._fonts_added
             else ("Roboto" if "Roboto" in self._fonts_added else "helvetica")
         )
+        font_size = 7
+        line_height = 3.5  # mm por línea
+        
+        self.set_font(mono, "", font_size)
+        self.set_fill_color(*JSON_BOX_FILL)
+        self.set_draw_color(*JSON_BOX_BORDER)
 
-        # --- INICIO FIX (v1): Manejar data vacía ---
-        if not data:
-            try:
-                text_placeholder = json.dumps(data) if data is not None else "(No data)"
-                if text_placeholder == "null":
-                    text_placeholder = "(No data)"
-
-                self.set_font(mono, "", 6)  # Usar 'default_size' (6)
-                self.set_fill_color(*JSON_BOX_FILL)
-                self.set_draw_color(*JSON_BOX_BORDER)
-                self.ensure_space(JSON_LINE_HEIGHT + JSON_PADDING + 6)
-                self.multi_cell(
-                    0, JSON_LINE_HEIGHT, text_placeholder, border=1, fill=True
-                )
-                self.ln(5)
-
-                fam = "Roboto" if "Roboto" in self._fonts_added else "helvetica"
-                self.set_font(fam, "", BASE_FONT_SIZE)
-                return
-            except Exception:
-                pass
-        # --- FIN FIX (v1) ---
-
-        # Serializar y limpiar texto
+        # Serializar y limpiar
         try:
             text = json.dumps(data, indent=2, ensure_ascii=False)
         except Exception:
             text = str(data)
+        
         text = clean_string_for_pdf(text)
         lines = text.splitlines()
+        
+        if not lines:
+            lines = ["(No data)"]
 
-        # parámetros
-        default_size = 6
-        min_size = 6  # tamaño mínimo aceptable para intentar ajustar
-        base_line_height = JSON_LINE_HEIGHT
-        chunk_size = 200  # líneas por chunk estándar
-
-        idx = 0
+        # Iterar sobre las líneas e imprimir paginando manualmente
+        i = 0
         total_lines = len(lines)
-
-        # función helper: cuántas líneas caben en lo que queda de la página con un line_height dado
-        def lines_that_fit(line_h):
-            remaining = (self.h - self.b_margin) - self.get_y()
-            usable = max(0, remaining - 2)
-            return int(max(0, math.floor((usable - JSON_PADDING) / line_h)))
-
-        # Iterar por chunks (pero permitimos partir dentro del chunk si hace falta)
-        while idx < total_lines:
-            end_idx = min(idx + chunk_size, total_lines)
-            chunk_lines = lines[idx:end_idx]
-            chunk_len = len(chunk_lines)
-
-            # intento 1: ver si el chunk completo cabe sin cambiar tamaño
-            line_h = base_line_height
-            est_h = chunk_len * line_h + JSON_PADDING
-            remaining = (self.h - self.b_margin) - self.get_y()
-
-            # Si no cabe, probar reducir la fuente para intentar que entre en la página actual
-            if est_h > remaining:
-                fit_size = None
-                for s in range(default_size, min_size - 1, -1):
-                    scaled_h = base_line_height * (s / default_size)
-                    if (chunk_len * scaled_h + JSON_PADDING) <= remaining:
-                        fit_size = s
-                        line_h = scaled_h
-                        break
-
-                if fit_size is not None:
-                    # cabe reduciendo la fuente
-                    self.set_font(mono, "", fit_size)
-                    self.set_fill_color(*JSON_BOX_FILL)
-                    self.set_draw_color(*JSON_BOX_BORDER)
-                    self.ensure_space(chunk_len * line_h + JSON_PADDING + 6)
-                    self.multi_cell(
-                        0, line_h, "\n".join(chunk_lines), border=1, fill=True
-                    )
-                    self.ln(2)
-                    idx = end_idx
-                    self.set_font(mono, "", default_size)
-                    continue
-
-                # si no cabe aunque reduzca a min_size, averiguar cuántas líneas sí entran con min_size
-                scaled_h_min = base_line_height * (min_size / default_size)
-                fit_lines = lines_that_fit(scaled_h_min)
-                if (
-                    fit_lines >= 6
-                ):  # umbral mínimo para evitar bloques ridículamente pequeños
-                    part = chunk_lines[:fit_lines]
-                    self.set_font(mono, "", min_size)
-                    self.set_fill_color(*JSON_BOX_FILL)
-                    self.set_draw_color(*JSON_BOX_BORDER)
-                    self.ensure_space(len(part) * scaled_h_min + JSON_PADDING + 6)
-                    self.multi_cell(
-                        0, scaled_h_min, "\n".join(part), border=1, fill=True
-                    )
-                    self.ln(2)
-                    idx += fit_lines
-                    self.set_font(mono, "", default_size)
-                    continue
-                else:
-                    # no entra nada significativo en la página actual: forzar salto de página
-                    self.add_page()
-                    remaining = (self.h - self.b_margin) - self.get_y()
-
-            # Si llegamos acá: o cabe tal cual, o ya estamos en página nueva -> renderizar por chunks
-            line_h = base_line_height
-            est_h = len(chunk_lines) * line_h + JSON_PADDING
-            self.ensure_space(est_h + 6)
-            self.set_font(mono, "", default_size)
-            try:
-                self.set_fill_color(*JSON_BOX_FILL)
-                self.set_draw_color(*JSON_BOX_BORDER)
-                self.multi_cell(0, line_h, "\n".join(chunk_lines), border=1, fill=True)
-                self.ln(2)
-            except Exception:
-                for l in chunk_lines:
-                    self.ensure_space(line_h + 2)
-                    self.cell(0, line_h, l)  # Dejado como cell por simplicidad
-                    self.ln(1)
-            idx = end_idx
-
-        # Restaurar fuente de texto normal
-        try:
-            fam = "Roboto" if "Roboto" in self._fonts_added else "helvetica"
-            self.set_font(fam, "", BASE_FONT_SIZE)
-        except Exception:
-            self.set_font("helvetica", "", BASE_FONT_SIZE)
+        
+        while i < total_lines:
+            # Calcular espacio disponible en la página actual
+            current_y = self.get_y()
+            page_height = self.h
+            bottom_margin = self.b_margin
+            space_left = page_height - bottom_margin - current_y
+            
+            # Si queda muy poco espacio (menos de 15mm), saltar de página
+            # Pero solo si no estamos ya al principio de una página (para evitar bucles)
+            if space_left < 15 and current_y > (self.t_margin + 20):
+                self.add_page()
+                current_y = self.get_y()
+                space_left = page_height - bottom_margin - current_y
+            
+            # Calcular cuántas líneas caben en el espacio restante
+            # Restamos 1 línea de margen de seguridad
+            lines_that_fit = int(space_left / line_height) - 1
+            
+            if lines_that_fit <= 0:
+                self.add_page()
+                continue
+                
+            # Determinar el chunk a imprimir
+            end_i = min(i + lines_that_fit, total_lines)
+            chunk = lines[i:end_i]
+            
+            if not chunk:
+                break
+                
+            chunk_text = "\n".join(chunk)
+            
+            # Imprimir el bloque
+            # Usamos multi_cell. Como ya calculamos que cabe, no debería saltar de página automáticamente
+            # salvo error de cálculo menor.
+            # FIX: Asegurar posición X en margen izquierdo para evitar error de espacio horizontal
+            self.set_x(self.l_margin)
+            self.multi_cell(0, line_height, chunk_text, border=1, fill=True, align='L')
+            
+            # Avanzar índice
+            i = end_i
+            
+        # Restaurar fuente normal al finalizar
+        fam = "Roboto" if "Roboto" in self._fonts_added else "helvetica"
+        self.set_font(fam, "", BASE_FONT_SIZE)
         self.ln(5)
+
 
     def write_json_summary_box(self, data, top_n=3, filename_hint=None):
         """Caja resumen de JSON (snippet) en estilo monoespaciado."""
@@ -807,6 +777,8 @@ class PDFReport(FPDF):
             snippet = (
                 "\n".join(lines) if lines else (json_str[:1200] if large else json_str)
             )
+            if not snippet.strip():
+                snippet = json_str[:1200]
         elif isinstance(data, list):
             snippet = f"Array length: {len(data)}\nExamples:"
             for it in data[:top_n]:
@@ -1001,23 +973,27 @@ def create_comprehensive_pdf(report_folder_path):
         if not os.path.isdir(report_folder_path):
             logger.error("La carpeta no existe: %s", report_folder_path)
             return
-        pdf_file_name = (
-            f"Reporte_Consolidado_{os.path.basename(report_folder_path)}.pdf"
-        )
+        
+        # Definir rutas
+        pdf_file_name = f"Reporte_Consolidado_{os.path.basename(report_folder_path)}.pdf"
         pdf_file_path = os.path.join(report_folder_path, pdf_file_name)
         md_file = os.path.join(report_folder_path, "ag2_report.md")
         json_fix_plan_file = os.path.join(report_folder_path, "fix_plan.json")
-        json_agg_summary_file = os.path.join(
-            report_folder_path, "aggregated_summary.json"
-        )
-        pages_folder = os.path.join(report_folder_path, "pages")
-        page_json_files = sorted(glob.glob(os.path.join(pages_folder, "*.json")))
+        json_agg_summary_file = os.path.join(report_folder_path, "aggregated_summary.json")
+        
+        # DEBUG: Logs para páginas
+        pages_dir = os.path.join(report_folder_path, "pages")
+        page_json_files = sorted(glob.glob(os.path.join(pages_dir, "*.json")))
+        logger.info(f"DEBUG: Buscando reportes de páginas en: {pages_dir}")
+        logger.info(f"DEBUG: Encontrados {len(page_json_files)} archivos: {[os.path.basename(f) for f in page_json_files]}")
 
+        # Leer Markdown
         markdown_text = ""
         if os.path.exists(md_file):
             with open(md_file, "r", encoding="utf-8") as f:
                 markdown_text = f.read()
 
+        # Leer Fix Plan
         try:
             with open(json_fix_plan_file, "r", encoding="utf-8") as f:
                 fix_plan_data = json.load(f)
@@ -1025,34 +1001,30 @@ def create_comprehensive_pdf(report_folder_path):
             logger.warning("No se pudo leer fix_plan.json -> se usará lista vacía")
             fix_plan_data = []
 
+        # Leer Aggregated Summary
         try:
             with open(json_agg_summary_file, "r", encoding="utf-8") as f:
                 agg_summary_data = json.load(f)
         except Exception:
-            logger.warning(
-                "No se pudo leer aggregated_summary.json -> se usará diccionario vacío"
-            )
+            logger.warning("No se pudo leer aggregated_summary.json -> se usará diccionario vacío")
             agg_summary_data = {}
 
-        if fix_plan_data is None:
-            fix_plan_data = []
-        if agg_summary_data is None:
-            agg_summary_data = {}
+        if fix_plan_data is None: fix_plan_data = []
+        if agg_summary_data is None: agg_summary_data = {}
 
+        # Inicializar PDF
         pdf = PDFReport()
+        
+        # Datos para portada
         url_base = "N/A"
         try:
-            url_tmp = (
-                agg_summary_data.get("url")
-                if isinstance(agg_summary_data, dict)
-                else None
-            )
+            url_tmp = agg_summary_data.get("url") if isinstance(agg_summary_data, dict) else None
             url_base = (url_tmp or "N/A").replace("SITE-WIDE AGGREGATE: ", "")
         except Exception:
             url_base = "N/A"
         fecha_str = datetime.now().strftime("%Y-%m-%d")
 
-        # --- Portada (centrada) ---
+        # --- Portada ---
         pdf.create_cover_page(
             f"{REPORT_TITLE_PREFIX}\n{os.path.basename(report_folder_path)}",
             url_base,
@@ -1062,126 +1034,26 @@ def create_comprehensive_pdf(report_folder_path):
 
         # --- Página del Índice (placeholder) ---
         pdf.add_page()
-        pdf._toc_page_no = pdf.page_no()  # Guardamos que el TOC irá en esta página
+        pdf._toc_page_no = pdf.page_no()
 
-        # --- Renderizar el Markdown con preservación completa de encabezados ---
+        # --- Renderizar Markdown ---
         if markdown_text:
-            # write_markdown_text maneja la lógica inteligente de cambio de página
             pdf.write_markdown_text(markdown_text)
         else:
-            # Fallback limpio y profesional
+            # Fallback (Resumen Ejecutivo)
             pdf.begin_section("Resumen Ejecutivo (Fallback)", level=1)
             try:
-                pages_audited = (
-                    agg_summary_data.get("audited_pages_count", "N/A")
-                    if agg_summary_data
-                    else "N/A"
-                )
-            except Exception:
-                pages_audited = "N/A"
+                pages_audited = agg_summary_data.get("audited_pages_count", "N/A") if agg_summary_data else "N/A"
+            except: pages_audited = "N/A"
+            
             summary = summarize_fix_plan(fix_plan_data, top_n=3)
-            pdf.set_font(
-                "Roboto" if "Roboto" in pdf._fonts_added else "helvetica", "B", 12
-            )
-            # FIX: Reemplazado 'ln=1' por 'new_x/new_y'
-            pdf.cell(
-                0,
-                LINE_HEIGHT * 1.8,
-                "Resumen Ejecutivo de Hallazgos",
-                0,
-                new_x=XPos.LMARGIN,
-                new_y=YPos.NEXT,
-                align="L",
-            )
+            pdf.set_font("Roboto" if "Roboto" in pdf._fonts_added else "helvetica", "B", 12)
+            pdf.cell(0, LINE_HEIGHT * 1.8, "Resumen Ejecutivo de Hallazgos", 0, new_x=XPos.LMARGIN, new_y=YPos.NEXT, align="L")
             pdf.ln(2)
-            pdf.set_font(
-                "Roboto" if "Roboto" in pdf._fonts_added else "helvetica",
-                "",
-                BASE_FONT_SIZE,
-            )
-            col1 = (pdf.w - pdf.l_margin - pdf.r_margin) * 0.45
-            col2 = (pdf.w - pdf.l_margin - pdf.r_margin) * 0.45
-            pdf.set_fill_color(245, 245, 245)
-            pdf.set_font(
-                "Roboto" if "Roboto" in pdf._fonts_added else "helvetica",
-                "B",
-                BASE_FONT_SIZE,
-            )
-            # FIX: Reemplazado 'ln=0' y 'ln=1' por 'new_x/new_y'
-            pdf.cell(
-                col1,
-                LINE_HEIGHT * 1.4,
-                "Métrica",
-                1,
-                new_x=XPos.RIGHT,
-                new_y=YPos.TOP,
-                align="L",
-                fill=True,
-            )
-            pdf.cell(
-                col2,
-                LINE_HEIGHT * 1.4,
-                "Resultado",
-                1,
-                new_x=XPos.LMARGIN,
-                new_y=YPos.NEXT,
-                align="C",
-                fill=True,
-            )
-            counts = summary.get("counts") if isinstance(summary, dict) else {}
-            counts = counts or {}
-            total_found = sum(counts.values()) if isinstance(counts, dict) else "N/A"
-            pdf.set_font(
-                "Roboto" if "Roboto" in pdf._fonts_added else "helvetica",
-                "",
-                BASE_FONT_SIZE,
-            )
-            rows = [
-                ("Total Páginas Auditadas", str(pages_audited)),
-                ("Total Problemas Encontrados", str(total_found)),
-                (
-                    " - Críticos",
-                    str(counts.get("CRITICAL", 0) if isinstance(counts, dict) else 0),
-                ),
-                (
-                    " - Altos",
-                    str(counts.get("HIGH", 0) if isinstance(counts, dict) else 0),
-                ),
-                (
-                    "Páginas Afectadas (estim.)",
-                    str(
-                        summary.get("pages_affected", "N/A")
-                        if isinstance(summary, dict)
-                        else "N/A"
-                    ),
-                ),
-            ]
-            fill = False
-            pdf.set_fill_color(255, 255, 255)
-            for k, v in rows:
-                # FIX: Reemplazado 'ln=0' y 'ln=1' por 'new_x/new_y'
-                pdf.cell(
-                    col1,
-                    LINE_HEIGHT * 1.3,
-                    k,
-                    1,
-                    new_x=XPos.RIGHT,
-                    new_y=YPos.TOP,
-                    align="L",
-                    fill=fill,
-                )
-                pdf.cell(
-                    col2,
-                    LINE_HEIGHT * 1.3,
-                    v,
-                    1,
-                    new_x=XPos.LMARGIN,
-                    new_y=YPos.NEXT,
-                    align="C",
-                    fill=fill,
-                )
-                fill = not fill
-            pdf.ln(6)
+            
+            pdf.set_font("Roboto" if "Roboto" in pdf._fonts_added else "helvetica", "", BASE_FONT_SIZE)
+            pdf.multi_cell(0, LINE_HEIGHT, f"Total Páginas Auditadas: {pages_audited}")
+            pdf.ln(4)
 
         # --- Análisis PageSpeed ---
         pagespeed_analysis_file = os.path.join(report_folder_path, "pagespeed_analysis.md")
@@ -1194,75 +1066,243 @@ def create_comprehensive_pdf(report_folder_path):
                 pdf.write_markdown_text(ps_analysis)
             except Exception as e:
                 logger.warning(f"Error leyendo análisis PageSpeed: {e}")
-        
-        # --- Anexos ---
 
-        # --- FIX: Forzar nueva página para Anexo A ---
+        # --- Anexo A ---
         pdf.add_page()
         pdf.begin_section("Anexo A: Plan de Acción (fix_plan.json)", level=1)
         pdf.write_json_raw(fix_plan_data)
 
-        # --- FIX: Forzar nueva página para Anexo B ---
+        # --- Anexo B ---
         pdf.add_page()
-        pdf.begin_section(
-            "Anexo B: Resumen Agregado de Datos (aggregated_summary.json)", level=1
-        )
-        pdf.write_json_summary_box(
-            agg_summary_data, top_n=4, filename_hint="aggregated_summary.json"
-        )
+        pdf.begin_section("Anexo B: Resumen Agregado de Datos (aggregated_summary.json)", level=1)
+        pdf.write_json_summary_box(agg_summary_data, top_n=4, filename_hint="aggregated_summary.json")
 
-        # --- FIX: Forzar nueva página para Anexo C ---
+        # --- Anexo C ---
         pdf.add_page()
-        pdf.begin_section(
-            "Anexo C: Reportes de Páginas Individuales (resumen)", level=1
-        )
+        pdf.begin_section("Anexo C: Reportes de Páginas Individuales (resumen)", level=1)
+        
+        if not page_json_files:
+            pdf.set_font("Roboto" if "Roboto" in pdf._fonts_added else "helvetica", "", 10)
+            pdf.multi_cell(0, 5, "(No se encontraron reportes individuales en la carpeta 'pages')")
+        
         for i, page_file in enumerate(page_json_files):
             page_title = f"Archivo: {os.path.basename(page_file)}"
             if i > 0:
                 pdf.ln(4)
                 pdf.set_draw_color(200, 200, 200)
-                pdf.line(
-                    pdf.get_x(),
-                    pdf.get_y(),
-                    pdf.get_x() + (pdf.w - pdf.l_margin - pdf.r_margin),
-                    pdf.get_y(),
-                )
+                pdf.line(pdf.get_x(), pdf.get_y(), pdf.get_x() + (pdf.w - pdf.l_margin - pdf.r_margin), pdf.get_y())
                 pdf.ln(4)
-            pdf.set_font(
-                "Roboto" if "Roboto" in pdf._fonts_added else "helvetica", "B", 11
-            )
-            # FIX: Reemplazado 'ln=0' (default) por 'new_x/new_y'
-            pdf.cell(
-                0, LINE_HEIGHT * 1.3, page_title, new_x=XPos.LMARGIN, new_y=YPos.NEXT
-            )
+            
+            pdf.set_font("Roboto" if "Roboto" in pdf._fonts_added else "helvetica", "B", 11)
+            pdf.cell(0, LINE_HEIGHT * 1.3, page_title, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
             pdf.ln(6)
 
             try:
                 with open(page_file, "r", encoding="utf-8") as f:
                     page_data = json.load(f)
+                # DEBUG LOG
+                logger.info(f"DEBUG: Cargado {os.path.basename(page_file)}. Keys: {list(page_data.keys()) if isinstance(page_data, dict) else 'No dict'}")
             except Exception as e:
-                logger.warning("No se pudo leer %s: %s", page_file, e)
+                logger.error(f"DEBUG: Error cargando {page_file}: {e}")
                 page_data = None
-            pdf.write_json_summary_box(
-                page_data,
-                top_n=3,
-                filename_hint=os.path.join("pages", os.path.basename(page_file)),
-            )
+            
+            pdf.write_json_summary_box(page_data, top_n=3, filename_hint=os.path.join("pages", os.path.basename(page_file)))
 
-        # --- Rellenar el TOC manual en la página reservada ---
-        logger.info(
-            "Rendering TOC (entries=%d) on page %s",
-            len(pdf._toc_entries),
-            pdf._toc_page_no,
-        )
+        # --- Anexo D: Competidores ---
+        pdf.add_page()
+        pdf.begin_section("Anexo D: Análisis Detallado de Competidores", level=1)
+        
+        # Buscar archivos JSON de competidores
+        competitors_dir = os.path.join(report_folder_path, "competitors")
+        competitor_json_files = []
+        
+        logger.info(f"DEBUG: Buscando competidores en: {competitors_dir}")
+        
+        if os.path.isdir(competitors_dir):
+            competitor_json_files = sorted(glob.glob(os.path.join(competitors_dir, "competitor_*.json")))
+            logger.info(f"DEBUG: Encontrados {len(competitor_json_files)} competidores: {[os.path.basename(f) for f in competitor_json_files]}")
+        
+        if not competitor_json_files:
+            pdf.set_font("Roboto" if "Roboto" in pdf._fonts_added else "helvetica", "", 10)
+            pdf.multi_cell(0, 5, "(No se encontraron reportes de competidores en la carpeta 'competitors')")
+        else:
+            # Introducción del anexo
+            pdf.set_font("Roboto" if "Roboto" in pdf._fonts_added else "helvetica", "", 10)
+            intro_text = f"Se analizaron {len(competitor_json_files)} competidores identificados durante la auditoría. A continuación se presenta un análisis detallado de cada uno, incluyendo su GEO Score y comparación con el sitio objetivo."
+            pdf.multi_cell(0, 5, intro_text)
+            pdf.ln(6)
+            
+            # Tabla comparativa de GEO Scores
+            pdf.set_font("Roboto" if "Roboto" in pdf._fonts_added else "helvetica", "B", 11)
+            pdf.cell(0, LINE_HEIGHT * 1.3, "Tabla Comparativa de GEO Scores", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+            pdf.ln(4)
+            
+            # Cargar scores de todos los competidores
+            competitor_scores = []
+            for comp_file in competitor_json_files:
+                try:
+                    with open(comp_file, "r", encoding="utf-8") as f:
+                        comp_data = json.load(f)
+                        competitor_scores.append({
+                            "domain": comp_data.get("domain", "Unknown"),
+                            "geo_score": comp_data.get("geo_score", 0),
+                            "url": comp_data.get("url", "")
+                        })
+                except Exception as e:
+                    logger.error(f"Error cargando competidor {comp_file}: {e}")
+            
+            # Ordenar por GEO Score descendente
+            competitor_scores.sort(key=lambda x: x["geo_score"], reverse=True)
+            
+            # Mostrar tabla
+            pdf.set_font("Roboto" if "Roboto" in pdf._fonts_added else "helvetica", "B", 9)
+            col_widths = [100, 40, 40]
+            pdf.cell(col_widths[0], 6, "Competidor", border=1)
+            pdf.cell(col_widths[1], 6, "GEO Score", border=1, align="C")
+            pdf.cell(col_widths[2], 6, "Ranking", border=1, align="C", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+            
+            pdf.set_font("Roboto" if "Roboto" in pdf._fonts_added else "helvetica", "", 9)
+            for idx, comp in enumerate(competitor_scores, 1):
+                domain_text = pdf.clean_latin1(comp["domain"][:45])  # Truncar si es muy largo
+                pdf.cell(col_widths[0], 6, domain_text, border=1)
+                pdf.cell(col_widths[1], 6, f"{comp['geo_score']:.1f}/10", border=1, align="C")
+                pdf.cell(col_widths[2], 6, f"#{idx}", border=1, align="C", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+            
+            pdf.ln(8)
+            
+            # Reportes individuales de cada competidor
+            for i, comp_file in enumerate(competitor_json_files):
+                try:
+                    with open(comp_file, "r", encoding="utf-8") as f:
+                        comp_data = json.load(f)
+                    
+                    domain = comp_data.get("domain", "Unknown")
+                    geo_score = comp_data.get("geo_score", 0)
+                    url = comp_data.get("url", "")
+                    audit_data = comp_data.get("audit_data", {})
+                    
+                    # Separador entre competidores
+                    if i > 0:
+                        pdf.ln(6)
+                        pdf.set_draw_color(200, 200, 200)
+                        pdf.line(pdf.get_x(), pdf.get_y(), pdf.get_x() + (pdf.w - pdf.l_margin - pdf.r_margin), pdf.get_y())
+                        pdf.ln(6)
+                    
+                    # Título del competidor
+                    pdf.set_font("Roboto" if "Roboto" in pdf._fonts_added else "helvetica", "B", 12)
+                    comp_title = pdf.clean_latin1(f"Competidor: {domain}")
+                    pdf.cell(0, LINE_HEIGHT * 1.5, comp_title, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+                    pdf.ln(2)
+                    
+                    # URL y GEO Score
+                    pdf.set_font("Roboto" if "Roboto" in pdf._fonts_added else "helvetica", "", 9)
+                    url_text = pdf.clean_latin1(f"URL: {url}")
+                    pdf.cell(0, 5, url_text, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+                    
+                    # GEO Score con color
+                    score_text = f"GEO Score: {geo_score:.1f}/10"
+                    if geo_score >= 7:
+                        pdf.set_text_color(0, 128, 0)  # Verde
+                        interpretation = "(Excelente optimización para IA)"
+                    elif geo_score >= 5:
+                        pdf.set_text_color(255, 140, 0)  # Naranja
+                        interpretation = "(Optimización moderada)"
+                    else:
+                        pdf.set_text_color(255, 0, 0)  # Rojo
+                        interpretation = "(Optimización deficiente)"
+                    
+                    pdf.set_font("Roboto" if "Roboto" in pdf._fonts_added else "helvetica", "B", 10)
+                    pdf.cell(0, 5, f"{score_text} {interpretation}", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+                    pdf.set_text_color(0, 0, 0)  # Reset color
+                    pdf.ln(4)
+                    
+                    # Análisis de fortalezas y debilidades
+                    pdf.set_font("Roboto" if "Roboto" in pdf._fonts_added else "helvetica", "B", 10)
+                    pdf.cell(0, 5, "Fortalezas:", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+                    pdf.set_font("Roboto" if "Roboto" in pdf._fonts_added else "helvetica", "", 9)
+                    
+                    strengths = []
+                    weaknesses = []
+                    
+                    # Analizar estructura
+                    if audit_data.get("structure", {}).get("h1_check", {}).get("status") == "pass":
+                        strengths.append("✓ H1 correctamente implementado")
+                    else:
+                        weaknesses.append("✗ Falta H1 o está mal implementado")
+                    
+                    # Analizar Schema
+                    schema_status = audit_data.get("schema", {}).get("schema_presence", {}).get("status")
+                    if schema_status == "present":
+                        schema_types = audit_data.get("schema", {}).get("schema_types", [])
+                        strengths.append(f"✓ Schema.org implementado ({len(schema_types)} tipos)")
+                    else:
+                        weaknesses.append("✗ Sin Schema.org")
+                    
+                    # Analizar E-E-A-T
+                    author_status = audit_data.get("eeat", {}).get("author_presence", {}).get("status")
+                    if author_status == "pass":
+                        strengths.append("✓ Información de autor presente")
+                    else:
+                        weaknesses.append("✗ Sin información de autor")
+                    
+                    # Analizar HTML semántico
+                    semantic_score = audit_data.get("structure", {}).get("semantic_html", {}).get("score_percent", 0)
+                    if semantic_score >= 70:
+                        strengths.append(f"✓ HTML semántico bien implementado ({semantic_score}%)")
+                    elif semantic_score >= 50:
+                        weaknesses.append(f"⚠ HTML semántico moderado ({semantic_score}%)")
+                    else:
+                        weaknesses.append(f"✗ HTML semántico deficiente ({semantic_score}%)")
+                    
+                    # Mostrar fortalezas
+                    for strength in strengths:
+                        strength_text = pdf.clean_latin1(f"  {strength}")
+                        pdf.cell(0, 5, strength_text, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+                    
+                    if not strengths:
+                        pdf.cell(0, 5, "  (No se identificaron fortalezas significativas)", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+                    
+                    pdf.ln(3)
+                    
+                    # Mostrar debilidades
+                    pdf.set_font("Roboto" if "Roboto" in pdf._fonts_added else "helvetica", "B", 10)
+                    pdf.cell(0, 5, "Debilidades:", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+                    pdf.set_font("Roboto" if "Roboto" in pdf._fonts_added else "helvetica", "", 9)
+                    
+                    for weakness in weaknesses:
+                        weakness_text = pdf.clean_latin1(f"  {weakness}")
+                        pdf.cell(0, 5, weakness_text, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+                    
+                    if not weaknesses:
+                        pdf.cell(0, 5, "  (No se identificaron debilidades significativas)", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+                    
+                    pdf.ln(4)
+                    
+                    # Oportunidades de aprendizaje
+                    if strengths:
+                        pdf.set_font("Roboto" if "Roboto" in pdf._fonts_added else "helvetica", "B", 10)
+                        pdf.cell(0, 5, "Oportunidades de Aprendizaje:", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+                        pdf.set_font("Roboto" if "Roboto" in pdf._fonts_added else "helvetica", "I", 9)
+                        opp_text = pdf.clean_latin1(f"Este competidor destaca en {len(strengths)} área(s). Considere implementar prácticas similares para mejorar su GEO Score.")
+                        pdf.multi_cell(0, 5, opp_text)
+                    
+                except Exception as e:
+                    logger.error(f"Error procesando competidor {comp_file}: {e}")
+                    pdf.set_font("Roboto" if "Roboto" in pdf._fonts_added else "helvetica", "", 9)
+                    pdf.cell(0, 5, f"Error cargando datos del competidor: {os.path.basename(comp_file)}", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+
+
+        # --- Rellenar TOC ---
+        logger.info("Rendering TOC (entries=%d) on page %s", len(pdf._toc_entries), pdf._toc_page_no)
         pdf.render_manual_toc()
 
-        # --- Guardar el PDF ---
+        # --- Guardar PDF ---
         try:
             pdf.output(pdf_file_path)
             logger.info("¡Éxito! PDF consolidado guardado en: %s", pdf_file_path)
         except Exception as e:
             logger.exception("Error al guardar PDF: %s", e)
+
     except Exception as e:
         logger.error("Falló la creación del PDF: %s", e)
         traceback.print_exc()

@@ -86,3 +86,53 @@ export interface ConversationMessage {
   audit_id?: number
   audit_started?: boolean
 }
+
+// New Feature Types
+
+export interface Backlink {
+  id: number
+  source_url: string
+  target_url: string
+  anchor_text: string
+  is_dofollow: boolean
+  domain_authority?: number
+}
+
+export interface Keyword {
+  id: number
+  term: string
+  volume: number
+  difficulty: number
+  cpc: number
+  intent: string
+}
+
+export interface RankTracking {
+  id: number
+  keyword: string
+  position: number
+  url: string
+  device: string
+  location: string
+  tracked_at: string
+}
+
+export interface LLMVisibility {
+  id: number
+  llm_name: string
+  query: string
+  is_visible: boolean
+  rank?: number
+  citation_text?: string
+  checked_at: string
+}
+
+export interface AIContentSuggestion {
+  id: number
+  page_url?: string
+  topic: string
+  suggestion_type: string
+  content_outline?: any
+  priority: string
+  created_at: string
+}
