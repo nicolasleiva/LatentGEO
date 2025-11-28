@@ -13,81 +13,71 @@ logger = logging.getLogger(__name__)
 class KeywordService:
     def __init__(self, db: Session):
         self.db = db
-        self.api_key = settings.OPENAI_API_KEY
-        if self.api_key:
-            self.client = AsyncOpenAI(api_key=self.api_key)
+        
+        # Primary: Usar Kimi vía NVIDIA
+        self.nvidia_api_key = settings.NVIDIA_API_KEY or settings.NV_API_KEY
+        if self.nvidia_api_key:
+            self.client = AsyncOpenAI(
+                api_key=self.nvidia_api_key,
+                base_url=settings.NV_BASE_URL
+            )
+            logger.info("✅ Kimi/NVIDIA API configurada para keywords")
         else:
             self.client = None
+            logger.warning("⚠️  No se encontró NVIDIA_API_KEY. Usando MOCK data.")
 
     async def research_keywords(self, audit_id: int, domain: str, seed_keywords: List[str] = None) -> List[dict]:
         """
-        Generates keyword ideas using OpenAI, Gemini, or Mock data.
+        Generates keyword ideas using Kimi (Moonshot AI).
         """
-        # 1. Try OpenAI
+        # Usar Kimi vía NVIDIA
         if self.client:
-            return await self._research_openai(audit_id, domain, seed_keywords)
+            return await self._research_kimi(audit_id, domain, seed_keywords)
         
-        # 2. Try Gemini
-        if settings.GEMINI_API_KEY:
-            return await self._research_gemini(audit_id, domain, seed_keywords)
-
-        # 3. Fallback to Mock
+        # Fallback to Mock
         logger.warning("No AI keys set. Using MOCK data for keywords.")
         return self._get_mock_keywords(audit_id, domain, seed_keywords)
 
-    async def _research_openai(self, audit_id: int, domain: str, seeds: List[str]) -> List[dict]:
+    async def _research_kimi(self, audit_id: int, domain: str, seeds: List[str]) -> List[dict]:
+        """Genera keywords usando Kimi (Moonshot AI vía NVIDIA)"""
         try:
             prompt = self._get_prompt(domain, seeds)
+            
             response = await self.client.chat.completions.create(
-                model="gpt-4o",
+                model=settings.NV_MODEL,
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.7,
-                response_format={"type": "json_object"}
+                max_tokens=settings.NV_MAX_TOKENS
             )
-            content = response.choices[0].message.content.strip()
-            return self._process_ai_response(audit_id, content)
-        except Exception as e:
-            logger.error(f"OpenAI error: {e}")
-            if settings.GEMINI_API_KEY:
-                return await self._research_gemini(audit_id, domain, seeds)
-            return self._get_mock_keywords(audit_id, domain, seeds)
-
-    async def _research_gemini(self, audit_id: int, domain: str, seeds: List[str]) -> List[dict]:
-        import aiohttp
-        try:
-            prompt = self._get_prompt(domain, seeds) + "\n\nReturn raw JSON only."
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/{settings.GEMINI_MODEL}:generateContent?key={settings.GEMINI_API_KEY}"
-            headers = {"Content-Type": "application/json"}
-            data = {"contents": [{"parts": [{"text": prompt}]}]}
             
-            async with aiohttp.ClientSession() as session:
-                async with session.post(url, headers=headers, json=data) as resp:
-                    if resp.status == 200:
-                        result = await resp.json()
-                        content = result["candidates"][0]["content"]["parts"][0]["text"]
-                        # Clean markdown code blocks if present
-                        if "```" in content:
-                            content = content.replace("```json", "").replace("```", "")
-                        return self._process_ai_response(audit_id, content)
-                    else:
-                        logger.error(f"Gemini API error: {resp.status}")
-                        return self._get_mock_keywords(audit_id, domain, seeds)
+            content = response.choices[0].message.content.strip()
+            
+            # Limpiar respuesta si viene con markdown
+            if "```" in content:
+                content = content.replace("```json", "").replace("```", "")
+            
+            logger.info(f"✅ Kimi generó {len(content)} keywords para {domain}")
+            return self._process_ai_response(audit_id, content)
+            
         except Exception as e:
-            logger.error(f"Gemini error: {e}")
+            logger.error(f"Kimi API error: {e}")
             return self._get_mock_keywords(audit_id, domain, seeds)
 
     def _get_prompt(self, domain: str, seeds: List[str]) -> str:
         return f"""
-        Act as an SEO expert. Generate 10 high-potential keywords for the domain: {domain}.
-        Context/Niche seeds: {', '.join(seeds) if seeds else 'General analysis'}
+        Actúa como un experto en SEO. Genera 10 keywords de alto potencial para el dominio: {domain}.
         
-        For each keyword, estimate:
-        1. Search Volume (monthly)
-        2. Difficulty (0-100)
-        3. CPC (in USD)
-        4. Search Intent (Informational, Commercial, Transactional, Navigational)
+        Contexto/Nicho semillas: {', '.join(seeds) if seeds else 'Análisis general'}
+        
+        Para cada keyword, estima:
+        1. Volumen de búsqueda (mensual)
+        2. Dificultad (0-100)
+        3. CPC (en USD)
+        4. Intención de búsqueda (Informational, Commercial, Transactional, Navigational)
 
-        Return ONLY a valid JSON array of objects with keys: "term", "volume", "difficulty", "cpc", "intent".
+        Retorna SOLO un array JSON válido de objetos con keys: "term", "volume", "difficulty", "cpc", "intent".
+        
+        Responde únicamente con el JSON, sin texto adicional.
         """
 
     def _process_ai_response(self, audit_id: int, content: str) -> List[dict]:
@@ -95,13 +85,13 @@ class KeywordService:
             data = json.loads(content)
             keywords_list = data.get("keywords", data) if isinstance(data, dict) else data
             
-            # Enrich with Real Data from Google Ads if available
+            # Enriquecer con datos reales de Google Ads si está disponible
             try:
                 terms = [kw.get("term") for kw in keywords_list if isinstance(kw, dict) and kw.get("term")]
                 if terms:
                     real_metrics = GoogleAdsService().get_keyword_metrics(terms)
                     if real_metrics:
-                        logger.info(f"Enriching {len(real_metrics)} keywords with Google Ads data")
+                        logger.info(f"Enriqueciendo {len(real_metrics)} keywords con datos de Google Ads")
                         for kw in keywords_list:
                             term = kw.get("term")
                             if term in real_metrics:
@@ -110,7 +100,7 @@ class KeywordService:
                                 kw["difficulty"] = metrics["difficulty"]
                                 kw["cpc"] = metrics["cpc"]
             except Exception as e:
-                logger.error(f"Failed to enrich with Google Ads data: {e}")
+                logger.error(f"Fallo al enriquecer con Google Ads data: {e}")
 
             results = []
             if isinstance(keywords_list, list):
@@ -132,7 +122,7 @@ class KeywordService:
                 return [k.__dict__ for k in results]
             return []
         except Exception as e:
-            logger.error(f"Error processing AI response: {e}")
+            logger.error(f"Error processing Kimi response: {e}")
             return []
 
 

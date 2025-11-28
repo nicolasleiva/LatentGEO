@@ -19,13 +19,18 @@ class Settings(BaseSettings):
     GOOGLE_API_KEY: Optional[str] = None
     GOOGLE_PAGESPEED_API_KEY: Optional[str] = None
     CSE_ID: Optional[str] = None
+    
+    # NVIDIA/Kimi Configuration (Primary LLM)
+    NVIDIA_API_KEY: Optional[str] = None
+    NV_API_KEY: Optional[str] = None
+    NV_BASE_URL: str = "https://integrate.api.nvidia.com/v1"
+    NV_MODEL: str = "moonshotai/kimi-k2-instruct-0905"
+    NV_MAX_TOKENS: int = 4096
+    
+    # Deprecated: Usar Kimi en su lugar
     GEMINI_API_KEY: Optional[str] = None
     GEMINI_MODEL: str = "gemini-2.5-flash-lite"
     OPENAI_API_KEY: Optional[str] = None
-    NVIDIA_API_KEY: Optional[str] = None
-    api_key: Optional[str] = None
-    nv_api_key: Optional[str] = None
-    base_url: Optional[str] = None
     
     # Google Ads Configuration
     GOOGLE_ADS_DEVELOPER_TOKEN: str = os.getenv("GOOGLE_ADS_DEVELOPER_TOKEN", "")
@@ -34,6 +39,18 @@ class Settings(BaseSettings):
     GOOGLE_ADS_REFRESH_TOKEN: str = os.getenv("GOOGLE_ADS_REFRESH_TOKEN", "")
     GOOGLE_ADS_CUSTOMER_ID: str = os.getenv("GOOGLE_ADS_CUSTOMER_ID", "")
     GOOGLE_ADS_LOGIN_CUSTOMER_ID: str = os.getenv("GOOGLE_ADS_LOGIN_CUSTOMER_ID", "")
+
+    # HubSpot Configuration
+    HUBSPOT_CLIENT_ID: Optional[str] = os.getenv("HUBSPOT_CLIENT_ID")
+    HUBSPOT_CLIENT_SECRET: Optional[str] = os.getenv("HUBSPOT_CLIENT_SECRET")
+    HUBSPOT_REDIRECT_URI: str = os.getenv("HUBSPOT_REDIRECT_URI", "http://localhost:3000/integrations/hubspot/callback")
+    ENCRYPTION_KEY: str = os.getenv("ENCRYPTION_KEY", "your-encryption-key-must-be-32-url-safe-base64-bytes")
+
+    # GitHub Configuration
+    GITHUB_CLIENT_ID: Optional[str] = os.getenv("GITHUB_CLIENT_ID")
+    GITHUB_CLIENT_SECRET: Optional[str] = os.getenv("GITHUB_CLIENT_SECRET")
+    GITHUB_REDIRECT_URI: str = os.getenv("GITHUB_REDIRECT_URI", "http://localhost:3000/integrations/github/callback")
+    GITHUB_WEBHOOK_SECRET: Optional[str] = os.getenv("GITHUB_WEBHOOK_SECRET")
 
     # Redis
     REDIS_URL: str = "redis://localhost:6379/0"

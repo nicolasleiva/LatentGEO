@@ -41,7 +41,8 @@ class AuditService:
             status=AuditStatus.PENDING,
             language=audit_create.language or "es",
             competitors=audit_create.competitors,
-            market=audit_create.market
+            market=audit_create.market,
+            source=audit_create.source
         )
         db.add(audit)
         db.flush()

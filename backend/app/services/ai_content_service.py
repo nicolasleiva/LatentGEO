@@ -5,7 +5,6 @@ from .crawler_service import CrawlerService
 from typing import List, Dict, Any
 import logging
 import json
-import random
 from openai import AsyncOpenAI
 
 logger = logging.getLogger(__name__)
@@ -13,15 +12,22 @@ logger = logging.getLogger(__name__)
 class AIContentService:
     def __init__(self, db: Session):
         self.db = db
-        self.api_key = settings.OPENAI_API_KEY
-        if self.api_key:
-            self.client = AsyncOpenAI(api_key=self.api_key)
+        
+        # Primary: Usar Kimi vía NVIDIA
+        self.nvidia_api_key = settings.NVIDIA_API_KEY or settings.NV_API_KEY
+        if self.nvidia_api_key:
+            self.client = AsyncOpenAI(
+                api_key=self.nvidia_api_key,
+                base_url=settings.NV_BASE_URL
+            )
+            logger.info("✅ Kimi/NVIDIA API configurada correctamente")
         else:
             self.client = None
+            logger.warning("⚠️  No se encontró NVIDIA_API_KEY. Usando MOCK data.")
 
     async def generate_suggestions(self, audit_id: int, domain: str, topics: List[str]) -> List[dict]:
         """
-        Generates content suggestions based on crawled content and OpenAI/Gemini analysis.
+        Generates content suggestions based on crawled content and Kimi analysis.
         """
         # 1. Crawl the site to get context (Real implementation)
         try:
@@ -36,72 +42,61 @@ class AIContentService:
             logger.error(f"Crawling error: {e}")
             page_content = "Content unavailable."
 
-        # 2. Generate Suggestions
+        # 2. Generate Suggestions usando Kimi
         if self.client:
-            return await self._generate_openai(audit_id, domain, topics, page_content)
+            return await self._generate_kimi(audit_id, domain, topics, page_content)
         
-        if settings.GEMINI_API_KEY:
-            return await self._generate_gemini(audit_id, domain, topics, page_content)
-
         logger.warning("No AI keys set. Using MOCK data for content suggestions.")
         return self._get_mock_suggestions(audit_id, domain, topics)
 
-    async def _generate_openai(self, audit_id: int, domain: str, topics: List[str], context: str) -> List[dict]:
+    async def _generate_kimi(self, audit_id: int, domain: str, topics: List[str], context: str) -> List[dict]:
+        """Genera sugerencias usando Kimi (Moonshot AI vía NVIDIA)"""
         try:
             prompt = self._get_prompt(domain, topics, context)
+            
             response = await self.client.chat.completions.create(
-                model="gpt-4o",
+                model=settings.NV_MODEL,
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.7,
-                response_format={"type": "json_object"}
+                max_tokens=settings.NV_MAX_TOKENS
             )
-            content = response.choices[0].message.content.strip()
-            return self._process_ai_response(audit_id, content, topics)
-        except Exception as e:
-            logger.error(f"OpenAI error: {e}")
-            if settings.GEMINI_API_KEY:
-                return await self._generate_gemini(audit_id, domain, topics, context)
-            return self._get_mock_suggestions(audit_id, domain, topics)
-
-    async def _generate_gemini(self, audit_id: int, domain: str, topics: List[str], context: str) -> List[dict]:
-        import aiohttp
-        try:
-            prompt = self._get_prompt(domain, topics, context) + "\n\nReturn raw JSON only."
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/{settings.GEMINI_MODEL}:generateContent?key={settings.GEMINI_API_KEY}"
-            headers = {"Content-Type": "application/json"}
-            data = {"contents": [{"parts": [{"text": prompt}]}]}
             
-            async with aiohttp.ClientSession() as session:
-                async with session.post(url, headers=headers, json=data) as resp:
-                    if resp.status == 200:
-                        result = await resp.json()
-                        content = result["candidates"][0]["content"]["parts"][0]["text"]
-                        if "```" in content:
-                            content = content.replace("```json", "").replace("```", "")
-                        return self._process_ai_response(audit_id, content, topics)
-                    else:
-                        logger.error(f"Gemini API error: {resp.status}")
-                        return self._get_mock_suggestions(audit_id, domain, topics)
+            content = response.choices[0].message.content.strip()
+            
+            # Limpiar respuesta si viene con markdown
+            if "```" in content:
+                content = content.replace("```json", "").replace("```", "")
+            
+            logger.info(f"✅ Kimi generó sugerencias exitosamente para {domain}")
+            return self._process_ai_response(audit_id, content, topics, domain)
+            
         except Exception as e:
-            logger.error(f"Gemini error: {e}")
+            logger.error(f"Kimi API error: {e}")
             return self._get_mock_suggestions(audit_id, domain, topics)
 
     def _get_prompt(self, domain: str, topics: List[str], context: str) -> str:
         return f"""
-        Analyze the following website content summary for domain: {domain}.
-        Content snippet: {context}
+        Analiza el siguiente contenido del sitio web: {domain}
         
-        Target Topics: {', '.join(topics)}
+        Contenido: {context}
         
-        Generate 3 content suggestions to improve topical authority:
-        1. A "Missing Sub-topic" (new_content) that is relevant but not covered.
-        2. A "FAQ" (faq) that users likely ask.
-        3. A "Content Outline" (outline) for a pillar page on one of the target topics.
+        Temas objetivo: {', '.join(topics)}
         
-        Return ONLY a valid JSON array of objects with keys: "topic", "suggestion_type" (new_content, faq, outline), "content_outline" (JSON object), "priority" (high, medium, low).
+        Genera 3 sugerencias de contenido para mejorar la autoridad temática:
+        1. Un "Sub-tema Faltante" (new_content) que sea relevante pero no esté cubierto
+        2. Una "FAQ" (faq) que los usuarios probablemente busquen
+        3. Un "Content Outline" (outline) para una página pilar sobre uno de los temas objetivo
+        
+        Retorna SOLO un array JSON válido de objetos con estas keys:
+        - "topic": string
+        - "suggestion_type": "new_content" | "faq" | "outline"
+        - "content_outline": object con la estructura propuesta
+        - "priority": "high" | "medium" | "low"
+        
+        Responde únicamente con el JSON, sin texto adicional.
         """
 
-    def _process_ai_response(self, audit_id: int, content: str, topics: List[str]) -> List[dict]:
+    def _process_ai_response(self, audit_id: int, content: str, topics: List[str], domain: str) -> List[dict]:
         try:
             data = json.loads(content)
             suggestions_list = data.get("suggestions", data) if isinstance(data, dict) else data
@@ -125,7 +120,7 @@ class AIContentService:
                 return [s.__dict__ for s in results]
             return self._get_mock_suggestions(audit_id, domain, topics)
         except Exception as e:
-            logger.error(f"Error processing AI response: {e}")
+            logger.error(f"Error processing Kimi response: {e}")
             return self._get_mock_suggestions(audit_id, domain, topics)
 
 
