@@ -15,6 +15,7 @@ class AuditCreate(BaseModel):
     language: Optional[str] = "es"  # "en" o "es"
     competitors: Optional[List[str]] = None  # URLs de competidores
     market: Optional[str] = None  # "us", "latam", "emea", "argentina", etc.
+    source: Optional[str] = "web"  # "web", "hubspot"
 
 class AuditResponse(BaseModel):
     id: int

@@ -3,7 +3,7 @@ Configuración de Base de Datos con SQLAlchemy
 """
 import asyncio
 import time
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text, inspect
 from sqlalchemy.orm import declarative_base, sessionmaker
 from sqlalchemy.pool import StaticPool
 from .config import settings
@@ -59,6 +59,23 @@ async def init_db():
                 logger.info(f"[DB] Conexión a la base de datos exitosa.")
                 Base.metadata.create_all(bind=engine)
                 logger.info("[DB] Tablas de base de datos creadas/verificadas correctamente.")
+                
+                # --- MIGRATION CHECK ---
+                # Verificar si la columna 'source' existe en la tabla 'audits'
+                inspector = inspect(engine)
+                if "audits" in inspector.get_table_names():
+                    columns = [c["name"] for c in inspector.get_columns("audits")]
+                    if "source" not in columns:
+                        logger.info("[DB] Migrando: Agregando columna 'source' a tabla 'audits'...")
+                        try:
+                            # SQLite vs Postgres syntax might differ slightly for ADD COLUMN, but usually standard
+                            # For SQLite, it's ADD COLUMN. For Postgres too.
+                            connection.execute(text("ALTER TABLE audits ADD COLUMN source VARCHAR(50) DEFAULT 'web'"))
+                            connection.commit()
+                            logger.info("[DB] Columna 'source' agregada exitosamente.")
+                        except Exception as e:
+                            logger.error(f"[DB] Error agregando columna 'source': {e}")
+                
                 return
         except Exception as e:
             last_exc = e

@@ -17,6 +17,11 @@ aiohttp==3.9.1
 beautifulsoup4==4.12.2
 python-dotenv==1.0.0
 
+# GitHub Integration
+PyGithub==2.1.1
+cryptography==41.0.7  # Para encriptar OAuth tokens
+python-frontmatter==1.0.1  # Para parsear frontmatter de blogs
+
 # PDF y reportes
 fpdf2==2.7.0
 
