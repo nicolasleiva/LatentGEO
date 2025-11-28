@@ -160,6 +160,15 @@ export default function AuditDetailPage() {
 
             {audit?.status === 'completed' && (
               <div className="flex gap-3">
+                {audit.source === 'hubspot' && (
+                  <Button
+                    onClick={() => router.push(`/audits/${auditId}/hubspot-apply`)}
+                    className="bg-[#ff7a59] hover:bg-[#ff7a59]/90 text-white px-6"
+                  >
+                    <Sparkles className="h-4 w-4 mr-2" />
+                    Apply to HubSpot
+                  </Button>
+                )}
                 <Button
                   onClick={analyzePageSpeed}
                   disabled={pageSpeedLoading}

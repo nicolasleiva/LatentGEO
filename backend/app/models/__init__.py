@@ -36,6 +36,7 @@ class Audit(Base):
     id = Column(Integer, primary_key=True, index=True)
     url = Column(String(255), nullable=False)
     domain = Column(String(255), index=True)
+    source = Column(String(50), default="web") # web, hubspot, etc.
 
     status = Column(Enum(AuditStatus), default=AuditStatus.PENDING)
     progress = Column(Float, default=0.0)  # 0-100
@@ -336,3 +337,11 @@ class CompetitorCitationAnalysis(Base):
     gap_analysis = Column(JSON, nullable=True)  # Análisis de brechas
     
     analyzed_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+
+# Importar modelos de HubSpot
+from .hubspot import HubSpotConnection, HubSpotPage, HubSpotChange
+
+# Importar modelos de GitHub
+from .github import GitHubConnection, GitHubRepository, GitHubPullRequest, GitHubWebhookEvent
+
