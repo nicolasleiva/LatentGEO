@@ -26,7 +26,7 @@ class KeywordService:
             self.client = None
             logger.warning("⚠️  No se encontró NVIDIA_API_KEY. Usando MOCK data.")
 
-    async def research_keywords(self, audit_id: int, domain: str, seed_keywords: List[str] = None) -> List[dict]:
+    async def research_keywords(self, audit_id: int, domain: str, seed_keywords: List[str] = None) -> List[Keyword]:
         """
         Generates keyword ideas using Kimi (Moonshot AI).
         """
@@ -38,7 +38,7 @@ class KeywordService:
         logger.warning("No AI keys set. Using MOCK data for keywords.")
         return self._get_mock_keywords(audit_id, domain, seed_keywords)
 
-    async def _research_kimi(self, audit_id: int, domain: str, seeds: List[str]) -> List[dict]:
+    async def _research_kimi(self, audit_id: int, domain: str, seeds: List[str]) -> List[Keyword]:
         """Genera keywords usando Kimi (Moonshot AI vía NVIDIA)"""
         try:
             prompt = self._get_prompt(domain, seeds)
@@ -80,7 +80,7 @@ class KeywordService:
         Responde únicamente con el JSON, sin texto adicional.
         """
 
-    def _process_ai_response(self, audit_id: int, content: str) -> List[dict]:
+    def _process_ai_response(self, audit_id: int, content: str) -> List[Keyword]:
         try:
             data = json.loads(content)
             keywords_list = data.get("keywords", data) if isinstance(data, dict) else data
@@ -119,14 +119,14 @@ class KeywordService:
                 self.db.commit()
                 for kw in results:
                     self.db.refresh(kw)
-                return [k.__dict__ for k in results]
+                return results  # Return SQLAlchemy objects, Pydantic will serialize
             return []
         except Exception as e:
             logger.error(f"Error processing Kimi response: {e}")
             return []
 
 
-    def _get_mock_keywords(self, audit_id: int, domain: str, seeds: List[str] = None) -> List[dict]:
+    def _get_mock_keywords(self, audit_id: int, domain: str, seeds: List[str] = None) -> List[Keyword]:
         """Returns realistic mock data for testing without API key."""
         base_seeds = seeds if seeds else ["software", "solutions", "platform", "tools"]
         intents = ["Informational", "Commercial", "Transactional"]
@@ -151,8 +151,8 @@ class KeywordService:
         for kw in mock_results:
             self.db.refresh(kw)
             
-        return [k.__dict__ for k in mock_results]
+        return mock_results  # Return SQLAlchemy objects
 
-    def get_keywords(self, audit_id: int) -> List[dict]:
+    def get_keywords(self, audit_id: int) -> List[Keyword]:
         keywords = self.db.query(Keyword).filter(Keyword.audit_id == audit_id).all()
-        return [k.__dict__ for k in keywords]
+        return keywords  # Return SQLAlchemy objects

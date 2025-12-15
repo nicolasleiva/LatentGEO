@@ -1,0 +1,74 @@
+--progress is a global compose flag, better use `docker compose --progress xx build ...
+time="2025-11-29T11:22:44-03:00" level=warning msg="The \"OPENAI_API_KEY\" variable is not set. Defaulting to a blank string."
+time="2025-11-29T11:22:44-03:00" level=warning msg="C:\\Users\\Dell\\auditor_geo\\auditor_geo\\docker-compose.yml: the attribute `version` is obsolete, it will be ignored, please remove it to avoid potential confusion"
+#1 [internal] load local bake definitions
+#1 reading from stdin 1.06kB 0.0s done
+#1 DONE 0.0s
+
+#2 [internal] load build definition from Dockerfile.frontend
+#2 transferring dockerfile: 2.70kB 0.0s done
+#2 DONE 0.1s
+
+#3 [internal] load metadata for docker.io/library/node:20.9-slim
+#3 DONE 0.0s
+
+#4 [internal] load .dockerignore
+#4 transferring context: 324B 0.0s done
+#4 DONE 0.1s
+
+#5 [builder 1/6] FROM docker.io/library/node:20.9-slim
+#5 DONE 0.0s
+
+#6 [builder 2/6] WORKDIR /app
+#6 CACHED
+
+#7 [internal] load build context
+#7 transferring context: 7.81kB 0.0s done
+#7 DONE 0.1s
+
+#8 [builder 3/6] RUN corepack enable && corepack prepare pnpm@latest --activate
+#8 1.615 Preparing pnpm@latest for immediate activation...
+#8 DONE 5.2s
+
+#9 [builder 4/6] COPY frontend/ ./
+#9 DONE 0.3s
+
+#10 [builder 5/6] RUN pnpm install --frozen-lockfile --strict-peer-dependencies=false
+#10 1.385 Lockfile is up to date, resolution step is skipped
+#10 1.564 Progress: resolved 1, reused 0, downloaded 0, added 0
+#10 1.888 Packages: +506
+#10 1.888 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+#10 2.573 Progress: resolved 506, reused 0, downloaded 0, added 0
+#10 3.574 Progress: resolved 506, reused 0, downloaded 33, added 30
+#10 4.575 Progress: resolved 506, reused 0, downloaded 86, added 85
+#10 5.576 Progress: resolved 506, reused 0, downloaded 93, added 93
+#10 5.657 ÔÇëWARNÔÇë Tarball download average speed 47 KiB/s (size 49 KiB) is below 50 KiB/s: https://registry.npmjs.org/@radix-ui/react-menu/-/react-menu-2.1.16.tgz (GET)
+#10 6.578 Progress: resolved 506, reused 0, downloaded 98, added 98
+#10 7.141 ÔÇëWARNÔÇë Tarball download average speed 14 KiB/s (size 33 KiB) is below 50 KiB/s: https://registry.npmjs.org/input-otp/-/input-otp-1.4.2.tgz (GET)
+#10 7.235 ÔÇëWARNÔÇë Tarball download average speed 4 KiB/s (size 10 KiB) is below 50 KiB/s: https://registry.npmjs.org/next-themes/-/next-themes-0.2.1.tgz (GET)
+#10 7.578 Progress: resolved 506, reused 0, downloaded 107, added 107
+#10 8.579 Progress: resolved 506, reused 0, downloaded 120, added 120
+#10 9.292 ÔÇëWARNÔÇë Tarball download average speed 2 KiB/s (size 11 KiB) is below 50 KiB/s: https://registry.npmjs.org/@radix-ui/react-radio-group/-/react-radio-group-1.3.8.tgz (GET)
+#10 9.310 ÔÇëWARNÔÇë Tarball download average speed 18 KiB/s (size 63 KiB) is below 50 KiB/s: https://registry.npmjs.org/redux/-/redux-5.0.1.tgz (GET)
+#10 9.407 ÔÇëWARNÔÇë Tarball download average speed 27 KiB/s (size 55 KiB) is below 50 KiB/s: https://registry.npmjs.org/decimal.js-light/-/decimal.js-light-2.5.1.tgz (GET)
+#10 9.547 ÔÇëWARNÔÇë Tarball download average speed 49 KiB/s (size 218 KiB) is below 50 KiB/s: https://registry.npmjs.org/react-resizable-panels/-/react-resizable-panels-2.1.9.tgz (GET)
+#10 9.557 ÔÇëWARNÔÇë Tarball download average speed 38 KiB/s (size 130 KiB) is below 50 KiB/s: https://registry.npmjs.org/reselect/-/reselect-5.1.1.tgz (GET)
+#10 9.579 Progress: resolved 506, reused 0, downloaded 135, added 133
+#10 9.716 ÔÇëWARNÔÇë Tarball download average speed 13 KiB/s (size 45 KiB) is below 50 KiB/s: https://registry.npmjs.org/@vercel/analytics/-/analytics-1.5.0.tgz (GET)
+#10 10.58 Progress: resolved 506, reused 0, downloaded 147, added 147
+#10 11.53 ÔÇëWARNÔÇë Tarball download average speed 25 KiB/s (size 45 KiB) is below 50 KiB/s: https://registry.npmjs.org/autoprefixer/-/autoprefixer-10.4.22.tgz (GET)
+#10 11.57 ÔÇëWARNÔÇë Tarball download average speed 22 KiB/s (size 37 KiB) is below 50 KiB/s: https://registry.npmjs.org/vaul/-/vaul-0.9.9.tgz (GET)
+#10 11.59 Progress: resolved 506, reused 0, downloaded 161, added 160
+#10 12.59 Progress: resolved 506, reused 0, downloaded 203, added 203
+#10 13.59 Progress: resolved 506, reused 0, downloaded 262, added 261
+#10 14.59 Progress: resolved 506, reused 0, downloaded 307, added 307
+#10 15.35 ÔÇëWARNÔÇë Tarball download average speed 21 KiB/s (size 27 KiB) is below 50 KiB/s: https://registry.npmjs.org/semver/-/semver-7.7.3.tgz (GET)
+#10 15.59 Progress: resolved 506, reused 0, downloaded 320, added 319
+#10 16.59 Progress: resolved 506, reused 0, downloaded 332, added 332
+#10 16.65 ÔÇëWARNÔÇë Tarball download average speed 9 KiB/s (size 108 KiB) is below 50 KiB/s: https://registry.npmjs.org/react-day-picker/-/react-day-picker-9.11.1.tgz (GET)
+#10 17.59 Progress: resolved 506, reused 0, downloaded 373, added 372
+#10 18.59 Progress: resolved 506, reused 0, downloaded 424, added 424
+#10 19.59 Progress: resolved 506, reused 0, downloaded 455, added 455
+#10 20.59 Progress: resolved 506, reused 0, downloaded 461, added 461
+#10 21.38 ÔÇëWARNÔÇë Tarball download average speed 22 KiB/s (size 41 KiB) is below 50 KiB/s: https://registry.npmjs.org/postcss-selector-parser/-/postcss-selector-parser-6.1.2.tgz (GET)
+#10 21.59 Progress: resolved 506, reused 0, downloaded 466, added 466

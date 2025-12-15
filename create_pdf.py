@@ -999,6 +999,7 @@ def create_comprehensive_pdf(report_folder_path):
         json_agg_summary_file = os.path.join(
             report_folder_path, "aggregated_summary.json"
         )
+        json_pagespeed_file = os.path.join(report_folder_path, "pagespeed.json")
         pages_folder = os.path.join(report_folder_path, "pages")
         page_json_files = sorted(glob.glob(os.path.join(pages_folder, "*.json")))
 
@@ -1022,6 +1023,13 @@ def create_comprehensive_pdf(report_folder_path):
                 "No se pudo leer aggregated_summary.json -> se usará diccionario vacío"
             )
             agg_summary_data = {}
+
+        try:
+            with open(json_pagespeed_file, "r", encoding="utf-8") as f:
+                pagespeed_data = json.load(f)
+        except Exception:
+            logger.warning("No se pudo leer pagespeed.json -> se usará diccionario vacío")
+            pagespeed_data = {}
 
         if fix_plan_data is None:
             fix_plan_data = []
@@ -1187,6 +1195,34 @@ def create_comprehensive_pdf(report_folder_path):
         pdf.write_json_summary_box(
             agg_summary_data, top_n=4, filename_hint="aggregated_summary.json"
         )
+
+        # --- FIX: Forzar nueva página para Anexo B.1 (PageSpeed) ---
+        if pagespeed_data:
+            # Extract mobile data if it exists
+            mobile_data = pagespeed_data.get("mobile", pagespeed_data)
+            if mobile_data:
+                pdf.add_page()
+                pdf.begin_section(
+                    "Anexo B.1: PageSpeed Insights (pagespeed.json)", level=1
+                )
+                # Renderizar resumen de PageSpeed
+                ps_summary = {
+                    "Performance Score": mobile_data.get("performance_score", "N/A"),
+                    "Accessibility Score": mobile_data.get("accessibility_score", "N/A"),
+                    "Best Practices Score": mobile_data.get("best_practices_score", "N/A"),
+                    "SEO Score": mobile_data.get("seo_score", "N/A"),
+                    "Strategy": mobile_data.get("strategy", "N/A"),
+                    "Core Web Vitals": {
+                        "LCP (ms)": mobile_data.get("core_web_vitals", {}).get("lcp", "N/A"),
+                        "FID (ms)": mobile_data.get("core_web_vitals", {}).get("fid", "N/A"),
+                        "CLS": mobile_data.get("core_web_vitals", {}).get("cls", "N/A"),
+                        "FCP (ms)": mobile_data.get("core_web_vitals", {}).get("fcp", "N/A"),
+                        "TTFB (ms)": mobile_data.get("core_web_vitals", {}).get("ttfb", "N/A"),
+                    }
+                }
+                pdf.write_json_summary_box(
+                    ps_summary, top_n=5, filename_hint="pagespeed.json"
+                )
 
         # --- FIX: Forzar nueva página para Anexo C ---
         pdf.add_page()

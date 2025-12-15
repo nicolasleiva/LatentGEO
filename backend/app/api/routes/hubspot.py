@@ -2,11 +2,12 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from typing import List, Dict, Any
 from pydantic import BaseModel
+import uuid
 
 from ...core.database import get_db
 from ...integrations.hubspot.auth import HubSpotAuth
 from ...integrations.hubspot.service import HubSpotService
-from ...models.hubspot import HubSpotConnection, HubSpotPage
+from ...models.hubspot import HubSpotConnection, HubSpotPage, HubSpotChange
 
 router = APIRouter()
 
@@ -32,34 +33,31 @@ async def oauth_callback(request: ConnectRequest, db: Session = Depends(get_db))
         # 1. Exchange code for tokens
         token_data = await HubSpotAuth.exchange_code(request.code)
         
-        # 2. Get portal info (optional, but good to have portal ID)
-        # For now, we might need to fetch it or use a placeholder if not in token response
-        # Usually HubSpot returns portal ID in access token info or we can fetch it.
-        # Let's assume we can get it or just use a unique identifier from the token response if available.
-        # Actually, let's fetch 'hub_id' or 'portalId' from a basic info endpoint if needed, 
-        # but for now let's use a placeholder or extract from token if JWT (HubSpot tokens are opaque usually).
-        # We'll use a simple "default" or try to get it from an API call if we want to be strict.
-        # Let's add a method to client to get account info? Or just use a dummy for now since we want "no mocks".
-        # Wait, the plan said "No mocks". I should probably fetch the portal ID.
-        # Let's instantiate a temporary client to get portal ID.
+        # 2. Get portal ID from token response or fetch from API
+        # HubSpot includes hub_id in the token response
+        portal_id = token_data.get("hub_id") or token_data.get("hub_domain") or "default_portal"
         
-        from ...integrations.hubspot.client import HubSpotClient
-        temp_client = HubSpotClient(token_data["access_token"])
-        # There is an endpoint /account-info/v3/details but it requires scopes.
-        # Let's just use a hash of the refresh token or something unique if we can't get portal ID easily without extra calls.
-        # Actually, let's try to get it from the token response if it's there.
-        # If not, we'll just use "hubspot_portal" for now to proceed, or make a call to get some data.
-        # Let's assume we can use the first page's portal ID or similar? No.
-        # Let's just use a generic ID for now or "default" if we only support one.
-        # But to be proper, let's try to fetch account details.
-        
-        # For this implementation, I will use a simple identifier.
-        portal_id = "default_portal" 
+        # If not in token, fetch from account info endpoint
+        if portal_id == "default_portal":
+            from ...integrations.hubspot.client import HubSpotClient
+            temp_client = HubSpotClient(token_data["access_token"])
+            try:
+                # Try to get account info
+                account_info = await temp_client.client.get("/account-info/v3/details")
+                if account_info.status_code == 200:
+                    data = account_info.json()
+                    portal_id = str(data.get("portalId", "default_portal"))
+            except:
+                # If fails, use a hash of the access token as unique identifier
+                import hashlib
+                portal_id = hashlib.md5(token_data["access_token"].encode()).hexdigest()[:16]
+            finally:
+                await temp_client.close()
         
         service = HubSpotService(db)
         connection = await service.create_or_update_connection(token_data, portal_id)
         
-        return {"status": "success", "connection_id": connection.id}
+        return {"status": "success", "connection_id": connection.id, "portal_id": portal_id}
         
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -190,13 +188,20 @@ async def batch_apply_recommendations(request: BatchApplyRequest, db: Session = 
             )
             
             if change.status == "applied":
-                results["applied"].append({"page_id": rec["hubspot_page_id"], "success": True})
+                results["applied"].append({"page_id": rec["hubspot_page_id"], "success": True, "field": rec["field"]})
                 applied_count += 1
             else:
-                results["failed"].append({"page_id": rec["hubspot_page_id"], "error": change.error_message})
+                results["failed"].append({"page_id": rec["hubspot_page_id"], "error": change.error_message, "field": rec["field"]})
                 
         except Exception as e:
-            results["failed"].append({"page_id": rec.get("hubspot_page_id"), "error": str(e)})
+            results["failed"].append({"page_id": rec.get("hubspot_page_id"), "error": str(e), "field": rec.get("field", "unknown")})
+    
+    return {
+        "status": "completed",
+        "applied": applied_count,
+        "failed": len(results["failed"]),
+        "details": results
+    }
             
 @router.post("/rollback/{change_id}")
 async def rollback_change(change_id: str, db: Session = Depends(get_db)):

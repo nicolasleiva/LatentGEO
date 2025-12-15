@@ -2,22 +2,43 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { useUser } from '@auth0/nextjs-auth0/client'
+import { Header } from '@/components/header'
 import { Button } from '@/components/ui/button'
-import { RefreshCw } from 'lucide-react'
+import { Badge } from '@/components/ui/badge'
+import {
+  RefreshCw, Globe, Clock, ArrowRight, Plus,
+  Search, Filter, ChevronDown
+} from 'lucide-react'
+
+interface Audit {
+  id: number
+  url: string
+  domain: string
+  status: string
+  created_at: string
+  geo_score?: number
+  total_pages?: number
+}
 
 export default function AuditsListPage() {
   const router = useRouter()
-  const [audits, setAudits] = useState<any[]>([])
+  const { user } = useUser()
+  const [audits, setAudits] = useState<Audit[]>([])
   const [loading, setLoading] = useState(true)
+  const [filter, setFilter] = useState<'all' | 'completed' | 'running' | 'pending'>('all')
+  const [searchQuery, setSearchQuery] = useState('')
 
-  const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
+  const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000'
 
   useEffect(() => {
     const fetchAudits = async () => {
       try {
-        const response = await fetch(`${backendUrl}/api/audits`)
+        // Filtrar por email del usuario si está logueado
+        const userEmailParam = user?.email ? `?user_email=${encodeURIComponent(user.email)}` : ''
+        const response = await fetch(`${backendUrl}/api/audits${userEmailParam}`)
         const data = await response.json()
-        setAudits(data)
+        setAudits(Array.isArray(data) ? data : [])
       } catch (err) {
         console.error(err)
       } finally {
@@ -25,61 +46,167 @@ export default function AuditsListPage() {
       }
     }
     fetchAudits()
-  }, [backendUrl])
+  }, [backendUrl, user])
 
-  if (loading) {
-    return (
-      <div className="flex min-h-screen flex-col">
-        <main className="flex-1 flex items-center justify-center">
-          <RefreshCw className="h-8 w-8 animate-spin" />
-        </main>
-      </div>
+  const filteredAudits = audits
+    .filter(audit => filter === 'all' || audit.status === filter)
+    .filter(audit =>
+      audit.url.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      audit.domain?.toLowerCase().includes(searchQuery.toLowerCase())
     )
+    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'completed': return 'bg-green-500/10 text-green-400 border-green-500/20'
+      case 'running': return 'bg-blue-500/10 text-blue-400 border-blue-500/20'
+      case 'failed': return 'bg-red-500/10 text-red-400 border-red-500/20'
+      default: return 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20'
+    }
   }
 
   return (
-    <div className="flex min-h-screen flex-col">
-      <main className="flex-1 container mx-auto px-4 py-8 max-w-5xl">
-        <div className="flex items-center justify-between mb-8">
-          <h1 className="text-2xl font-medium tracking-tight">Audit History</h1>
-          <Button variant="outline" size="sm" onClick={() => window.location.reload()}>
-            <RefreshCw className="h-4 w-4 mr-2" /> Refresh
-          </Button>
+    <div className="min-h-screen bg-background text-foreground">
+      <Header />
+
+      <main className="max-w-6xl mx-auto px-6 py-12">
+        {/* Header */}
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
+          <div>
+            <h1 className="text-3xl font-bold">Your Audits</h1>
+            <p className="text-muted-foreground mt-1">
+              {audits.length} total audits
+            </p>
+          </div>
+          <div className="flex gap-3">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => window.location.reload()}
+            >
+              <RefreshCw className="h-4 w-4 mr-2" /> Refresh
+            </Button>
+            <Button
+              onClick={() => router.push('/')}
+            >
+              <Plus className="h-4 w-4 mr-2" /> New Audit
+            </Button>
+          </div>
         </div>
 
-        <div className="grid gap-4">
-          {audits.map((audit) => (
-            <div
-              key={audit.id}
-              onClick={() => router.push(`/audits/${audit.id}`)}
-              className="group bg-card border border-border rounded-xl p-6 cursor-pointer hover:bg-accent/50 transition-all duration-300"
-            >
-              <div className="flex justify-between items-center">
-                <div className="flex items-center gap-4">
-                  <div className="h-10 w-10 rounded-full bg-secondary flex items-center justify-center text-xs font-medium text-secondary-foreground">
-                    #{audit.id}
+        {/* Filters */}
+        <div className="flex flex-col md:flex-row gap-4 mb-8">
+          <div className="relative flex-1">
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
+            <input
+              type="text"
+              placeholder="Search audits..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-12 pr-4 py-3 glass-panel border border-border rounded-xl text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-border/80"
+            />
+          </div>
+          <div className="flex gap-2">
+            {(['all', 'completed', 'running', 'pending'] as const).map((status) => (
+              <button
+                key={status}
+                onClick={() => setFilter(status)}
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors capitalize ${filter === status
+                    ? 'bg-muted text-foreground'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
+                  }`}
+              >
+                {status}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Loading */}
+        {loading && (
+          <div className="flex items-center justify-center py-20">
+            <RefreshCw className="h-8 w-8 animate-spin text-muted-foreground" />
+          </div>
+        )}
+
+        {/* Audits Grid */}
+        {!loading && filteredAudits.length > 0 && (
+          <div className="grid gap-4">
+            {filteredAudits.map((audit) => (
+              <div
+                key={audit.id}
+                onClick={() => router.push(`/audits/${audit.id}`)}
+                className="group p-6 glass-card border border-border rounded-2xl cursor-pointer hover:bg-muted/50 hover:border-border/80 transition-all"
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-4">
+                    <div className="p-3 bg-muted/50 rounded-xl">
+                      <Globe className="w-6 h-6 text-blue-500" />
+                    </div>
+                    <div>
+                      <h3 className="text-lg font-medium group-hover:text-blue-500 transition-colors">
+                        {audit.domain || (() => {
+                          try {
+                            return new URL(audit.url).hostname.replace('www.', '')
+                          } catch {
+                            return audit.url
+                          }
+                        })()}
+                      </h3>
+                      <p className="text-sm text-muted-foreground mt-1">{audit.url}</p>
+                    </div>
                   </div>
-                  <div>
-                    <h3 className="font-medium text-base group-hover:text-primary transition-colors">{audit.url}</h3>
-                    <p className="text-xs text-muted-foreground font-mono mt-1">{new Date(audit.created_at).toLocaleDateString()}</p>
+
+                  <div className="flex items-center gap-4">
+                    {audit.status === 'completed' && audit.geo_score && (
+                      <div className="text-right hidden md:block">
+                        <p className="text-sm text-muted-foreground">GEO Score</p>
+                        <p className="text-lg font-semibold text-green-500">
+                          {Math.round(audit.geo_score)}%
+                        </p>
+                      </div>
+                    )}
+
+                    <Badge variant="outline" className={getStatusColor(audit.status)}>
+                      {audit.status}
+                    </Badge>
+
+                    <div className="text-right hidden md:block">
+                      <p className="text-sm text-muted-foreground">Created</p>
+                      <p className="text-sm text-foreground flex items-center gap-1">
+                        <Clock className="w-3 h-3" />
+                        {new Date(audit.created_at).toLocaleDateString()}
+                      </p>
+                    </div>
+
+                    <ArrowRight className="w-5 h-5 text-muted-foreground group-hover:text-foreground transition-colors" />
                   </div>
                 </div>
-                <span className={`px-3 py-1 rounded-full text-xs font-medium border ${audit.status === 'completed'
-                  ? 'bg-primary text-primary-foreground border-primary'
-                  : 'bg-secondary text-secondary-foreground border-border'
-                  }`}>
-                  {audit.status.toUpperCase()}
-                </span>
               </div>
-            </div>
-          ))}
+            ))}
+          </div>
+        )}
 
-          {audits.length === 0 && !loading && (
-            <div className="text-center py-12 text-muted-foreground">
-              No audits found. Start a new one from the home page.
-            </div>
-          )}
-        </div>
+        {/* Empty State */}
+        {!loading && filteredAudits.length === 0 && (
+          <div className="text-center py-20">
+            <Globe className="w-16 h-16 text-muted-foreground/50 mx-auto mb-6" />
+            <h3 className="text-xl font-medium text-muted-foreground mb-2">
+              {searchQuery || filter !== 'all' ? 'No audits found' : 'No audits yet'}
+            </h3>
+            <p className="text-muted-foreground/70 mb-6">
+              {searchQuery || filter !== 'all'
+                ? 'Try adjusting your search or filters'
+                : 'Start your first GEO audit to see results here'}
+            </p>
+            <Button
+              onClick={() => router.push('/')}
+            >
+              <Plus className="w-4 h-4 mr-2" />
+              Start New Audit
+            </Button>
+          </div>
+        )}
       </main>
     </div>
   )

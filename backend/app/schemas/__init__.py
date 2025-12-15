@@ -16,6 +16,9 @@ class AuditCreate(BaseModel):
     competitors: Optional[List[str]] = None  # URLs de competidores
     market: Optional[str] = None  # "us", "latam", "emea", "argentina", etc.
     source: Optional[str] = "web"  # "web", "hubspot"
+    # User association (Auth0)
+    user_id: Optional[str] = None  # Auth0 user sub
+    user_email: Optional[str] = None  # User email
 
 class AuditResponse(BaseModel):
     id: int
@@ -37,6 +40,7 @@ class AuditResponse(BaseModel):
     category: Optional[str] = None  # Business category (e.g., "AI coding assistant")
     competitors: Optional[List[str]] = None
     market: Optional[str] = None
+    geo_score: float = 0  # GEO Score (0-10)
     
     class Config:
         from_attributes = True

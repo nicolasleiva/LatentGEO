@@ -1,162 +1,318 @@
+"""
+Servicio para sugerencias de contenido AI.
+Genera recomendaciones de contenido basadas en keywords y gaps.
+"""
+import logging
+from typing import List, Dict, Any
+from urllib.parse import urlparse
 from sqlalchemy.orm import Session
 from ..models import AIContentSuggestion
-from ..core.config import settings
-from .crawler_service import CrawlerService
-from typing import List, Dict, Any
-import logging
-import json
-from openai import AsyncOpenAI
+from ..core.llm_kimi import get_llm_function
 
 logger = logging.getLogger(__name__)
 
+
 class AIContentService:
+    """Servicio para generar sugerencias de contenido."""
+    
     def __init__(self, db: Session):
         self.db = db
-        
-        # Primary: Usar Kimi vía NVIDIA
-        self.nvidia_api_key = settings.NVIDIA_API_KEY or settings.NV_API_KEY
-        if self.nvidia_api_key:
-            self.client = AsyncOpenAI(
-                api_key=self.nvidia_api_key,
-                base_url=settings.NV_BASE_URL
-            )
-            logger.info("✅ Kimi/NVIDIA API configurada correctamente")
-        else:
-            self.client = None
-            logger.warning("⚠️  No se encontró NVIDIA_API_KEY. Usando MOCK data.")
-
-    async def generate_suggestions(self, audit_id: int, domain: str, topics: List[str]) -> List[dict]:
+        self.llm_function = get_llm_function()
+    
+    async def generate_suggestions(self, audit_id: int, domain: str, topics: List[str]) -> List[AIContentSuggestion]:
         """
-        Generates content suggestions based on crawled content and Kimi analysis.
+        Genera sugerencias de contenido usando IA basándose en el contexto real del negocio.
+        
+        Args:
+            audit_id: ID de la auditoría
+            domain: Dominio del sitio
+            topics: Lista de topics adicionales a analizar
+            
+        Returns:
+            Lista de sugerencias guardadas
         """
-        # 1. Crawl the site to get context (Real implementation)
-        try:
-            url = f"https://{domain}" if not domain.startswith("http") else domain
-            page_content = await CrawlerService.get_page_content(url)
-            if not page_content:
-                logger.warning(f"Could not crawl {url}, proceeding with limited context.")
-                page_content = "Content unavailable."
-            else:
-                page_content = page_content[:5000]
-        except Exception as e:
-            logger.error(f"Crawling error: {e}")
-            page_content = "Content unavailable."
+        logger.info(f"Generating AI content suggestions for {domain} with topics: {topics}")
+        
+        # Cargar contexto completo de la auditoría
+        from ..models import Audit
+        audit = self.db.query(Audit).filter(Audit.id == audit_id).first()
+        
+        # Extraer información del negocio
+        business_context = self._extract_business_context(audit, domain)
+        
+        suggestions = []
+        brand = domain.replace("www.", "").split(".")[0]
+        
+        # Generar sugerencias con IA si disponible
+        if self.llm_function:
+            try:
+                prompt = f"""
+                Actúa como experto en Content Marketing y SEO.
+                
+                **CONTEXTO DEL NEGOCIO:**
+                - Sitio web: {domain}
+                - Marca: {brand}
+                - Categoría de negocio: {business_context['category']}
+                - Descripción: {business_context['description']}
+                - Público objetivo: {business_context['audience']}
+                - Competidores: {', '.join(business_context['competitors'][:3]) if business_context['competitors'] else 'No identificados'}
+                - Keywords principales: {', '.join(business_context['top_keywords'][:5]) if business_context['top_keywords'] else 'No disponibles'}
+                
+                **TOPICS ADICIONALES A INCLUIR:** {', '.join(topics) if topics else 'Ninguno especificado'}
+                
+                **TU TAREA:**
+                Genera 5 ideas de contenido que:
+                1. Sean RELEVANTES para el negocio real ({business_context['category']})
+                2. Combinen el core del negocio con los topics adicionales si los hay
+                3. Ayuden a posicionar la marca como autoridad en su nicho
+                4. Sean atractivas para el público objetivo
+                
+                Para cada idea incluye:
+                - title: Título atractivo y específico
+                - content_type: guide, comparison, tutorial, case_study, faq, listicle
+                - target_keyword: Keyword principal (relevante al negocio)
+                - priority: high, medium, low
+                - outline: Array con 5 secciones
 
-        # 2. Generate Suggestions usando Kimi
-        if self.client:
-            return await self._generate_kimi(audit_id, domain, topics, page_content)
-        
-        logger.warning("No AI keys set. Using MOCK data for content suggestions.")
-        return self._get_mock_suggestions(audit_id, domain, topics)
-
-    async def _generate_kimi(self, audit_id: int, domain: str, topics: List[str], context: str) -> List[dict]:
-        """Genera sugerencias usando Kimi (Moonshot AI vía NVIDIA)"""
-        try:
-            prompt = self._get_prompt(domain, topics, context)
-            
-            response = await self.client.chat.completions.create(
-                model=settings.NV_MODEL,
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0.7,
-                max_tokens=settings.NV_MAX_TOKENS
-            )
-            
-            content = response.choices[0].message.content.strip()
-            
-            # Limpiar respuesta si viene con markdown
-            if "```" in content:
-                content = content.replace("```json", "").replace("```", "")
-            
-            logger.info(f"✅ Kimi generó sugerencias exitosamente para {domain}")
-            return self._process_ai_response(audit_id, content, topics, domain)
-            
-        except Exception as e:
-            logger.error(f"Kimi API error: {e}")
-            return self._get_mock_suggestions(audit_id, domain, topics)
-
-    def _get_prompt(self, domain: str, topics: List[str], context: str) -> str:
-        return f"""
-        Analiza el siguiente contenido del sitio web: {domain}
-        
-        Contenido: {context}
-        
-        Temas objetivo: {', '.join(topics)}
-        
-        Genera 3 sugerencias de contenido para mejorar la autoridad temática:
-        1. Un "Sub-tema Faltante" (new_content) que sea relevante pero no esté cubierto
-        2. Una "FAQ" (faq) que los usuarios probablemente busquen
-        3. Un "Content Outline" (outline) para una página pilar sobre uno de los temas objetivo
-        
-        Retorna SOLO un array JSON válido de objetos con estas keys:
-        - "topic": string
-        - "suggestion_type": "new_content" | "faq" | "outline"
-        - "content_outline": object con la estructura propuesta
-        - "priority": "high" | "medium" | "low"
-        
-        Responde únicamente con el JSON, sin texto adicional.
-        """
-
-    def _process_ai_response(self, audit_id: int, content: str, topics: List[str], domain: str) -> List[dict]:
-        try:
-            data = json.loads(content)
-            suggestions_list = data.get("suggestions", data) if isinstance(data, dict) else data
-
-            results = []
-            if isinstance(suggestions_list, list):
-                for item in suggestions_list:
+                Responde SOLO con JSON:
+                [
+                    {{
+                        "title": "...",
+                        "content_type": "guide",
+                        "target_keyword": "...",
+                        "priority": "high",
+                        "outline": ["Sección 1", "Sección 2", ...]
+                    }}
+                ]
+                """
+                
+                response = await self.llm_function(
+                    system_prompt="Eres un experto en SEO y Content Marketing. Responde solo con JSON válido.",
+                    user_prompt=prompt
+                )
+                
+                # Parsear respuesta
+                import json
+                if "```json" in response:
+                    response = response.split("```json")[1].split("```")[0]
+                elif "```" in response:
+                    response = response.split("```")[1].split("```")[0]
+                
+                ai_suggestions = json.loads(response.strip())
+                
+                for idx, sugg in enumerate(ai_suggestions[:5]):
                     suggestion = AIContentSuggestion(
                         audit_id=audit_id,
-                        topic=item.get("topic", "General"),
-                        suggestion_type=item.get("suggestion_type", "new_content"),
-                        content_outline=item.get("content_outline", {}),
-                        priority=item.get("priority", "medium")
+                        topic=sugg.get("title", f"Content Idea {idx+1}"),
+                        suggestion_type=sugg.get("content_type", "guide"),
+                        content_outline={
+                            "target_keyword": sugg.get("target_keyword", ""),
+                            "sections": sugg.get("outline", []),
+                            "business_context": business_context['category']
+                        },
+                        priority=sugg.get("priority", "medium")
                     )
                     self.db.add(suggestion)
-                    results.append(suggestion)
-                
-                self.db.commit()
-                for s in results:
-                    self.db.refresh(s)
-                return [s.__dict__ for s in results]
-            return self._get_mock_suggestions(audit_id, domain, topics)
-        except Exception as e:
-            logger.error(f"Error processing Kimi response: {e}")
-            return self._get_mock_suggestions(audit_id, domain, topics)
-
-
-    def _get_mock_suggestions(self, audit_id: int, domain: str, topics: List[str]) -> List[dict]:
-        """Returns realistic mock suggestions."""
-        mock_results = []
-        topic = topics[0] if topics else "Industry Trends"
-        
-        # 1. New Content
-        s1 = AIContentSuggestion(
-            audit_id=audit_id,
-            topic=topic,
-            suggestion_type="new_content",
-            content_outline={"sections": ["Introduction to " + topic, "Benefits", "Case Studies", "Conclusion"]},
-            priority="high"
-        )
-        self.db.add(s1)
-        mock_results.append(s1)
-        
-        # 2. FAQ
-        s2 = AIContentSuggestion(
-            audit_id=audit_id,
-            topic=topic,
-            suggestion_type="faq",
-            content_outline={"question": f"Why is {topic} important?", "answer": f"{topic} is crucial for scaling your business..."},
-            priority="medium"
-        )
-        self.db.add(s2)
-        mock_results.append(s2)
+                    suggestions.append(suggestion)
+                    
+            except Exception as e:
+                logger.error(f"Error generating AI suggestions: {e}")
+                # Fall back to static suggestions
+                suggestions = self._generate_static_suggestions(audit_id, domain, brand, topics, business_context)
+        else:
+            suggestions = self._generate_static_suggestions(audit_id, domain, brand, topics, business_context)
         
         self.db.commit()
-        for s in mock_results:
+        for s in suggestions:
             self.db.refresh(s)
+        
+        logger.info(f"Generated {len(suggestions)} content suggestions for {business_context['category']}")
+        return suggestions
+    
+    def _extract_business_context(self, audit, domain: str) -> Dict[str, Any]:
+        """Extrae el contexto del negocio desde la auditoría."""
+        context = {
+            "category": "General",
+            "description": "",
+            "audience": "General",
+            "competitors": [],
+            "top_keywords": [],
+            "is_ymyl": False
+        }
+        
+        if not audit:
+            return context
+        
+        # Extraer categoría desde external_intelligence o category
+        if audit.category:
+            context["category"] = audit.category
+        
+        ext_intel = audit.external_intelligence or {}
+        if ext_intel:
+            context["category"] = ext_intel.get("category", context["category"])
+            context["is_ymyl"] = ext_intel.get("is_ymyl", False)
+            context["description"] = ext_intel.get("business_description", "")
+            context["audience"] = ext_intel.get("target_audience", "General")
+        
+        # Extraer competidores
+        if audit.competitors:
+            context["competitors"] = audit.competitors if isinstance(audit.competitors, list) else []
+        
+        comp_audits = audit.competitor_audits or []
+        if comp_audits:
+            for comp in comp_audits[:3]:
+                if isinstance(comp, dict) and comp.get("url"):
+                    context["competitors"].append(comp["url"])
+        
+        # Extraer keywords desde la BD
+        if hasattr(audit, 'keywords') and audit.keywords:
+            context["top_keywords"] = [k.term for k in audit.keywords[:10]]
+        
+        # Extraer keywords desde target_audit
+        target_audit = audit.target_audit or {}
+        if target_audit:
+            # Intentar obtener keywords del contenido analizado
+            content = target_audit.get("content", {})
+            if content.get("main_topics"):
+                context["top_keywords"].extend(content.get("main_topics", [])[:5])
+        
+        logger.info(f"Extracted business context: category={context['category']}, keywords={len(context['top_keywords'])}")
+        return context
+    
+    def _generate_static_suggestions(self, audit_id: int, domain: str, brand: str, topics: List[str], business_context: Dict[str, Any] = None) -> List[AIContentSuggestion]:
+        """Genera sugerencias estáticas cuando no hay LLM disponible."""
+        suggestions = []
+        
+        # Usar contexto del negocio si disponible
+        category = business_context.get("category", "General") if business_context else "General"
+        topic = topics[0] if topics else category
+        
+        templates = [
+            ("Guía Completa de {category}: Todo lo que necesitas saber", "guide", "high"),
+            ("{brand} vs Competidores: Análisis Completo 2025", "comparison", "high"),
+            ("Cómo {topic} puede transformar tu {category}", "tutorial", "medium"),
+            ("5 Casos de Éxito en {category}", "case_study", "medium"),
+            ("Preguntas Frecuentes sobre {category}", "faq", "low"),
+        ]
+        
+        for title_template, content_type, priority in templates:
+            title = title_template.format(
+                topic=topic.title(), 
+                brand=brand.title(),
+                category=category
+            )
             
-        return [s.__dict__ for s in mock_results]
+            suggestion = AIContentSuggestion(
+                audit_id=audit_id,
+                topic=title,
+                suggestion_type=content_type,
+                content_outline={
+                    "target_keyword": topic,
+                    "business_context": category,
+                    "sections": [
+                        "Introducción",
+                        "Desarrollo principal",
+                        "Ejemplos prácticos",
+                        "Conclusión",
+                        "Recursos adicionales"
+                    ]
+                },
+                priority=priority
+            )
+            self.db.add(suggestion)
+            suggestions.append(suggestion)
+        
+        return suggestions
+    
+    def get_suggestions(self, audit_id: int) -> List[AIContentSuggestion]:
+        """Obtiene sugerencias existentes para una auditoría."""
+        return self.db.query(AIContentSuggestion).filter(
+            AIContentSuggestion.audit_id == audit_id
+        ).all()
+    
+    @staticmethod
+    def generate_content_suggestions(keywords: List[Dict[str, Any]], url: str) -> List[Dict[str, Any]]:
+        """
+        Genera sugerencias de contenido basadas en keywords (método estático legacy).
+        
+        Args:
+            keywords: Lista de keywords
+            url: URL del sitio
+            
+        Returns:
+            Lista de sugerencias de contenido
+        """
+        try:
+            logger.info(f"Generating content suggestions for {url}")
+            
+            domain = urlparse(url).netloc.replace('www.', '')
+            brand = domain.split('.')[0]
+            
+            suggestions = []
+            
+            # Sugerencia 1: Guía completa
+            if keywords:
+                top_kw = keywords[0].get("keyword", brand)
+                suggestions.append({
+                    "title": f"Guía Completa: Todo sobre {top_kw.title()}",
+                    "target_keyword": top_kw,
+                    "content_type": "guide",
+                    "priority": "high",
+                    "estimated_traffic": 1500,
+                    "difficulty": 45,
+                    "outline": {
+                        "sections": [
+                            "Introducción y contexto",
+                            "Características principales",
+                            "Casos de uso",
+                            "Comparativa con alternativas",
+                            "Preguntas frecuentes"
+                        ]
+                    }
+                })
+            
+            # Sugerencia 2: Comparativa
+            suggestions.append({
+                "title": f"{brand.title()} vs Competidores: Análisis Completo 2025",
+                "target_keyword": f"{brand} vs",
+                "content_type": "comparison",
+                "priority": "high",
+                "estimated_traffic": 1200,
+                "difficulty": 50,
+                "outline": {
+                    "sections": [
+                        "Tabla comparativa de características",
+                        "Precios y planes",
+                        "Pros y contras",
+                        "Casos de uso ideales",
+                        "Veredicto final"
+                    ]
+                }
+            })
+            
+            # Sugerencia 3: Tutorial
+            suggestions.append({
+                "title": f"Cómo Empezar con {brand.title()}: Tutorial Paso a Paso",
+                "target_keyword": f"how to use {brand}",
+                "content_type": "tutorial",
+                "priority": "medium",
+                "estimated_traffic": 800,
+                "difficulty": 35,
+                "outline": {
+                    "sections": [
+                        "Requisitos previos",
+                        "Configuración inicial",
+                        "Primeros pasos",
+                        "Funciones avanzadas",
+                        "Solución de problemas"
+                    ]
+                }
+            })
+            
+            logger.info(f"Generated {len(suggestions)} content suggestions for {url}")
+            return suggestions
+            
+        except Exception as e:
+            logger.error(f"Error generating content suggestions: {e}")
+            return []
 
-    def get_suggestions(self, audit_id: int) -> List[dict]:
-        suggestions = self.db.query(AIContentSuggestion).filter(AIContentSuggestion.audit_id == audit_id).all()
-        return [s.__dict__ for s in suggestions]

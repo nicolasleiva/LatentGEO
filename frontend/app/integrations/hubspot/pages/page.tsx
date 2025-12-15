@@ -32,6 +32,7 @@ export default function HubSpotPages() {
 
     useEffect(() => {
         fetchConnection()
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [])
 
     const fetchConnection = async () => {

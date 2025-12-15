@@ -20,12 +20,21 @@ class Settings(BaseSettings):
     GOOGLE_PAGESPEED_API_KEY: Optional[str] = None
     CSE_ID: Optional[str] = None
     
-    # NVIDIA/Kimi Configuration (Primary LLM)
+    # NVIDIA/LLM Configuration
     NVIDIA_API_KEY: Optional[str] = None
     NV_API_KEY: Optional[str] = None
     NV_BASE_URL: str = "https://integrate.api.nvidia.com/v1"
-    NV_MODEL: str = "moonshotai/kimi-k2-instruct-0905"
-    NV_MAX_TOKENS: int = 4096
+    
+    # KIMI K2 Thinking - Para análisis y reportes (mejor razonamiento)
+    NV_MODEL: str = "moonshotai/kimi-k2-thinking"
+    NV_MODEL_ANALYSIS: str = "moonshotai/kimi-k2-thinking"
+    NV_API_KEY_ANALYSIS: Optional[str] = None  # Puede ser diferente
+    NV_MAX_TOKENS: int = 16384
+    
+    # Devstral - Para modificación de código (optimizado para programación)
+    NV_MODEL_CODE: str = "mistralai/devstral-2-123b-instruct-2512"
+    NV_API_KEY_CODE: Optional[str] = None  # Puede ser diferente
+    NV_MAX_TOKENS_CODE: int = 8192
     
     # Deprecated: Usar Kimi en su lugar
     GEMINI_API_KEY: Optional[str] = None
@@ -86,3 +95,58 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+
+def validate_environment():
+    """
+    Validates required environment variables and logs warnings for missing optional ones.
+    Raises ValueError if critical variables are missing.
+    """
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    errors = []
+    warnings = []
+    
+    # Critical variables (required for core functionality)
+    if not settings.DATABASE_URL:
+        errors.append("DATABASE_URL is required")
+    
+    # HubSpot integration variables (required if using HubSpot)
+    if settings.HUBSPOT_CLIENT_ID or settings.HUBSPOT_CLIENT_SECRET:
+        if not settings.HUBSPOT_CLIENT_ID:
+            errors.append("HUBSPOT_CLIENT_ID is required when HubSpot integration is configured")
+        if not settings.HUBSPOT_CLIENT_SECRET:
+            errors.append("HUBSPOT_CLIENT_SECRET is required when HubSpot integration is configured")
+        if not settings.ENCRYPTION_KEY or settings.ENCRYPTION_KEY == "your-encryption-key-must-be-32-url-safe-base64-bytes":
+            errors.append("ENCRYPTION_KEY must be set to a valid 32-byte URL-safe base64 key for HubSpot integration")
+    
+    # GitHub integration variables (required if using GitHub)
+    if settings.GITHUB_CLIENT_ID or settings.GITHUB_CLIENT_SECRET:
+        if not settings.GITHUB_CLIENT_ID:
+            errors.append("GITHUB_CLIENT_ID is required when GitHub integration is configured")
+        if not settings.GITHUB_CLIENT_SECRET:
+            errors.append("GITHUB_CLIENT_SECRET is required when GitHub integration is configured")
+    
+    # Optional but recommended variables
+    if not settings.GOOGLE_PAGESPEED_API_KEY:
+        warnings.append("GOOGLE_PAGESPEED_API_KEY is not set - PageSpeed analysis will be limited")
+    
+    if not settings.NVIDIA_API_KEY and not settings.NV_API_KEY:
+        warnings.append("NVIDIA_API_KEY/NV_API_KEY is not set - AI features may not work")
+    
+    if not settings.GOOGLE_API_KEY:
+        warnings.append("GOOGLE_API_KEY is not set - Some search features may not work")
+    
+    # Log warnings
+    for warning in warnings:
+        logger.warning(f"⚠️  {warning}")
+    
+    # Raise errors if any critical variables are missing
+    if errors:
+        error_message = "Missing required environment variables:\n" + "\n".join(f"  ❌ {error}" for error in errors)
+        logger.error(error_message)
+        raise ValueError(error_message)
+    
+    logger.info("✅ Environment validation passed")
+    return True

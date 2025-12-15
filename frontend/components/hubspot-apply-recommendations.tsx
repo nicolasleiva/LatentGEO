@@ -5,7 +5,7 @@
  * Componente para aplicar recomendaciones SEO directamente a HubSpot
  */
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -37,11 +37,7 @@ export default function HubSpotApplyRecommendations({ auditId }: { auditId: stri
     const [results, setResults] = useState<ApplyResult[]>([])
     const [loading, setLoading] = useState(true)
 
-    useEffect(() => {
-        fetchRecommendations()
-    }, [auditId])
-
-    const fetchRecommendations = async () => {
+    const fetchRecommendations = useCallback(async () => {
         try {
             const response = await fetch(`/api/hubspot/recommendations/${auditId}`)
             const data = await response.json()
@@ -59,7 +55,11 @@ export default function HubSpotApplyRecommendations({ auditId }: { auditId: stri
         } finally {
             setLoading(false)
         }
-    }
+    }, [auditId])
+
+    useEffect(() => {
+        fetchRecommendations()
+    }, [fetchRecommendations])
 
     const toggleRecommendation = (id: string) => {
         const newSelected = new Set(selectedRecs)

@@ -48,7 +48,7 @@ function CallbackContent() {
 
                 // Guardar connection_id si es necesario o simplemente redirigir
                 setTimeout(() => {
-                    router.push('/dashboard')
+                    router.push('/audits')
                 }, 2000)
 
             } catch (err) {
