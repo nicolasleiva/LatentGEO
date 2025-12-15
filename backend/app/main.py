@@ -130,6 +130,10 @@ def create_app() -> FastAPI:
     # GitHub
     from app.api.routes import github
     app.include_router(github.router, prefix="/api/github", tags=["github"])
+    
+    # Score History - Tracking temporal
+    from app.routes import score_history
+    app.include_router(score_history.router)
 
     logger.info("Rutas registradas")
 

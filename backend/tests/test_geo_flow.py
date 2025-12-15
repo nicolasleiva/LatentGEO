@@ -107,7 +107,7 @@ if __name__ == "__main__":
     #    get_user_input()
     
     CONNECTION_ID = "950f7afc-fa8d-4baf-9bef-cd00c780f05c"
-    REPO_ID = "dec8ccd2-5934-47b3-bc49-8e12ff70fde2"
+    REPO_ID = "ddb422bc-b093-4f70-8a49-be7af1721395"
     
     if CONNECTION_ID == "tu_connection_id" or REPO_ID == "tu_repo_id":
         print("\n❌ Error: Necesitas configurar CONNECTION_ID y REPO_ID.")

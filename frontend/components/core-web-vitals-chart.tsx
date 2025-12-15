@@ -96,10 +96,10 @@ export function CoreWebVitalsChart({ data }: CoreWebVitalsProps) {
         {mobile?.screenshots && mobile.screenshots.length > 0 && (
           <div className="glass p-6 rounded-2xl">
             <h3 className="text-lg font-medium mb-6 text-white">Loading Screenshots (Mobile)</h3>
-            <div className="grid grid-cols-4 gap-2">
+            <div className="grid grid-cols-4 md:grid-cols-6 gap-2">
               {mobile.screenshots.map((s: any, i: number) => (
                 <div key={i} className="border border-white/10 rounded-lg overflow-hidden bg-white/5">
-                  <Image src={s.data} alt={`Screenshot ${i + 1}`} className="w-full h-auto" width={200} height={150} unoptimized />
+                  <Image src={s.data} alt={`Screenshot ${i + 1}`} className="w-full h-auto" width={120} height={90} unoptimized />
                   <div className="text-[10px] text-center p-1 text-white/50">{(s.timestamp / 1000).toFixed(1)}s</div>
                 </div>
               ))}
@@ -109,10 +109,11 @@ export function CoreWebVitalsChart({ data }: CoreWebVitalsProps) {
         {desktop?.screenshots && desktop.screenshots.length > 0 && (
           <div className="glass p-6 rounded-2xl">
             <h3 className="text-lg font-medium mb-6 text-white">Loading Screenshots (Desktop)</h3>
-            <div className="grid grid-cols-4 gap-2">
+            {/* Desktop screenshots are wider, so we use more columns and max-height to keep them similar to mobile size */}
+            <div className="grid grid-cols-4 md:grid-cols-6 gap-2">
               {desktop.screenshots.map((s: any, i: number) => (
                 <div key={i} className="border border-white/10 rounded-lg overflow-hidden bg-white/5">
-                  <Image src={s.data} alt={`Screenshot ${i + 1}`} className="w-full h-auto" width={200} height={150} unoptimized />
+                  <Image src={s.data} alt={`Screenshot ${i + 1}`} className="w-full h-auto max-h-20 object-cover object-top" width={160} height={80} unoptimized />
                   <div className="text-[10px] text-center p-1 text-white/50">{(s.timestamp / 1000).toFixed(1)}s</div>
                 </div>
               ))}

@@ -76,16 +76,16 @@ export function IssuesHeatmap({ data }: HeatmapProps) {
   }, [data])
 
   return (
-    <div className="glass p-6 rounded-2xl">
-      <h3 className="text-lg font-medium mb-6 text-white">Issues Heatmap</h3>
-      <div className="relative w-full aspect-[2/1] bg-black/20 rounded-xl overflow-hidden border border-white/5">
+    <div className="glass-card p-6 rounded-2xl">
+      <h3 className="text-lg font-medium mb-6 text-foreground">Issues Heatmap</h3>
+      <div className="relative w-full aspect-[2/1] bg-muted/20 rounded-xl overflow-hidden border border-border">
         <canvas ref={canvasRef} width={800} height={400} className="w-full h-full object-contain" />
       </div>
       <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-2">
         {data.slice(0, 6).map((item, i) => (
-          <div key={i} className="flex items-center gap-3 p-2 rounded-lg hover:bg-white/5 transition-colors">
-            <span className="text-white/30 text-xs font-mono w-4 text-right">{i + 1}</span>
-            <span className="font-mono text-xs text-white/70 truncate" title={item.url}>{item.url}</span>
+          <div key={i} className="flex items-center gap-3 p-2 rounded-lg hover:bg-muted/50 transition-colors">
+            <span className="text-muted-foreground text-xs font-mono w-4 text-right">{i + 1}</span>
+            <span className="font-mono text-xs text-foreground truncate" title={item.url}>{item.url}</span>
           </div>
         ))}
       </div>

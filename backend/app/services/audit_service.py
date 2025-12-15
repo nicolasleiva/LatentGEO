@@ -42,14 +42,16 @@ class AuditService:
             language=audit_create.language or "es",
             competitors=audit_create.competitors,
             market=audit_create.market,
-            source=audit_create.source
+            source=audit_create.source,
+            user_id=audit_create.user_id,
+            user_email=audit_create.user_email
         )
         db.add(audit)
         db.flush()
         db.commit()
         db.refresh(audit)
 
-        logger.info(f"Auditoría creada: {audit.id} para {url}, competitors: {audit_create.competitors}")
+        logger.info(f"Auditoría creada: {audit.id} para {url}, user: {audit_create.user_email}")
         return audit
 
     @staticmethod
@@ -68,10 +70,16 @@ class AuditService:
         return audit
 
     @staticmethod
-    def get_audits(db: Session, skip: int = 0, limit: int = 20) -> List[Audit]:
-        """Obtener lista de auditorías con paginación"""
+    def get_audits(db: Session, skip: int = 0, limit: int = 20, user_email: str = None) -> List[Audit]:
+        """Obtener lista de auditorías con paginación y filtro opcional por usuario"""
+        query = db.query(Audit)
+        
+        # Filtrar por usuario si se proporciona
+        if user_email:
+            query = query.filter(Audit.user_email == user_email)
+        
         audits = (
-            db.query(Audit)
+            query
             .order_by(desc(Audit.created_at))
             .offset(skip)
             .limit(limit)
@@ -173,31 +181,49 @@ class AuditService:
         else:
             logger.warning(f"No PageSpeed data to save for audit {audit_id}")
 
+        # Import CompetitorService here to avoid circular imports and use it below
+        from .audit_service import CompetitorService as CS
+        
+        # Calcular y guardar GEO Score para el target audit
+        geo_score = CS._calculate_geo_score(target_audit)
+        audit.geo_score = geo_score
+        logger.info(f"GEO Score calculado para audit {audit_id}: {geo_score}")
+
         # Actualizar metadata
         audit.is_ymyl = external_intelligence.get("is_ymyl", False)
         audit.category = external_intelligence.get("category", "Desconocida")
         # target_audit ya es dict o {}
         audit.total_pages = target_audit.get("audited_pages_count", 0)
 
-        # Contar issues
-        fix_plan_list = fix_plan if isinstance(fix_plan, list) else []
-        audit.critical_issues = len(
-            [f for f in fix_plan_list if f.get("priority") == "CRITICAL"]
-        )
-        audit.high_issues = len(
-            [f for f in fix_plan_list if f.get("priority") == "HIGH"]
-        )
-        audit.medium_issues = len(
-            [f for f in fix_plan_list if f.get("priority") == "MEDIUM"]
-        )
-        audit.low_issues = len([f for f in fix_plan_list if f.get("priority") == "LOW"])
+        # Contar issues reales desde las páginas auditadas (Más preciso para el dashboard)
+        saved_pages = db.query(AuditedPage).filter(AuditedPage.audit_id == audit_id).all()
         
-        # Guardar competidores con GEO scores calculados
-        from .audit_service import CompetitorService
+        if saved_pages:
+            audit.total_pages = len(saved_pages)
+            audit.critical_issues = sum(p.critical_issues for p in saved_pages)
+            audit.high_issues = sum(p.high_issues for p in saved_pages)
+            audit.medium_issues = sum(p.medium_issues for p in saved_pages)
+            audit.low_issues = sum(p.low_issues for p in saved_pages)
+            logger.info(f"Issues calculados desde {len(saved_pages)} páginas: C={audit.critical_issues}, H={audit.high_issues}")
+        else:
+            # Fallback a fix_plan si no hay páginas guardadas
+            fix_plan_list = fix_plan if isinstance(fix_plan, list) else []
+            audit.critical_issues = len(
+                [f for f in fix_plan_list if f.get("priority") == "CRITICAL"]
+            )
+            audit.high_issues = len(
+                [f for f in fix_plan_list if f.get("priority") == "HIGH"]
+            )
+            audit.medium_issues = len(
+                [f for f in fix_plan_list if f.get("priority") == "MEDIUM"]
+            )
+            audit.low_issues = len([f for f in fix_plan_list if f.get("priority") == "LOW"])
+        
+        # Guardar competidores con GEO scores calculados (using CS alias from above)
         for comp_data in competitor_audits:
             if isinstance(comp_data, dict) and comp_data.get("url"):
                 try:
-                    CompetitorService.add_competitor(
+                    CS.add_competitor(
                         db=db,
                         audit_id=audit_id,
                         url=comp_data.get("url"),
@@ -402,12 +428,14 @@ Sin datos numericos repetidos. Sin tablas. Markdown limpio."""
             scores = []
             
             # Score de estructura semántica
-            if audit_data.get("structure", {}).get("semantic_html", {}).get("score_percent"):
-                scores.append(audit_data["structure"]["semantic_html"]["score_percent"])
+            sem_html = audit_data.get("structure", {}).get("semantic_html", {})
+            if sem_html.get("score_percent") is not None:
+                scores.append(sem_html["score_percent"])
             
             # Score de tono conversacional
-            if audit_data.get("content", {}).get("conversational_tone", {}).get("score"):
-                scores.append(audit_data["content"]["conversational_tone"]["score"] * 10)  # Normalizar a 100
+            conv_tone = audit_data.get("content", {}).get("conversational_tone", {})
+            if conv_tone.get("score") is not None:
+                scores.append(conv_tone["score"] * 10)  # Normalizar a 100
             
             # Penalizar por problemas críticos
             penalty = 0
@@ -517,25 +545,57 @@ Sin datos numericos repetidos. Sin tablas. Markdown limpio."""
     def _count_page_issues(audit_data: Dict[str, Any]) -> tuple:
         critical = high = medium = low = 0
         try:
-            # Contar issues críticos
-            if audit_data.get("structure", {}).get("h1_check", {}).get("status") != "pass":
+            # 1. Structure & SEO Basics
+            struct = audit_data.get("structure", {})
+            # H1 missing or multiple is CRITICAL
+            h1_status = struct.get("h1_check", {}).get("status")
+            if h1_status == "missing":
                 critical += 1
-            if not audit_data.get("schema", {}).get("schema_presence", {}).get("status") == "present":
-                high += 1
-            if audit_data.get("eeat", {}).get("author_presence", {}).get("status") != "pass":
+            elif h1_status == "multiple":
                 high += 1
             
-            # Issues de estructura
-            semantic = audit_data.get("structure", {}).get("semantic_html", {})
-            if semantic.get("score_percent", 100) < 50:
+            # Title missing/empty is CRITICAL, too long/short is MEDIUM
+            title_status = struct.get("title_check", {}).get("status")
+            if title_status == "missing" or title_status == "empty":
+                critical += 1
+            elif title_status in ["too_long", "too_short"]:
                 medium += 1
+
+            # Meta Desc missing is HIGH
+            meta_status = struct.get("meta_desc_check", {}).get("status")
+            if meta_status == "missing" or meta_status == "empty":
+                high += 1
+            elif meta_status in ["too_long", "too_short"]:
+                low += 1
+
+            # 2. Schema (GEO Critical)
+            # Missing schema is CRITICAL for GEO
+            schema_status = audit_data.get("schema", {}).get("schema_presence", {}).get("status")
+            if schema_status != "present":
+                critical += 1
             
-            # Issues de contenido
+            # 3. EEAT (High Impact)
+            # Author missing is HIGH
+            eeat = audit_data.get("eeat", {})
+            if eeat.get("author_presence", {}).get("status") != "pass":
+                high += 1
+            
+            # 4. Content Quality
             content = audit_data.get("content", {})
             if content.get("conversational_tone", {}).get("score", 10) < 5:
                 medium += 1
-        except:
+            
+            # 5. Images
+            img_status = struct.get("image_alt_check", {}).get("status")
+            if img_status == "missing_alts":
+                medium += 1
+
+            # 6. PageSpeed (si está disponible en datos de auditoría local simulados)
+            # Por ahora no se incluye aquí porque viene por separado, pero si existiera:
             pass
+
+        except Exception as e:
+            logger.error(f"Error contando issues de página: {e}")
         
         return critical, high, medium, low
 
@@ -572,6 +632,117 @@ Sin datos numericos repetidos. Sin tablas. Markdown limpio."""
             "pending": pending,
             "success_rate": round((completed / max(1, total)) * 100, 2)
         }
+    
+    @staticmethod
+    def set_pagespeed_data(db: Session, audit_id: int, pagespeed_data: Dict[str, Any]) -> Audit:
+        """Store PageSpeed data in audit record"""
+        audit = db.query(Audit).filter(Audit.id == audit_id).first()
+        if audit:
+            audit.pagespeed_data = pagespeed_data
+            db.commit()
+            db.refresh(audit)
+            logger.info(f"PageSpeed data stored for audit {audit_id}")
+        else:
+            logger.warning(f"Audit {audit_id} not found for PageSpeed data storage")
+        return audit
+    
+    @staticmethod
+    def get_pagespeed_data(db: Session, audit_id: int) -> Optional[Dict[str, Any]]:
+        """Retrieve PageSpeed data from audit record"""
+        audit = db.query(Audit).filter(Audit.id == audit_id).first()
+        return audit.pagespeed_data if audit else None
+    
+    @staticmethod
+    def get_complete_audit_context(db: Session, audit_id: int) -> Dict[str, Any]:
+        """
+        Get complete audit context for LLM/GitHub App.
+        
+        Returns all available data:
+        - target_audit
+        - external_intelligence
+        - search_results
+        - competitor_audits
+        - pagespeed_data
+        - keywords
+        - backlinks
+        - rank_tracking
+        - llm_visibility
+        - ai_content_suggestions
+        """
+        audit = db.query(Audit).filter(Audit.id == audit_id).first()
+        if not audit:
+            logger.warning(f"Audit {audit_id} not found for complete context")
+            return {}
+        
+        # Load related data
+        keywords = []
+        for k in audit.keywords:
+            keywords.append({
+                "keyword": k.term,
+                "search_volume": k.volume,
+                "difficulty": k.difficulty,
+                "cpc": k.cpc,
+                "intent": k.intent
+            })
+        
+        backlinks_summary = {
+            "total_backlinks": len(audit.backlinks),
+            "top_backlinks": []
+        }
+        for b in audit.backlinks[:10]:  # Top 10
+            backlinks_summary["top_backlinks"].append({
+                "source_url": b.source_url,
+                "target_url": b.target_url,
+                "anchor_text": b.anchor_text,
+                "domain_authority": b.domain_authority,
+                "is_dofollow": b.is_dofollow
+            })
+        
+        rank_tracking = []
+        for r in audit.rank_trackings:
+            rank_tracking.append({
+                "keyword": r.keyword,
+                "position": r.position,
+                "url": r.url,
+                "device": r.device,
+                "location": r.location
+            })
+        
+        llm_visibility = []
+        for l in audit.llm_visibilities:
+            llm_visibility.append({
+                "query": l.query,
+                "llm_name": l.llm_name,
+                "is_visible": l.is_visible,
+                "rank": l.rank,
+                "citation_text": l.citation_text
+            })
+        
+        ai_content = []
+        for a in audit.ai_content_suggestions:
+            ai_content.append({
+                "topic": a.topic,
+                "suggestion_type": a.suggestion_type,
+                "content_outline": a.content_outline,
+                "priority": a.priority,
+                "page_url": a.page_url
+            })
+        
+        context = {
+            "target_audit": audit.target_audit or {},
+            "external_intelligence": audit.external_intelligence or {},
+            "search_results": audit.search_results or {},
+            "competitor_audits": audit.competitor_audits or [],
+            "pagespeed": audit.pagespeed_data or {},
+            "keywords": keywords,
+            "backlinks": backlinks_summary,
+            "rank_tracking": rank_tracking,
+            "llm_visibility": llm_visibility,
+            "ai_content_suggestions": ai_content
+        }
+        
+        logger.info(f"Complete context loaded for audit {audit_id}")
+        return context
 
 
 class ReportService:
@@ -638,35 +809,46 @@ class CompetitorService:
         """Calcular GEO score basado en datos de auditoría (0-10)"""
         try:
             score = 10.0
+            penalties = []
             
-            # Penalización por falta de Schema (-3 puntos)
+            # 1. Schema (-3.0) - CRITICAL
             schema_status = audit_data.get("schema", {}).get("schema_presence", {}).get("status")
             if schema_status != "present":
                 score -= 3.0
+                penalties.append("no_schema")
             
-            # Penalización por HTML semántico bajo (-2 puntos si < 50%)
-            semantic_score = audit_data.get("structure", {}).get("semantic_html", {}).get("score_percent", 0)
+            # 2. Semantic HTML (-2.0 / -1.0)
+            semantic = audit_data.get("structure", {}).get("semantic_html", {})
+            semantic_score = semantic.get("score_percent", 0) if semantic else 0
             if semantic_score < 50:
                 score -= 2.0
-            elif semantic_score < 70:
+                penalties.append("bad_semantic")
+            elif semantic_score < 75:
                 score -= 1.0
+                penalties.append("poor_semantic")
             
-            # Penalización por falta de autor (-2 puntos)
-            author_status = audit_data.get("eeat", {}).get("author_presence", {}).get("status")
+            # 3. Author / EEAT (-2.0)
+            eeat = audit_data.get("eeat", {})
+            author_status = eeat.get("author_presence", {}).get("status") if eeat else "missing"
             if author_status != "pass":
                 score -= 2.0
+                penalties.append("no_author")
             
-            # Penalización por tono no conversacional (-1 punto si < 3)
-            conversational = audit_data.get("content", {}).get("conversational_tone", {}).get("score", 0)
-            if conversational < 3:
-                score -= 1.0
+            # 4. Conversational Tone (-1.5) - Important for AI
+            content = audit_data.get("content", {})
+            conversational = content.get("conversational_tone", {}).get("score", 0) if content else 0
+            if conversational < 4:
+                score -= 1.5
+                penalties.append("robotic_tone")
             
-            # Penalización por falta de H1 (-1 punto)
+            # 5. H1 (-1.5)
             h1_status = audit_data.get("structure", {}).get("h1_check", {}).get("status")
             if h1_status != "pass":
-                score -= 1.0
-            
-            return max(0.0, min(10.0, score))
+                score -= 1.5
+                penalties.append("bad_h1")
+
+            final_score = max(1.0, min(10.0, score))
+            return final_score
         except Exception as e:
             logger.error(f"Error calculando GEO score: {e}")
             return 5.0  # Score por defecto

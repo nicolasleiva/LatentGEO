@@ -1,6 +1,8 @@
 import type { Metadata } from 'next'
 import { Inter } from 'next/font/google'
 import { Analytics } from '@vercel/analytics/next'
+import { Auth0Provider } from '@auth0/nextjs-auth0/client'
+import { ThemeProvider } from '@/components/theme-provider'
 import './globals.css'
 
 const inter = Inter({
@@ -20,9 +22,18 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="en" className={`${inter.variable} dark`}>
-      <body className="font-sans antialiased min-h-screen selection:bg-white/20">
-        {children}
+    <html lang="en" className={inter.variable} suppressHydrationWarning>
+      <body className="font-sans antialiased min-h-screen">
+        <ThemeProvider
+          attribute="class"
+          defaultTheme="dark"
+          enableSystem={false}
+          disableTransitionOnChange={false}
+        >
+          <Auth0Provider>
+            {children}
+          </Auth0Provider>
+        </ThemeProvider>
         <Analytics />
       </body>
     </html>

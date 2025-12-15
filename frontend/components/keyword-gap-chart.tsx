@@ -28,8 +28,8 @@ export function KeywordGapChart({ data }: KeywordGapProps) {
 
   return (
     <div className="grid gap-6 md:grid-cols-2 h-full">
-      <div className="glass p-6 rounded-2xl flex flex-col">
-        <h3 className="text-lg font-medium mb-6 text-white">Keyword Distribution</h3>
+      <div className="glass-card p-6 rounded-2xl flex flex-col">
+        <h3 className="text-lg font-medium mb-6 text-foreground">Keyword Distribution</h3>
         <div className="h-[300px] w-full">
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
@@ -56,19 +56,19 @@ export function KeywordGapChart({ data }: KeywordGapProps) {
             </BarChart>
           </ResponsiveContainer>
         </div>
-        <div className="mt-6 text-center p-4 bg-white/5 rounded-xl border border-white/5">
-          <div className="text-4xl font-bold text-white tracking-tight">{gap_analysis.gap_score.toFixed(1)}%</div>
-          <div className="text-xs text-white/40 uppercase tracking-widest font-medium mt-1">Gap Score</div>
+        <div className="mt-6 text-center p-4 glass-panel rounded-xl border border-border">
+          <div className="text-4xl font-bold text-foreground tracking-tight">{gap_analysis.gap_score.toFixed(1)}%</div>
+          <div className="text-xs text-muted-foreground uppercase tracking-widest font-medium mt-1">Gap Score</div>
         </div>
       </div>
 
-      <div className="glass p-6 rounded-2xl flex flex-col h-[500px] md:h-auto">
-        <h3 className="text-lg font-medium mb-6 text-white">Top Opportunities</h3>
-        <div className="space-y-2 flex-1 overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent">
+      <div className="glass-card p-6 rounded-2xl flex flex-col h-[500px] md:h-auto">
+        <h3 className="text-lg font-medium mb-6 text-foreground">Top Opportunities</h3>
+        <div className="space-y-2 flex-1 overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-border scrollbar-track-transparent">
           {gap_analysis.opportunities.slice(0, 15).map((opp, i) => (
-            <div key={i} className="flex items-center justify-between p-3 bg-white/5 rounded-xl border border-white/5 hover:bg-white/10 transition-colors group">
-              <span className="font-medium text-white/80 group-hover:text-white transition-colors">{opp.keyword}</span>
-              <Badge variant="secondary" className="bg-white/10 text-white/50 border-none group-hover:bg-white/20 group-hover:text-white transition-colors">{opp.competitor_frequency}</Badge>
+            <div key={i} className="flex items-center justify-between p-3 glass-panel rounded-xl border border-border hover:bg-muted/50 transition-colors group">
+              <span className="font-medium text-foreground/80 group-hover:text-foreground transition-colors">{opp.keyword}</span>
+              <Badge variant="secondary" className="bg-muted text-muted-foreground border-none group-hover:bg-muted/80 group-hover:text-foreground transition-colors">{opp.competitor_frequency}</Badge>
             </div>
           ))}
         </div>

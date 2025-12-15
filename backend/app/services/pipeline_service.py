@@ -415,10 +415,202 @@ Tu respuesta DEBE tener DOS PARTES separadas por un delimitador claro.
 **GENERA EL fix_plan BASÁNDOTE EN LOS DATOS REALES DE 'target_audit' QUE RECIBIRÁS.**
 """
 
+    REPORT_PROMPT_V11_COMPLETE = """
+Eres un Director de Consultoría SEO/GEO de élite. Recibirás un JSON gigante con 10 claves de contexto clave:
+1. 'target_audit': Auditoría técnica del sitio.
+2. 'external_intelligence': Clasificación YMYL y tipo de negocio.
+3. 'search_results': Análisis de competidores en SERPs.
+4. 'competitor_audits': Auditorías de competidores.
+5. 'pagespeed': Datos de rendimiento (Mobile/Desktop).
+6. 'keywords': Análisis de palabras clave y oportunidades.
+7. 'backlinks': Perfil de enlaces y autoridad.
+8. 'rank_tracking': Posicionamiento actual y tendencias.
+9. 'llm_visibility': Menciones y citabilidad en IA.
+10. 'ai_content_suggestions': Sugerencias de contenido optimizado.
+
+Tu trabajo es generar un INFORME DE AUDITORÍA COMPLETO (en Markdown) y un PLAN DE ACCIÓN (en JSON).
+
+IMPORTANTE: Manejo de Datos Faltantes
+- Si alguna clave (ej. 'pagespeed', 'keywords', 'rank_tracking') está vacía, es null o tiene el mensaje "Data not available", DEBES indicarlo explícitamente en la sección correspondiente con un mensaje como "Datos no disponibles para esta sección" y ofrecer recomendaciones generales basadas en mejores prácticas.
+- NO inventes datos. Si faltan datos, explica qué herramientas se deberían usar para obtenerlos.
+
+Tu respuesta DEBE tener DOS PARTES separadas por un delimitador:
+1. "report_markdown": El informe completo siguiendo la plantilla.
+2. "---START_FIX_PLAN---": El delimitador.
+3. "fix_plan": El JSON Array de tareas.
+
+--- REQUISITOS DEL "report_markdown" (Plantilla Estricta) ---
+
+# 1. Resumen Ejecutivo (Enfoque de Negocio)
+* 1-2 párrafos para alta dirección. Enfócate en el impacto de negocio.
+* **Hipótesis de Impacto:** Estimación de mejora en KPIs (conversión, tráfico, autoridad).
+* **Tabla de Hallazgos (Cuantificada):**
+    | Categoría | Total Problemas | Críticos | % Impacto |
+    | :--- | :--- | :--- | :--- |
+    | Estructura Técnica | ... | ... | ... |
+    | Contenido & GEO | ... | ... | ... |
+    | Rendimiento (WPO) | ... | ... | ... |
+    | Autoridad (E-E-A-T) | ... | ... | ... |
+
+# 2. Metodología
+* Menciona las fuentes de datos utilizadas: Auditoría Técnica, PageSpeed Insights, Análisis de Competencia, Rank Tracking, etc.
+
+# 3. Análisis de Rendimiento Web (PageSpeed & CWV)
+* **(Si hay datos en 'pagespeed')**:
+    * **Tabla Comparativa Mobile vs Desktop:**
+        | Métrica | Mobile | Desktop | Estado |
+        | :--- | :--- | :--- | :--- |
+        | Score Total | ... | ... | ... |
+        | LCP | ... | ... | ... |
+        | INP | ... | ... | ... |
+        | CLS | ... | ... | ... |
+    * **Top 5 Oportunidades de Mejora:** (Tabla con "Ahorro Estimado" e "Impacto Negocio").
+* **(Si falta data):** "Datos no disponibles. Se recomienda realizar una auditoría de Core Web Vitals."
+
+# 4. Diagnóstico Técnico & Semántico
+* **4.1 Estructura Técnica:** H1, Jerarquía, Metadatos.
+* **4.2 Estructura para IA (GEO):** Claridad de fragmentos, FAQs (Ejemplo Antes/Después).
+* **4.3 Schema.org:** Estado de implementación.
+* **4.4 E-E-A-T:** Autor, Frescura.
+
+# 5. Análisis de Visibilidad y Competencia
+* **5.1 Palabras Clave (De 'keywords'):**
+    * **Tabla Top 20 Oportunidades:** (Keyword, Volumen, Dificultad, Posición Actual, Score). Ordenar por Opportunity Score.
+    * Análisis de brechas: ¿Qué keywords atacan los competidores que nosotros no?
+    * Recomendaciones de contenido basadas en keywords.
+* **5.2 Rank Tracking (De 'rank_tracking'):**
+    * **Tabla de Posiciones:** Keyword, Ranking Actual, Cambio (+/-).
+    * **Distribución:** % en Top 3, Top 10, Top 20, >20.
+    * **Quick Wins:** Keywords en posiciones 4-10.
+
+# 6. Perfil de Enlaces y Autoridad
+* **De 'backlinks':**
+    * **Tabla Top 20 Backlinks:** Source URL, Domain Authority (DA/DR), Target URL.
+    * **Resumen de Autoridad:** Total Backlinks, Referring Domains, Avg DA.
+    * **Comparativa:** Nuestro DA vs Competidores (si disponible).
+    * Oportunidades de Link Building (Gaps).
+
+# 7. Visibilidad en IA y LLMs
+* **De 'llm_visibility':**
+    * **Tabla de Visibilidad por Plataforma:**
+        | Query | Mentions (ChatGPT) | Mentions (Gemini) | Mentions (Perplexity) | Sentiment |
+        | :--- | :--- | :--- | :--- | :--- |
+    * Citabilidad: Análisis de dónde aparecen los competidores.
+    * Estrategias para mejorar: Schema, menciones de marca, fuentes de datos.
+
+# 8. Hoja de Ruta GEO (Estrategia de Contenido)
+* **8.1 Sugerencias de Contenido AI (De 'ai_content_suggestions'):**
+    * **Tabla de Sugerencias:**
+        | Título Sugerido | Tipo (Blog/Guía) | Potencial Tráfico | Prioridad |
+        | :--- | :--- | :--- | :--- |
+    * Agrupar por temática.
+* **8.2 Calendario Editorial 90 días:** Propuesta de publicación semanal/quincenal.
+
+# 9. Estrategia Competitiva Integrada
+* **Ventajas Competitivas:** Top 3 diferenciadores.
+* **Debilidades Críticas:** Top 3 riesgos.
+* **Matriz Impacto vs Esfuerzo:**
+    * Quick Wins (Alto Impacto, Bajo Esfuerzo)
+    * Proyectos Mayores (Alto Impacto, Alto Esfuerzo)
+    * Tareas de Mantenimiento
+
+# 10. Plan de Implementación (RACI)
+* **Tabla de Tareas:**
+    | Tarea | Prioridad | Esfuerzo | Responsable | KPI |
+    | :--- | :--- | :--- | :--- | :--- |
+    | (Ej. Optimizar LCP Mobile) | Alta | Medio | Dev | LCP < 2.5s |
+
+---
+# Anexos
+## Anexo A: Snippet JSON-LD Crítico
+(Generar JSON-LD Organization/WebSite)
+
+## Anexo B: Verificación Manual
+(Baseline de prompts usados)
+
+---START_FIX_PLAN---
+[
+  // JSON Array con tareas de TODAS las secciones (Técnico, PageSpeed, Contenido, Off-page).
+  // Formato: { "page_path", "issue_code", "priority", "description", "snippet", "suggestion" }
+]
+"""
+
     @staticmethod
     def now_iso() -> str:
         """Retorna timestamp ISO 8601 actual."""
         return datetime.utcnow().isoformat() + "Z"
+
+    @staticmethod
+    def _extract_top_opportunities(opportunities_dict: dict, limit: int = 3) -> list:
+        """
+        Extract top opportunities from PageSpeed opportunities dictionary.
+        
+        Safely converts the opportunities dictionary to a sorted list of the most
+        impactful optimizations based on potential time savings.
+        
+        Args:
+            opportunities_dict: Dictionary of opportunity audits from PageSpeed API
+            limit: Maximum number of opportunities to return (default: 3)
+            
+        Returns:
+            List of top opportunities sorted by potential savings (descending)
+            Returns empty list if input is invalid or no opportunities have savings
+            
+        Example:
+            >>> opps = {
+            ...     "uses_optimized_images": {"title": "Optimize images", "numericValue": 1250},
+            ...     "render_blocking": {"title": "Remove blocking", "numericValue": 890}
+            ... }
+            >>> result = _extract_top_opportunities(opps, limit=2)
+            >>> len(result)
+            2
+            >>> result[0]["savings_ms"]
+            1250
+        """
+        if not opportunities_dict or not isinstance(opportunities_dict, dict):
+            logger.warning(f"PageSpeed opportunities is not a valid dict: {type(opportunities_dict)}")
+            return []
+        
+        try:
+            # Convert dict to list of opportunities with savings
+            opportunities_list = []
+            for key, opp_data in opportunities_dict.items():
+                if not isinstance(opp_data, dict):
+                    logger.debug(f"Skipping non-dict opportunity: {key}")
+                    continue
+                    
+                # Extract numeric value (savings in ms)
+                numeric_value = opp_data.get("numericValue", 0)
+                # Handle None values explicitly
+                if numeric_value is None:
+                    logger.debug(f"Found None numericValue for opportunity {key}, converting to 0")
+                    numeric_value = 0
+                
+                # Additional type checking for safety
+                if not isinstance(numeric_value, (int, float)):
+                    logger.warning(f"Invalid numericValue type for {key}: {type(numeric_value)} = {numeric_value}, converting to 0")
+                    numeric_value = 0
+                    
+                if numeric_value > 0:  # Only include opportunities with measurable savings
+                    opportunities_list.append({
+                        "id": key,
+                        "title": opp_data.get("title", key.replace("_", " ").title()),
+                        "description": opp_data.get("description", ""),
+                        "savings_ms": numeric_value,
+                        "score": opp_data.get("score", 0),
+                        "display_value": opp_data.get("displayValue", "")
+                    })
+            
+            # Sort by savings (descending) and return top N
+            opportunities_list.sort(key=lambda x: x["savings_ms"], reverse=True)
+            result = opportunities_list[:limit]
+            
+            logger.info(f"Extracted {len(result)} PageSpeed opportunities from {len(opportunities_dict)} total (top {limit})")
+            return result
+            
+        except Exception as e:
+            logger.error(f"Error extracting PageSpeed opportunities: {e}", exc_info=True)
+            return []
 
     @staticmethod
     def _aggregate_summaries(summaries: List[Dict], base_url: str) -> Dict[str, Any]:
@@ -1135,6 +1327,12 @@ Tu respuesta DEBE tener DOS PARTES separadas por un delimitador claro.
         external_intelligence: Dict[str, Any],
         search_results: Dict[str, Any],
         competitor_audits: List[Dict[str, Any]],
+        pagespeed_data: Optional[Dict[str, Any]] = None,
+        keywords_data: Optional[Dict[str, Any]] = None,
+        backlinks_data: Optional[Dict[str, Any]] = None,
+        rank_tracking_data: Optional[Dict[str, Any]] = None,
+        llm_visibility_data: Optional[Dict[str, Any]] = None,
+        ai_content_suggestions: Optional[Dict[str, Any]] = None,
         llm_function: Optional[callable] = None,
     ) -> Tuple[str, List[Dict[str, Any]]]:
         """
@@ -1157,30 +1355,184 @@ Tu respuesta DEBE tener DOS PARTES separadas por un delimitador claro.
             # Asegurar que target_audit sea dict
             target_audit = PipelineService._ensure_dict(target_audit)
 
-            # Cargar PageSpeed si existe
-            pagespeed_data = {}
-            try:
-                from pathlib import Path
-                import json
-                # Intentar cargar desde archivo si existe
-                reports_dir = Path("reports") / f"audit_{id(target_audit)}"
-                pagespeed_file = reports_dir / "pagespeed.json"
-                if pagespeed_file.exists():
-                    with open(pagespeed_file, 'r') as f:
-                        pagespeed_data = json.load(f)
-            except:
-                pass
-            
+            # Validar y cargar PageSpeed
+            if not pagespeed_data:
+                pagespeed_data = {}
+                try:
+                    # Intentar cargar desde archivo si existe (fallback)
+                    reports_dir = Path("reports") / f"audit_{id(target_audit)}"
+                    pagespeed_file = reports_dir / "pagespeed.json"
+                    if pagespeed_file.exists():
+                        with open(pagespeed_file, 'r') as f:
+                            pagespeed_data = json.load(f)
+                            logger.info("PageSpeed data loaded from file fallback")
+                except:
+                    pass
+
+            # Validar arrays y datos adicionales
+            keywords_data = keywords_data if keywords_data else {}
+            backlinks_data = backlinks_data if backlinks_data else {}
+            rank_tracking_data = rank_tracking_data if rank_tracking_data else {}
+            # These must be lists for slicing [:5] to work
+            llm_visibility_data = llm_visibility_data if isinstance(llm_visibility_data, list) else []
+            ai_content_suggestions = ai_content_suggestions if isinstance(ai_content_suggestions, list) else []
+
+            # Logging de disponibilidad de datos
+            logger.info("Generando reporte con contexto ampliado:")
+            logger.info(f"- Target Audit: {'OK' if target_audit else 'MISSING'}")
+            logger.info(f"- Competitor Audits: {len(competitor_audits)}")
+            logger.info(f"- PageSpeed: {'OK' if pagespeed_data else 'MISSING'}")
+            logger.info(f"- Keywords: {'OK' if keywords_data else 'MISSING'}")
+            logger.info(f"- Backlinks: {'OK' if backlinks_data else 'MISSING'}")
+            logger.info(f"- Rank Tracking: {'OK' if rank_tracking_data else 'MISSING'}")
+            logger.info(f"- LLM Visibility: {'OK' if llm_visibility_data else 'MISSING'}")
+            logger.info(f"- AI Content Suggestions: {'OK' if ai_content_suggestions else 'MISSING'}")
+
             final_context = {
                 "target_audit": target_audit,
                 "external_intelligence": external_intelligence,
                 "search_results": search_results,
                 "competitor_audits": competitor_audits,
                 "pagespeed": pagespeed_data,
+                "keywords": keywords_data,
+                "backlinks": backlinks_data,
+                "rank_tracking": rank_tracking_data,
+                "llm_visibility": llm_visibility_data,
+                "ai_content_suggestions": ai_content_suggestions,
             }
 
+            # CRITICAL: Reduce context size DRASTICALLY to avoid token limits
+            # Only send ESSENTIAL summary data, NO raw HTML or full audits
+            
+            # Helper to extract only scores from structure
+            def extract_structure_summary(struct):
+                return {
+                    "h1_check": {"status": struct.get("h1_check", {}).get("status")},
+                    "semantic_html": {"score_percent": struct.get("semantic_html", {}).get("score_percent", 0)},
+                    "header_hierarchy": {"issues_count": len(struct.get("header_hierarchy", {}).get("issues", []))}
+                }
+            
+            # Helper to extract only scores from content
+            def extract_content_summary(cont):
+                return {
+                    "conversational_tone": {"score": cont.get("conversational_tone", {}).get("score", 0)},
+                    "question_targeting": {"status": cont.get("question_targeting", {}).get("status")}
+                }
+            
+            # Helper to extract only scores from eeat
+            def extract_eeat_summary(eeat):
+                return {
+                    "author_presence": {"status": eeat.get("author_presence", {}).get("status")},
+                    "content_freshness": {"dates_found": len(eeat.get("content_freshness", {}).get("dates_found", []))},
+                    "citations_and_sources": {
+                        "external_links": eeat.get("citations_and_sources", {}).get("external_links", 0),
+                        "authoritative_links": eeat.get("citations_and_sources", {}).get("authoritative_links", 0)
+                    }
+                }
+            
+            # Helper to extract only schema types
+            def extract_schema_summary(schema):
+                return {
+                    "schema_presence": {"status": schema.get("schema_presence", {}).get("status")},
+                    "schema_types": schema.get("schema_types", [])[:5]  # Max 5 types
+                }
+            
+            # Debug logging for PageSpeed data
+            logger.info(f"PageSpeed data type: {type(pagespeed_data)}")
+            logger.info(f"PageSpeed data keys: {list(pagespeed_data.keys()) if pagespeed_data else 'None'}")
+            if pagespeed_data:
+                logger.info(f"Mobile data available: {bool(pagespeed_data.get('mobile'))}")
+                logger.info(f"Desktop data available: {bool(pagespeed_data.get('desktop'))}")
+                if pagespeed_data.get('mobile'):
+                    logger.info(f"Mobile score: {pagespeed_data.get('mobile', {}).get('score')}")
+            
+            reduced_context = {
+                "target_audit": {
+                    "url": target_audit.get("url"),
+                    "audited_pages_count": target_audit.get("audited_pages_count", 0),
+                    "structure": extract_structure_summary(target_audit.get("structure", {})),
+                    "content": extract_content_summary(target_audit.get("content", {})),
+                    "eeat": extract_eeat_summary(target_audit.get("eeat", {})),
+                    "schema": extract_schema_summary(target_audit.get("schema", {}))
+                },
+                "external_intelligence": external_intelligence,
+                "search_results": {
+                    "competitors": {
+                        "count": len(search_results.get("competitors", {}).get("items", [])),
+                        "top_3_urls": [
+                            item.get("link") 
+                            for item in search_results.get("competitors", {}).get("items", [])[:3]
+                        ]
+                    },
+                    "authority": {
+                        "count": len(search_results.get("authority", {}).get("items", [])),
+                        "top_2_urls": [
+                            item.get("link") 
+                            for item in search_results.get("authority", {}).get("items", [])[:2]
+                        ]
+                    }
+                },
+                "competitor_audits": [
+                    {
+                        "url": comp.get("url"),
+                        "structure": extract_structure_summary(comp.get("structure", {})),
+                        "schema": extract_schema_summary(comp.get("schema", {}))
+                    }
+                    for comp in competitor_audits[:3]  # Max 3 competitors
+                ],
+                "pagespeed": {
+                    "mobile": {
+                        "score": pagespeed_data.get("mobile", {}).get("performance_score"),
+                        "lcp": pagespeed_data.get("mobile", {}).get("metrics", {}).get("lcp") or pagespeed_data.get("mobile", {}).get("core_web_vitals", {}).get("lcp"),
+                        "fcp": pagespeed_data.get("mobile", {}).get("metrics", {}).get("fcp") or pagespeed_data.get("mobile", {}).get("core_web_vitals", {}).get("fcp"),
+                        "cls": pagespeed_data.get("mobile", {}).get("metrics", {}).get("cls") or pagespeed_data.get("mobile", {}).get("core_web_vitals", {}).get("cls"),
+                        "tbt": pagespeed_data.get("mobile", {}).get("metrics", {}).get("tbt"),
+                        "si": pagespeed_data.get("mobile", {}).get("metrics", {}).get("si"),
+                        "accessibility_score": pagespeed_data.get("mobile", {}).get("accessibility_score"),
+                        "seo_score": pagespeed_data.get("mobile", {}).get("seo_score"),
+                        "best_practices_score": pagespeed_data.get("mobile", {}).get("best_practices_score"),
+                        "top_3_opportunities": PipelineService._extract_top_opportunities(
+                            pagespeed_data.get("mobile", {}).get("opportunities", {}),
+                            limit=3
+                        ),
+                        "top_diagnostics": [
+                            k for k, v in (pagespeed_data.get("mobile", {}).get("diagnostics", {}) or {}).items()
+                            if isinstance(v, dict) and v.get("score") is not None and v.get("score") < 0.5
+                        ][:3]
+                    } if pagespeed_data and pagespeed_data.get("mobile") else None,
+                    "desktop": {
+                        "score": pagespeed_data.get("desktop", {}).get("performance_score"),
+                        "lcp": pagespeed_data.get("desktop", {}).get("metrics", {}).get("lcp") or pagespeed_data.get("desktop", {}).get("core_web_vitals", {}).get("lcp"),
+                        "fcp": pagespeed_data.get("desktop", {}).get("metrics", {}).get("fcp") or pagespeed_data.get("desktop", {}).get("core_web_vitals", {}).get("fcp"),
+                        "cls": pagespeed_data.get("desktop", {}).get("metrics", {}).get("cls") or pagespeed_data.get("desktop", {}).get("core_web_vitals", {}).get("cls"),
+                        "tbt": pagespeed_data.get("desktop", {}).get("metrics", {}).get("tbt"),
+                        "si": pagespeed_data.get("desktop", {}).get("metrics", {}).get("si"),
+                        "accessibility_score": pagespeed_data.get("desktop", {}).get("accessibility_score"),
+                        "seo_score": pagespeed_data.get("desktop", {}).get("seo_score"),
+                        "best_practices_score": pagespeed_data.get("desktop", {}).get("best_practices_score")
+                    } if pagespeed_data and pagespeed_data.get("desktop") else None
+                } if pagespeed_data else {},
+                "keywords": {
+                    "total_keywords": keywords_data.get("total_keywords", 0),
+                    "top_10": keywords_data.get("top_opportunities", [])[:10]
+                } if keywords_data else {},
+                "backlinks": {
+                    "total_backlinks": backlinks_data.get("total_backlinks", 0),
+                    "referring_domains": backlinks_data.get("referring_domains", 0),
+                    "summary": backlinks_data.get("summary", {}),
+                    "top_10": backlinks_data.get("top_backlinks", [])[:10]
+                } if backlinks_data else {},
+                "rank_tracking": {
+                    "total_keywords": rank_tracking_data.get("total_keywords", 0),
+                    "distribution": rank_tracking_data.get("distribution", {}),
+                    "top_10": rank_tracking_data.get("rankings", [])[:10]
+                } if rank_tracking_data else {},
+                "llm_visibility": llm_visibility_data[:5] if llm_visibility_data else [],  # Max 5
+                "ai_content_suggestions": ai_content_suggestions[:5] if ai_content_suggestions else [],  # Max 5
+            }
+            
             final_context_input = json.dumps(
-                final_context, ensure_ascii=False, indent=2
+                reduced_context, ensure_ascii=False, indent=2
             )
 
             if llm_function is None:
@@ -1218,7 +1570,7 @@ Se requiere:
             else:
                 # Llamar LLM
                 report_text = await llm_function(
-                    system_prompt=PipelineService.REPORT_PROMPT_V10_PRO,
+                    system_prompt=PipelineService.REPORT_PROMPT_V11_COMPLETE,
                     user_prompt=final_context_input,
                 )
 
@@ -1313,9 +1665,83 @@ Se requiere:
             return ""
 
     @staticmethod
+    def load_audit_context(db: Session, audit_id: int) -> Dict[str, Any]:
+        """
+        Carga el contexto completo de una auditoría desde la base de datos.
+        Recupera keywords, backlinks, rank_tracking, etc.
+        """
+        from app.models import Audit
+        # Recuperar auditoría con sus relaciones
+        audit = db.query(Audit).filter(Audit.id == audit_id).first()
+        if not audit:
+            return {}
+        
+        context = {
+            "keywords": {
+                "items": [
+                    {
+                        "term": k.term, 
+                        "volume": k.volume, 
+                        "difficulty": k.difficulty,
+                        "intent": k.intent
+                    } for k in audit.keywords
+                ],
+                "count": len(audit.keywords)
+            },
+            "backlinks": {
+                "items": [
+                    {
+                        "source_url": b.source_url,
+                        "target_url": b.target_url,
+                        "domain_authority": b.domain_authority,
+                        "anchor": b.anchor_text
+                    } for b in audit.backlinks
+                ],
+                "count": len(audit.backlinks)
+            },
+            "rank_tracking": {
+                "items": [
+                    {
+                        "keyword": r.keyword,
+                        "position": r.position,
+                        "url": r.url,
+                        "change": 0 # Placeholder if change tracking not implemented
+                    } for r in audit.rank_trackings
+                ],
+                "count": len(audit.rank_trackings)
+            },
+            "llm_visibility": {
+                "items": [
+                    {
+                        "query": l.query,
+                        "llm_name": l.llm_name,
+                        "is_visible": l.is_visible,
+                        "sentiment": l.citation_text # Using citation_text as proxy for sentiment/detail if needed
+                    } for l in audit.llm_visibilities
+                ],
+                "count": len(audit.llm_visibilities)
+            },
+            "ai_content_suggestions": {
+                "items": [
+                    {
+                        "topic": s.topic,
+                        "type": s.suggestion_type,
+                        "priority": s.priority,
+                        "outline": s.content_outline
+                    } for s in audit.ai_content_suggestions
+                ],
+                "count": len(audit.ai_content_suggestions)
+            }
+        }
+        return context
+
+    @staticmethod
     async def run_complete_audit(
         url: str,
         target_audit: Dict[str, Any],
+        audit_id: Optional[int] = None, # New
+        pagespeed_data: Optional[Dict[str, Any]] = None, # New
+        additional_context: Optional[Dict[str, Any]] = None, # New
         crawler_service: Optional[callable] = None,
         audit_local_service: Optional[callable] = None,
         llm_function: Optional[callable] = None,
@@ -1503,13 +1929,22 @@ Se requiere:
             all_competitor_urls, audit_local_service
         )
 
+        # Prepare additional context if provided
+        additional_context = additional_context or {}
+        
         # PASO 5: Generar Reporte (Agente 2)
         markdown_report, fix_plan = await PipelineService.generate_report(
             target_audit,
             external_intelligence,
             search_results,
             competitor_audits,
-            llm_function,
+            pagespeed_data=pagespeed_data,
+            keywords_data=additional_context.get("keywords"),
+            backlinks_data=additional_context.get("backlinks"),
+            rank_tracking_data=additional_context.get("rank_tracking"),
+            llm_visibility_data=additional_context.get("llm_visibility"),
+            ai_content_suggestions=additional_context.get("ai_content_suggestions"),
+            llm_function=llm_function,
         )
 
         # PASO 6: Análisis Comparativo Automático
@@ -1570,6 +2005,9 @@ Se requiere:
 async def run_complete_audit(
     url: str,
     target_audit: Optional[Dict[str, Any]] = None,
+    audit_id: Optional[int] = None,
+    pagespeed_data: Optional[Dict[str, Any]] = None,
+    additional_context: Optional[Dict[str, Any]] = None,
     crawler_service: Optional[callable] = None,
     audit_local_service: Optional[callable] = None,
     llm_function: Optional[callable] = None,
@@ -1580,6 +2018,9 @@ async def run_complete_audit(
     return await PipelineService.run_complete_audit(
         url,
         target_audit,
+        audit_id,
+        pagespeed_data,
+        additional_context,
         crawler_service,
         audit_local_service,
         llm_function,

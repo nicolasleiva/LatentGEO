@@ -222,7 +222,7 @@ class GitHubClient:
     
     def create_branch(self, repo: Repository.Repository, branch_name: str, base_branch: str = None) -> str:
         """
-        Crea una nueva branch
+        Crea una nueva branch. Si ya existe, la elimina primero.
         
         Args:
             repo: Repository object
@@ -236,6 +236,20 @@ class GitHubClient:
             base_branch = repo.default_branch
         
         base = repo.get_branch(base_branch)
+        
+        # Verificar si el branch ya existe
+        try:
+            existing_ref = repo.get_git_ref(f"heads/{branch_name}")
+            # Si existe, eliminarlo primero
+            logger.warning(f"Branch {branch_name} already exists in {repo.full_name}, deleting it")
+            existing_ref.delete()
+        except GithubException as e:
+            if e.status != 404:
+                # Si el error no es "not found", re-lanzar
+                raise
+            # Si es 404, el branch no existe, procedemos a crearlo
+        
+        # Crear el nuevo branch
         repo.create_git_ref(f"refs/heads/{branch_name}", base.commit.sha)
         logger.info(f"Created branch {branch_name} in {repo.full_name}")
         return base.commit.sha
