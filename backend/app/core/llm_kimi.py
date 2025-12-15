@@ -10,15 +10,17 @@ logger = get_logger(__name__)
 
 def get_llm_function():
     """
-    Retorna función que ejecuta prompts con KIMI (NVIDIA NIM)
-    Gemini queda comentado como fallback
+    Retorna función que ejecuta prompts con KIMI K2 Thinking (NVIDIA NIM)
+    Usa el modelo configurado en settings para análisis y reportes
     """
-    if settings.NVIDIA_API_KEY:
+    api_key = settings.NV_API_KEY_ANALYSIS or settings.NVIDIA_API_KEY or settings.NV_API_KEY
+    
+    if api_key:
         async def kimi_function(system_prompt: str, user_prompt: str) -> str:
             try:
                 client = OpenAI(
-                    base_url="https://integrate.api.nvidia.com/v1",
-                    api_key=settings.NVIDIA_API_KEY
+                    base_url=settings.NV_BASE_URL,
+                    api_key=api_key
                 )
                 
                 messages = [
@@ -26,18 +28,19 @@ def get_llm_function():
                     {"role": "user", "content": user_prompt}
                 ]
                 
+                # Usar KIMI K2 Thinking para análisis (mejor razonamiento)
                 completion = client.chat.completions.create(
-                    model="moonshotai/kimi-k2-instruct-0905",
+                    model=settings.NV_MODEL_ANALYSIS,  # moonshotai/kimi-k2-thinking
                     messages=messages,
-                    temperature=0,
+                    temperature=1,  # Recomendado para kimi-k2-thinking
                     top_p=0.9,
-                    max_tokens=40096,
+                    max_tokens=settings.NV_MAX_TOKENS,  # 16384
                     stream=False
                 )
                 
                 return completion.choices[0].message.content.strip()
             except Exception as e:
-                logger.error(f"Error with KIMI: {e}")
+                logger.error(f"Error with KIMI K2 Thinking: {e}")
                 raise
 
         return kimi_function

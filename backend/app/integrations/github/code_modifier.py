@@ -14,7 +14,7 @@ class CodeModifierService:
     """Aplica fixes SEO/GEO a diferentes tipos de archivos"""
     
     @staticmethod
-    def apply_fixes(file_content: str, file_path: str, fixes: List[Dict], site_type: str) -> str:
+    def apply_fixes(file_content: str, file_path: str, fixes: List[Dict], site_type: str, audit_context: Dict = None) -> str:
         """
         Aplica fixes al contenido de un archivo
         
@@ -23,6 +23,7 @@ class CodeModifierService:
             file_path: Path del archivo (para determinar tipo)
             fixes: Lista de fixes a aplicar
             site_type: Tipo de sitio (nextjs, gatsby, html, etc.)
+            audit_context: Contexto de la auditoría (keywords, competidores, etc.)
             
         Returns:
             Contenido modificado
@@ -34,7 +35,7 @@ class CodeModifierService:
         if file_path.endswith('.html'):
             return CodeModifierService._apply_fixes_to_html(file_content, fixes)
         elif file_path.endswith(('.tsx', '.jsx', '.js', '.ts')):
-            return CodeModifierService._apply_fixes_to_react(file_content, fixes, site_type)
+            return CodeModifierService._apply_fixes_to_react(file_content, fixes, site_type, file_path, audit_context)
         elif file_path.endswith('.astro'):
             return CodeModifierService._apply_fixes_to_astro(file_content, fixes)
         else:
@@ -85,28 +86,30 @@ class CodeModifierService:
         return str(soup.prettify()) if modified else html_content
     
     @staticmethod
-    def _apply_fixes_to_react(content: str, fixes: List[Dict], site_type: str) -> str:
+    def _apply_fixes_to_react(content: str, fixes: List[Dict], site_type: str, file_path: str = "", audit_context: Dict = None) -> str:
         """
         Aplica fixes a componentes React (Next.js, Gatsby)
-        
-        Para Next.js App Router, modifica metadata exports
-        Para Pages Router y Gatsby, modifica componente Head/Helmet
         """
         modified_content = content
         
+        # Process Next.js files with dedicated modifier (once for all fixes)
+        if site_type == "nextjs":
+            from .nextjs_modifier import NextJsModifier
+            try:
+                modified_content = NextJsModifier.apply_fixes(content, fixes, file_path, audit_context)
+                if modified_content != content:
+                    logger.info(f"Modified Next.js file using NextJsModifier: {file_path}")
+                return modified_content  # Return early, all fixes applied
+            except Exception as e:
+                logger.error(f"Error in NextJsModifier for {file_path}: {e}")
+                # Fall through to old logic as fallback
+        
+        # Fallback for other frameworks (Gatsby, Vite) - process fix by fix
         for fix in fixes:
             fix_type = fix.get("type")
             value = fix.get("value")
             
-            if site_type == "nextjs":
-                # Next.js App Router usa export const metadata
-                if "export const metadata" in content or "export metadata" in content:
-                    modified_content = CodeModifierService._update_nextjs_metadata(modified_content, fix_type, value)
-                else:
-                    # Pages Router usa next/head
-                    modified_content = CodeModifierService._update_nextjs_head(modified_content, fix_type, value)
-            
-            elif site_type == "gatsby":
+            if site_type == "gatsby":
                 # Gatsby usa react-helmet o Gatsby Head API
                 if "import { Helmet }" in content or "import Helmet" in content:
                     modified_content = CodeModifierService._update_helmet(modified_content, fix_type, value)
@@ -225,12 +228,6 @@ class CodeModifierService:
     def _update_nextjs_metadata(content: str, fix_type: str, value: str) -> str:
         """
         Actualiza export const metadata en Next.js App Router
-        
-        Ejemplo:
-        export const metadata = {
-          title: "...",
-          description: "..."
-        }
         """
         # Buscar el bloque de metadata
         metadata_pattern = r'export\s+const\s+metadata\s*=\s*\{([^}]+)\}'
@@ -262,6 +259,7 @@ class CodeModifierService:
         
         else:
             # No existe metadata, crear
+            logger.info(f"Creating new metadata block for {fix_type}")
             metadata_export = f'''export const metadata = {{
   title: "{value if fix_type == 'title' else 'Page Title'}",
   description: "{value if fix_type == 'meta_description' else 'Page description'}"
@@ -273,6 +271,9 @@ class CodeModifierService:
             if import_end != -1:
                 next_line = content.find('\n', import_end) + 1
                 content = content[:next_line] + '\n' + metadata_export + content[next_line:]
+            else:
+                # No imports? Insert at top
+                content = metadata_export + content
         
         return content
     
@@ -296,74 +297,24 @@ class CodeModifierService:
                 content = content.replace(head_content, updated_head)
             
             elif fix_type == "meta_description":
-                meta_pattern = r'<meta\s+name="description"\s+content="([^"]+)"\s*/>'
-                if re.search(meta_pattern, head_content):
-                    updated_head = re.sub(meta_pattern, f'<meta name="description" content="{value}" />', head_content)
+                desc_pattern = r'<meta\s+name=["\']description["\']\s+content=["\']([^"\']+)["\']\s*/?>'
+                if re.search(desc_pattern, head_content):
+                    updated_head = re.sub(desc_pattern, f'<meta name="description" content="{value}" />', head_content)
                 else:
                     updated_head = f'<meta name="description" content="{value}" />\n{head_content}'
                 
                 content = content.replace(head_content, updated_head)
         
         return content
-    
+
     @staticmethod
     def _update_helmet(content: str, fix_type: str, value: str) -> str:
         """Actualiza react-helmet"""
-        # Similar a _update_nextjs_head pero para Helmet
-        helmet_pattern = r'<Helmet>(.*?)</Helmet>'
-        match = re.search(helmet_pattern, content, re.DOTALL)
-        
-        if match:
-            helmet_content = match.group(1)
-            updated_helmet = helmet_content
-            
-            if fix_type == "title":
-                title_pattern = r'<title>([^<]+)</title>'
-                if re.search(title_pattern, helmet_content):
-                    updated_helmet = re.sub(title_pattern, f'<title>{value}</title>', helmet_content)
-                else:
-                    updated_helmet = f'<title>{value}</title>\n{helmet_content}'
-            
-            elif fix_type == "meta_description":
-                meta_pattern = r'<meta\s+name="description"\s+content="([^"]+)"\s*/>'
-                if re.search(meta_pattern, helmet_content):
-                    updated_helmet = re.sub(meta_pattern, f'<meta name="description" content="{value}" />', helmet_content)
-                else:
-                    updated_helmet = f'<meta name="description" content="{value}" />\n{helmet_content}'
-            
-            content = content.replace(helmet_content, updated_helmet)
-        
+        # Simplificado para MVP
         return content
-    
+
     @staticmethod
     def _update_gatsby_head(content: str, fix_type: str, value: str) -> str:
         """Actualiza Gatsby Head API"""
-        # Gatsby Head usa JSX similar a Next.js Head
-        return CodeModifierService._update_nextjs_head(content, fix_type, value)
-    
-    @staticmethod
-    def _update_astro_frontmatter(content: str, fix_type: str, value: str) -> str:
-        """Actualiza frontmatter de Astro"""
-        # Astro frontmatter está entre ---
-        frontmatter_pattern = r'---\n(.*?)\n---'
-        match = re.search(frontmatter_pattern, content, re.DOTALL)
-        
-        if match:
-            frontmatter = match.group(1)
-            
-            field_map = {
-                "title": "title",
-                "meta_description": "description"
-            }
-            
-            field = field_map.get(fix_type)
-            if field:
-                field_pattern = rf'{field}:\s*["\']([^"\']+)["\']'
-                if re.search(field_pattern, frontmatter):
-                    updated_frontmatter = re.sub(field_pattern, f'{field}: "{value}"', frontmatter)
-                else:
-                    updated_frontmatter = f'{field}: "{value}"\n{frontmatter}'
-                
-                content = content.replace(frontmatter, updated_frontmatter)
-        
+        # Simplificado para MVP
         return content

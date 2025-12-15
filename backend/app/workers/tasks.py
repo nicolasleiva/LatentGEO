@@ -95,14 +95,28 @@ def run_audit_task(self, audit_id: int):
                 logger.error(f"Error in audit_local_service_func for {url}: {audit_error}", exc_info=True)
                 return {"status": 500, "url": url, "error": str(audit_error)}
 
-        # Importar crawler y PageSpeed
+        # Importar crawler (PageSpeed y GEO tools se ejecutan solo al generar PDF)
         from app.services.crawler_service import CrawlerService
-        from app.services.pagespeed_service import PageSpeedService
         
-        # Ejecutar pipeline principal (SIN PageSpeed automático)
+        # NOTE: PageSpeed and GEO Tools (Keywords, Rankings, Backlinks, Visibility)
+        # are NOT run automatically here. They are executed when the user requests
+        # the full PDF report via generate_full_report_task.
+        # This keeps the main audit pipeline fast (2-5 minutes) and the dashboard available quickly.
+        pagespeed_data = None
+
+        # Load complete audit context (will be empty for new audits)
+
+        additional_context = {}
+        with get_db_session() as db:
+            additional_context = PipelineService.load_audit_context(db, audit_id)
+        
+        # Ejecutar pipeline principal con PageSpeed data y contexto adicional
         result = asyncio.run(PipelineService.run_complete_audit(
             url=audit_url,
             target_audit={},
+            audit_id=audit_id,
+            pagespeed_data=pagespeed_data,
+            additional_context=additional_context,
             crawler_service=CrawlerService.crawl_site,
             audit_local_service=audit_local_service_func,
             llm_function=llm_function,
@@ -110,18 +124,13 @@ def run_audit_task(self, audit_id: int):
             google_cx_id=settings.CSE_ID,
         ))
         
-        # Inicializar pagespeed vacío para consistencia
-        result["pagespeed"] = {}
+        # Ensure pagespeed is in result
+        if "pagespeed" not in result:
+            result["pagespeed"] = pagespeed_data or {}
 
 
-        # --- AUTO-RUN GEO TOOLS (Rank, Backlinks, Visibility) ---
-        # DISABLED FOR MANUAL EXECUTION
-        # try:
-        #     with get_db_session() as db:
-        #         logger.info(f"Auto-running GEO Tools for audit {audit_id}...")
-        #         ...
-        # except Exception as tool_error:
-        #     logger.error(f"Error running auto GEO tools: {tool_error}", exc_info=True)
+        # GEO Tools (Keywords, Backlinks, Rankings) will be generated on-demand when PDF is requested
+        # This avoids generating data that may not be used and keeps the audit pipeline fast
         
         # Guardar páginas auditadas individuales
         with get_db_session() as db:
@@ -577,114 +586,45 @@ def run_pagespeed_task(self, audit_id: int):
 @celery_app.task(name="generate_full_report_task")
 def generate_full_report_task(audit_id: int):
     """
-    Orchestrator task:
-    1. Checks if GEO tools run. If not, runs them.
-    2. Checks if PageSpeed run. If not, runs it.
-    3. Generates final PDF.
+    Orchestrator task for generating complete PDF report:
+    1. Runs PageSpeed if missing
+    2. Runs GEO Tools if missing (Keywords, Rankings, Backlinks, Visibility)
+    3. REGENERATES the report markdown with LLM using ALL available data
+    4. Generates the final PDF
     """
     logger.info(f"Starting Full Report Generation for audit {audit_id}")
     
     try:
-        # 1. Run GEO Analysis (if missing)
+        from app.services.pagespeed_service import PageSpeedService
+        from app.services.pipeline_service import PipelineService
+        from app.core.llm_kimi import get_llm_function
+        from app.services.keyword_service import KeywordService
+        from app.services.rank_tracker_service import RankTrackerService
+        from app.services.backlink_service import BacklinkService
+        from app.services.llm_visibility_service import LLMVisibilityService
+        from urllib.parse import urlparse
+        
+        llm_function = get_llm_function()
+        
+        # Step 1: Run PageSpeed if missing
         with get_db_session() as db:
             audit = AuditService.get_audit(db, audit_id)
-            if "# 10. Análisis GEO Automático" not in (audit.report_markdown or ""):
-                logger.info("GEO Analysis missing, running now...")
-                
-                # Import services
-                from app.services.rank_tracker_service import RankTrackerService
-                from app.services.backlink_service import BacklinkService
-                from app.services.llm_visibility_service import LLMVisibilityService
-                from urllib.parse import urlparse
-                
-                audit_url = str(audit.url)
-                domain = urlparse(audit_url).netloc.replace("www.", "")
-                brand_name = domain.split('.')[0]
-                
-                category = None
-                if audit.external_intelligence and isinstance(audit.external_intelligence, dict):
-                    category = audit.external_intelligence.get("category")
-                
-                keywords = [brand_name]
-                if category:
-                    keywords.append(category)
-                
-                async def run_geo_tools():
-                    rank_service = RankTrackerService(db)
-                    backlink_service = BacklinkService(db)
-                    visibility_service = LLMVisibilityService(db)
-                    
-                    rankings = await rank_service.track_rankings(audit_id, domain, keywords)
-                    backlinks = await backlink_service.analyze_backlinks(audit_id, domain)
-                    visibility = await visibility_service.check_visibility(audit_id, brand_name, keywords)
-                    return rankings, backlinks, visibility
-
-                rankings, backlinks, visibility = asyncio.run(run_geo_tools())
-                
-                # Append to report
-                current_report = audit.report_markdown or ""
-                geo_section = "\n\n# 10. Análisis GEO Automático (Anexos)\n\n"
-                
-                # Rank Tracking
-                geo_section += "## 10.1 Rank Tracking Inicial\n"
-                if rankings:
-                    geo_section += "| Keyword | Posición | Top Competidor |\n|---|---|---|\n"
-                    for r in rankings:
-                        top_competitor = r.top_results[0]['domain'] if r.top_results else "N/A"
-                        pos = f"#{r.position}" if r.position > 0 else ">10"
-                        geo_section += f"| {r.keyword} | {pos} | {top_competitor} |\n"
-                else:
-                    geo_section += "*No se encontraron rankings.*\n"
-                
-                # Backlinks
-                geo_section += "\n## 10.2 Análisis de Enlaces\n"
-                geo_section += f"* **Total de Backlinks Encontrados**: {len(backlinks)}\n"
-                dofollow_count = len([b for b in backlinks if b.is_dofollow])
-                geo_section += f"* **Enlaces DoFollow**: {dofollow_count}\n"
-                geo_section += f"* **Enlaces NoFollow**: {len(backlinks) - dofollow_count}\n"
-                
-                # LLM Visibility
-                geo_section += "\n## 10.3 Visibilidad en IA (LLMs)\n"
-                if visibility and len(visibility) > 0:
-                    visible_count = sum(1 for v in visibility if v.get('is_visible', False))
-                    total_queries = len(visibility)
-                    visibility_rate = (visible_count / total_queries * 100) if total_queries > 0 else 0
-                    geo_section += f"* **Consultas Analizadas**: {total_queries}\n"
-                    geo_section += f"* **Visibilidad**: {visible_count}/{total_queries} ({visibility_rate:.1f}%)\n"
-                    geo_section += f"* **LLM**: {visibility[0].get('llm_name', 'KIMI')}\n"
-                    
-                    visible_queries = [v for v in visibility if v.get('is_visible', False)]
-                    if visible_queries:
-                        geo_section += "\n**Queries donde la marca es visible:**\n"
-                        for v in visible_queries[:3]:
-                            query = v.get('query', 'N/A')
-                            citation = v.get('citation_text', '')[:100] + "..." if len(v.get('citation_text', '')) > 100 else v.get('citation_text', '')
-                            geo_section += f"- *{query}*: {citation}\n"
-                else:
-                    geo_section += "*Análisis de visibilidad no disponible.*\n"
-                
-                audit.report_markdown = current_report + geo_section
-                db.commit()
-                logger.info("GEO Analysis auto-completed for full report.")
-
-        # 2. Run PageSpeed (if missing)
-        with get_db_session() as db:
-            audit = AuditService.get_audit(db, audit_id)
+            if not audit:
+                raise ValueError(f"Audit {audit_id} not found")
+            
+            audit_url = str(audit.url)
+            domain = urlparse(audit_url).netloc.replace("www.", "")
+            brand_name = domain.split('.')[0]
+            
             if not audit.pagespeed_data:
                 logger.info("PageSpeed data missing, running analysis...")
-                # Run PageSpeed logic directly
-                from app.services.pagespeed_service import PageSpeedService
-                from app.services.pipeline_service import PipelineService
-                from app.core.llm_kimi import get_llm_function
-                
                 pagespeed_data = asyncio.run(PageSpeedService.analyze_both_strategies(
-                    url=str(audit.url),
+                    url=audit_url,
                     api_key=settings.GOOGLE_PAGESPEED_API_KEY
                 ))
                 
-                if not isinstance(pagespeed_data, Exception):
+                if pagespeed_data and not isinstance(pagespeed_data, Exception):
                     _save_pagespeed_data(audit_id, pagespeed_data)
-                    llm_function = get_llm_function()
                     ps_analysis = asyncio.run(PipelineService.generate_pagespeed_analysis(
                         pagespeed_data, llm_function
                     ))
@@ -693,9 +633,107 @@ def generate_full_report_task(audit_id: int):
                     
                     audit.pagespeed_data = pagespeed_data
                     db.commit()
-                    logger.info("PageSpeed auto-completed for full report.")
+                    logger.info("PageSpeed data collected.")
+        
+        # Step 2: Run GEO Tools if missing
+        with get_db_session() as db:
+            audit = AuditService.get_audit(db, audit_id)
+            audit_url = str(audit.url)
+            domain = urlparse(audit_url).netloc.replace("www.", "")
+            brand_name = domain.split('.')[0]
+            
+            category = None
+            if audit.external_intelligence and isinstance(audit.external_intelligence, dict):
+                category = audit.external_intelligence.get("category")
+            
+            keywords = [brand_name]
+            if category:
+                keywords.append(category)
+            
+            # Check if we have GEO data
+            has_keywords = len(audit.keywords) > 0 if hasattr(audit, 'keywords') else False
+            has_rankings = len(audit.rank_trackings) > 0 if hasattr(audit, 'rank_trackings') else False
+            has_backlinks = len(audit.backlinks) > 0 if hasattr(audit, 'backlinks') else False
+            has_visibility = len(audit.llm_visibilities) > 0 if hasattr(audit, 'llm_visibilities') else False
+            
+            if not (has_keywords and has_rankings and has_backlinks and has_visibility):
+                logger.info("GEO data missing, running analysis...")
+                
+                async def run_geo_tools():
+                    kw_service = KeywordService(db)
+                    rank_service = RankTrackerService(db)
+                    backlink_service = BacklinkService(db)
+                    visibility_service = LLMVisibilityService(db)
+                    
+                    if not has_keywords:
+                        await kw_service.research_keywords(audit_id, domain, [brand_name])
+                    if not has_rankings:
+                        await rank_service.track_rankings(audit_id, domain, keywords)
+                    if not has_backlinks:
+                        await backlink_service.analyze_backlinks(audit_id, domain)
+                    if not has_visibility:
+                        await visibility_service.check_visibility(audit_id, brand_name, keywords)
 
-        # 3. Generate PDF
+                asyncio.run(run_geo_tools())
+                logger.info("GEO data collected.")
+        
+        # Step 3: REGENERATE report with LLM using ALL available context
+        with get_db_session() as db:
+            audit = AuditService.get_audit(db, audit_id)
+            
+            # Load complete context with ALL data
+            complete_context = AuditService.get_complete_audit_context(db, audit_id)
+            
+            # Prepare data for report generation
+            target_audit = audit.target_audit or {}
+            external_intelligence = audit.external_intelligence or {}
+            search_results = audit.search_results or {}
+            competitor_audits = audit.competitor_audits or []
+            pagespeed_data = audit.pagespeed_data or {}
+            
+            # Get GEO data from context
+            keywords_data = complete_context.get("keywords", [])
+            backlinks_data = complete_context.get("backlinks", {})
+            rank_tracking_data = complete_context.get("rank_tracking", [])
+            llm_visibility_data = complete_context.get("llm_visibility", [])
+            ai_content_data = complete_context.get("ai_content_suggestions", [])
+            
+            logger.info(f"Regenerating report with full context:")
+            logger.info(f"  - Target Audit: {'OK' if target_audit else 'MISSING'}")
+            logger.info(f"  - PageSpeed: {'OK' if pagespeed_data else 'MISSING'}")
+            logger.info(f"  - Keywords: {len(keywords_data)} items")
+            logger.info(f"  - Backlinks: {backlinks_data.get('total_backlinks', 0)} items")
+            logger.info(f"  - Rank Tracking: {len(rank_tracking_data)} items")
+            logger.info(f"  - LLM Visibility: {len(llm_visibility_data)} items")
+            
+            # Regenerate report markdown with LLM
+            new_report_markdown, new_fix_plan = asyncio.run(
+                PipelineService.generate_report(
+                    target_audit=target_audit,
+                    external_intelligence=external_intelligence,
+                    search_results=search_results,
+                    competitor_audits=competitor_audits,
+                    pagespeed_data=pagespeed_data,
+                    keywords_data={"keywords": keywords_data, "total_keywords": len(keywords_data)},
+                    backlinks_data=backlinks_data,
+                    rank_tracking_data={"rankings": rank_tracking_data, "total_keywords": len(rank_tracking_data)},
+                    llm_visibility_data=llm_visibility_data,
+                    ai_content_suggestions=ai_content_data,
+                    llm_function=llm_function
+                )
+            )
+            
+            # Update audit with new report
+            if new_report_markdown and len(new_report_markdown) > 500:
+                audit.report_markdown = new_report_markdown
+                if new_fix_plan:
+                    audit.fix_plan = new_fix_plan
+                db.commit()
+                logger.info("Report regenerated with full context.")
+            else:
+                logger.warning("Report regeneration returned short content, keeping original.")
+        
+        # Step 4: Generate PDF
         with get_db_session() as db:
             audit = AuditService.get_audit(db, audit_id)
             logger.info(f"Generating Final PDF for audit {audit_id}")
@@ -710,3 +748,4 @@ def generate_full_report_task(audit_id: int):
     except Exception as e:
         logger.error(f"Error generating full report: {e}", exc_info=True)
         raise
+

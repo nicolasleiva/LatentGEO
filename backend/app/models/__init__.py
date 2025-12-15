@@ -37,6 +37,10 @@ class Audit(Base):
     url = Column(String(255), nullable=False)
     domain = Column(String(255), index=True)
     source = Column(String(50), default="web") # web, hubspot, etc.
+    
+    # User association (Auth0)
+    user_id = Column(String(255), nullable=True, index=True)  # Auth0 user sub
+    user_email = Column(String(255), nullable=True, index=True)  # User email for display
 
     status = Column(Enum(AuditStatus), default=AuditStatus.PENDING)
     progress = Column(Float, default=0.0)  # 0-100
@@ -47,6 +51,7 @@ class Audit(Base):
     high_issues = Column(Integer, default=0)
     medium_issues = Column(Integer, default=0)
     low_issues = Column(Integer, default=0)
+    geo_score = Column(Float, default=0.0)
 
     # Datos de auditoría
     target_audit = Column(JSON, nullable=True)
@@ -99,6 +104,9 @@ class Audit(Base):
     # Task ID de Celery
     task_id = Column(String(255), nullable=True, unique=True, index=True)
     error_message = Column(Text, nullable=True)
+    
+    # GEO Score (0-10) basado en target_audit
+    geo_score = Column(Float, default=0)
     
     # Propiedad dinámica para report_pdf_path (se calcula desde reports)
     @property
@@ -339,9 +347,47 @@ class CompetitorCitationAnalysis(Base):
     analyzed_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 
+class ScoreHistory(Base):
+    """Modelo para historial de scores - permite tracking temporal"""
+    __tablename__ = "score_history"
+
+    id = Column(Integer, primary_key=True, index=True)
+    domain = Column(String(255), nullable=False, index=True)
+    user_id = Column(String(255), nullable=True, index=True)  # Auth0 user sub
+    
+    # Scores principales
+    overall_score = Column(Float, default=0)
+    seo_score = Column(Float, default=0)
+    geo_score = Column(Float, default=0)
+    performance_score = Column(Float, default=0)
+    accessibility_score = Column(Float, default=0)
+    best_practices_score = Column(Float, default=0)
+    
+    # Core Web Vitals
+    lcp = Column(Float, nullable=True)  # Largest Contentful Paint (ms)
+    fid = Column(Float, nullable=True)  # First Input Delay (ms)
+    cls = Column(Float, nullable=True)  # Cumulative Layout Shift
+    
+    # Issues count
+    critical_issues = Column(Integer, default=0)
+    high_issues = Column(Integer, default=0)
+    medium_issues = Column(Integer, default=0)
+    low_issues = Column(Integer, default=0)
+    total_pages = Column(Integer, default=0)
+    
+    # Citation/GEO metrics
+    citation_rate = Column(Float, default=0)
+    llm_mentions = Column(Integer, default=0)
+    
+    # Metadata
+    audit_id = Column(Integer, ForeignKey("audits.id"), nullable=True)
+    recorded_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
+
+
 # Importar modelos de HubSpot
 from .hubspot import HubSpotConnection, HubSpotPage, HubSpotChange
 
 # Importar modelos de GitHub
 from .github import GitHubConnection, GitHubRepository, GitHubPullRequest, GitHubWebhookEvent
+
 

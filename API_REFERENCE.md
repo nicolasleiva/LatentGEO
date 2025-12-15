@@ -181,25 +181,26 @@ GET /reports/audit/1
 }
 ```
 
-### 2.2 Generar PDF
-```http
-POST /reports/generate-pdf
-Content-Type: application/json
+### 2.2 Generar PDF (V11 Complete Context)
+Genera un reporte PDF comprensivo que incluye:
+- Análisis PageSpeed (Mobile/Desktop)
+- Investigación de Keywords (Volumen, Dificultad)
+- Perfil de Backlinks (DA, Anchor text)
+- Rank Tracking & Visibilidad en LLMs
+- Sugerencias de Contenido IA
 
-{
-  "audit_id": 1,
-  "include_competitor_analysis": true,
-  "include_raw_data": false
-}
+```http
+POST /audits/{audit_id}/generate-pdf?force_pagespeed_refresh=false
 ```
 
-**Response (202 Accepted):**
+**Response (200):**
 ```json
 {
-  "task_id": "pdf-generation-12345",
-  "audit_id": 1,
-  "status": "pending",
-  "file_url": null
+  "success": true,
+  "pdf_path": "/app/reports/ejemplo.com/Reporte_Consolidado_....pdf",
+  "message": "PDF generated successfully with PageSpeed data",
+  "pagespeed_included": true,
+  "file_size": 125000
 }
 ```
 

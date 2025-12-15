@@ -1,13 +1,19 @@
-from fastapi import APIRouter, Depends, HTTPException, Response, status, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, Response, status, BackgroundTasks, Request
 from sqlalchemy.orm import Session
 from typing import List
 import asyncio
+import os
+from datetime import datetime
+from pydantic import BaseModel
 
 from app.core.database import get_db
 from app.core.config import settings
 from app.models import Audit, AuditStatus
 from app.schemas import AuditCreate, AuditResponse, AuditSummary, AuditConfigRequest, ChatMessage
 from app.services.audit_service import AuditService
+# from app.services.github_service import GitHubService # Deprecated - now using app.integrations.github
+# from app.services.path_mapper_service import PathMapperService # Deprecated
+# from app.services.code_fixer_service import CodeFixerService # Deprecated
 from app.services.pipeline_service import PipelineService
 from app.services.audit_local_service import AuditLocalService
 from app.core.logger import get_logger
@@ -28,6 +34,7 @@ router = APIRouter(
 async def run_audit_sync(audit_id: int):
     """
     Función auxiliar para ejecutar auditoría de forma síncrona como fallback.
+    NOTE: PageSpeed is NOT run here. It's executed on-demand when user requests PDF.
     """
     from app.core.llm_kimi import get_llm_function
     from app.core.database import SessionLocal
@@ -46,6 +53,12 @@ async def run_audit_sync(audit_id: int):
             logger.error(f"Audit {audit_id} not found")
             return
         
+        # NOTE: PageSpeed NOT collected here - it runs when user generates PDF
+        pagespeed_data = None
+        
+        # Load complete audit context (keywords, backlinks, rankings, etc.)
+        additional_context = PipelineService.load_audit_context(db, audit_id)
+        
         # Ejecutar pipeline
         llm_function = get_llm_function()
         
@@ -58,6 +71,9 @@ async def run_audit_sync(audit_id: int):
         result = await PipelineService.run_complete_audit(
             url=str(audit.url),
             target_audit=target_audit_result,
+            audit_id=audit_id,
+            pagespeed_data=pagespeed_data,
+            additional_context=additional_context,
             crawler_service=None,
             audit_local_service=None,
             llm_function=llm_function,
@@ -82,6 +98,7 @@ async def run_audit_sync(audit_id: int):
             competitor_audits=competitor_audits,
             report_markdown=report_markdown,
             fix_plan=fix_plan,
+            pagespeed_data=pagespeed_data,
         )
         
         AuditService.update_audit_progress(
@@ -113,6 +130,11 @@ async def create_audit(
     """
     Crea auditoría. Si tiene competitors/market, inicia pipeline.
     Si no, solo crea registro (espera configuración de chat).
+    
+    NOTE: PageSpeed is NOT collected here. It runs when user:
+    - Clicks "Analyze PageSpeed" button
+    - Generates the full PDF report
+    This keeps audit creation fast and responsive.
     """
     audit = AuditService.create_audit(db, audit_create)
 
@@ -136,28 +158,44 @@ async def create_audit(
 def list_audits(
     db: Session = Depends(get_db),
     skip: int = 0,
-    limit: int = 100
+    limit: int = 100,
+    user_email: str = None  # Optional filter by user email
 ) -> List[Audit]:
     """
-    Lista todas las auditorías con paginación.
+    Lista auditorías con paginación.
+    Si se proporciona user_email, filtra solo las auditorías de ese usuario.
     """
-    # The method is get_audits, not list_audits
-    audits = AuditService.get_audits(db, skip=skip, limit=limit)
+    audits = AuditService.get_audits(db, skip=skip, limit=limit, user_email=user_email)
     return audits
 
 
 @router.get("/{audit_id}", response_model=AuditResponse)
 def get_audit(audit_id: int, db: Session = Depends(get_db)):
     """
-    Obtiene los detalles completos de una auditoría, incluyendo sus resultados.
+    Get audit details WITHOUT triggering PageSpeed analysis.
+    
+    This endpoint loads quickly and returns cached PageSpeed data if available.
+    Frontend should display "Run PageSpeed" button if data is missing.
+    
+    Response includes:
+    - pagespeed_available: boolean flag indicating if PageSpeed data exists
+    - pagespeed_stale: boolean flag indicating if cached data is >24 hours old
     """
+    from app.services.pdf_service import PDFService
+    
     audit = AuditService.get_audit(db, audit_id)
     if not audit:
         raise HTTPException(status_code=404, detail="Auditoría no encontrada")
     
-    # Cargar páginas auditadas
+    # Load audited pages (fast operation)
     pages = AuditService.get_audited_pages(db, audit_id)
     audit.pages = pages
+    
+    # Add PageSpeed availability flags (NO PageSpeed trigger)
+    audit.pagespeed_available = audit.pagespeed_data is not None and bool(audit.pagespeed_data)
+    audit.pagespeed_stale = PDFService._is_pagespeed_stale(audit.pagespeed_data) if audit.pagespeed_data else True
+    
+    logger.info(f"Audit {audit_id} loaded (PageSpeed available: {audit.pagespeed_available}, stale: {audit.pagespeed_stale})")
     
     return audit
 
@@ -340,13 +378,182 @@ def get_competitors(audit_id: int, db: Session = Depends(get_db)):
     return result
 
 
+@router.post("/{audit_id}/run-pagespeed")
+async def run_pagespeed_analysis(
+    audit_id: int,
+    strategy: str = "both",
+    db: Session = Depends(get_db)
+):
+    """
+    Manually trigger PageSpeed analysis and return COMPLETE data.
+    
+    This endpoint is called when user clicks "Run PageSpeed" button.
+    Returns the full PageSpeed Insights output with all metrics, opportunities,
+    diagnostics, accessibility, SEO, and best practices audits.
+    
+    Args:
+        audit_id: Audit ID
+        strategy: "mobile", "desktop", or "both" (default)
+    
+    Returns:
+        Complete PageSpeed data structure with all fields
+    """
+    from app.services.pagespeed_service import PageSpeedService
+    import asyncio
+    
+    audit = AuditService.get_audit(db, audit_id)
+    if not audit:
+        raise HTTPException(status_code=404, detail="Auditoría no encontrada")
+    
+    try:
+        logger.info(f"Manual PageSpeed analysis triggered for audit {audit_id}, strategy: {strategy}")
+        
+        if strategy == "both":
+            # Run both strategies
+            mobile = await PageSpeedService.analyze_url(
+                url=str(audit.url),
+                api_key=settings.GOOGLE_PAGESPEED_API_KEY,
+                strategy="mobile"
+            )
+            await asyncio.sleep(3)  # Rate limiting
+            desktop = await PageSpeedService.analyze_url(
+                url=str(audit.url),
+                api_key=settings.GOOGLE_PAGESPEED_API_KEY,
+                strategy="desktop"
+            )
+            pagespeed_data = {"mobile": mobile, "desktop": desktop}
+        else:
+            # Run single strategy
+            result = await PageSpeedService.analyze_url(
+                url=str(audit.url),
+                api_key=settings.GOOGLE_PAGESPEED_API_KEY,
+                strategy=strategy
+            )
+            pagespeed_data = {strategy: result}
+        
+        # Store complete data in database
+        AuditService.set_pagespeed_data(db, audit_id, pagespeed_data)
+        
+        logger.info(f"PageSpeed analysis completed for audit {audit_id}")
+        
+        # Return COMPLETE data to frontend
+        return {
+            "success": True,
+            "data": pagespeed_data,  # Full structure with all fields
+            "message": "PageSpeed analysis completed",
+            "strategies_analyzed": list(pagespeed_data.keys())
+        }
+    except Exception as e:
+        logger.error(f"PageSpeed analysis failed for audit {audit_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error analyzing PageSpeed: {str(e)}")
+
+
+@router.post("/{audit_id}/generate-pdf")
+async def generate_audit_pdf(
+    audit_id: int,
+    force_pagespeed_refresh: bool = False,
+    background_tasks: BackgroundTasks = None,
+    db: Session = Depends(get_db)
+):
+    """
+    Generate PDF report with automatic PageSpeed analysis.
+    
+    This endpoint automatically triggers PageSpeed analysis if:
+    - No PageSpeed data exists
+    - Cached PageSpeed data is stale (>24 hours old)
+    - force_pagespeed_refresh is True
+    
+    The PDF includes complete context from ALL features:
+    - PageSpeed (mobile + desktop)
+    - Keywords
+    - Backlinks
+    - Rank tracking
+    - LLM visibility
+    - AI content suggestions
+    """
+    from app.services.pdf_service import PDFService
+    from app.models import Report
+    
+    audit = AuditService.get_audit(db, audit_id)
+    if not audit:
+        raise HTTPException(status_code=404, detail="Auditoría no encontrada")
+    
+    if audit.status != AuditStatus.COMPLETED:
+        raise HTTPException(
+            status_code=400,
+            detail=f"La auditoría debe estar completada. Estado actual: {audit.status.value}",
+        )
+    
+    try:
+        logger.info(f"=== Starting PDF generation with auto-PageSpeed for audit {audit_id} ===")
+        
+        # Generate PDF with complete context (includes auto-PageSpeed trigger)
+        pdf_path = await PDFService.generate_pdf_with_complete_context(
+            db=db,
+            audit_id=audit_id,
+            force_pagespeed_refresh=force_pagespeed_refresh
+        )
+        
+        if not pdf_path or not os.path.exists(pdf_path):
+            raise Exception(f"PDF generation failed - file not created at {pdf_path}")
+        
+        # Get file size
+        file_size = os.path.getsize(pdf_path)
+        
+        # Save PDF path to Report table
+        existing_report = db.query(Report).filter(
+            Report.audit_id == audit_id,
+            Report.report_type == "PDF"
+        ).first()
+        
+        if existing_report:
+            # Update existing report
+            existing_report.file_path = pdf_path
+            existing_report.file_size = file_size
+            existing_report.created_at = datetime.now()
+            logger.info(f"Updated existing PDF report entry")
+        else:
+            # Create new report entry
+            pdf_report = Report(
+                audit_id=audit_id,
+                report_type="PDF",
+                file_path=pdf_path,
+                file_size=file_size
+            )
+            db.add(pdf_report)
+            logger.info(f"Created new PDF report entry")
+        
+        db.commit()
+        
+        # Refresh audit to get updated pagespeed_data
+        db.refresh(audit)
+        
+        logger.info(f"=== PDF generation completed successfully ===")
+        logger.info(f"PDF saved at: {pdf_path}")
+        logger.info(f"PDF size: {file_size} bytes")
+        
+        return {
+            "success": True,
+            "pdf_path": pdf_path,
+            "message": "PDF generated successfully with PageSpeed data",
+            "pagespeed_included": bool(audit.pagespeed_data),
+            "file_size": file_size
+        }
+        
+    except Exception as e:
+        logger.error(f"=== Error generating PDF for audit {audit_id} ===")
+        logger.error(f"Error: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error generating PDF: {str(e)}")
+
+
 @router.get("/{audit_id}/download-pdf")
 def download_audit_pdf(audit_id: int, db: Session = Depends(get_db)):
     """
     Descarga el PDF de una auditoría completada.
+    Si el PDF no existe, sugiere generarlo primero.
     """
     from fastapi.responses import FileResponse
-    import os
+    from app.models import Report
     
     audit = AuditService.get_audit(db, audit_id)
     if not audit:
@@ -358,14 +565,43 @@ def download_audit_pdf(audit_id: int, db: Session = Depends(get_db)):
             detail=f"El PDF aún no está listo. Estado actual: {audit.status.value}",
         )
     
-    if not audit.report_pdf_path or not os.path.exists(audit.report_pdf_path):
+    # Get PDF path from Report table
+    pdf_report = db.query(Report).filter(
+        Report.audit_id == audit_id,
+        Report.report_type == "PDF"
+    ).order_by(Report.created_at.desc()).first()
+    
+    if not pdf_report or not pdf_report.file_path:
         raise HTTPException(
             status_code=404,
-            detail="El archivo PDF no se encuentra disponible",
+            detail="El archivo PDF no existe. Por favor, genera el PDF primero usando POST /api/audits/{audit_id}/generate-pdf",
         )
     
+    pdf_path = pdf_report.file_path
+    
+    # Handle both relative and absolute paths
+    if not os.path.isabs(pdf_path):
+        # If relative, make it absolute from current working directory
+        pdf_path = os.path.abspath(pdf_path)
+    
+    logger.info(f"Attempting to download PDF from: {pdf_path}")
+    logger.info(f"File exists: {os.path.exists(pdf_path)}")
+    
+    if not os.path.exists(pdf_path):
+        # Try alternative path - maybe it's in /app directory
+        alt_path = os.path.join("/app", pdf_report.file_path)
+        logger.info(f"Trying alternative path: {alt_path}")
+        if os.path.exists(alt_path):
+            pdf_path = alt_path
+            logger.info(f"Found PDF at alternative path")
+        else:
+            raise HTTPException(
+                status_code=404,
+                detail=f"El archivo PDF no existe en {pdf_path} ni en {alt_path}. Por favor, genera el PDF primero.",
+            )
+    
     return FileResponse(
-        path=audit.report_pdf_path,
+        path=pdf_path,
         media_type="application/pdf",
         filename=f"audit_{audit_id}_report.pdf"
     )
@@ -407,3 +643,18 @@ async def configure_audit_chat(
         role="assistant",
         content="Configuration saved. Starting audit..."
     )
+
+
+
+# DEPRECATED: Old GitHub integration endpoint
+# This functionality is now handled by /api/github/ endpoints
+# See: backend/app/api/routes/github.py
+
+# class GitHubFixRequest(BaseModel):
+#     repo_full_name: str
+#     base_branch: str = "main"
+
+# @router.post("/{audit_id}/github/create-fix", status_code=status.HTTP_201_CREATED)
+# async def create_github_fix(...):
+#     # This endpoint has been superseded by the new GitHub integration
+#     # Use /api/github/create-auto-fix-pr/{connection_id}/{repo_id} instead

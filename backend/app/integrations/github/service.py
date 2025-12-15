@@ -23,6 +23,112 @@ class GitHubService:
     def __init__(self, db: Session):
         self.db = db
     
+    def get_audit_context_for_fixes(self, audit_id: int) -> Dict[str, Any]:
+        """
+        Get complete audit context for generating code fixes.
+        Uses the same context structure as report generation.
+        
+        Args:
+            audit_id: ID of the audit
+            
+        Returns:
+            Complete audit context dictionary
+        """
+        from ...services.audit_service import AuditService
+        return AuditService.get_complete_audit_context(self.db, audit_id)
+    
+    async def generate_fixes_with_context(self, audit_id: int, repo_owner: str, 
+                                         repo_name: str) -> List[Dict[str, Any]]:
+        """
+        Generate code fixes using complete audit context.
+        
+        Args:
+            audit_id: ID of the audit
+            repo_owner: Repository owner
+            repo_name: Repository name
+            
+        Returns:
+            List of fix recommendations
+        """
+        # Get complete context (same as LLM report generation)
+        context = self.get_audit_context_for_fixes(audit_id)
+        
+        fixes = []
+        
+        # Example: Use PageSpeed data for performance fixes
+        if context.get("pagespeed"):
+            pagespeed = context["pagespeed"]
+            mobile_score = pagespeed.get("mobile", {}).get("performance_score", 100)
+            if mobile_score < 50:
+                fixes.append({
+                    "type": "performance",
+                    "priority": "high",
+                    "description": "Critical mobile performance issues detected",
+                    "metrics": pagespeed.get("mobile", {}).get("metrics", {}),
+                    "file_pattern": "*.html",
+                    "suggestion": "Optimize images, defer JavaScript, minimize CSS"
+                })
+        
+        # Example: Use keyword data for SEO fixes
+        if context.get("keywords"):
+            missing_keywords = [
+                k for k in context["keywords"]
+                if k.get("search_volume", 0) > 1000
+            ]
+            if missing_keywords:
+                fixes.append({
+                    "type": "seo",
+                    "priority": "medium",
+                    "description": "High-volume keywords not optimized",
+                    "keywords": [k["keyword"] for k in missing_keywords[:5]],
+                    "file_pattern": "*.html",
+                    "suggestion": "Add these keywords to meta tags and content"
+                })
+        
+        # Example: Use backlink data for authority fixes
+        if context.get("backlinks"):
+            backlinks = context["backlinks"]
+            if backlinks.get("total_backlinks", 0) < 10:
+                fixes.append({
+                    "type": "authority",
+                    "priority": "low",
+                    "description": "Low backlink count detected",
+                    "current_count": backlinks.get("total_backlinks", 0),
+                    "suggestion": "Create shareable content and reach out to industry sites"
+                })
+        
+        # Example: Use LLM visibility for GEO fixes
+        if context.get("llm_visibility"):
+            llm_vis = context["llm_visibility"]
+            mentions = len([l for l in llm_vis if l.get("mentioned")])
+            if mentions < 3:
+                fixes.append({
+                    "type": "geo",
+                    "priority": "medium",
+                    "description": "Low LLM visibility detected",
+                    "current_mentions": mentions,
+                    "suggestion": "Improve E-E-A-T signals, add author bios, structured data"
+                })
+        
+        logger.info(f"Generated {len(fixes)} fix recommendations for audit {audit_id}")
+        return fixes
+        if context.get("llm_visibility"):
+            invisible_queries = [
+                l for l in context["llm_visibility"]
+                if not l.get("is_visible", False)
+            ]
+            if invisible_queries:
+                fixes.append({
+                    "type": "geo",
+                    "priority": "high",
+                    "description": "Low visibility in LLM responses",
+                    "queries": [q["query"] for q in invisible_queries[:3]],
+                    "suggestion": "Improve E-E-A-T signals and structured data"
+                })
+        
+        logger.info(f"Generated {len(fixes)} fixes for audit {audit_id} using complete context")
+        return fixes
+    
     async def create_or_update_connection(self, token_data: Dict, user_info: Dict) -> GitHubConnection:
         """
         Crea o actualiza conexión de GitHub
@@ -231,6 +337,130 @@ class GitHubService:
         file_changes = {}
         modified_files = []
         
+        # Extract audit context
+        audit_context = {
+            "keywords": [],
+            "competitors": [],
+            "issues": [],
+            "topic": "Growth Hacking, SEO, Analytics",
+            "pagespeed": {},
+            "technical_audit": {},
+            "content_suggestions": [],
+            "fix_plan": []
+        }
+        
+        if audit:
+            try:
+                # 1. Keywords (from relationship)
+                if audit.keywords:
+                    audit_context["keywords"] = [k.term for k in audit.keywords[:20]] # Top 20 keywords
+                
+                # 2. Competitors (from JSON column)
+                if audit.competitors:
+                    audit_context["competitors"] = audit.competitors
+                
+                # 3. Issues (from fix_plan or calculated)
+                if audit.fix_plan:
+                    # Extract issues from fix plan if available
+                    if isinstance(audit.fix_plan, list):
+                        audit_context["issues"] = [item.get('issue') for item in audit.fix_plan if item.get('issue')]
+                        audit_context["fix_plan"] = audit.fix_plan
+                    elif isinstance(audit.fix_plan, dict):
+                        # Handle dict format if applicable
+                        pass
+                
+                # Fallback issues from counts
+                if not audit_context["issues"]:
+                    if audit.critical_issues > 0:
+                        audit_context["issues"].append(f"{audit.critical_issues} Critical Issues detected")
+                    if audit.high_issues > 0:
+                        audit_context["issues"].append(f"{audit.high_issues} High Priority Issues detected")
+
+                # 4. PageSpeed Data (use processed structure from PageSpeedService)
+                if audit.pagespeed_data:
+                    ps = audit.pagespeed_data
+                    mobile = ps.get("mobile", {})
+                    desktop = ps.get("desktop", {})
+                    
+                    audit_context["pagespeed"] = {
+                        "mobile": {
+                            "score": mobile.get("performance_score", 0),
+                            "metrics": {
+                                "LCP": mobile.get("metrics", {}).get("lcp") or mobile.get("core_web_vitals", {}).get("lcp"),
+                                "FCP": mobile.get("metrics", {}).get("fcp") or mobile.get("core_web_vitals", {}).get("fcp"),
+                                "CLS": mobile.get("metrics", {}).get("cls") or mobile.get("core_web_vitals", {}).get("cls"),
+                                "TBT": mobile.get("metrics", {}).get("tbt"),
+                                "SI": mobile.get("metrics", {}).get("si"),
+                            },
+                            "accessibility_score": mobile.get("accessibility_score"),
+                            "seo_score": mobile.get("seo_score"),
+                            "best_practices_score": mobile.get("best_practices_score"),
+                        },
+                        "desktop": {
+                            "score": desktop.get("performance_score", 0),
+                            "metrics": {
+                                "LCP": desktop.get("metrics", {}).get("lcp") or desktop.get("core_web_vitals", {}).get("lcp"),
+                                "FCP": desktop.get("metrics", {}).get("fcp") or desktop.get("core_web_vitals", {}).get("fcp"),
+                                "CLS": desktop.get("metrics", {}).get("cls") or desktop.get("core_web_vitals", {}).get("cls"),
+                                "TBT": desktop.get("metrics", {}).get("tbt"),
+                                "SI": desktop.get("metrics", {}).get("si"),
+                            }
+                        },
+                        "opportunities": [],
+                        "diagnostics": []
+                    }
+                    
+                    # Extract top opportunities from mobile data
+                    opps = mobile.get("opportunities", {})
+                    if opps:
+                        for key, value in opps.items():
+                            if isinstance(value, dict) and value.get("numericValue") and value.get("numericValue") > 0:
+                                audit_context["pagespeed"]["opportunities"].append({
+                                    "id": key,
+                                    "title": value.get("title", key),
+                                    "description": value.get("description", ""),
+                                    "savings_ms": value.get("numericValue", 0),
+                                    "display_value": value.get("displayValue", "")
+                                })
+                        # Sort by savings
+                        audit_context["pagespeed"]["opportunities"].sort(key=lambda x: x["savings_ms"], reverse=True)
+                        audit_context["pagespeed"]["opportunities"] = audit_context["pagespeed"]["opportunities"][:5]
+                    
+                    # Extract top diagnostics
+                    diags = mobile.get("diagnostics", {})
+                    if diags:
+                        for key, value in diags.items():
+                            if isinstance(value, dict) and value.get("score") is not None and value.get("score") < 0.5:
+                                audit_context["pagespeed"]["diagnostics"].append({
+                                    "id": key,
+                                    "title": value.get("title", key),
+                                    "score": value.get("score", 0),
+                                    "display_value": value.get("displayValue", "")
+                                })
+                        audit_context["pagespeed"]["diagnostics"] = audit_context["pagespeed"]["diagnostics"][:5]
+
+                # 5. Technical Audit (Target Audit)
+                if audit.target_audit:
+                    ta = audit.target_audit
+                    audit_context["technical_audit"] = {
+                        "schema_status": ta.get("schema", {}).get("schema_presence", {}).get("status"),
+                        "h1_status": ta.get("structure", {}).get("h1_check", {}).get("status"),
+                        "meta_description": ta.get("meta", {}).get("meta_description", {}).get("exists"),
+                        "canonical": ta.get("meta", {}).get("canonical", {}).get("exists"),
+                        "semantic_html_score": ta.get("structure", {}).get("semantic_html", {}).get("score_percent")
+                    }
+
+                # 6. AI Content Suggestions
+                if audit.ai_content_suggestions:
+                    audit_context["content_suggestions"] = [
+                        {"topic": s.topic, "type": s.suggestion_type, "suggestion": s.content_outline} 
+                        for s in audit.ai_content_suggestions[:5]
+                    ]
+
+                logger.info(f"Extracted rich audit context: {len(audit_context['keywords'])} keywords, PageSpeed: {'Yes' if audit_context['pagespeed'] else 'No'}")
+            except Exception as e:
+                logger.warning(f"Failed to extract rich audit context: {e}")
+        
         for file_path in page_files[:10]:  # Limitar a 10 archivos para el MVP
             try:
                 # Obtener contenido actual
@@ -241,7 +471,8 @@ class GitHubService:
                     original_content, 
                     file_path, 
                     fixes,
-                    repo.site_type
+                    repo.site_type,
+                    audit_context
                 )
                 
                 # Si hubo cambios, actualizar archivo

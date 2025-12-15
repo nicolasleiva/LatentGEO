@@ -43,6 +43,7 @@ class GitHubOAuth:
             f"&redirect_uri={settings.GITHUB_REDIRECT_URI}"
             f"&scope={scopes}"
             f"&state={state}"
+            f"&prompt=login"
         )
         
         return {"url": url, "state": state}

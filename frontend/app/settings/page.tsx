@@ -1,0 +1,260 @@
+'use client'
+
+import { useState } from 'react'
+import { useUser } from '@auth0/nextjs-auth0/client'
+import { Header } from '@/components/header'
+import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
+import {
+    User, Bell, Key, Globe, Palette, Shield,
+    Save, Moon, Sun, Monitor, Check
+} from 'lucide-react'
+
+export default function SettingsPage() {
+    const { user, isLoading } = useUser()
+    const [theme, setTheme] = useState<'dark' | 'light' | 'system'>('dark')
+    const [notifications, setNotifications] = useState({
+        email: true,
+        auditComplete: true,
+        weeklyReport: false,
+    })
+    const [saved, setSaved] = useState(false)
+
+    const handleSave = () => {
+        setSaved(true)
+        setTimeout(() => setSaved(false), 2000)
+    }
+
+    if (isLoading) {
+        return (
+            <div className="min-h-screen bg-background">
+                <Header />
+                <div className="flex items-center justify-center h-[60vh]">
+                    <div className="w-8 h-8 border-2 border-muted-foreground border-t-foreground rounded-full animate-spin" />
+                </div>
+            </div>
+        )
+    }
+
+    if (!user) {
+        return (
+            <div className="min-h-screen bg-background">
+                <Header />
+                <div className="max-w-4xl mx-auto px-6 py-16 text-center">
+                    <Shield className="w-16 h-16 text-muted-foreground/50 mx-auto mb-6" />
+                    <h1 className="text-3xl font-bold text-foreground mb-4">Sign in Required</h1>
+                    <p className="text-muted-foreground mb-8">
+                        Please sign in to access your settings.
+                    </p>
+                    <a
+                        href="/auth/login"
+                        className="inline-flex items-center gap-2 px-6 py-3 bg-primary text-primary-foreground rounded-xl font-medium hover:bg-primary/90 transition-colors"
+                    >
+                        Sign In
+                    </a>
+                </div>
+            </div>
+        )
+    }
+
+    return (
+        <div className="min-h-screen bg-background text-foreground">
+            <Header />
+
+            <main className="max-w-4xl mx-auto px-6 py-12">
+                <div className="mb-8">
+                    <h1 className="text-3xl font-bold mb-2">Settings</h1>
+                    <p className="text-muted-foreground">Manage your account and preferences</p>
+                </div>
+
+                <div className="space-y-6">
+                    {/* Profile Section */}
+                    <section className="p-6 glass-card border border-border rounded-2xl">
+                        <div className="flex items-center gap-3 mb-6">
+                            <User className="w-5 h-5 text-blue-500" />
+                            <h2 className="text-lg font-semibold">Profile</h2>
+                        </div>
+
+                        <div className="flex items-center gap-6 mb-6">
+                            {user.picture ? (
+                                <img
+                                    src={user.picture}
+                                    alt={user.name || 'User'}
+                                    className="w-20 h-20 rounded-full border-2 border-border"
+                                />
+                            ) : (
+                                <div className="w-20 h-20 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-2xl font-bold text-white">
+                                    {user.name?.charAt(0) || user.email?.charAt(0) || 'U'}
+                                </div>
+                            )}
+                            <div>
+                                <h3 className="text-xl font-medium">{user.name || 'User'}</h3>
+                                <p className="text-muted-foreground">{user.email}</p>
+                                <Badge className="mt-2 bg-green-500/10 text-green-500 border-green-500/20">
+                                    Free Plan
+                                </Badge>
+                            </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label className="block text-sm text-muted-foreground mb-2">Display Name</label>
+                                <input
+                                    type="text"
+                                    defaultValue={user.name || ''}
+                                    className="w-full px-4 py-3 glass-panel border border-border rounded-xl text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-border/80"
+                                    placeholder="Your name"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-sm text-muted-foreground mb-2">Email</label>
+                                <input
+                                    type="email"
+                                    value={user.email || ''}
+                                    disabled
+                                    className="w-full px-4 py-3 glass-panel border border-border rounded-xl text-muted-foreground cursor-not-allowed"
+                                />
+                            </div>
+                        </div>
+                    </section>
+
+                    {/* Appearance Section */}
+                    <section className="p-6 glass-card border border-border rounded-2xl">
+                        <div className="flex items-center gap-3 mb-6">
+                            <Palette className="w-5 h-5 text-purple-500" />
+                            <h2 className="text-lg font-semibold">Appearance</h2>
+                        </div>
+
+                        <div className="flex gap-4">
+                            <button
+                                onClick={() => setTheme('dark')}
+                                className={`flex-1 p-4 rounded-xl border transition-all ${theme === 'dark'
+                                        ? 'bg-muted border-border/80'
+                                        : 'glass-panel border-border hover:border-border/80'
+                                    }`}
+                            >
+                                <Moon className="w-6 h-6 mx-auto mb-2" />
+                                <p className="text-sm">Dark</p>
+                            </button>
+                            <button
+                                onClick={() => setTheme('light')}
+                                className={`flex-1 p-4 rounded-xl border transition-all ${theme === 'light'
+                                        ? 'bg-muted border-border/80'
+                                        : 'glass-panel border-border hover:border-border/80'
+                                    }`}
+                            >
+                                <Sun className="w-6 h-6 mx-auto mb-2" />
+                                <p className="text-sm">Light</p>
+                            </button>
+                            <button
+                                onClick={() => setTheme('system')}
+                                className={`flex-1 p-4 rounded-xl border transition-all ${theme === 'system'
+                                        ? 'bg-muted border-border/80'
+                                        : 'glass-panel border-border hover:border-border/80'
+                                    }`}
+                            >
+                                <Monitor className="w-6 h-6 mx-auto mb-2" />
+                                <p className="text-sm">System</p>
+                            </button>
+                        </div>
+                    </section>
+
+                    {/* Notifications Section */}
+                    <section className="p-6 glass-card border border-border rounded-2xl">
+                        <div className="flex items-center gap-3 mb-6">
+                            <Bell className="w-5 h-5 text-yellow-500" />
+                            <h2 className="text-lg font-semibold">Notifications</h2>
+                        </div>
+
+                        <div className="space-y-4">
+                            <label className="flex items-center justify-between p-4 glass-panel rounded-xl cursor-pointer hover:bg-muted/50 transition-colors">
+                                <div>
+                                    <p className="font-medium">Email Notifications</p>
+                                    <p className="text-sm text-muted-foreground">Receive updates via email</p>
+                                </div>
+                                <input
+                                    type="checkbox"
+                                    checked={notifications.email}
+                                    onChange={(e) => setNotifications({ ...notifications, email: e.target.checked })}
+                                    className="w-5 h-5 accent-blue-500"
+                                />
+                            </label>
+
+                            <label className="flex items-center justify-between p-4 glass-panel rounded-xl cursor-pointer hover:bg-muted/50 transition-colors">
+                                <div>
+                                    <p className="font-medium">Audit Complete</p>
+                                    <p className="text-sm text-muted-foreground">Notify when an audit finishes</p>
+                                </div>
+                                <input
+                                    type="checkbox"
+                                    checked={notifications.auditComplete}
+                                    onChange={(e) => setNotifications({ ...notifications, auditComplete: e.target.checked })}
+                                    className="w-5 h-5 accent-blue-500"
+                                />
+                            </label>
+
+                            <label className="flex items-center justify-between p-4 glass-panel rounded-xl cursor-pointer hover:bg-muted/50 transition-colors">
+                                <div>
+                                    <p className="font-medium">Weekly Report</p>
+                                    <p className="text-sm text-muted-foreground">Get a summary of your audits</p>
+                                </div>
+                                <input
+                                    type="checkbox"
+                                    checked={notifications.weeklyReport}
+                                    onChange={(e) => setNotifications({ ...notifications, weeklyReport: e.target.checked })}
+                                    className="w-5 h-5 accent-blue-500"
+                                />
+                            </label>
+                        </div>
+                    </section>
+
+                    {/* API Keys Section */}
+                    <section className="p-6 glass-card border border-border rounded-2xl">
+                        <div className="flex items-center gap-3 mb-6">
+                            <Key className="w-5 h-5 text-green-500" />
+                            <h2 className="text-lg font-semibold">API Keys</h2>
+                            <Badge className="bg-blue-500/10 text-blue-400 border-blue-500/20">
+                                Coming Soon
+                            </Badge>
+                        </div>
+
+                        <p className="text-muted-foreground mb-4">
+                            Generate API keys to integrate Auditor GEO with your applications.
+                        </p>
+
+                        <Button
+                            disabled
+                        >
+                            Generate API Key
+                        </Button>
+                    </section>
+
+                    {/* Save Button */}
+                    <div className="flex justify-end gap-4">
+                        <Button
+                            variant="outline"
+                        >
+                            Cancel
+                        </Button>
+                        <Button
+                            onClick={handleSave}
+                            className={`${saved ? 'bg-green-500' : ''} hover:opacity-90 transition-all`}
+                        >
+                            {saved ? (
+                                <>
+                                    <Check className="w-4 h-4 mr-2" />
+                                    Saved!
+                                </>
+                            ) : (
+                                <>
+                                    <Save className="w-4 h-4 mr-2" />
+                                    Save Changes
+                                </>
+                            )}
+                        </Button>
+                    </div>
+                </div>
+            </main>
+        </div>
+    )
+}

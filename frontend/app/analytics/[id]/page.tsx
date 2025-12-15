@@ -17,25 +17,24 @@ export default function AuditAnalyticsPage({ params }: { params: { id: string } 
     const [issuesData, setIssuesData] = useState<any>(null)
 
     useEffect(() => {
+        const loadAnalytics = async () => {
+            try {
+                const [analyticsRes, competitorRes, issuesRes] = await Promise.all([
+                    api.getAuditAnalytics(auditId),
+                    api.getCompetitorAnalysis(auditId).catch(() => null),
+                    api.getIssuesByPriority(auditId).catch(() => null)
+                ])
+                setAnalytics(analyticsRes)
+                setCompetitorData(competitorRes)
+                setIssuesData(issuesRes)
+            } catch (error) {
+                console.error('Error loading analytics:', error)
+            } finally {
+                setLoading(false)
+            }
+        }
         loadAnalytics()
     }, [auditId])
-
-    const loadAnalytics = async () => {
-        try {
-            const [analyticsRes, competitorRes, issuesRes] = await Promise.all([
-                api.getAuditAnalytics(auditId),
-                api.getCompetitorAnalysis(auditId).catch(() => null),
-                api.getIssuesByPriority(auditId).catch(() => null)
-            ])
-            setAnalytics(analyticsRes)
-            setCompetitorData(competitorRes)
-            setIssuesData(issuesRes)
-        } catch (error) {
-            console.error('Error loading analytics:', error)
-        } finally {
-            setLoading(false)
-        }
-    }
 
     if (loading) {
         return (

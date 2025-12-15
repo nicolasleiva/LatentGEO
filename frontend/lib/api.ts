@@ -22,6 +22,8 @@ class APIService {
     url: string
     maxPages?: number
     competitors?: string[]
+    user_id?: string
+    user_email?: string
   }): Promise<AuditSummary> {
     const res = await fetch(`${this.baseUrl}/api/audits`, {
       method: 'POST',
@@ -381,6 +383,33 @@ class APIService {
     if (!res.ok) throw new Error(`API error: ${res.status}`)
     return res.json()
   }
+
+  // ============= SCORE HISTORY =============
+
+  async getScoreHistory(domain: string, days = 90, userEmail?: string): Promise<any> {
+    const params = new URLSearchParams({ days: days.toString() })
+    if (userEmail) params.append('user_email', userEmail)
+    const res = await fetch(`${this.baseUrl}/api/score-history/domain/${encodeURIComponent(domain)}?${params}`)
+    if (!res.ok) throw new Error(`API error: ${res.status}`)
+    return res.json()
+  }
+
+  async getMonthlyComparison(domain: string, userEmail?: string): Promise<any> {
+    const params = new URLSearchParams()
+    if (userEmail) params.append('user_email', userEmail)
+    const res = await fetch(`${this.baseUrl}/api/score-history/domain/${encodeURIComponent(domain)}/comparison?${params}`)
+    if (!res.ok) throw new Error(`API error: ${res.status}`)
+    return res.json()
+  }
+
+  async getDomainsSummary(days = 30, userEmail?: string): Promise<any> {
+    const params = new URLSearchParams({ days: days.toString() })
+    if (userEmail) params.append('user_email', userEmail)
+    const res = await fetch(`${this.baseUrl}/api/score-history/summary?${params}`)
+    if (!res.ok) throw new Error(`API error: ${res.status}`)
+    return res.json()
+  }
 }
 
 export const api = new APIService()
+

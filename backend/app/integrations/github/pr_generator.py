@@ -111,11 +111,19 @@ class PRGeneratorService:
         for file_path, changes in file_changes.items():
             body += f"#### `{file_path}`\n\n"
             for change in changes:
-                body += f"- **{change['type']}**: "
-                if change.get('before'):
-                    body += f"Changed from `{change['before'][:50]}...` to `{change['after'][:50]}...`\n"
+                change_type = change.get('type', 'modification')
+                before = change.get('before') or ''
+                after = change.get('after') or ''
+                
+                body += f"- **{change_type}**: "
+                if before and after:
+                    body += f"Changed from `{before[:50]}...` to `{after[:50]}...`\n"
+                elif after:
+                    body += f"Added: `{after[:100]}...`\n"
+                elif before:
+                    body += f"Removed: `{before[:100]}...`\n"
                 else:
-                    body += f"Added: `{change['after'][:100]}...`\n"
+                    body += "Modified content\n"
             body += "\n"
         
         body += "</details>\n\n"

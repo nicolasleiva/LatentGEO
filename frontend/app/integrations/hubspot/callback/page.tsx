@@ -13,38 +13,38 @@ function CallbackContent() {
     const [error, setError] = useState('')
 
     useEffect(() => {
+        const exchangeCode = async (authCode: string) => {
+            try {
+                const response = await fetch('/api/hubspot/callback', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ code: authCode })
+                })
+
+                if (!response.ok) {
+                    throw new Error('Failed to exchange code')
+                }
+
+                const data = await response.json()
+                setStatus('Connected successfully! Redirecting...')
+
+                // Redirect to pages list
+                setTimeout(() => {
+                    router.push('/integrations/hubspot/pages')
+                }, 1500)
+
+            } catch (err) {
+                console.error(err)
+                setError('Failed to connect to HubSpot. Please try again.')
+            }
+        }
+
         if (code) {
             exchangeCode(code)
         } else {
             setError('No authorization code found')
         }
-    }, [code])
-
-    const exchangeCode = async (authCode: string) => {
-        try {
-            const response = await fetch('/api/hubspot/callback', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ code: authCode })
-            })
-
-            if (!response.ok) {
-                throw new Error('Failed to exchange code')
-            }
-
-            const data = await response.json()
-            setStatus('Connected successfully! Redirecting...')
-
-            // Redirect to pages list
-            setTimeout(() => {
-                router.push('/integrations/hubspot/pages')
-            }, 1500)
-
-        } catch (err) {
-            console.error(err)
-            setError('Failed to connect to HubSpot. Please try again.')
-        }
-    }
+    }, [code, router])
 
     return (
         <Card className="w-full max-w-md text-center">

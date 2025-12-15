@@ -28,7 +28,7 @@ class ConnectResponse(BaseModel):
 
 class CallbackRequest(BaseModel):
     code: str
-    state: str
+    state: Optional[str] = None
 
 class RepositoryResponse(BaseModel):
     id: str
@@ -73,6 +73,18 @@ def get_auth_url():
         return data
     except Exception as e:
         logger.error(f"Error generating GitHub auth URL: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/oauth/authorize")
+def oauth_authorize():
+    """Redirige directamente a GitHub OAuth (para compatibilidad con frontend)"""
+    from fastapi.responses import RedirectResponse
+    try:
+        auth_data = GitHubOAuth.get_authorization_url()
+        return RedirectResponse(url=auth_data["url"])
+    except Exception as e:
+        logger.error(f"Error redirecting to GitHub OAuth: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -807,3 +819,281 @@ async def _handle_installation_event(payload: Dict, db: Session):
         # App desinstalada
         logger.info(f"GitHub App uninstalled: {installation_id}")
         # TODO: Desactivar conexión
+
+class CreateAutoFixRequest(BaseModel):
+    audit_id: int
+
+
+@router.get("/geo-compare/{audit_id}")
+async def compare_geo_with_competitors(
+    audit_id: int,
+    competitor_urls: Optional[List[str]] = None,
+    db: Session = Depends(get_db)
+):
+    """
+    Compara GEO score con competidores
+    
+    Útil para ver gaps de optimización vs competencia directa
+    
+    Args:
+        audit_id: ID de la auditoría a comparar
+        competitor_urls: Lista de URLs de competidores (opcional)
+        
+    Returns:
+        Análisis comparativo con ranking y gaps
+    """
+    from ...services.geo_score_service import GEOScoreService
+    from ...models import Audit
+    
+    audit = db.query(Audit).filter(Audit.id == audit_id).first()
+    
+    if not audit:
+        raise HTTPException(status_code=404, detail="Audit not found")
+    
+    # Si no se proveen competidores, usar los de la auditoría
+    if not competitor_urls:
+        external_intel = audit.external_intelligence or {}
+        competitor_urls = [
+            comp.get("url") 
+            for comp in external_intel.get("competitors", [])[:3]
+        ]
+    
+    if not competitor_urls:
+        raise HTTPException(
+            status_code=400,
+            detail="No competitor URLs provided or found in audit"
+        )
+    
+    try:
+        geo_service = GEOScoreService(db)
+        comparison = await geo_service.compare_with_competitors(
+            url=audit.url,
+            competitor_urls=competitor_urls
+        )
+        
+        return comparison
+        
+    except Exception as e:
+        logger.error(f"Error comparing GEO scores: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+
+
+@router.post("/webhook")
+async def github_webhook(
+    request: Request,
+    x_github_event: Optional[str] = Header(None),
+    x_hub_signature_256: Optional[str] = Header(None),
+    db: Session = Depends(get_db)
+):
+    """
+    Maneja webhooks de GitHub
+    
+    Eventos soportados:
+    - push: Auto-auditar cuando hay cambios
+    - pull_request: Actualizar estado del PR
+    - installation: Manejar instalación de la app
+    """
+    # 1. Verificar firma del webhook
+    body = await request.body()
+    
+    if not _verify_webhook_signature(body, x_hub_signature_256):
+        logger.warning("Invalid GitHub webhook signature")
+        raise HTTPException(status_code=401, detail="Invalid signature")
+    
+    # 2. Parsear payload
+    payload = await request.json()
+    
+    # 3. Procesar según tipo de evento
+    try:
+        from ...models.github import GitHubWebhookEvent
+        
+        # Guardar evento
+        event = GitHubWebhookEvent(
+            event_type=x_github_event,
+            event_id=request.headers.get("x-github-delivery", ""),
+            payload=payload
+        )
+        db.add(event)
+        db.commit()
+        
+        # Procesar según tipo
+        if x_github_event == "push":
+            await _handle_push_event(payload, db)
+        elif x_github_event == "pull_request":
+            await _handle_pr_event(payload, db)
+        elif x_github_event == "installation":
+            await _handle_installation_event(payload, db)
+        
+        # Marcar como procesado
+        event.processed = True
+        event.processed_at = datetime.utcnow()
+        db.commit()
+        
+        return {"status": "success", "event": x_github_event}
+        
+    except Exception as e:
+        logger.error(f"Error processing webhook: {e}")
+        if 'event' in locals():
+            event.error_message = str(e)
+            db.commit()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# Helper functions
+
+def _verify_webhook_signature(payload_body: bytes, signature_header: str) -> bool:
+    """Verifica la firma del webhook de GitHub"""
+    if not signature_header or not settings.GITHUB_WEBHOOK_SECRET:
+        return True  # Skip verification in development
+    
+    hash_object = hmac.new(
+        settings.GITHUB_WEBHOOK_SECRET.encode(),
+        msg=payload_body,
+        digestmod=hashlib.sha256
+    )
+    expected_signature = "sha256=" + hash_object.hexdigest()
+    
+    return hmac.compare_digest(expected_signature, signature_header)
+
+
+async def _handle_push_event(payload: Dict, db: Session):
+    """Maneja evento push - potencialmente auto-auditar"""
+    repo_full_name = payload["repository"]["full_name"]
+    
+    # Buscar repo en BD
+    repo = db.query(GitHubRepository).filter(
+        GitHubRepository.full_name == repo_full_name
+    ).first()
+    
+    if repo and repo.auto_audit:
+        logger.info(f"Auto-audit triggered for {repo_full_name}")
+        # TODO: Disparar auditoría en background con Celery
+        # from ...workers.tasks import run_audit_task
+        # run_audit_task.delay(repo.homepage_url or repo.url)
+
+
+async def _handle_pr_event(payload: Dict, db: Session):
+    """Maneja evento pull_request - actualizar estado"""
+    pr_number = payload["pull_request"]["number"]
+    action = payload["action"]  # opened, closed, merged, etc.
+    
+    # Buscar PR en BD
+    pr = db.query(GitHubPullRequest).filter(
+        GitHubPullRequest.pr_number == pr_number
+    ).first()
+    
+    if pr:
+        if action == "closed":
+            if payload["pull_request"].get("merged"):
+                pr.status = PRStatus.MERGED
+                pr.merged_at = datetime.utcnow()
+            else:
+                pr.status = PRStatus.CLOSED
+                pr.closed_at = datetime.utcnow()
+            
+            db.commit()
+            logger.info(f"PR #{pr_number} status updated to {action}")
+
+
+async def _handle_installation_event(payload: Dict, db: Session):
+    """Maneja evento installation"""
+    action = payload["action"]
+    installation_id = payload["installation"]["id"]
+    
+    if action == "created":
+        # Nueva instalación de la app
+        logger.info(f"GitHub App installed: {installation_id}")
+        # TODO: Guardar installation_id en GitHubConnection
+    
+    elif action == "deleted":
+        # App desinstalada
+        logger.info(f"GitHub App uninstalled: {installation_id}")
+        # TODO: Desactivar conexión
+
+class CreateAutoFixRequest(BaseModel):
+    audit_id: int
+
+@router.post("/create-auto-fix-pr/{connection_id}/{repo_id}")
+async def create_auto_fix_pr(
+    connection_id: str,
+    repo_id: str,
+    request: CreateAutoFixRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Crea un PR automático basado en auditoría existente.
+    
+    Utiliza el método GitHubService.create_pr_with_fixes que ya tiene toda
+    la lógica de extracción de contexto enriquecido (PageSpeed, Technical, etc.)
+    """
+    from ...models import Audit, AuditStatus
+    from ...integrations.github.service import GitHubService
+    
+    service = GitHubService(db)
+    
+    try:
+        # 1. Obtener auditoría
+        audit = db.query(Audit).filter(Audit.id == request.audit_id).first()
+        if not audit:
+            raise HTTPException(status_code=404, detail="Audit not found")
+        
+        if audit.status != AuditStatus.COMPLETED:
+            raise HTTPException(status_code=400, detail="Audit is not completed yet")
+            
+        # 2. Convertir fix_plan a fixes con formato correcto para el modificador
+        raw_fixes = audit.fix_plan or []
+        if not raw_fixes:
+            raise HTTPException(status_code=400, detail="Audit has no fix plan")
+        
+        # Convertir cada item del fix_plan al formato que espera el modificador
+        fixes = []
+        for item in raw_fixes:
+            fix_type = _map_issue_to_fix_type(item.get("issue", ""))
+            
+            if fix_type != "other":  # Solo incluir fixes que podemos aplicar
+                fixes.append({
+                    "type": fix_type,
+                    "priority": item.get("priority", "MEDIUM"),
+                    "value": item.get("recommended_value", ""),
+                    "page_url": item.get("page", ""),
+                    "description": item.get("issue", ""),
+                    "current_value": item.get("current_value"),
+                    "impact": item.get("impact", "")
+                })
+        
+        if not fixes:
+            # Si no hay fixes mapeables, usar fixes mínimos para mejorar SEO/GEO
+            fixes = [
+                {"type": "title", "priority": "HIGH", "description": "Optimize title"},
+                {"type": "meta_description", "priority": "HIGH", "description": "Add/update meta description"},
+                {"type": "schema", "priority": "MEDIUM", "description": "Add Schema.org structured data"},
+                {"type": "add_faq_section", "priority": "MEDIUM", "description": "Add FAQ section"},
+            ]
+        
+        logger.info(f"Mapped {len(fixes)} fixes from fix_plan for audit {request.audit_id}")
+        
+        # 3. Llamar al método existente que ya tiene toda la lógica
+        # Este método extrae automáticamente:
+        # - Keywords, Competitors, PageSpeed, Technical Audit, Content Suggestions
+        pr = await service.create_pr_with_fixes(
+            connection_id=connection_id,
+            repo_id=repo_id,
+            audit_id=request.audit_id,
+            fixes=fixes
+        )
+        
+        return {
+            "success": True,
+            "pr_url": pr.html_url,
+            "pr_number": pr.pr_number,
+            "title": pr.title
+        }
+        
+    except ValueError as e:
+        logger.error(f"Validation error: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error creating auto-fix PR: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
