@@ -9,6 +9,10 @@ from pydantic_settings import BaseSettings
 class Settings(BaseSettings):
     """Configuración de la aplicación"""
     
+    # Configuración del proyecto
+    PROJECT_NAME: str = "Auditor"
+    PROJECT_SLUG: str = "auditor"
+    
     # Base de datos
     DATABASE_URL: str = "sqlite:////app/db/auditor.db"
     SQLALCHEMY_ECHO: bool = False
@@ -81,13 +85,19 @@ class Settings(BaseSettings):
     MAX_PAGE_SIZE: int = 100
     
     # Configuración general
-    APP_NAME: str = "Auditor GEO/SEO"
+    APP_NAME: str = "Auditor"
     APP_VERSION: str = "1.0.0"
     DEBUG: bool = False
     debug: Optional[str] = None
     secret_key: str = "your-secret-key-change-in-production"
     cors_origins: Optional[str] = None
     CORS_ORIGINS: list = ["http://localhost:3000", "http://localhost:8000"]
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        # Actualizar APP_NAME con PROJECT_NAME si está configurado
+        if self.PROJECT_NAME and self.PROJECT_NAME != "Auditor":
+            self.APP_NAME = self.PROJECT_NAME
     
     class Config:
         env_file = ".env"

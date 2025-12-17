@@ -64,9 +64,9 @@ class PDFService:
             for k in audit.keywords:
                 keywords.append({
                     "keyword": k.term if hasattr(k, 'term') else k.keyword if hasattr(k, 'keyword') else '',
-                    "search_volume": k.volume if hasattr(k, 'volume') else k.search_volume if hasattr(k, 'search_volume') else 0,
-                    "difficulty": k.difficulty if hasattr(k, 'difficulty') else 0,
-                    "cpc": k.cpc if hasattr(k, 'cpc') else 0,
+                    "search_volume": (k.volume if hasattr(k, 'volume') else k.search_volume if hasattr(k, 'search_volume') else 0) or 0,
+                    "difficulty": (k.difficulty if hasattr(k, 'difficulty') else 0) or 0,
+                    "cpc": (k.cpc if hasattr(k, 'cpc') else 0) or 0,
                     "intent": k.intent if hasattr(k, 'intent') else '',
                     "current_rank": getattr(k, 'current_rank', None),
                     "opportunity_score": getattr(k, 'opportunity_score', None)
@@ -83,9 +83,9 @@ class PDFService:
                     "source_url": b.source_url,
                     "target_url": b.target_url,
                     "anchor_text": b.anchor_text if hasattr(b, 'anchor_text') else '',
-                    "domain_authority": b.domain_authority if hasattr(b, 'domain_authority') else 0,
-                    "page_authority": getattr(b, 'page_authority', 0),
-                    "spam_score": getattr(b, 'spam_score', 0),
+                    "domain_authority": (b.domain_authority if hasattr(b, 'domain_authority') else 0) or 0,
+                    "page_authority": getattr(b, 'page_authority', 0) or 0,
+                    "spam_score": getattr(b, 'spam_score', 0) or 0,
                     "link_type": "dofollow" if getattr(b, 'is_dofollow', True) else "nofollow"
                 })
         
@@ -94,13 +94,13 @@ class PDFService:
             for r in audit.rank_trackings:
                 rank_tracking.append({
                     "keyword": r.keyword,
-                    "position": r.position,
+                    "position": (r.position or 100),
                     "url": r.url,
                     "search_engine": getattr(r, 'search_engine', 'google'),
                     "location": r.location if hasattr(r, 'location') else 'US',
                     "device": r.device if hasattr(r, 'device') else 'desktop',
                     "previous_position": getattr(r, 'previous_position', None),
-                    "change": r.position - getattr(r, 'previous_position', r.position) if hasattr(r, 'previous_position') and r.previous_position else 0
+                    "change": ((r.position or 100) - getattr(r, 'previous_position', 0)) if getattr(r, 'previous_position', None) else 0
                 })
         
         llm_visibility = []
@@ -125,8 +125,8 @@ class PDFService:
                     "target_keyword": getattr(a, 'target_keyword', ''),
                     "content_type": a.suggestion_type if hasattr(a, 'suggestion_type') else getattr(a, 'content_type', ''),
                     "priority": a.priority if hasattr(a, 'priority') else 'medium',
-                    "estimated_traffic": getattr(a, 'estimated_traffic', 0),
-                    "difficulty": getattr(a, 'difficulty', 0),
+                    "estimated_traffic": getattr(a, 'estimated_traffic', 0) or 0,
+                    "difficulty": getattr(a, 'difficulty', 0) or 0,
                     "outline": a.content_outline if hasattr(a, 'content_outline') else getattr(a, 'outline', {})
                 })
         else:

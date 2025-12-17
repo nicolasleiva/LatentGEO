@@ -175,6 +175,8 @@ REQUIRED TRANSFORMATIONS ({len(fixes)} total):
    - Return ONLY the complete modified TSX code
    - NO explanations, NO markdown code blocks (no ```)
    - Do NOT truncate or summarize
+   - Do NOT include any text before or after the code
+   - Do NOT include markdown descriptions like "Here's the complete modified TSX file..."
 
 2. PRESERVE EXISTING CODE:
    - Keep ALL existing imports, props, state, and component logic
@@ -236,8 +238,8 @@ REQUIRED TRANSFORMATIONS ({len(fixes)} total):
 5. FAQ SECTION - DYNAMIC RENDERING (React Best Practices):
    - Iterate over `faqData.mainEntity` to render questions.
    - IMPORANT: Use a unique property (like `faq.name`) as the `key` prop.
-   - DO NOT use the array index `key={index}` (this is an anti-pattern).
-   - Example: `<div key={faq.name}>...</div>`
+   - DO NOT use the array index `key={{index}}` (this is an anti-pattern).
+   - Example: `<div key={{faq.name}}>...</div>`
 
 6. THINGS TO AVOID:
    ❌ Don't use "https://example.com/..." URLs (use relative paths)
@@ -247,11 +249,19 @@ REQUIRED TRANSFORMATIONS ({len(fixes)} total):
    ❌ Don't import next/head in App Router
    ❌ Don't duplicate FAQ content (schema AND hardcoded HTML)
    ❌ Don't import next/head in App Router
+   ❌ Don't add markdown text or code fence markers (```tsx, ```) at the start or end
+   ❌ Don't use placeholder dates like "2025-01-01" (use current year)
+   ❌ Don't reference non-existent image files (/og-image.jpg must exist in public/)
+   ❌ Don't use itemProp="mainEntity" on individual FAQ items (only on container)
+   ❌ Don't include explanatory text like "Here's the complete modified TSX file..."
 
 7. CONTENT RULES:
    - Generate 3-4 relevant FAQ Q&A pairs based on page topic
    - Use "Our Team", "Industry Experts" for author, not fake names
    - Use current year: {datetime.now().strftime('%Y')}
+   - All image URLs must be relative paths (e.g., /og-image.jpg, /logo.jpg)
+   - Dates must be realistic (not placeholder dates)
+   - Verify all referenced images exist in public/ directory
 
 IMPORTANT: Return the ENTIRE modified file. Do not truncate.
 """

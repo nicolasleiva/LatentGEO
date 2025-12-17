@@ -1044,8 +1044,42 @@ async def create_auto_fix_pr(
             
         # 2. Convertir fix_plan a fixes con formato correcto para el modificador
         raw_fixes = audit.fix_plan or []
+        
+        # Si no hay fix_plan, generar fixes básicos de SEO/GEO
         if not raw_fixes:
-            raise HTTPException(status_code=400, detail="Audit has no fix plan")
+            logger.info(f"No fix_plan found for audit {request.audit_id}, using default SEO/GEO fixes")
+            fixes = [
+                {"type": "title", "priority": "HIGH", "description": "Optimize page title for SEO"},
+                {"type": "meta_description", "priority": "HIGH", "description": "Add/optimize meta description"},
+                {"type": "schema", "priority": "MEDIUM", "description": "Add Schema.org structured data"},
+                {"type": "add_faq_section", "priority": "MEDIUM", "description": "Add FAQ section for better user engagement"},
+            ]
+        else:
+            # Convertir fix_plan existente
+            fixes = []
+            for item in raw_fixes:
+                fix_type = _map_issue_to_fix_type(item.get("issue", ""))
+                
+                if fix_type != "other":  # Solo incluir fixes que podemos aplicar
+                    fixes.append({
+                        "type": fix_type,
+                        "priority": item.get("priority", "MEDIUM"),
+                        "value": item.get("recommended_value", ""),
+                        "page_url": item.get("page", ""),
+                        "description": item.get("issue", ""),
+                        "current_value": item.get("current_value"),
+                        "impact": item.get("impact", "")
+                    })
+            
+            # Si después del mapeo no hay fixes, usar los por defecto
+            if not fixes:
+                logger.info(f"No mappeable fixes found for audit {request.audit_id}, using default SEO/GEO fixes")
+                fixes = [
+                    {"type": "title", "priority": "HIGH", "description": "Optimize page title for SEO"},
+                    {"type": "meta_description", "priority": "HIGH", "description": "Add/optimize meta description"},
+                    {"type": "schema", "priority": "MEDIUM", "description": "Add Schema.org structured data"},
+                    {"type": "add_faq_section", "priority": "MEDIUM", "description": "Add FAQ section for better user engagement"},
+                ]
         
         # Convertir cada item del fix_plan al formato que espera el modificador
         fixes = []
