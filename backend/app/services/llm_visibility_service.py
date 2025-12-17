@@ -13,6 +13,10 @@ logger = logging.getLogger(__name__)
 class LLMVisibilityService:
     """Servicio para generar análisis de visibilidad en LLMs."""
     
+    def __init__(self, db=None):
+        """Inicializa el servicio (db es opcional)."""
+        self.db = db
+    
     @staticmethod
     def generate_llm_visibility(keywords: List[Dict[str, Any]], url: str) -> List[Dict[str, Any]]:
         """
@@ -57,9 +61,16 @@ class LLMVisibilityService:
                     "competitors_mentioned": ["competitor1.com", "competitor2.com"] if not is_brand else []
                 })
             
-            logger.info(f"Generated {len(visibility_data)} LLM visibility entries for {url}")
-            return visibility_data
-            
+        logger.info(f"Generated {len(visibility_data)} LLM visibility entries for {url}")
+        return visibility_data
+        
+    async def _query_llm(self, query: str, llm_name: str = 'kimi') -> Dict[str, Any]:
+        """Consulta un LLM (metodo auxiliar para citation tracking)."""
+        return {
+            'response': f'Mock response for query: {query}',
+            'llm_name': llm_name
+        }
+        
         except Exception as e:
             logger.error(f"Error generating LLM visibility: {e}")
             return []
