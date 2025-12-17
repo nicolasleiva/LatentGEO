@@ -54,6 +54,11 @@ class PRGeneratorService:
         # Header
         body = "## 🚀 Automated SEO/GEO Improvements\n\n"
         body += "This PR contains automated fixes to improve your site's SEO and GEO (Generative Engine Optimization) performance.\n\n"
+        body += "### ⚠️ Important Notes for Next.js\n\n"
+        body += "- **Absolute URLs**: All image URLs use absolute paths (e.g., `https://yourdomain.com/image.jpg`)\n"
+        body += "- **Environment Variables**: Update `NEXT_PUBLIC_SITE_URL` in `.env.local` with your domain\n"
+        body += "- **Image Assets**: Ensure all referenced images exist in the `public/` directory\n"
+        body += "- **Dates**: Verify publication and modification dates are accurate\n\n"
         
         # Audit Summary
         body += "### 📊 Audit Summary\n\n"
@@ -127,6 +132,14 @@ class PRGeneratorService:
             body += "\n"
         
         body += "</details>\n\n"
+        
+        # Validation Checklist
+        body += "### 💬 Before Merging\n\n"
+        body += "- [ ] Update `NEXT_PUBLIC_SITE_URL` environment variable\n"
+        body += "- [ ] Verify all image files exist in `public/` directory\n"
+        body += "- [ ] Check dates are correct (not placeholder dates)\n"
+        body += "- [ ] Run `npm run build` locally to verify no syntax errors\n"
+        body += "- [ ] Test social media previews with Open Graph Debugger\n\n"
         
         # Instructions
         body += "### ✨ Next Steps\n\n"

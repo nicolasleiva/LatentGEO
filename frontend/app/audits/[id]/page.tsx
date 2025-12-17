@@ -12,6 +12,7 @@ import { ArrowLeft, Download, RefreshCw, ExternalLink, Globe, AlertTriangle, Che
 import { GitHubIntegration } from '@/components/github-integration';
 import { HubSpotIntegration } from '@/components/hubspot-integration';
 import { AuditChatFlow } from '@/components/audit-chat-flow';
+import { AuditProgressIndicator } from '@/components/audit-progress-indicator';
 import { Dialog, DialogContent, DialogTrigger, DialogTitle } from '@/components/ui/dialog';
 
 
@@ -28,8 +29,12 @@ export default function AuditDetailPage() {
   const [keywordGapData, setKeywordGapData] = useState<any>(null);
   const [pageSpeedLoading, setPageSpeedLoading] = useState(false);
   const [pdfGenerating, setPdfGenerating] = useState(false);
+  const [pollingTimeout, setPollingTimeout] = useState(false);
+  const [pollCount, setPollCount] = useState(0);
 
   const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
+  const MAX_POLL_TIME = 240000; // 4 minutos
+  const MAX_POLLS = 30;
 
   const fetchData = useCallback(async () => {
     try {
@@ -42,11 +47,6 @@ export default function AuditDetailPage() {
 
       setAudit(auditData);
       setPages(pagesData);
-
-      // PageSpeed data (if any)
-      if (auditData.pagespeed_data && Object.keys(auditData.pagespeed_data).length > 0) {
-        setPageSpeedData(auditData.pagespeed_data);
-      }
 
       // Competitors (only when audit is finished)
       if (auditData.status === 'completed') {
@@ -70,14 +70,27 @@ export default function AuditDetailPage() {
   // Initial load
   useEffect(() => {
     fetchData();
+    setPageSpeedData(null);
   }, [fetchData]);
 
-  // Poll while audit is running
+  // Limpiar PageSpeed cuando status cambia a 'running'
   useEffect(() => {
-    if (audit?.status === 'completed') return;
-    const interval = setInterval(fetchData, 3000);
-    return () => clearInterval(interval);
-  }, [audit?.status, fetchData]);
+    if (audit?.status === 'running') {
+      setPageSpeedData(null);
+    }
+  }, [audit?.status]);
+
+  // Polling SOLO cuando está pending (esperando config)
+  useEffect(() => {
+    if (audit?.status !== 'pending' || pollingTimeout) return;
+
+    const pollTimer = setTimeout(() => {
+      fetchData();
+      setPollCount(c => c + 1);
+    }, 2000); // Poll cada 2s mientras está pending
+
+    return () => clearTimeout(pollTimer);
+  }, [audit?.status, fetchData, pollCount, auditId, pollingTimeout]);
 
   if (loading) {
     return (
@@ -89,6 +102,8 @@ export default function AuditDetailPage() {
       </div>
     );
   }
+
+
 
   const analyzePageSpeed = async () => {
     setPageSpeedLoading(true);
@@ -107,37 +122,28 @@ export default function AuditDetailPage() {
     }
   };
 
-  const generateAndDownloadPDF = async () => {
+  const generatePDF = async () => {
     setPdfGenerating(true);
     try {
-      console.log('Starting PDF generation with all features...');
-
-      // Generate the PDF with ALL features (PageSpeed, keywords, rank tracking, etc.)
       const generateRes = await fetch(`${backendUrl}/api/audits/${auditId}/generate-pdf`, {
         method: 'POST',
       });
-
       if (generateRes.ok) {
-        const result = await generateRes.json();
-        console.log('PDF generation result:', result);
-
-        // Small delay to ensure file is ready
         await new Promise(resolve => setTimeout(resolve, 500));
-
-        // Download the generated PDF
         window.open(`${backendUrl}/api/audits/${auditId}/download-pdf`, '_blank');
       } else {
         const error = await generateRes.json();
-        console.error('Error generating PDF:', error);
-        alert(`Error generating PDF: ${error.detail || 'Unknown error'}. Check console for details.`);
+        alert(`Error: ${error.detail || 'Unknown error'}`);
       }
     } catch (err) {
-      console.error('Error generating PDF:', err);
-      alert('Error generating PDF. Please try again.');
+      console.error(err);
+      alert('Error generating PDF');
     } finally {
       setPdfGenerating(false);
     }
   };
+
+
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -220,7 +226,7 @@ export default function AuditDetailPage() {
                   Analyze PageSpeed
                 </Button>
                 <Button
-                  onClick={generateAndDownloadPDF}
+                  onClick={generatePDF}
                   disabled={pdfGenerating}
                   className="glass-button px-6"
                 >
@@ -242,21 +248,12 @@ export default function AuditDetailPage() {
             )}
           </div>
 
-          {/* Progress bar (if not completed and not pending config) */}
-          {audit?.status !== 'completed' && audit?.status !== 'pending' && (
-            <div className="mt-8">
-              <div className="flex justify-between mb-2 text-sm text-muted-foreground">
-                <span className="font-medium">Audit Progress</span>
-                <span>{audit?.progress ?? 0}%</span>
-              </div>
-              <div className="w-full bg-muted rounded-full h-2 overflow-hidden">
-                <div
-                  className="bg-gradient-to-r from-blue-500 to-purple-500 h-full rounded-full transition-all duration-500"
-                  style={{ width: `${audit?.progress ?? 0}%` }}
-                />
-              </div>
-            </div>
-          )}
+          {/* Progress indicator */}
+          <AuditProgressIndicator
+            progress={audit?.progress ?? 0}
+            status={audit?.status ?? ''}
+            hasTimedOut={pollingTimeout}
+          />
         </div>
 
         {/* Chat Flow for Configuration (if audit is pending) */}
