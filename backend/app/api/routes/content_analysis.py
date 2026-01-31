@@ -4,7 +4,7 @@ from ...services.duplicate_content_service import DuplicateContentService
 from ...services.keyword_gap_service import KeywordGapService
 from ...services.crawler_service import CrawlerService
 
-router = APIRouter(prefix="/api/content", tags=["content"])
+router = APIRouter(prefix="/content", tags=["content"])
 
 @router.post("/duplicates")
 async def find_duplicates(pages: List[Dict], threshold: float = Query(0.85, ge=0.0, le=1.0)):

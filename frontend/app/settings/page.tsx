@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { useUser } from '@auth0/nextjs-auth0/client'
+import Image from 'next/image'
 import { Header } from '@/components/header'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -77,11 +78,15 @@ export default function SettingsPage() {
 
                         <div className="flex items-center gap-6 mb-6">
                             {user.picture ? (
-                                <img
-                                    src={user.picture}
-                                    alt={user.name || 'User'}
-                                    className="w-20 h-20 rounded-full border-2 border-border"
-                                />
+                                <div className="relative w-20 h-20">
+                                    <Image
+                                        src={user.picture}
+                                        alt={user.name || 'User'}
+                                        fill
+                                        className="rounded-full border-2 border-border object-cover"
+                                        unoptimized
+                                    />
+                                </div>
                             ) : (
                                 <div className="w-20 h-20 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-2xl font-bold text-white">
                                     {user.name?.charAt(0) || user.email?.charAt(0) || 'U'}
@@ -129,8 +134,8 @@ export default function SettingsPage() {
                             <button
                                 onClick={() => setTheme('dark')}
                                 className={`flex-1 p-4 rounded-xl border transition-all ${theme === 'dark'
-                                        ? 'bg-muted border-border/80'
-                                        : 'glass-panel border-border hover:border-border/80'
+                                    ? 'bg-muted border-border/80'
+                                    : 'glass-panel border-border hover:border-border/80'
                                     }`}
                             >
                                 <Moon className="w-6 h-6 mx-auto mb-2" />
@@ -139,8 +144,8 @@ export default function SettingsPage() {
                             <button
                                 onClick={() => setTheme('light')}
                                 className={`flex-1 p-4 rounded-xl border transition-all ${theme === 'light'
-                                        ? 'bg-muted border-border/80'
-                                        : 'glass-panel border-border hover:border-border/80'
+                                    ? 'bg-muted border-border/80'
+                                    : 'glass-panel border-border hover:border-border/80'
                                     }`}
                             >
                                 <Sun className="w-6 h-6 mx-auto mb-2" />
@@ -149,8 +154,8 @@ export default function SettingsPage() {
                             <button
                                 onClick={() => setTheme('system')}
                                 className={`flex-1 p-4 rounded-xl border transition-all ${theme === 'system'
-                                        ? 'bg-muted border-border/80'
-                                        : 'glass-panel border-border hover:border-border/80'
+                                    ? 'bg-muted border-border/80'
+                                    : 'glass-panel border-border hover:border-border/80'
                                     }`}
                             >
                                 <Monitor className="w-6 h-6 mx-auto mb-2" />

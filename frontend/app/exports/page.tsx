@@ -90,7 +90,7 @@ export default function ReportsExportsPage() {
         switch (status) {
             case 'completed':
                 return <CheckCircle className="h-4 w-4 text-green-400" />
-            case 'running':
+            case 'processing':
                 return <Clock className="h-4 w-4 text-yellow-400 animate-pulse" />
             default:
                 return <AlertCircle className="h-4 w-4 text-red-400" />

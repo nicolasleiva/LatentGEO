@@ -136,3 +136,50 @@ export interface AIContentSuggestion {
   priority: string
   created_at: string
 }
+
+export interface ReportItem {
+  id: number
+  audit_id: number
+  report_type?: string
+  file_path?: string
+  created_at?: string
+}
+
+export interface WebhookEventDescriptor {
+  event: string
+  description: string
+}
+
+export interface WebhookTestResponse {
+  success: boolean
+  status_code?: number
+  response_time_ms?: number
+  error?: string
+}
+
+export interface GitHubConnection {
+  id: string
+  provider?: string
+  account_login?: string
+  created_at?: string
+  is_active?: boolean
+}
+
+export interface GitHubRepository {
+  id: string
+  connection_id: string
+  name?: string
+  full_name?: string
+  html_url?: string
+  default_branch?: string
+  is_active?: boolean
+}
+
+export interface GitHubPullRequest {
+  id?: string
+  pr_number: number
+  title?: string
+  status?: string
+  html_url?: string
+  created_at?: string
+}

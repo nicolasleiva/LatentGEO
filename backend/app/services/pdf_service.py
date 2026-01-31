@@ -5,10 +5,12 @@ import os
 import sys
 import json
 from datetime import datetime
+from typing import List, Dict, Any
 
 from ..core.config import settings
 from ..core.logger import get_logger
 from ..models import Audit
+from ..core.llm_kimi import get_llm_function
 
 logger = get_logger(__name__)
 
@@ -270,6 +272,124 @@ class PDFService:
                     json.dump(target_audit_data, f, indent=2, ensure_ascii=False)
             except Exception as e:
                 logger.warning(f"No se pudo guardar aggregated_summary.json: {e}")
+
+        # Guardar PageSpeed data
+        if hasattr(audit, 'pagespeed_data') and audit.pagespeed_data:
+            pagespeed_path = os.path.join(reports_dir, "pagespeed.json")
+            try:
+                ps_data = json.loads(audit.pagespeed_data) if isinstance(audit.pagespeed_data, str) else audit.pagespeed_data
+                with open(pagespeed_path, "w", encoding="utf-8") as f:
+                    json.dump(ps_data, f, indent=2, ensure_ascii=False)
+            except Exception as e:
+                logger.warning(f"No se pudo guardar pagespeed.json: {e}")
+
+        # Guardar Keywords data
+        if hasattr(audit, 'keywords') and audit.keywords:
+            keywords_path = os.path.join(reports_dir, "keywords.json")
+            try:
+                keywords_list = []
+                for k in audit.keywords:
+                    keywords_list.append({
+                        "term": k.term,
+                        "volume": k.volume,
+                        "difficulty": k.difficulty,
+                        "cpc": k.cpc,
+                        "intent": k.intent
+                    })
+                with open(keywords_path, "w", encoding="utf-8") as f:
+                    json.dump(keywords_list, f, indent=2, ensure_ascii=False)
+            except Exception as e:
+                logger.warning(f"No se pudo guardar keywords.json: {e}")
+
+        # Guardar Backlinks data
+        if hasattr(audit, 'backlinks') and audit.backlinks:
+            backlinks_path = os.path.join(reports_dir, "backlinks.json")
+            try:
+                backlinks_list = []
+                for b in audit.backlinks:
+                    backlinks_list.append({
+                        "source_url": b.source_url,
+                        "target_url": b.target_url,
+                        "anchor_text": b.anchor_text,
+                        "is_dofollow": b.is_dofollow,
+                        "domain_authority": b.domain_authority
+                    })
+                with open(backlinks_path, "w", encoding="utf-8") as f:
+                    json.dump(backlinks_list, f, indent=2, ensure_ascii=False)
+            except Exception as e:
+                logger.warning(f"No se pudo guardar backlinks.json: {e}")
+
+        # Guardar Rankings data
+        if hasattr(audit, 'rank_trackings') and audit.rank_trackings:
+            rankings_path = os.path.join(reports_dir, "rankings.json")
+            try:
+                rankings_list = []
+                for r in audit.rank_trackings:
+                    rankings_list.append({
+                        "keyword": r.keyword,
+                        "position": r.position,
+                        "url": r.url,
+                        "device": r.device,
+                        "location": r.location,
+                        "top_results": r.top_results
+                    })
+                with open(rankings_path, "w", encoding="utf-8") as f:
+                    json.dump(rankings_list, f, indent=2, ensure_ascii=False)
+            except Exception as e:
+                logger.warning(f"No se pudo guardar rankings.json: {e}")
+
+        # Guardar LLM Visibility data
+        if hasattr(audit, 'llm_visibilities') and audit.llm_visibilities:
+            visibility_path = os.path.join(reports_dir, "llm_visibility.json")
+            try:
+                visibility_list = []
+                for v in audit.llm_visibilities:
+                    visibility_list.append({
+                        "llm_name": v.llm_name,
+                        "query": v.query,
+                        "is_visible": v.is_visible,
+                        "rank": v.rank,
+                        "citation_text": v.citation_text
+                    })
+                with open(visibility_path, "w", encoding="utf-8") as f:
+                    json.dump(visibility_list, f, indent=2, ensure_ascii=False)
+            except Exception as e:
+                logger.warning(f"No se pudo guardar llm_visibility.json: {e}")
+
+        # Guardar páginas individuales
+        if hasattr(audit, 'pages') and audit.pages:
+            pages_dir = os.path.join(reports_dir, "pages")
+            os.makedirs(pages_dir, exist_ok=True)
+            for page in audit.pages:
+                try:
+                    # Crear nombre de archivo seguro
+                    filename = page.url.replace("https://", "").replace("http://", "").replace("/", "_").replace("?", "_").replace("&", "_")
+                    if not filename: filename = "index"
+                    page_path = os.path.join(pages_dir, f"report_{filename}.json")
+                    
+                    page_data = json.loads(page.audit_data) if isinstance(page.audit_data, str) else page.audit_data
+                    with open(page_path, "w", encoding="utf-8") as f:
+                        json.dump(page_data, f, indent=2, ensure_ascii=False)
+                except Exception as e:
+                    logger.warning(f"No se pudo guardar página {page.url}: {e}")
+
+        # Guardar competidores
+        if hasattr(audit, 'competitor_audits') and audit.competitor_audits:
+            competitors_dir = os.path.join(reports_dir, "competitors")
+            os.makedirs(competitors_dir, exist_ok=True)
+            try:
+                comp_list = json.loads(audit.competitor_audits) if isinstance(audit.competitor_audits, str) else audit.competitor_audits
+                if isinstance(comp_list, list):
+                    for i, comp_data in enumerate(comp_list):
+                        try:
+                            domain = comp_data.get("domain") or comp_data.get("url", "").replace("https://", "").replace("http://", "").split("/")[0] or f"competitor_{i}"
+                            comp_path = os.path.join(competitors_dir, f"competitor_{domain}.json")
+                            with open(comp_path, "w", encoding="utf-8") as f:
+                                json.dump(comp_data, f, indent=2, ensure_ascii=False)
+                        except Exception as e:
+                            logger.warning(f"No se pudo guardar competidor {i}: {e}")
+            except Exception as e:
+                logger.warning(f"Error procesando competitor_audits: {e}")
         
         # Llamar a create_comprehensive_pdf (igual que ag2_pipeline.py)
         try:
@@ -288,6 +408,8 @@ class PDFService:
         except Exception as e:
             logger.error(f"Error generando PDF con create_comprehensive_pdf: {e}", exc_info=True)
             raise
+
+
 
 
     @staticmethod
@@ -318,6 +440,10 @@ class PDFService:
         try:
             from datetime import datetime, timedelta, timezone
             # Parse ISO format timestamp
+            if not isinstance(fetch_time, str):
+                logger.warning(f"fetch_time is not a string: {type(fetch_time)}")
+                return True
+                
             if 'Z' in fetch_time:
                 fetch_datetime = datetime.fromisoformat(fetch_time.replace('Z', '+00:00'))
             else:
@@ -391,63 +517,273 @@ class PDFService:
                 logger.info(f"✓ PageSpeed data collected and stored")
             except Exception as e:
                 logger.error(f"PageSpeed collection failed: {e}")
-                pagespeed_data = None
+                # Fallback to existing (stale) data if available
+                # Fallback to existing (stale) data if available
+                try:
+                    db.refresh(audit)
+                    if audit.pagespeed_data:
+                        logger.warning("Falling back to existing (stale) PageSpeed data")
+                        pagespeed_data = audit.pagespeed_data
+                    else:
+                        pagespeed_data = None
+                except Exception:
+                    pagespeed_data = audit.pagespeed_data if audit.pagespeed_data else None
         else:
             logger.info(f"✓ Using cached PageSpeed data (fresh)")
         
-        # 4. Generate GEO Tools (Keywords, Backlinks, Rankings) ON-DEMAND
+        # 4. Generate GEO Tools (Keywords, Backlinks, Rankings) REAL
         logger.info(f"Generating GEO Tools (Keywords, Backlinks, Rankings) for PDF...")
+        
+        # Initialize with defaults types
+        keywords_data = {}
+        backlinks_data = {}
+        rank_tracking_data = {}
+        llm_visibility_data = []
+        ai_content_suggestions_list = []
+        
+        # Import services here to avoid circular imports if any
         try:
-            from .keywords_service import KeywordsService
-            from .backlinks_service import BacklinksService
-            from .rank_tracking_service import RankTrackingService
+            from .keyword_service import KeywordService
+            from .backlink_service import BacklinkService
+            from .rank_tracker_service import RankTrackerService
+            from .llm_visibility_service import LLMVisibilityService
+            from .ai_content_service import AIContentService
             from urllib.parse import urlparse
             
             audit_url = str(audit.url)
             domain = urlparse(audit_url).netloc.replace("www.", "")
-            
-            # Get category from existing intelligence if available
-            category = None
-            if audit.external_intelligence and isinstance(audit.external_intelligence, dict):
-                category = audit.external_intelligence.get("category", "")
-            
-            # Generate data using services (synchronous)
-            logger.info(f"  - Generating Keywords for {domain}")
-            target_audit = audit.target_audit or {}
-            keywords_data_list = KeywordsService.generate_keywords_from_audit(target_audit, audit_url)
-            
-            logger.info(f"  - Generating Backlinks for {domain}")
-            backlinks_data_dict = BacklinksService.generate_backlinks_from_audit(target_audit, audit_url)
-            
-            logger.info(f"  - Generating Rankings for {domain}")
-            rankings_data_list = RankTrackingService.generate_rankings_from_keywords(keywords_data_list, audit_url)
-            
-            # Format data for context
-            keywords_data = {
-                "keywords": keywords_data_list,
-                "total_keywords": len(keywords_data_list),
-                "top_opportunities": sorted(keywords_data_list, key=lambda x: x.get("opportunity_score", 0), reverse=True)[:10]
-            }
-            backlinks_data = backlinks_data_dict
-            rank_tracking_data = {
-                "rankings": rankings_data_list,
-                "total_keywords": len(rankings_data_list),
-                "distribution": {
-                    "top_3": len([r for r in rankings_data_list if r.get("position", 100) <= 3]),
-                    "top_10": len([r for r in rankings_data_list if r.get("position", 100) <= 10]),
-                    "top_20": len([r for r in rankings_data_list if r.get("position", 100) <= 20]),
-                    "beyond_20": len([r for r in rankings_data_list if r.get("position", 100) > 20])
+            keywords_data_list = []
+
+            # 1. Keywords - Always run fresh research for PDF
+            try:
+                keyword_svc = KeywordService(db)
+                logger.info(f"  - Performing fresh keyword research for PDF...")
+                keywords_objs = await keyword_svc.research_keywords(audit_id, domain)
+                
+                keywords_data_list = [
+                    {
+                        "keyword": k.term,
+                        "search_volume": k.volume,
+                        "difficulty": k.difficulty,
+                        "cpc": k.cpc,
+                        "intent": k.intent,
+                        "opportunity_score": getattr(k, 'opportunity_score', 50)
+                    } for k in keywords_objs
+                ]
+
+                keywords_data = {
+                    "keywords": keywords_data_list,
+                    "total_keywords": len(keywords_data_list),
+                    "top_opportunities": sorted(keywords_data_list, key=lambda x: x.get("opportunity_score", 0), reverse=True)[:10]
                 }
-            }
+            except Exception as e:
+                logger.error(f"Error generating Keywords for PDF: {e}")
+                
+            # Fallback to DB if empty
+            if not keywords_data or not keywords_data.get("keywords"):
+                 try:
+                    db.refresh(audit)
+                    if audit.keywords:
+                        logger.info(f"Using existing Keywords from DB as fallback (found {len(audit.keywords)})")
+                        keywords_objs = audit.keywords
+                        keywords_data_list = [
+                            {
+                                "keyword": k.term,
+                                "search_volume": k.volume,
+                                "difficulty": int(k.difficulty) if k.difficulty else 0, # Ensure int
+                                "cpc": k.cpc,
+                                "intent": k.intent,
+                                "opportunity_score": getattr(k, 'opportunity_score', 50)
+                            } for k in keywords_objs
+                        ]
+                        keywords_data = {
+                            "keywords": keywords_data_list,
+                            "total_keywords": len(keywords_data_list),
+                            "top_opportunities": sorted(keywords_data_list, key=lambda x: x.get("opportunity_score", 0), reverse=True)[:10]
+                        }
+                 except Exception as fb_err:
+                     logger.error(f"Fallback for Keywords failed: {fb_err}")
+
+            # 2. Backlinks - Always run fresh analysis for PDF
+            try:
+                backlink_svc = BacklinkService(db)
+                logger.info(f"  - Performing fresh backlinks analysis for PDF...")
+                backlinks_objs = await backlink_svc.analyze_backlinks(audit_id, domain)
+                
+                backlinks_list = [
+                    {
+                        "source_url": b.source_url,
+                        "target_url": b.target_url,
+                        "anchor_text": b.anchor_text,
+                        "domain_authority": b.domain_authority or 0,
+                        "is_dofollow": b.is_dofollow
+                    } for b in backlinks_objs
+                ]
+
+                backlinks_data = {
+                    "total_backlinks": len(backlinks_list),
+                    "referring_domains": len(set(urlparse(b["source_url"]).netloc for b in backlinks_list if "://" in b["source_url"])),
+                    "top_backlinks": backlinks_list[:20],
+                    "summary": {
+                        "average_domain_authority": round(sum(b["domain_authority"] for b in backlinks_list) / len(backlinks_list), 1) if backlinks_list else 0,
+                        "dofollow_count": len([b for b in backlinks_list if b["is_dofollow"]]),
+                        "nofollow_count": len([b for b in backlinks_list if not b["is_dofollow"]])
+                    }
+                }
+            except Exception as e:
+                logger.error(f"Error generating Backlinks for PDF: {e}")
+
+            # Fallback to DB if empty
+            if not backlinks_data or not backlinks_data.get("top_backlinks"):
+                try:
+                    # db.refresh(audit) # Already refreshed above if keywords failed, but safe to do again? 
+                    # Optimization: check if we need refresh? doing it again handles case where only backlinks failed.
+                    db.refresh(audit)
+                    if audit.backlinks:
+                        logger.info(f"Using existing Backlinks from DB as fallback (found {len(audit.backlinks)})")
+                        backlinks_objs = audit.backlinks
+                        backlinks_list = [
+                            {
+                                "source_url": b.source_url,
+                                "target_url": b.target_url,
+                                "anchor_text": b.anchor_text,
+                                "domain_authority": b.domain_authority or 0,
+                                "is_dofollow": b.is_dofollow
+                            } for b in backlinks_objs
+                        ]
+
+                        backlinks_data = {
+                            "total_backlinks": len(backlinks_list),
+                            "referring_domains": len(set(urlparse(b["source_url"]).netloc for b in backlinks_list if "://" in b["source_url"])),
+                            "top_backlinks": backlinks_list[:20],
+                            "summary": {
+                                "average_domain_authority": round(sum(b["domain_authority"] for b in backlinks_list) / len(backlinks_list), 1) if backlinks_list else 0,
+                                "dofollow_count": len([b for b in backlinks_list if b["is_dofollow"]]),
+                                "nofollow_count": len([b for b in backlinks_list if not b["is_dofollow"]])
+                            }
+                        }
+                except Exception as fb_err:
+                     logger.error(f"Fallback for Backlinks failed: {fb_err}")
+
+            # 3. Rankings - Always run fresh tracking for PDF
+            try:
+                rank_svc = RankTrackerService(db)
+                logger.info(f"  - Performing fresh rankings tracking for PDF...")
+                # Ensure we use keywords_objs if available, otherwise empty
+                kw_terms = [k.term for k in keywords_data_list[:10]] if keywords_data_list else []
+                
+                if kw_terms:
+                    rankings_objs = await rank_svc.track_rankings(audit_id, domain, kw_terms)
+                else:
+                    rankings_objs = []
+                
+                rankings_list = [
+                    {
+                        "keyword": r.keyword,
+                        "position": r.position,
+                        "url": r.url,
+                        "change": 0
+                    } for r in rankings_objs
+                ]
+
+                rank_tracking_data = {
+                    "rankings": rankings_list,
+                    "total_keywords": len(rankings_list),
+                    "distribution": {
+                        "top_3": len([r for r in rankings_list if r.get("position", 100) <= 3 and r.get("position", 0) > 0]),
+                        "top_10": len([r for r in rankings_list if r.get("position", 100) <= 10 and r.get("position", 0) > 0]),
+                        "top_20": len([r for r in rankings_list if r.get("position", 100) <= 20 and r.get("position", 0) > 0]),
+                        "beyond_20": len([r for r in rankings_list if r.get("position", 100) > 20 or r.get("position", 0) == 0])
+                    }
+                }
+            except Exception as e:
+                 logger.error(f"Error generating Rankings for PDF: {e}")
+
+            # Fallback to DB if empty
+            if not rank_tracking_data or not rank_tracking_data.get("rankings"):
+                 # Check audit.rank_trackings (note the relationship name might be singular or plural, check model)
+                 # Based on test file it is 'rank_trackings'
+                 try:
+                     db.refresh(audit)
+                     if getattr(audit, 'rank_trackings', None):
+                        logger.info(f"Using existing Rankings from DB as fallback (found {len(audit.rank_trackings)})")
+                        rankings_objs = audit.rank_trackings
+                        rankings_list = [
+                            {
+                                "keyword": r.keyword,
+                                "position": r.position,
+                                "url": r.url,
+                                "change": 0
+                            } for r in rankings_objs
+                        ]
+
+                        rank_tracking_data = {
+                            "rankings": rankings_list,
+                            "total_keywords": len(rankings_list),
+                            "distribution": {
+                                "top_3": len([r for r in rankings_list if r.get("position", 100) <= 3 and r.get("position", 0) > 0]),
+                                "top_10": len([r for r in rankings_list if r.get("position", 100) <= 10 and r.get("position", 0) > 0]),
+                                "top_20": len([r for r in rankings_list if r.get("position", 100) <= 20 and r.get("position", 0) > 0]),
+                                "beyond_20": len([r for r in rankings_list if r.get("position", 100) > 20 or r.get("position", 0) == 0])
+                            }
+                        }
+                 except Exception as fb_err:
+                     logger.error(f"Fallback for Rankings failed: {fb_err}")
+
+            # 4. LLM Visibility
+            try:
+                if keywords_data_list: # Reuse list from step 1
+                    llm_visibility_data = await LLMVisibilityService.generate_llm_visibility(keywords_data_list, audit_url)
+                else:
+                    llm_visibility_data = []
+            except Exception as e:
+                 logger.error(f"Error generating LLM Visibility for PDF: {e}")
+                 # Fallback to DB
+                 try:
+                     db.refresh(audit)
+                     if audit.llm_visibilities:
+                         llm_visibility_data = [
+                             {
+                                 "query": l.query,
+                                 "llm_name": l.llm_name,
+                                 "is_visible": l.is_visible,
+                                 "rank": l.rank,
+                                 "citation_text": l.citation_text
+                             } for l in audit.llm_visibilities
+                         ]
+                 except: pass
+
+            # 5. AI Content Suggestions
+            try:
+                if keywords_data_list: # Reuse list from step 1
+                    ai_content_suggestions_list = AIContentService.generate_content_suggestions(
+                        keywords=keywords_data_list,
+                        url=audit_url
+                    )
+                else:
+                    ai_content_suggestions_list = []
+            except Exception as e:
+                 logger.error(f"Error generating AI Content Suggestions for PDF: {e}")
+                 # Fallback to DB
+                 try:
+                     db.refresh(audit)
+                     if audit.ai_content_suggestions:
+                         ai_content_suggestions_list = [
+                             {
+                                 "topic": a.topic,
+                                 "suggestion_type": a.suggestion_type,
+                                 "content_outline": a.content_outline,
+                                 "priority": a.priority,
+                                 "page_url": a.page_url
+                             } for a in audit.ai_content_suggestions
+                         ]
+                 except: pass
             
-            logger.info(f"✓ GEO Tools generated: {len(keywords_data_list)} keywords, {backlinks_data_dict.get('total_backlinks', 0)} backlinks, {len(rankings_data_list)} rankings")
-            
+            logger.info(f"✓ GEO Tools data collected: {len(keywords_data.get('keywords', []))} keywords, {len(backlinks_data.get('top_backlinks', []))} backlinks, {len(rank_tracking_data.get('rankings', []))} rankings")
+
         except Exception as tool_error:
-            logger.error(f"Error generating GEO tools: {tool_error}", exc_info=True)
-            # Continue with empty data
-            keywords_data = {}
-            backlinks_data = {}
-            rank_tracking_data = {}
+            logger.error(f"Critical error initializing GEO tools services: {tool_error}", exc_info=True)
+            # Fallback is handled by initialization values
         
         # 5. Load COMPLETE context from ALL features (LLM visibility, AI content, etc.)
         complete_context = PDFService._load_complete_audit_context(db, audit_id)
@@ -458,27 +794,52 @@ class PDFService:
         try:
             llm_function = get_llm_function()
             
-            # Regenerate report with complete context (using freshly generated GEO tools data)
+            # Use fresh generated data (keywords_data, backlinks_data, etc.) 
+            # rather than complete_context which may have stale or incorrectly formatted data
+            # Also properly handle the case where llm_visibility_data is a list vs dict
+            llm_viz_for_report = llm_visibility_data if isinstance(llm_visibility_data, list) else []
+            ai_suggestions_for_report = ai_content_suggestions_list if isinstance(ai_content_suggestions_list, list) else []
+            
+            logger.info(f"  Using fresh data for report generation:")
+            logger.info(f"    - Keywords: {len(keywords_data.get('keywords', [])) if isinstance(keywords_data, dict) else 0}")
+            logger.info(f"    - Backlinks: {len(backlinks_data.get('top_backlinks', [])) if isinstance(backlinks_data, dict) else 0}")
+            logger.info(f"    - Rankings: {len(rank_tracking_data.get('rankings', [])) if isinstance(rank_tracking_data, dict) else 0}")
+            logger.info(f"    - LLM Visibility: {len(llm_viz_for_report)}")
+            logger.info(f"    - AI Content Suggestions: {len(ai_suggestions_for_report)}")
+            
+            # Regenerate report with complete context (using FRESH data from GEO tools)
             markdown_report, fix_plan = await PipelineService.generate_report(
                 target_audit=audit.target_audit or {},
                 external_intelligence=audit.external_intelligence or {},
                 search_results=audit.search_results or {},
                 competitor_audits=audit.competitor_audits or [],
                 pagespeed_data=pagespeed_data,
-                keywords_data=keywords_data,  # Freshly generated
-                backlinks_data=backlinks_data,  # Freshly generated
-                rank_tracking_data=rank_tracking_data,  # Freshly generated
-                llm_visibility_data=complete_context.get("llm_visibility", []),
-                ai_content_suggestions=complete_context.get("ai_content_suggestions", []),
+                keywords_data=keywords_data,  # Fresh data from KeywordService
+                backlinks_data=backlinks_data,  # Fresh data from BacklinkService
+                rank_tracking_data=rank_tracking_data,  # Fresh data from RankTrackerService
+                llm_visibility_data=llm_viz_for_report,  # Fresh data from LLMVisibilityService
+                ai_content_suggestions=ai_suggestions_for_report,  # Fresh data from AIContentService
                 llm_function=llm_function
             )
             
             # Update audit with new report
-            audit.report_markdown = markdown_report
+            if markdown_report and len(markdown_report.strip()) > 100:  # Only update if meaningful content
+                audit.report_markdown = markdown_report
+                logger.info(f"✓ Markdown report regenerated with complete context ({len(markdown_report)} chars)")
+            else:
+                logger.warning(f"Regenerated markdown too short ({len(markdown_report or '')} chars), keeping existing")
+                if not audit.report_markdown:
+                    logger.error("No existing markdown report available")
+
+            # Ensure fix_plan is generated - NO FALLBACK for production
+            if not fix_plan or len(fix_plan) == 0:
+                logger.warning("Fix plan is empty. No fallback used as per production requirements.")
+                fix_plan = []
+
             audit.fix_plan = fix_plan
             db.commit()
-            
-            logger.info(f"✓ Markdown report regenerated with complete context")
+
+            logger.info(f"Fix plan length: {len(fix_plan) if fix_plan else 0}")
         except Exception as e:
             logger.warning(f"Could not regenerate markdown report: {e}. Using existing report.")
         
@@ -494,14 +855,27 @@ class PDFService:
             audit=audit,
             pages=pages,
             competitors=competitors,
-            pagespeed_data=pagespeed_data
+            pagespeed_data=pagespeed_data,
+            keywords_data=keywords_data,
+            backlinks_data=backlinks_data,
+            rank_tracking_data=rank_tracking_data,
+            llm_visibility_data=llm_visibility_data
         )
         
         logger.info(f"=== PDF generation completed: {pdf_path} ===")
         return pdf_path
 
     @staticmethod
-    async def generate_comprehensive_pdf(audit: Audit, pages: list, competitors: list, pagespeed_data: dict = None) -> str:
+    async def generate_comprehensive_pdf(
+        audit: Audit, 
+        pages: list, 
+        competitors: list, 
+        pagespeed_data: dict = None,
+        keywords_data: dict = None,
+        backlinks_data: dict = None,
+        rank_tracking_data: dict = None,
+        llm_visibility_data: list = None
+    ) -> str:
         """
         Genera un PDF completo con todos los datos de la auditoría:
         - Datos de auditoría principal
@@ -509,13 +883,19 @@ class PDFService:
         - Competidores
         - PageSpeed data
         - Keywords
+        - Backlinks
         - Rank tracking
+        - LLM Visibility
         
         Args:
             audit: La instancia del modelo Audit
             pages: Lista de páginas auditadas
             competitors: Lista de competidores
             pagespeed_data: Datos de PageSpeed (opcional)
+            keywords_data: Datos de Keywords (opcional)
+            backlinks_data: Datos de Backlinks (opcional)
+            rank_tracking_data: Datos de Rank Tracking (opcional)
+            llm_visibility_data: Datos de LLM Visibility (opcional)
             
         Returns:
             La ruta completa al archivo PDF generado
@@ -563,6 +943,48 @@ class PDFService:
                     json.dump(pagespeed_data, f, indent=2, ensure_ascii=False)
             except Exception as e:
                 logger.warning(f"No se pudo guardar pagespeed.json: {e}")
+
+        # 4.1 Guardar Keywords data
+        if keywords_data:
+            keywords_path = os.path.join(reports_dir, "keywords.json")
+            try:
+                # keywords_data can be a dict or a list
+                data_to_save = keywords_data.get("keywords", keywords_data) if isinstance(keywords_data, dict) else keywords_data
+                with open(keywords_path, "w", encoding="utf-8") as f:
+                    json.dump(data_to_save, f, indent=2, ensure_ascii=False)
+            except Exception as e:
+                logger.warning(f"No se pudo guardar keywords.json: {e}")
+
+        # 4.2 Guardar Backlinks data
+        if backlinks_data:
+            backlinks_path = os.path.join(reports_dir, "backlinks.json")
+            try:
+                # backlinks_data can be a dict or a list
+                data_to_save = backlinks_data.get("top_backlinks", backlinks_data) if isinstance(backlinks_data, dict) else backlinks_data
+                with open(backlinks_path, "w", encoding="utf-8") as f:
+                    json.dump(data_to_save, f, indent=2, ensure_ascii=False)
+            except Exception as e:
+                logger.warning(f"No se pudo guardar backlinks.json: {e}")
+
+        # 4.3 Guardar Rankings data
+        if rank_tracking_data:
+            rankings_path = os.path.join(reports_dir, "rankings.json")
+            try:
+                # rank_tracking_data can be a dict or a list
+                data_to_save = rank_tracking_data.get("rankings", rank_tracking_data) if isinstance(rank_tracking_data, dict) else rank_tracking_data
+                with open(rankings_path, "w", encoding="utf-8") as f:
+                    json.dump(data_to_save, f, indent=2, ensure_ascii=False)
+            except Exception as e:
+                logger.warning(f"No se pudo guardar rankings.json: {e}")
+
+        # 4.4 Guardar LLM Visibility data
+        if llm_visibility_data:
+            visibility_path = os.path.join(reports_dir, "llm_visibility.json")
+            try:
+                with open(visibility_path, "w", encoding="utf-8") as f:
+                    json.dump(llm_visibility_data, f, indent=2, ensure_ascii=False)
+            except Exception as e:
+                logger.warning(f"No se pudo guardar llm_visibility.json: {e}")
         
         # 5. Guardar datos de páginas
         if pages:
@@ -603,6 +1025,15 @@ class PDFService:
                         "geo_score": getattr(comp, 'geo_score', 0),
                         "audit_data": getattr(comp, 'audit_data', {})
                     }
+                    # Extract domain from URL if not present
+                    if "domain" not in comp_data:
+                        from urllib.parse import urlparse
+                        url = comp_data.get("url", "")
+                        if url:
+                            domain = urlparse(url).netloc.replace("www.", "")
+                        else:
+                            domain = f"competitor_{idx + 1}"
+                        comp_data["domain"] = domain
                     comp_filename = f"competitor_{idx + 1}.json"
                     comp_path = os.path.join(competitors_dir, comp_filename)
                     with open(comp_path, "w", encoding="utf-8") as f:

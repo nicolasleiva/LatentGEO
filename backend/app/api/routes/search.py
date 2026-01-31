@@ -39,6 +39,7 @@ def extract_url(text: str) -> str | None:
 
 
 @router.post("", response_model=SearchResponse)
+@router.post("/", response_model=SearchResponse)
 async def search_ai(
     request: SearchRequest,
     background_tasks: BackgroundTasks,

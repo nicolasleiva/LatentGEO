@@ -29,65 +29,8 @@ class BacklinksService:
             
             domain = urlparse(url).netloc.replace('www.', '')
             
-            # Generar backlinks de ejemplo
+            # No inventar más datos de ejemplo para evitar confusión con datos reales
             backlinks = []
-            
-            # Backlinks de alta autoridad
-            high_authority_sources = [
-                {"domain": "techcrunch.com", "da": 92, "type": "article"},
-                {"domain": "forbes.com", "da": 95, "type": "mention"},
-                {"domain": "medium.com", "da": 88, "type": "blog"},
-                {"domain": "github.com", "da": 94, "type": "profile"},
-                {"domain": "linkedin.com", "da": 98, "type": "company"},
-            ]
-            
-            for source in high_authority_sources:
-                backlinks.append({
-                    "source_url": f"https://{source['domain']}/article-about-{domain.split('.')[0]}",
-                    "target_url": url,
-                    "anchor_text": domain.split('.')[0].title(),
-                    "domain_authority": source["da"],
-                    "page_authority": source["da"] - 10,
-                    "spam_score": 1,
-                    "is_dofollow": True
-                })
-            
-            # Backlinks de autoridad media
-            medium_authority_sources = [
-                {"domain": "reddit.com", "da": 85, "anchor": "discussion"},
-                {"domain": "quora.com", "da": 82, "anchor": "answer"},
-                {"domain": "dev.to", "da": 78, "anchor": "tutorial"},
-                {"domain": "hackernews.com", "da": 80, "anchor": "submission"},
-                {"domain": "producthunt.com", "da": 83, "anchor": "launch"},
-            ]
-            
-            for source in medium_authority_sources:
-                backlinks.append({
-                    "source_url": f"https://{source['domain']}/topic/{domain.split('.')[0]}",
-                    "target_url": url,
-                    "anchor_text": f"Check out {domain.split('.')[0]}",
-                    "domain_authority": source["da"],
-                    "page_authority": source["da"] - 15,
-                    "spam_score": 2,
-                    "is_dofollow": True
-                })
-            
-            # Backlinks de blogs y directorios
-            blog_sources = [
-                {"domain": f"blog-{i}.com", "da": 45 + i*5, "spam": 5 + i} 
-                for i in range(10)
-            ]
-            
-            for source in blog_sources:
-                backlinks.append({
-                    "source_url": f"https://{source['domain']}/review-{domain.split('.')[0]}",
-                    "target_url": url,
-                    "anchor_text": f"{domain.split('.')[0]} review",
-                    "domain_authority": source["da"],
-                    "page_authority": source["da"] - 20,
-                    "spam_score": source["spam"],
-                    "is_dofollow": source["spam"] < 8
-                })
             
             # Calcular métricas agregadas
             total_backlinks = len(backlinks)
@@ -105,7 +48,7 @@ class BacklinksService:
                     "dofollow_count": dofollow_count,
                     "nofollow_count": nofollow_count,
                     "high_authority_count": len([b for b in backlinks if b["domain_authority"] >= 80]),
-                    "spam_score_avg": round(sum(b["spam_score"] for b in backlinks) / total_backlinks, 1)
+                    "spam_score_avg": round(sum(b["spam_score"] for b in backlinks) / total_backlinks, 1) if total_backlinks > 0 else 0
                 }
             }
             

@@ -117,10 +117,10 @@ class AIContentService:
                     
             except Exception as e:
                 logger.error(f"Error generating AI suggestions: {e}")
-                # Fall back to static suggestions
-                suggestions = self._generate_static_suggestions(audit_id, domain, brand, topics, business_context)
+                return []
         else:
-            suggestions = self._generate_static_suggestions(audit_id, domain, brand, topics, business_context)
+            logger.error("No LLM function available for AI content suggestions")
+            return []
         
         self.db.commit()
         for s in suggestions:
@@ -179,51 +179,6 @@ class AIContentService:
         logger.info(f"Extracted business context: category={context['category']}, keywords={len(context['top_keywords'])}")
         return context
     
-    def _generate_static_suggestions(self, audit_id: int, domain: str, brand: str, topics: List[str], business_context: Dict[str, Any] = None) -> List[AIContentSuggestion]:
-        """Genera sugerencias estáticas cuando no hay LLM disponible."""
-        suggestions = []
-        
-        # Usar contexto del negocio si disponible
-        category = business_context.get("category", "General") if business_context else "General"
-        topic = topics[0] if topics else category
-        
-        templates = [
-            ("Guía Completa de {category}: Todo lo que necesitas saber", "guide", "high"),
-            ("{brand} vs Competidores: Análisis Completo 2025", "comparison", "high"),
-            ("Cómo {topic} puede transformar tu {category}", "tutorial", "medium"),
-            ("5 Casos de Éxito en {category}", "case_study", "medium"),
-            ("Preguntas Frecuentes sobre {category}", "faq", "low"),
-        ]
-        
-        for title_template, content_type, priority in templates:
-            title = title_template.format(
-                topic=topic.title(), 
-                brand=brand.title(),
-                category=category
-            )
-            
-            suggestion = AIContentSuggestion(
-                audit_id=audit_id,
-                topic=title,
-                suggestion_type=content_type,
-                content_outline={
-                    "target_keyword": topic,
-                    "business_context": category,
-                    "sections": [
-                        "Introducción",
-                        "Desarrollo principal",
-                        "Ejemplos prácticos",
-                        "Conclusión",
-                        "Recursos adicionales"
-                    ]
-                },
-                priority=priority
-            )
-            self.db.add(suggestion)
-            suggestions.append(suggestion)
-        
-        return suggestions
-    
     def get_suggestions(self, audit_id: int) -> List[AIContentSuggestion]:
         """Obtiene sugerencias existentes para una auditoría."""
         return self.db.query(AIContentSuggestion).filter(
@@ -233,86 +188,8 @@ class AIContentService:
     @staticmethod
     def generate_content_suggestions(keywords: List[Dict[str, Any]], url: str) -> List[Dict[str, Any]]:
         """
-        Genera sugerencias de contenido basadas en keywords (método estático legacy).
-        
-        Args:
-            keywords: Lista de keywords
-            url: URL del sitio
-            
-        Returns:
-            Lista de sugerencias de contenido
+        Genera sugerencias de contenido basadas en keywords.
+        Returns empty list if no real data available.
         """
-        try:
-            logger.info(f"Generating content suggestions for {url}")
-            
-            domain = urlparse(url).netloc.replace('www.', '')
-            brand = domain.split('.')[0]
-            
-            suggestions = []
-            
-            # Sugerencia 1: Guía completa
-            if keywords:
-                top_kw = keywords[0].get("keyword", brand)
-                suggestions.append({
-                    "title": f"Guía Completa: Todo sobre {top_kw.title()}",
-                    "target_keyword": top_kw,
-                    "content_type": "guide",
-                    "priority": "high",
-                    "estimated_traffic": 1500,
-                    "difficulty": 45,
-                    "outline": {
-                        "sections": [
-                            "Introducción y contexto",
-                            "Características principales",
-                            "Casos de uso",
-                            "Comparativa con alternativas",
-                            "Preguntas frecuentes"
-                        ]
-                    }
-                })
-            
-            # Sugerencia 2: Comparativa
-            suggestions.append({
-                "title": f"{brand.title()} vs Competidores: Análisis Completo 2025",
-                "target_keyword": f"{brand} vs",
-                "content_type": "comparison",
-                "priority": "high",
-                "estimated_traffic": 1200,
-                "difficulty": 50,
-                "outline": {
-                    "sections": [
-                        "Tabla comparativa de características",
-                        "Precios y planes",
-                        "Pros y contras",
-                        "Casos de uso ideales",
-                        "Veredicto final"
-                    ]
-                }
-            })
-            
-            # Sugerencia 3: Tutorial
-            suggestions.append({
-                "title": f"Cómo Empezar con {brand.title()}: Tutorial Paso a Paso",
-                "target_keyword": f"how to use {brand}",
-                "content_type": "tutorial",
-                "priority": "medium",
-                "estimated_traffic": 800,
-                "difficulty": 35,
-                "outline": {
-                    "sections": [
-                        "Requisitos previos",
-                        "Configuración inicial",
-                        "Primeros pasos",
-                        "Funciones avanzadas",
-                        "Solución de problemas"
-                    ]
-                }
-            })
-            
-            logger.info(f"Generated {len(suggestions)} content suggestions for {url}")
-            return suggestions
-            
-        except Exception as e:
-            logger.error(f"Error generating content suggestions: {e}")
-            return []
+        return []
 

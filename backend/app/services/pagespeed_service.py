@@ -10,23 +10,12 @@ class PageSpeedService:
     @staticmethod
     async def analyze_url(url: str, api_key: Optional[str] = None, strategy: str = "mobile") -> Dict:
         """Analiza Core Web Vitals usando PageSpeed Insights API"""
+        from ..core.config import settings
+        
+        # Si no hay API key, lanzar error
         if not api_key:
-            import random
-            return {
-                "url": url,
-                "strategy": strategy,
-                "performance_score": random.randint(60, 95),
-                "accessibility_score": random.randint(75, 98),
-                "best_practices_score": random.randint(70, 95),
-                "seo_score": random.randint(80, 100),
-                "core_web_vitals": {
-                    "lcp": random.uniform(1500, 3500),
-                    "fid": random.uniform(50, 200),
-                    "cls": random.uniform(0.05, 0.25),
-                    "fcp": random.uniform(1000, 2500),
-                    "ttfb": random.uniform(200, 800),
-                }
-            }
+            logger.error(f"No API key provided for PageSpeed analysis of {url}")
+            raise ValueError("GOOGLE_PAGESPEED_API_KEY is required for real analysis. Mock data is disabled.")
         
         import asyncio
         max_retries = 3
@@ -34,6 +23,7 @@ class PageSpeedService:
 
         for attempt in range(max_retries):
             try:
+                logger.info(f"PageSpeed API call attempt {attempt+1}/{max_retries} for {url} ({strategy})")
                 async with aiohttp.ClientSession() as session:
                     params = {
                         "url": url,
@@ -43,7 +33,9 @@ class PageSpeedService:
                         "category": ["PERFORMANCE", "ACCESSIBILITY", "BEST_PRACTICES", "SEO"]
                     }
                     
+                    logger.info(f"Calling PageSpeed API: {PageSpeedService.BASE_URL}")
                     async with session.get(PageSpeedService.BASE_URL, params=params, timeout=aiohttp.ClientTimeout(total=180)) as resp:
+                        logger.info(f"PageSpeed API response status: {resp.status}")
                         if resp.status == 200:
                             data = await resp.json()
                             lighthouse = data.get("lighthouseResult", {})
@@ -244,6 +236,11 @@ class PageSpeedService:
     @staticmethod
     async def analyze_both_strategies(url: str, api_key: Optional[str] = None) -> Dict:
         """Analiza desktop y mobile"""
+        from ..core.config import settings
+        if not settings.ENABLE_PAGESPEED or not api_key:
+            logger.info("PageSpeed analysis disabled or no API key. Skipping.")
+            return {}
+            
         import asyncio
         mobile = await PageSpeedService.analyze_url(url, api_key, "mobile")
         await asyncio.sleep(3)

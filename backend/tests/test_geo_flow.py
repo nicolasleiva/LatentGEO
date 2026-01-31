@@ -1,6 +1,13 @@
 import requests
 import json
 import time
+import pytest
+import os
+
+pytestmark = pytest.mark.skipif(
+    os.getenv("RUN_INTEGRATION_TESTS") != "1",
+    reason="Requiere servicios corriendo (localhost) y acceso a red/GitHub",
+)
 
 # Configuración
 API_URL = "http://localhost:8000/api"

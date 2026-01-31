@@ -1,7 +1,7 @@
 import type { AuditSummary, PageAudit, CompetitorData } from './types'
 
 // En el navegador usa localhost, en el servidor usa el nombre del servicio Docker
-const API_URL = typeof window !== 'undefined'
+export const API_URL = typeof window !== 'undefined'
   ? (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000')
   : (process.env.API_URL || 'http://backend:8000');
 
@@ -9,7 +9,7 @@ class APIService {
   private baseUrl = API_URL;
 
   async searchAI(query: string): Promise<{ response: string; suggestions: string[]; audit_started?: boolean; audit_id?: number }> {
-    const res = await fetch(`${this.baseUrl}/search`, {
+    const res = await fetch(`${this.baseUrl}/api/search`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ query })
@@ -34,8 +34,41 @@ class APIService {
     return res.json()
   }
 
+  async listAudits(userEmail?: string): Promise<any[]> {
+    const params = new URLSearchParams()
+    if (userEmail) params.set('user_email', userEmail)
+    const url = params.toString() ? `${this.baseUrl}/api/audits?${params}` : `${this.baseUrl}/api/audits`
+    const res = await fetch(url)
+    if (!res.ok) throw new Error(`API error: ${res.status}`)
+    const data = await res.json()
+    return Array.isArray(data?.audits) ? data.audits : Array.isArray(data) ? data : []
+  }
+
+  async listAuditsByStatus(status: string, userEmail?: string): Promise<any[]> {
+    const params = new URLSearchParams()
+    if (userEmail) params.set('user_email', userEmail)
+    const url = params.toString()
+      ? `${this.baseUrl}/api/audits/status/${encodeURIComponent(status)}?${params}`
+      : `${this.baseUrl}/api/audits/status/${encodeURIComponent(status)}`
+    const res = await fetch(url)
+    if (!res.ok) throw new Error(`API error: ${res.status}`)
+    const data = await res.json()
+    return Array.isArray(data?.audits) ? data.audits : Array.isArray(data) ? data : []
+  }
+
   async getAudit(id: string): Promise<AuditSummary> {
     const res = await fetch(`${this.baseUrl}/api/audits/${id}`)
+    if (!res.ok) throw new Error(`API error: ${res.status}`)
+    return res.json()
+  }
+
+  async deleteAudit(id: number): Promise<void> {
+    const res = await fetch(`${this.baseUrl}/api/audits/${id}`, { method: 'DELETE' })
+    if (!res.ok) throw new Error(`API error: ${res.status}`)
+  }
+
+  async getAuditStatus(id: string): Promise<AuditSummary> {
+    const res = await fetch(`${this.baseUrl}/api/audits/${id}/status`)
     if (!res.ok) throw new Error(`API error: ${res.status}`)
     return res.json()
   }
@@ -58,10 +91,22 @@ class APIService {
     return res.json()
   }
 
+  async getAuditReport(auditId: number): Promise<any> {
+    const res = await fetch(`${this.baseUrl}/api/audits/${auditId}/report`)
+    if (!res.ok) throw new Error(`API error: ${res.status}`)
+    return res.json()
+  }
+
+  async getFixPlan(auditId: number): Promise<any> {
+    const res = await fetch(`${this.baseUrl}/api/audits/${auditId}/fix_plan`)
+    if (!res.ok) throw new Error(`API error: ${res.status}`)
+    return res.json()
+  }
+
   // New Feature Methods
 
   async analyzeBacklinks(auditId: string, domain: string): Promise<import('./types').Backlink[]> {
-    const res = await fetch(`${this.baseUrl}/api/backlinks/analyze/${auditId}?domain=${domain}`, { method: 'POST' })
+    const res = await fetch(`${this.baseUrl}/api/backlinks/analyze/${auditId}?domain=${encodeURIComponent(domain)}`, { method: 'POST' })
     if (!res.ok) throw new Error(`API error: ${res.status}`)
     return res.json()
   }
@@ -73,7 +118,7 @@ class APIService {
   }
 
   async researchKeywords(auditId: string, domain: string, seedKeywords?: string[]): Promise<import('./types').Keyword[]> {
-    const res = await fetch(`${this.baseUrl}/api/keywords/research/${auditId}?domain=${domain}`, {
+    const res = await fetch(`${this.baseUrl}/api/keywords/research/${auditId}?domain=${encodeURIComponent(domain)}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(seedKeywords || [])
@@ -89,7 +134,7 @@ class APIService {
   }
 
   async trackRankings(auditId: string, domain: string, keywords: string[]): Promise<import('./types').RankTracking[]> {
-    const res = await fetch(`${this.baseUrl}/api/rank-tracking/track/${auditId}?domain=${domain}`, {
+    const res = await fetch(`${this.baseUrl}/api/rank-tracking/track/${auditId}?domain=${encodeURIComponent(domain)}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(keywords)
@@ -105,7 +150,7 @@ class APIService {
   }
 
   async checkLLMVisibility(auditId: string, brandName: string, queries: string[]): Promise<import('./types').LLMVisibility[]> {
-    const res = await fetch(`${this.baseUrl}/api/llm-visibility/check/${auditId}?brand_name=${brandName}`, {
+    const res = await fetch(`${this.baseUrl}/api/llm-visibility/check/${auditId}?brand_name=${encodeURIComponent(brandName)}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(queries)
@@ -121,7 +166,7 @@ class APIService {
   }
 
   async generateAIContent(auditId: string, domain: string, topics: string[]): Promise<import('./types').AIContentSuggestion[]> {
-    const res = await fetch(`${this.baseUrl}/api/ai-content/generate/${auditId}?domain=${domain}`, {
+    const res = await fetch(`${this.baseUrl}/api/ai-content/generate/${auditId}?domain=${encodeURIComponent(domain)}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(topics)
@@ -139,13 +184,13 @@ class APIService {
   // ============= REPORTS =============
 
   async getAuditReports(auditId: number): Promise<any> {
-    const res = await fetch(`${this.baseUrl}/reports/audit/${auditId}`)
+    const res = await fetch(`${this.baseUrl}/api/reports/audit/${auditId}`)
     if (!res.ok) throw new Error(`API error: ${res.status}`)
     return res.json()
   }
 
   async generatePDF(auditId: number, includeCompetitorAnalysis = false, includeRawData = false): Promise<{ task_id: string; audit_id: number; status: string }> {
-    const res = await fetch(`${this.baseUrl}/reports/generate-pdf`, {
+    const res = await fetch(`${this.baseUrl}/api/reports/generate-pdf`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ audit_id: auditId, include_competitor_analysis: includeCompetitorAnalysis, include_raw_data: includeRawData })
@@ -155,19 +200,19 @@ class APIService {
   }
 
   async downloadReport(reportId: number): Promise<Blob> {
-    const res = await fetch(`${this.baseUrl}/reports/download/${reportId}`)
+    const res = await fetch(`${this.baseUrl}/api/reports/download/${reportId}`)
     if (!res.ok) throw new Error(`API error: ${res.status}`)
     return res.blob()
   }
 
   async getMarkdownReport(auditId: number): Promise<{ audit_id: number; markdown: string; created_at: string }> {
-    const res = await fetch(`${this.baseUrl}/reports/markdown/${auditId}`)
+    const res = await fetch(`${this.baseUrl}/api/reports/markdown/${auditId}`)
     if (!res.ok) throw new Error(`API error: ${res.status}`)
     return res.json()
   }
 
   async getJSONReport(auditId: number): Promise<any> {
-    const res = await fetch(`${this.baseUrl}/reports/json/${auditId}`)
+    const res = await fetch(`${this.baseUrl}/api/reports/json/${auditId}`)
     if (!res.ok) throw new Error(`API error: ${res.status}`)
     return res.json()
   }
@@ -175,25 +220,25 @@ class APIService {
   // ============= ANALYTICS =============
 
   async getAuditAnalytics(auditId: number): Promise<any> {
-    const res = await fetch(`${this.baseUrl}/analytics/audit/${auditId}`)
+    const res = await fetch(`${this.baseUrl}/api/analytics/audit/${auditId}`)
     if (!res.ok) throw new Error(`API error: ${res.status}`)
     return res.json()
   }
 
   async getCompetitorAnalysis(auditId: number): Promise<any> {
-    const res = await fetch(`${this.baseUrl}/analytics/competitors/${auditId}`)
+    const res = await fetch(`${this.baseUrl}/api/analytics/competitors/${auditId}`)
     if (!res.ok) throw new Error(`API error: ${res.status}`)
     return res.json()
   }
 
   async getDashboardData(): Promise<any> {
-    const res = await fetch(`${this.baseUrl}/analytics/dashboard`)
+    const res = await fetch(`${this.baseUrl}/api/analytics/dashboard`)
     if (!res.ok) throw new Error(`API error: ${res.status}`)
     return res.json()
   }
 
   async getIssuesByPriority(auditId: number): Promise<any> {
-    const res = await fetch(`${this.baseUrl}/analytics/issues/${auditId}`)
+    const res = await fetch(`${this.baseUrl}/api/analytics/issues/${auditId}`)
     if (!res.ok) throw new Error(`API error: ${res.status}`)
     return res.json()
   }
@@ -211,13 +256,13 @@ class APIService {
   }
 
   async getCitationHistory(auditId: number, days = 30): Promise<any> {
-    const res = await fetch(`${this.baseUrl}/api/geo/citation-tracking/history/${auditId}?days=${days}`)
+    const res = await fetch(`${this.baseUrl}/api/geo/citation-tracking/history/${auditId}?days=${encodeURIComponent(days.toString())}`)
     if (!res.ok) throw new Error(`API error: ${res.status}`)
     return res.json()
   }
 
   async getRecentCitations(auditId: number, limit = 10): Promise<any> {
-    const res = await fetch(`${this.baseUrl}/api/geo/citation-tracking/recent/${auditId}?limit=${limit}`)
+    const res = await fetch(`${this.baseUrl}/api/geo/citation-tracking/recent/${auditId}?limit=${encodeURIComponent(limit.toString())}`)
     if (!res.ok) throw new Error(`API error: ${res.status}`)
     return res.json()
   }
@@ -364,6 +409,12 @@ class APIService {
     return res.json()
   }
 
+  async analyzePageSpeed(url: string, strategy: 'mobile' | 'desktop' = 'mobile'): Promise<any> {
+    const res = await fetch(`${this.baseUrl}/api/pagespeed/analyze?url=${encodeURIComponent(url)}&strategy=${encodeURIComponent(strategy)}`)
+    if (!res.ok) throw new Error(`API error: ${res.status}`)
+    return res.json()
+  }
+
   // ============= HEALTH =============
 
   async getHealth(): Promise<any> {
@@ -372,14 +423,249 @@ class APIService {
     return res.json()
   }
 
-  async getDbHealth(): Promise<any> {
-    const res = await fetch(`${this.baseUrl}/db-health`)
+  async getReadiness(): Promise<any> {
+    const res = await fetch(`${this.baseUrl}/health/ready`)
+    if (!res.ok) throw new Error(`API error: ${res.status}`)
+    return res.json()
+  }
+
+  async getLiveness(): Promise<any> {
+    const res = await fetch(`${this.baseUrl}/health/live`)
     if (!res.ok) throw new Error(`API error: ${res.status}`)
     return res.json()
   }
 
   async getStats(): Promise<any> {
-    const res = await fetch(`${this.baseUrl}/stats`)
+    const res = await fetch(`${this.baseUrl}/api/audits/stats/summary`)
+    if (!res.ok) throw new Error(`API error: ${res.status}`)
+    return res.json()
+  }
+
+  // ============= HUBSPOT =============
+
+  async getHubSpotAuthUrl(): Promise<{ url: string }> {
+    const res = await fetch(`${this.baseUrl}/api/hubspot/auth-url`)
+    if (!res.ok) throw new Error(`API error: ${res.status}`)
+    return res.json()
+  }
+
+  async hubSpotCallback(code: string): Promise<any> {
+    const res = await fetch(`${this.baseUrl}/api/hubspot/callback`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code })
+    })
+    if (!res.ok) throw new Error(`API error: ${res.status}`)
+    return res.json()
+  }
+
+  async getHubSpotConnections(): Promise<any[]> {
+    const res = await fetch(`${this.baseUrl}/api/hubspot/connections`)
+    if (!res.ok) throw new Error(`API error: ${res.status}`)
+    const data = await res.json()
+    return Array.isArray(data) ? data : []
+  }
+
+  async syncHubSpot(connectionId: string): Promise<any> {
+    const res = await fetch(`${this.baseUrl}/api/hubspot/sync/${encodeURIComponent(connectionId)}`, { method: 'POST' })
+    if (!res.ok) throw new Error(`API error: ${res.status}`)
+    return res.json()
+  }
+
+  async getHubSpotPages(connectionId: string): Promise<any[]> {
+    const res = await fetch(`${this.baseUrl}/api/hubspot/pages/${encodeURIComponent(connectionId)}`)
+    if (!res.ok) throw new Error(`API error: ${res.status}`)
+    const data = await res.json()
+    return Array.isArray(data) ? data : []
+  }
+
+  async getHubSpotRecommendations(auditId: number): Promise<any> {
+    const res = await fetch(`${this.baseUrl}/api/hubspot/recommendations/${auditId}`)
+    if (!res.ok) throw new Error(`API error: ${res.status}`)
+    return res.json()
+  }
+
+  async applyHubSpotRecommendations(auditId: number, recommendations: any[]): Promise<any> {
+    const res = await fetch(`${this.baseUrl}/api/hubspot/apply-recommendations`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ audit_id: auditId, recommendations })
+    })
+    if (!res.ok) throw new Error(`API error: ${res.status}`)
+    return res.json()
+  }
+
+  async rollbackHubSpotChange(changeId: string): Promise<any> {
+    const res = await fetch(`${this.baseUrl}/api/hubspot/rollback/${encodeURIComponent(changeId)}`, { method: 'POST' })
+    if (!res.ok) throw new Error(`API error: ${res.status}`)
+    return res.json()
+  }
+
+  // ============= WEBHOOKS =============
+
+  async listWebhookEvents(): Promise<any[]> {
+    const res = await fetch(`${this.baseUrl}/api/webhooks/events`)
+    if (!res.ok) throw new Error(`API error: ${res.status}`)
+    const data = await res.json()
+    return Array.isArray(data) ? data : []
+  }
+
+  async configureWebhook(config: { url: string; secret?: string | null; events: string[]; active?: boolean; description?: string | null }): Promise<any> {
+    const res = await fetch(`${this.baseUrl}/api/webhooks/config`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        url: config.url,
+        secret: config.secret ?? null,
+        events: config.events,
+        active: config.active ?? true,
+        description: config.description ?? null,
+      })
+    })
+    if (!res.ok) throw new Error(`API error: ${res.status}`)
+    return res.json()
+  }
+
+  async testWebhook(request: { url: string; secret?: string | null; event_type?: string }): Promise<any> {
+    const res = await fetch(`${this.baseUrl}/api/webhooks/test`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        url: request.url,
+        secret: request.secret ?? null,
+        event_type: request.event_type ?? 'audit.completed',
+      })
+    })
+    if (!res.ok) throw new Error(`API error: ${res.status}`)
+    return res.json()
+  }
+
+  async getWebhooksHealth(): Promise<any> {
+    const res = await fetch(`${this.baseUrl}/api/webhooks/health`)
+    if (!res.ok) throw new Error(`API error: ${res.status}`)
+    return res.json()
+  }
+
+  // ============= GITHUB =============
+
+  async getGitHubAuthUrl(): Promise<{ url: string }> {
+    const res = await fetch(`${this.baseUrl}/api/github/auth-url`)
+    if (!res.ok) throw new Error(`API error: ${res.status}`)
+    return res.json()
+  }
+
+  async githubCallback(code: string): Promise<any> {
+    const res = await fetch(`${this.baseUrl}/api/github/callback`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code })
+    })
+    if (!res.ok) throw new Error(`API error: ${res.status}`)
+    return res.json()
+  }
+
+  async getGitHubConnections(): Promise<any[]> {
+    const res = await fetch(`${this.baseUrl}/api/github/connections`)
+    if (!res.ok) throw new Error(`API error: ${res.status}`)
+    const data = await res.json()
+    return Array.isArray(data) ? data : []
+  }
+
+  async syncGitHub(connectionId: string): Promise<any> {
+    const res = await fetch(`${this.baseUrl}/api/github/sync/${encodeURIComponent(connectionId)}`, { method: 'POST' })
+    if (!res.ok) throw new Error(`API error: ${res.status}`)
+    return res.json()
+  }
+
+  async getGitHubRepos(connectionId: string): Promise<any[]> {
+    const res = await fetch(`${this.baseUrl}/api/github/repos/${encodeURIComponent(connectionId)}`)
+    if (!res.ok) throw new Error(`API error: ${res.status}`)
+    const data = await res.json()
+    return Array.isArray(data) ? data : []
+  }
+
+  async analyzeGitHubRepo(connectionId: string, repoId: string): Promise<any> {
+    const res = await fetch(`${this.baseUrl}/api/github/analyze/${encodeURIComponent(connectionId)}/${encodeURIComponent(repoId)}`, { method: 'POST' })
+    if (!res.ok) throw new Error(`API error: ${res.status}`)
+    return res.json()
+  }
+
+  async createGitHubPR(request: { connection_id: string; repo_id: string; audit_id: number; fixes: any[] }): Promise<any> {
+    const res = await fetch(`${this.baseUrl}/api/github/create-pr`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(request)
+    })
+    if (!res.ok) throw new Error(`API error: ${res.status}`)
+    return res.json()
+  }
+
+  async listGitHubPRs(repoId: string): Promise<any[]> {
+    const res = await fetch(`${this.baseUrl}/api/github/prs/${encodeURIComponent(repoId)}`)
+    if (!res.ok) throw new Error(`API error: ${res.status}`)
+    const data = await res.json()
+    return Array.isArray(data) ? data : []
+  }
+
+  async auditBlogs(connectionId: string, repoId: string): Promise<any> {
+    const res = await fetch(`${this.baseUrl}/api/github/audit-blogs/${encodeURIComponent(connectionId)}/${encodeURIComponent(repoId)}`, { method: 'POST' })
+    if (!res.ok) throw new Error(`API error: ${res.status}`)
+    return res.json()
+  }
+
+  async createBlogFixesPR(connectionId: string, repoId: string, blogPaths: string[]): Promise<any> {
+    const res = await fetch(`${this.baseUrl}/api/github/create-blog-fixes-pr/${encodeURIComponent(connectionId)}/${encodeURIComponent(repoId)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(blogPaths)
+    })
+    if (!res.ok) throw new Error(`API error: ${res.status}`)
+    return res.json()
+  }
+
+  async auditToFixes(auditId: number): Promise<any> {
+    const res = await fetch(`${this.baseUrl}/api/github/audit-to-fixes/${auditId}`)
+    if (!res.ok) throw new Error(`API error: ${res.status}`)
+    return res.json()
+  }
+
+  async getGitHubGeoScore(auditId: number): Promise<any> {
+    const res = await fetch(`${this.baseUrl}/api/github/geo-score/${auditId}`)
+    if (!res.ok) throw new Error(`API error: ${res.status}`)
+    return res.json()
+  }
+
+  async auditBlogsGeo(connectionId: string, repoId: string): Promise<any> {
+    const res = await fetch(`${this.baseUrl}/api/github/audit-blogs-geo/${encodeURIComponent(connectionId)}/${encodeURIComponent(repoId)}`, { method: 'POST' })
+    if (!res.ok) throw new Error(`API error: ${res.status}`)
+    return res.json()
+  }
+
+  async createGeoFixesPR(connectionId: string, repoId: string, blogPaths: string[], includeGeo = true): Promise<any> {
+    const res = await fetch(`${this.baseUrl}/api/github/create-geo-fixes-pr/${encodeURIComponent(connectionId)}/${encodeURIComponent(repoId)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ blog_paths: blogPaths, include_geo: includeGeo })
+    })
+    if (!res.ok) throw new Error(`API error: ${res.status}`)
+    return res.json()
+  }
+
+  async geoCompare(auditId: number, competitorUrls?: string[]): Promise<any> {
+    const qs = competitorUrls?.length
+      ? `?${competitorUrls.map((u) => `competitor_urls=${encodeURIComponent(u)}`).join('&')}`
+      : ''
+    const res = await fetch(`${this.baseUrl}/api/github/geo-compare/${auditId}${qs}`)
+    if (!res.ok) throw new Error(`API error: ${res.status}`)
+    return res.json()
+  }
+
+  async createAutoFixPR(connectionId: string, repoId: string, auditId: number): Promise<any> {
+    const res = await fetch(`${this.baseUrl}/api/github/create-auto-fix-pr/${encodeURIComponent(connectionId)}/${encodeURIComponent(repoId)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ audit_id: auditId })
+    })
     if (!res.ok) throw new Error(`API error: ${res.status}`)
     return res.json()
   }
@@ -412,4 +698,3 @@ class APIService {
 }
 
 export const api = new APIService()
-

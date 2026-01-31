@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Github, GitPullRequest, CheckCircle2, XCircle, Clock, ExternalLink, ArrowLeft, AlertCircle } from 'lucide-react';
+import { API_URL } from '@/lib/api';
 
 export default function GitHubAutoFixPage() {
     const params = useParams();
@@ -23,7 +24,7 @@ export default function GitHubAutoFixPage() {
     const [creating, setCreating] = useState(false);
     const [prResult, setPrResult] = useState<any>(null);
 
-    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
+    const backendUrl = API_URL;
 
     useEffect(() => {
         fetchAudit();
@@ -64,7 +65,7 @@ export default function GitHubAutoFixPage() {
     const fetchRepositories = async (connectionId: string) => {
         setReposLoading(true);
         try {
-            const res = await fetch(`${backendUrl}/api/github/repositories/${connectionId}`);
+            const res = await fetch(`${backendUrl}/api/github/repos/${connectionId}`);
             if (res.ok) {
                 const data = await res.json();
                 setRepositories(data);

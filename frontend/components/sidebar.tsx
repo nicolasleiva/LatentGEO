@@ -11,6 +11,13 @@ import {
     Settings,
     Globe,
     Bot,
+    FileText,
+    Download,
+    Github,
+    Webhook,
+    Activity,
+    Radio,
+    RotateCcw,
     Wand2
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -68,6 +75,32 @@ export function Sidebar() {
                 >
                     <Search className="h-4 w-4" />
                     Audit History
+                </Link>
+
+                <Link
+                    href="/reports"
+                    className={cn(
+                        "flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors",
+                        pathname === "/reports"
+                            ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                            : "text-muted-foreground hover:bg-sidebar-accent/50 hover:text-foreground"
+                    )}
+                >
+                    <FileText className="h-4 w-4" />
+                    Reports
+                </Link>
+
+                <Link
+                    href="/exports"
+                    className={cn(
+                        "flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors",
+                        pathname === "/exports"
+                            ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                            : "text-muted-foreground hover:bg-sidebar-accent/50 hover:text-foreground"
+                    )}
+                >
+                    <Download className="h-4 w-4" />
+                    Exports
                 </Link>
 
                 {currentAuditId && (
@@ -145,6 +178,92 @@ export function Sidebar() {
                 >
                     <Wand2 className="h-4 w-4" />
                     GEO Content Editor
+                </Link>
+
+                <div className="mt-8 px-3 mb-2 text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                    Integrations
+                </div>
+
+                <Link
+                    href="/integrations/hubspot/connect"
+                    className={cn(
+                        "flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors",
+                        pathname.includes('/integrations/hubspot')
+                            ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                            : "text-muted-foreground hover:bg-sidebar-accent/50 hover:text-foreground"
+                    )}
+                >
+                    <Zap className="h-4 w-4" />
+                    HubSpot
+                </Link>
+
+                <Link
+                    href="/integrations/hubspot/rollback"
+                    className={cn(
+                        "flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors",
+                        pathname === "/integrations/hubspot/rollback"
+                            ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                            : "text-muted-foreground hover:bg-sidebar-accent/50 hover:text-foreground"
+                    )}
+                >
+                    <RotateCcw className="h-4 w-4" />
+                    HubSpot Rollback
+                </Link>
+
+                <Link
+                    href="/integrations/github"
+                    className={cn(
+                        "flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors",
+                        pathname === "/integrations/github"
+                            ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                            : "text-muted-foreground hover:bg-sidebar-accent/50 hover:text-foreground"
+                    )}
+                >
+                    <Github className="h-4 w-4" />
+                    GitHub Admin
+                </Link>
+
+                <div className="mt-8 px-3 mb-2 text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                    Ops
+                </div>
+
+                <Link
+                    href="/ops/health"
+                    className={cn(
+                        "flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors",
+                        pathname === "/ops/health"
+                            ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                            : "text-muted-foreground hover:bg-sidebar-accent/50 hover:text-foreground"
+                    )}
+                >
+                    <Activity className="h-4 w-4" />
+                    Health
+                </Link>
+
+                <Link
+                    href="/ops/webhooks"
+                    className={cn(
+                        "flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors",
+                        pathname === "/ops/webhooks"
+                            ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                            : "text-muted-foreground hover:bg-sidebar-accent/50 hover:text-foreground"
+                    )}
+                >
+                    <Webhook className="h-4 w-4" />
+                    Webhooks
+                </Link>
+
+                <Link
+                    href="/ops/realtime"
+                    className={cn(
+                        "flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors",
+                        pathname === "/ops/realtime"
+                            ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                            : "text-muted-foreground hover:bg-sidebar-accent/50 hover:text-foreground"
+                    )}
+                >
+                    <Radio className="h-4 w-4" />
+                    Realtime
                 </Link>
             </div>
 

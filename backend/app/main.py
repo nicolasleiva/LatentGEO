@@ -1,7 +1,7 @@
 """
-FastAPI Main Application
+FastAPI Main Application - Production Ready (Level 2/3)
 """
-from fastapi import FastAPI
+from fastapi import FastAPI, APIRouter
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.openapi.utils import get_openapi
@@ -10,162 +10,187 @@ import os
 from .core.config import settings
 from .core.database import init_db
 from .core.logger import get_logger
+from .core.middleware import configure_security_middleware
 
-# Importar rutas
+# Import rate limiting
+try:
+    from .middleware.rate_limit import RateLimitMiddleware
+    RATE_LIMIT_AVAILABLE = True
+except ImportError:
+    RATE_LIMIT_AVAILABLE = False
+    logger = get_logger(__name__)
+    logger.warning("Rate limiting middleware not available")
+
+# Initialize Monitoring (Level 2/3)
+if settings.SENTRY_DSN:
+    try:
+        import sentry_sdk
+        from sentry_sdk.integrations.fastapi import FastApiIntegration
+        
+        sentry_sdk.init(
+            dsn=settings.SENTRY_DSN,
+            integrations=[FastApiIntegration()],
+            traces_sample_rate=1.0,
+            profiles_sample_rate=1.0,
+            environment=settings.ENVIRONMENT,
+        )
+    except ImportError:
+        pass
+
+# Import routes - the __init__.py handles missing dependencies gracefully
 from .api.routes import (
     audits, reports, analytics, health, search, pagespeed,
     backlinks, keywords, rank_tracking, llm_visibility, 
-    ai_content, content_editor
+    ai_content, content_editor, content_analysis,
+    geo, hubspot, github, webhooks, realtime, sse
 )
 
 try:
-    from .api.routes import content_analysis
-except ImportError:
-    content_analysis = None
+    from .routes import score_history
+except Exception:
+    score_history = None
 
 from contextlib import asynccontextmanager
 
-
 logger = get_logger(__name__)
-
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Context manager for the lifespan of the application."""
-    logger.info(f"========================================")
-    logger.info(f"Starting {settings.APP_NAME} v{settings.APP_VERSION}...")
-    logger.info(f"Debug mode: {settings.DEBUG}")
-    logger.info(
-        f"Database: {settings.DATABASE_URL.split('@')[-1].split('/')[0] if '@' in settings.DATABASE_URL else settings.DATABASE_URL}"
-    )
-    logger.info(f"API Documentation: http://localhost:8000/docs")
-    logger.info(f"========================================")
-
+    """Control de ciclo de vida de la aplicación."""
+    logger.info("=" * 40)
+    logger.info(f"STARTUP: {settings.APP_NAME} v{settings.APP_VERSION}")
+    logger.info("=" * 40)
+    
+    from .core.config import validate_environment
     try:
-        await init_db()
+        validate_environment()
+        logger.info("OK: Validacion de entorno exitosa")
     except Exception as e:
-        logger.critical(f"Fallo crítico al inicializar la base de datos: {e}", exc_info=True)
-        # En un entorno de producción, podrías querer que la aplicación falle aquí.
-        # raise
+        logger.error(f"WARN: Advertencia de validacion: {e}")
+    
+    try:
+        await init_db() 
+        logger.info("OK: Conexion con Base de Datos establecida")
+    except Exception as e:
+        logger.critical(f"ERR: Fallo critico al inicializar la base de datos: {e}")
+    
+    logger.info(f"INFO: Modo Debug: {settings.DEBUG}")
+    logger.info(f"INFO: Documentacion: http://localhost:8000/docs")
 
     yield
-    logger.info(f"========================================")
-    logger.info(f"Shutting down {settings.APP_NAME}...")
-    logger.info(f"========================================")
-
+    
+    logger.info("=" * 40)
+    logger.info(f"🛑 Apagando {settings.APP_NAME}...")
+    logger.info("=" * 40)
 
 def create_app() -> FastAPI:
-    """Factory para crear la aplicación FastAPI"""
-    from starlette.middleware.gzip import GZipMiddleware as GZip
+    """Factory para crear la aplicación FastAPI - Level 3"""
 
     app = FastAPI(
         title=settings.APP_NAME,
-        description="Plataforma profesional de auditoría SEO/GEO con API modular y dashboard",
         version=settings.APP_VERSION,
         debug=settings.DEBUG,
         lifespan=lifespan,
-        redirect_slashes=True,
     )
 
     # ===== MIDDLEWARE =====
-
-    # CORS - Permitir tanto localhost como el contenedor frontend
-    cors_origins = settings.CORS_ORIGINS + ["http://frontend:3000"]
+    # ===== MIDDLEWARE =====
+    # Always send explicit origins to support credentials (cookies/auth)
+    # We avoid "*" even in DEBUG because it conflicts with allow_credentials=True
+    
+    # Ensure localhost and defaults are included
+    cors_origins = set(settings.CORS_ORIGINS)
+    cors_origins.add("http://frontend:3000")
+    cors_origins.add("http://localhost:3000")
+    cors_origins.add("http://localhost:8000")
+    cors_origins.add("http://127.0.0.1:3000")
+    
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=cors_origins,
+        allow_origins=list(cors_origins),
         allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
+        allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+        allow_headers=["Authorization", "Content-Type", "X-Requested-With", "X-Webhook-Signature"],
     )
 
-    # GZIP
-    # app.add_middleware(GZip, minimum_size=1000)
+    configure_security_middleware(
+        app,
+        settings,
+        enable_rate_limiting=(not settings.DEBUG and not RATE_LIMIT_AVAILABLE),
+    )
+    
+    # Add ProxyHeaders middleware to get real IP behind Nginx/ALB
+    from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
+    app.add_middleware(ProxyHeadersMiddleware, trusted_hosts=settings.TRUSTED_HOSTS)
+    
+    # Add rate limiting (production)
+    if RATE_LIMIT_AVAILABLE and not settings.DEBUG:
+        app.add_middleware(RateLimitMiddleware)
+        logger.info("Rate limiting enabled")
 
-    logger.info(f"Middleware configurado")
-
-    # ===== RUTAS =====
-
-    # Health y utilidades
+    # ===== VERSIONAMIENTO (Level 3) =====
+    v1 = APIRouter(prefix="/api/v1")
+    
+    v1.include_router(audits.router)
+    v1.include_router(reports.router)
+    v1.include_router(analytics.router)
+    if search: v1.include_router(search.router)
+    if pagespeed: v1.include_router(pagespeed.router)
+    if backlinks: v1.include_router(backlinks.router)
+    if keywords: v1.include_router(keywords.router)
+    if rank_tracking: v1.include_router(rank_tracking.router)
+    if llm_visibility: v1.include_router(llm_visibility.router)
+    if ai_content: v1.include_router(ai_content.router)
+    if content_editor: v1.include_router(content_editor.router)
+    if content_analysis: v1.include_router(content_analysis.router)
+    if geo: v1.include_router(geo.router)
+    if hubspot: v1.include_router(hubspot.router)
+    if github: v1.include_router(github.router)
+    if webhooks: v1.include_router(webhooks.router)
+    if sse: v1.include_router(sse.router)
+    
+    app.include_router(v1)
+    
+    # Legacy Support /api & Global Routes
+    app.include_router(audits.router, prefix="/api")
+    app.include_router(reports.router, prefix="/api")
+    app.include_router(analytics.router, prefix="/api")
+    if search: app.include_router(search.router, prefix="/api")
+    if pagespeed: app.include_router(pagespeed.router, prefix="/api")
+    if backlinks: app.include_router(backlinks.router, prefix="/api")
+    if keywords: app.include_router(keywords.router, prefix="/api")
+    if rank_tracking: app.include_router(rank_tracking.router, prefix="/api")
+    if llm_visibility: app.include_router(llm_visibility.router, prefix="/api")
+    if ai_content: app.include_router(ai_content.router, prefix="/api")
+    if content_editor: app.include_router(content_editor.router, prefix="/api")
+    if content_analysis: app.include_router(content_analysis.router, prefix="/api")
+    if geo: app.include_router(geo.router, prefix="/api")
+    if hubspot: app.include_router(hubspot.router, prefix="/api")
+    if github: app.include_router(github.router, prefix="/api")
+    if webhooks: app.include_router(webhooks.router, prefix="/api")
+    if sse: app.include_router(sse.router, prefix="/api")
     app.include_router(health.router)
-
-    # Búsqueda AI
-    app.include_router(search.router)
-
-    # Auditorías
-    app.include_router(audits.router, prefix="/api/audits", tags=["audits"])
-
-    # Reportes
-    app.include_router(reports.router)
-
-    # Analytics
-    app.include_router(analytics.router)
-
-    # PageSpeed
-    app.include_router(pagespeed.router)
-
-    # New Features - AI SEO Tools
-    app.include_router(backlinks.router, prefix="/api/backlinks", tags=["backlinks"])
-    app.include_router(keywords.router, prefix="/api/keywords", tags=["keywords"])
-    app.include_router(rank_tracking.router, prefix="/api/rank-tracking", tags=["rank-tracking"])
-    app.include_router(llm_visibility.router, prefix="/api/llm-visibility", tags=["llm-visibility"])
-    app.include_router(ai_content.router, prefix="/api/ai-content", tags=["ai-content"])
+    if score_history:
+        app.include_router(score_history.router)
+    if realtime: app.include_router(realtime.router)
     
-    # Tools
-    app.include_router(content_editor.router, prefix="/api/tools/content-editor", tags=["content-editor"])
+    if search: app.include_router(search.router) # AI Chat search often at root
 
-    # Content Analysis
-    if content_analysis:
-        app.include_router(content_analysis.router)
-    
-    # GEO Features
-    from app.api.routes import geo
-    app.include_router(geo.router)
-
-    # Integrations
-    # HubSpot
-    from app.api.routes import hubspot
-    app.include_router(hubspot.router, prefix="/api/hubspot", tags=["hubspot"])
-    
-    # GitHub
-    from app.api.routes import github
-    app.include_router(github.router, prefix="/api/github", tags=["github"])
-    
-    # Score History - Tracking temporal
-    from app.routes import score_history
-    app.include_router(score_history.router)
-
-    logger.info("Rutas registradas")
-
-    # ===== DOCUMENTACIÓN PERSONALIZADA =====
-
+    # ===== OPENAPI CUSTOMIZATION =====
     def custom_openapi():
-        if app.openapi_schema:
-            return app.openapi_schema
-
+        if app.openapi_schema: return app.openapi_schema
         openapi_schema = get_openapi(
-            title=settings.APP_NAME,
+            title="🎯 " + settings.APP_NAME,
             version=settings.APP_VERSION,
-            description="API modular profesional para auditorías SEO/GEO",
+            summary="Plataforma de Auditoría SEO & GEO de Próxima Generación",
+            description="API modular profesional para auditoría de posicionamiento en motores tradicionales y generativos.",
             routes=app.routes,
+            contact={"name": "Soporte Auditor GEO", "email": "dev@auditorgeo.com"},
         )
-
-        openapi_schema["info"]["x-logo"] = {
-            "url": "https://fastapi.tiangolo.com/img/logo-margin/logo-teal.png"
-        }
-
         app.openapi_schema = openapi_schema
         return app.openapi_schema
 
     app.openapi = custom_openapi
-
     return app
 
-
 app = create_app()
-
-
-if __name__ == "__main__":
-    import uvicorn
-
-    uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=settings.DEBUG)

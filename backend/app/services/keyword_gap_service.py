@@ -69,9 +69,10 @@ class KeywordGapService:
         }
     
     @staticmethod
-    async def analyze_with_gemini(gap_data: Dict, llm_function) -> str:
-        """Usa Gemini para analizar el gap y dar recomendaciones"""
-        prompt = f"""Analiza este keyword gap y proporciona recomendaciones estratégicas:
+    async def analyze_with_kimi(gap_data: Dict, llm_function) -> str:
+        """Usa KIMI para analizar el gap y dar recomendaciones"""
+        system_prompt = "Eres un experto analista SEO especializado en Keyword Gap Analysis."
+        user_prompt = f"""Analiza este keyword gap y proporciona recomendaciones estratégicas:
 
 Keywords que faltan: {len(gap_data['missing_keywords'])}
 Keywords únicas: {len(gap_data['unique_keywords'])}
@@ -88,7 +89,9 @@ Proporciona:
 """
         
         try:
-            response = await llm_function(prompt)
+            response = await llm_function(system_prompt=system_prompt, user_prompt=user_prompt)
             return response
-        except:
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).error(f"Error in analyze_with_kimi: {e}")
             return "Análisis automático no disponible"

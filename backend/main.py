@@ -11,9 +11,9 @@ import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from .app.main import app as fastapi_app
-from .app.core.config import settings
-from .app.core.logger import get_logger
+from app.main import app as fastapi_app
+from app.core.config import settings
+from app.core.logger import get_logger
 
 logger = get_logger(__name__)
 
@@ -41,7 +41,7 @@ if __name__ == "__main__":
     reload = os.getenv("DEBUG", "True") == "True"
     
     uvicorn.run(
-        "backend.main:fastapi_app",
+        "main:fastapi_app",
         host=host,
         port=port,
         reload=reload,

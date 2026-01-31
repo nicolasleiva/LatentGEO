@@ -4,18 +4,34 @@ Configuración de Pytest y fixtures
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
+from sqlalchemy.pool import StaticPool
 from sqlalchemy.orm import sessionmaker
 from typing import Generator
 
 import sys
 import os
 
-# Add project root to path to allow imports
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../")))
+# Add the backend directory to sys.path
+# In Docker, this is /app. Locally, it's the backend folder.
+current_dir = os.path.dirname(os.path.abspath(__file__))
+project_root = os.path.dirname(current_dir) # This should be 'backend' local or '/app' in Docker
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
 
-from backend.app.main import app
-from backend.app.core.database import get_db, Base
-from backend.app.core.config import settings
+# Now imports should work relatively to project_root
+try:
+    from app.main import app
+    from app.core.database import get_db, Base
+    from app.core.config import settings
+except ImportError as e:
+    print(f"Failed to import from app.main: {e}")
+    # Fallback for different environments if necessary
+    try:
+        from backend.app.main import app
+        from backend.app.core.database import get_db, Base
+        from backend.app.core.config import settings
+    except ImportError:
+        raise e
 
 
 @pytest.fixture(scope="function", autouse=True)
@@ -23,20 +39,19 @@ def setup_test_db():
     """
     Fixture para crear y destruir la base de datos de test.
     """
-    TEST_DATABASE_URL = "sqlite:///./test.db"
-    engine = create_engine(TEST_DATABASE_URL, connect_args={"check_same_thread": False})
-
-    # Eliminar la base de datos de test si existe de una ejecución anterior
-    if os.path.exists("./test.db"):
-        os.remove("./test.db")
+    # Usar base de datos en memoria para evitar bloqueos de archivo en Windows
+    TEST_DATABASE_URL = "sqlite:///:memory:"
+    engine = create_engine(
+        TEST_DATABASE_URL, 
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool
+    )
 
     Base.metadata.create_all(bind=engine)
     yield engine
     # Limpieza después de que terminen todos los tests
-    Base.metadata.drop_all(bind=engine)  # Asegurar que todas las tablas se eliminen
-    engine.dispose()  # Cerrar todas las conexiones
-    if os.path.exists("./test.db"):
-        os.remove("./test.db")
+    Base.metadata.drop_all(bind=engine)
+    engine.dispose()
 
 
 @pytest.fixture(scope="function")

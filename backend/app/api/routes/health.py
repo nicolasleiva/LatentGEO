@@ -1,87 +1,71 @@
 """
-API Endpoints para Health Check y Utilidades
+Health Check Endpoint - Para load balancers y monitoring
 """
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from sqlalchemy import text
-
+from starlette.responses import JSONResponse
 from ...core.database import get_db
-from ...core.config import settings
+from ...services.cache_service import cache
 from ...core.logger import get_logger
 
 logger = get_logger(__name__)
 
-router = APIRouter(
-    tags=["health"],
-)
+router = APIRouter(tags=["health"])
 
 
-@router.get("/health", response_model=dict)
+@router.get("/health")
 async def health_check(db: Session = Depends(get_db)):
-    """Health check de la aplicación"""
+    """
+    Health check endpoint para load balancers.
+    Retorna 200 si todos los servicios están operativos.
+    """
+    health_status = {
+        "status": "healthy",
+        "services": {}
+    }
+    
+    # Check database
     try:
-        # Verificar base de datos
-        db_status = "down"
-        try:
-            db.execute(text("SELECT 1"))
-            db_status = "ok"
-        except Exception as e:
-            logger.error(f"DB health check falló: {e}")
-            db_status = "error"
-
-        # Verificar Redis (opcional)
-        redis_status = "not-configured"
-        try:
-            import redis
-
-            r = redis.from_url(settings.REDIS_URL, decode_responses=True)
-            r.ping()
-            redis_status = "ok"
-        except Exception as e:
-            logger.debug(f"Redis no disponible: {e}")
-            redis_status = "unavailable"
-
-        return {
-            "status": "ok" if db_status == "ok" else "degraded",
-            "version": settings.APP_VERSION,
-            "database": db_status,
-            "redis": redis_status,
-            "api_name": settings.APP_NAME,
-        }
+        db.execute(text("SELECT 1"))
+        health_status["services"]["database"] = "connected"
     except Exception as e:
-        logger.exception(f"Health check falló: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Service unavailable",
-        )
+        logger.error(f"Database health check failed: {e}")
+        health_status["services"]["database"] = "disconnected"
+        health_status["status"] = "unhealthy"
+    
+    # Check Redis
+    try:
+        if cache.enabled:
+            cache.redis_client.ping()
+            health_status["services"]["redis"] = "connected"
+        else:
+            health_status["services"]["redis"] = "disabled"
+    except Exception as e:
+        logger.error(f"Redis health check failed: {e}")
+        health_status["services"]["redis"] = "disconnected"
+        health_status["status"] = "degraded"
+    
+    status_code = 200 if health_status["status"] == "healthy" else 503
+    return JSONResponse(status_code=status_code, content=health_status)
 
 
-@router.get("/config", response_model=dict)
-async def get_config():
-    """Obtener configuración pública de la aplicación"""
-    return {
-        "app_name": settings.APP_NAME,
-        "app_version": settings.APP_VERSION,
-        "debug": settings.DEBUG,
-        "max_crawl_default": settings.MAX_CRAWL_DEFAULT,
-        "max_audit_default": settings.MAX_AUDIT_DEFAULT,
-        "default_page_size": settings.DEFAULT_PAGE_SIZE,
-        "max_page_size": settings.MAX_PAGE_SIZE,
-    }
+@router.get("/health/ready")
+async def readiness_check(db: Session = Depends(get_db)):
+    """
+    Readiness check - verifica si la app puede recibir tráfico.
+    """
+    try:
+        db.execute(text("SELECT 1"))
+        return JSONResponse(status_code=200, content={"status": "ready"})
+    except Exception as e:
+        logger.error(f"Readiness check failed: {e}")
+        return JSONResponse(status_code=503, content={"status": "not_ready", "error": str(e)})
 
 
-@router.get("/info", response_model=dict)
-async def get_info():
-    """Información de la API"""
-    return {
-        "title": settings.APP_NAME,
-        "version": settings.APP_VERSION,
-        "description": "API profesional para auditorías SEO/GEO con arquitectura modular",
-        "documentation": "/docs",
-        "endpoints": {
-            "audits": "/audits",
-            "reports": "/reports",
-            "analytics": "/analytics",
-            "crawler": "/crawler",
-        },
-    }
+@router.get("/health/live")
+async def liveness_check():
+    """
+    Liveness check - verifica si la app está viva (no colgada).
+    """
+    return {"status": "alive"}

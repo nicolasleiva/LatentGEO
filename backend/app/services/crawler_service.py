@@ -20,6 +20,7 @@ import sys
 from urllib.parse import urljoin, urlparse, ParseResult
 from bs4 import BeautifulSoup
 import urllib.robotparser
+import re
 from typing import Optional, Set, List
 
 logger = logging.getLogger(__name__)
@@ -83,7 +84,10 @@ class CrawlerService:
         """
         if not hostname:
             return None
-        return hostname.lower().lstrip("www.")
+        hostname = hostname.lower()
+        if hostname.startswith("www."):
+            return hostname[4:]
+        return hostname
 
     @staticmethod
     def normalize_url(
@@ -132,10 +136,11 @@ class CrawlerService:
             if any(parsed.path.lower().endswith(ext) for ext in BAD_EXTENSIONS):
                 return None
 
-            # Reconstruir URL normalizada
+            # Reconstruir URL normalizada - preservamos el hostname original (con o sin www)
+            # para no romper sitios que dependen del subdominio www
             normalized = ParseResult(
                 scheme=parsed.scheme.lower(),
-                netloc=hostname_norm,
+                netloc=hostname.lower(),
                 path=parsed.path or "/",
                 params="",
                 query="",
@@ -193,6 +198,11 @@ class CrawlerService:
                 )
 
                 if normalized:
+                    # Filter out purely numeric paths (e.g. /452, /468) which are often low value
+                    parsed_idx = urlparse(normalized)
+                    if re.match(r"^/\d+/?$", parsed_idx.path):
+                        # logger.debug(f"Skipping numeric path: {normalized}")
+                        continue
                     found_links.add(normalized)
 
             return found_links
@@ -218,18 +228,29 @@ class CrawlerService:
             rp = urllib.robotparser.RobotFileParser()
             headers = HEADERS_MOBILE if mobile else HEADERS_DESKTOP
 
-            async with aiohttp.ClientSession(headers=headers) as s:
-                async with s.get(
-                    robots_url, timeout=aiohttp.ClientTimeout(total=5)
-                ) as r:
-                    if r.status == 200:
-                        text = await r.text()
-                        rp.parse(text.splitlines())
-                    else:
-                        rp = urllib.robotparser.RobotFileParser()
+            try:
+                # Intento 1: SSL verificado
+                async with aiohttp.ClientSession(headers=headers) as s:
+                    async with s.get(
+                        robots_url, timeout=aiohttp.ClientTimeout(total=5), allow_redirects=True
+                    ) as r:
+                        if r.status == 200:
+                            text = await r.text()
+                            rp.parse(text.splitlines())
+            except Exception as e:
+                logger.warning(f"Error descargando robots.txt para {base_url}: {e}. Reintentando sin SSL...")
+                # Intento 2: SSL relajado
+                connector = aiohttp.TCPConnector(ssl=False)
+                async with aiohttp.ClientSession(headers=headers, connector=connector) as s:
+                    async with s.get(
+                        robots_url, timeout=aiohttp.ClientTimeout(total=5), allow_redirects=True
+                    ) as r:
+                        if r.status == 200:
+                            text = await r.text()
+                            rp.parse(text.splitlines())
 
         except Exception as e:
-            logger.warning(f"No se pudo descargar robots.txt: {e}")
+            logger.warning(f"No se pudo descargar robots.txt definitivamente: {e}")
             rp = urllib.robotparser.RobotFileParser()
 
         return rp
@@ -312,53 +333,56 @@ class CrawlerService:
                 while True:
                     try:
                         url = await queue.get()
+                        html = None # Initialize html to None
                         try:
-                            async with session.get(url) as resp:
-                                if (
-                                    resp.status == 200
-                                    and "text/html"
-                                    in resp.headers.get("content-type", "")
-                                ):
-                                    try:
-                                        html = await resp.text()
-                                    except Exception:
-                                        raw = await resp.read()
-                                        html = raw.decode(errors="ignore")
+                            # Intento normal
+                            try:
+                                async with session.get(url, allow_redirects=True) as resp:
+                                    if resp.status == 200 and "text/html" in resp.headers.get("content-type", ""):
+                                        try:
+                                            html = await resp.text()
+                                        except Exception:
+                                            raw = await resp.read()
+                                            html = raw.decode(errors="ignore")
+                                    else:
+                                        logger.debug(f"Ignorado [status {resp.status}] {url}")
+                                        if callback: callback(url, "skipped")
+                            except Exception as e:
+                                logger.warning(f"Error inicial en crawler para {url}: {e}. Reintentando sin SSL...")
+                                # Reintento sin SSL
+                                connector_no_ssl = aiohttp.TCPConnector(ssl=False)
+                                async with aiohttp.ClientSession(connector=connector_no_ssl, headers=headers) as secure_session:
+                                    async with secure_session.get(url, allow_redirects=True) as resp:
+                                        if resp.status == 200 and "text/html" in resp.headers.get("content-type", ""):
+                                            try:
+                                                html = await resp.text()
+                                            except Exception:
+                                                raw = await resp.read()
+                                                html = raw.decode(errors="ignore")
+                            
+                            if html:
+                                # Procesar página
+                                new_links = await CrawlerService.process_page(
+                                    html,
+                                    url,
+                                    base_hostname,
+                                    allow_subdomains=allow_subdomains,
+                                )
 
-                                    # Procesar página
-                                    new_links = await CrawlerService.process_page(
-                                        html,
-                                        url,
-                                        base_hostname,
-                                        allow_subdomains=allow_subdomains,
-                                    )
+                                async with lock:
+                                    pages_count += 1
 
-                                    async with lock:
-                                        pages_count += 1
-
-                                    # Agregar nuevos links a la cola
-                                    for link in new_links:
-                                        if (
-                                            link not in visited
-                                            and len(visited) < max_pages
-                                        ):
-                                            visited.add(link)
-                                            await queue.put(link)
-                                            logger.info(f"Encontrado: {link}")
-                                            if callback:
-                                                callback(link, "found")
-
-                                else:
-                                    logger.debug(
-                                        f"Ignorado [status {resp.status}] {url}"
-                                    )
-                                    if callback:
-                                        callback(url, "skipped")
+                                # Agregar nuevos links a la cola
+                                for link in new_links:
+                                    if link not in visited and len(visited) < max_pages:
+                                        visited.add(link)
+                                        await queue.put(link)
+                                        logger.info(f"Encontrado: {link}")
+                                        if callback: callback(link, "found")
 
                         except Exception as e:
                             logger.error(f"Error procesando {url}: {e}")
-                            if callback:
-                                callback(url, "error")
+                            if callback: callback(url, "error")
 
                         finally:
                             queue.task_done()
