@@ -58,15 +58,17 @@ class NextJsModifier:
         
         modified_content = content
         
-        # Phase 1: Apply metadata with Kimi (fast, high-value)
+        # Phase 1: Apply metadata with Kimi (fast, high-value) - App Router specific
         if metadata_fixes and is_app_router:
             modified_content = self._update_metadata_with_kimi(modified_content, file_path, audit_context)
+            # Remove from further processing if handled by _update_metadata_with_kimi
+            metadata_fixes = []
         
-        # Phase 2: Apply structural + content fixes with comprehensive Kimi transformation
-        if structural_fixes or content_fixes:
+        # Phase 2: Apply structural + content fixes + metadata fixes (if not handled) with comprehensive Kimi transformation
+        if structural_fixes or content_fixes or metadata_fixes:
             modified_content = self._apply_comprehensive_jsx_fixes(
                 modified_content,
-                structural_fixes + content_fixes,
+                structural_fixes + content_fixes + metadata_fixes,
                 file_path,
                 audit_context
             )
@@ -312,7 +314,13 @@ IMPORTANT: Return the ENTIRE modified file. Do not truncate.
         for fix in fixes:
             fix_type = fix.get("type")
             
-            if fix_type == "h1":
+            if fix_type == "title":
+                instructions.append("- Set page title (for Pages Router, use <title> in <Head> or JSX)")
+            
+            elif fix_type == "meta_description":
+                instructions.append("- Set meta description (for Pages Router, use <meta name=\"description\"> in <Head> or JSX)")
+
+            elif fix_type == "h1":
                 instructions.append("- Ensure exactly ONE <h1> tag with the main keyword/topic")
             
             elif fix_type == "structure":

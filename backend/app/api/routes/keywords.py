@@ -1,16 +1,16 @@
-from fastapi import APIRouter, Depends, HTTPException, Body
+from fastapi import APIRouter, Depends, HTTPException, Body, Query
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from ...core.database import get_db
 from ...services.keyword_service import KeywordService
 from ...schemas import KeywordResponse
 
-router = APIRouter()
+router = APIRouter(prefix="/keywords", tags=["keywords"])
 
 @router.post("/research/{audit_id}", response_model=List[KeywordResponse])
 async def research_keywords(
     audit_id: int, 
-    domain: str, 
+    domain: str = Query(..., description="Domain to research keywords for"),
     seed_keywords: Optional[List[str]] = Body(None),
     db: Session = Depends(get_db)
 ):

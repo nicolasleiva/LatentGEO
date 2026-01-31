@@ -1,12 +1,26 @@
+"""
+Duplicate Content Detection Service
+Detects duplicate content within site and against competitors.
+Uses TF-IDF when sklearn is available, falls back to difflib otherwise.
+"""
 import difflib
 from typing import List, Dict, Tuple
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.metrics.pairwise import cosine_similarity
-import numpy as np
 from bs4 import BeautifulSoup
 import re
 
+# Make sklearn optional - not critical for core functionality
+try:
+    from sklearn.feature_extraction.text import TfidfVectorizer
+    from sklearn.metrics.pairwise import cosine_similarity
+    import numpy as np
+    SKLEARN_AVAILABLE = True
+except ImportError:
+    SKLEARN_AVAILABLE = False
+    np = None
+
+
 class DuplicateContentService:
+    """Service for detecting duplicate content across pages."""
     
     @staticmethod
     def extract_text(html: str) -> str:
@@ -23,17 +37,41 @@ class DuplicateContentService:
         return difflib.SequenceMatcher(None, text1, text2).ratio()
     
     @staticmethod
-    def tfidf_similarity(texts: List[str]) -> np.ndarray:
-        """Calcula matriz de similitud TF-IDF"""
+    def tfidf_similarity(texts: List[str]) -> List[List[float]]:
+        """
+        Calcula matriz de similitud.
+        Uses TF-IDF if sklearn available, otherwise uses difflib.
+        """
         if len(texts) < 2:
-            return np.array([[1.0]])
-        vectorizer = TfidfVectorizer(stop_words='english', max_features=1000)
-        tfidf_matrix = vectorizer.fit_transform(texts)
-        return cosine_similarity(tfidf_matrix)
+            return [[1.0]]
+        
+        if SKLEARN_AVAILABLE:
+            # Use sklearn TF-IDF for better accuracy
+            vectorizer = TfidfVectorizer(stop_words='english', max_features=1000)
+            tfidf_matrix = vectorizer.fit_transform(texts)
+            return cosine_similarity(tfidf_matrix).tolist()
+        else:
+            # Fallback to difflib-based similarity matrix
+            n = len(texts)
+            similarity_matrix = [[0.0] * n for _ in range(n)]
+            
+            for i in range(n):
+                for j in range(n):
+                    if i == j:
+                        similarity_matrix[i][j] = 1.0
+                    elif j > i:
+                        sim = difflib.SequenceMatcher(None, texts[i], texts[j]).ratio()
+                        similarity_matrix[i][j] = sim
+                        similarity_matrix[j][i] = sim
+            
+            return similarity_matrix
     
     @staticmethod
     def find_duplicates(pages: List[Dict], threshold: float = 0.85) -> List[Dict]:
-        """Encuentra contenido duplicado entre páginas"""
+        """
+        Encuentra contenido duplicado entre páginas.
+        Useful for SEO - Google penalizes duplicate content.
+        """
         if len(pages) < 2:
             return []
         
@@ -51,14 +89,18 @@ class DuplicateContentService:
                         'url1': urls[i],
                         'url2': urls[j],
                         'similarity': float(similarity),
-                        'type': 'internal'
+                        'type': 'internal',
+                        'recommendation': 'Consolidar contenido o usar canonical tags'
                     })
         
         return duplicates
     
     @staticmethod
     def compare_external(internal_text: str, external_texts: List[Tuple[str, str]], threshold: float = 0.75) -> List[Dict]:
-        """Compara contenido interno con externo"""
+        """
+        Compara contenido interno con externo.
+        Detects if competitors have copied your content or vice versa.
+        """
         results = []
         for url, text in external_texts:
             similarity = DuplicateContentService.similarity_ratio(internal_text, text)
@@ -66,6 +108,13 @@ class DuplicateContentService:
                 results.append({
                     'external_url': url,
                     'similarity': similarity,
-                    'type': 'external'
+                    'type': 'external',
+                    'recommendation': 'Verificar originalidad y fechas de publicación'
                 })
         return results
+    
+    @staticmethod
+    def get_similarity_method() -> str:
+        """Returns which similarity method is being used."""
+        return "TF-IDF (sklearn)" if SKLEARN_AVAILABLE else "difflib (fallback)"
+

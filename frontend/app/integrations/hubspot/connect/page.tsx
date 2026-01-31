@@ -3,6 +3,7 @@
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { useState } from 'react'
+import { API_URL } from '@/lib/api'
 
 export default function HubSpotConnect() {
     const [loading, setLoading] = useState(false)
@@ -10,7 +11,7 @@ export default function HubSpotConnect() {
     const handleConnect = async () => {
         setLoading(true)
         try {
-            const response = await fetch('/api/hubspot/auth-url')
+            const response = await fetch(`${API_URL}/api/hubspot/auth-url`)
             const data = await response.json()
             window.location.href = data.url
         } catch (error) {

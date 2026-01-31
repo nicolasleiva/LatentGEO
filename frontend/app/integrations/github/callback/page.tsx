@@ -4,6 +4,7 @@ import { useEffect, useState, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Loader2, CheckCircle2, XCircle } from "lucide-react"
+import { API_URL } from '@/lib/api'
 
 function CallbackContent() {
     const router = useRouter()
@@ -29,8 +30,7 @@ function CallbackContent() {
 
         const exchangeCode = async () => {
             try {
-                // Usar la URL completa del backend
-                const response = await fetch('http://localhost:8000/api/github/callback', {
+                const response = await fetch(`${API_URL}/api/github/callback`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',

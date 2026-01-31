@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Badge } from '@/components/ui/badge'
 import { RefreshCw, Play, ExternalLink } from 'lucide-react'
+import { API_URL } from '@/lib/api'
 
 interface HubSpotPage {
     id: string
@@ -37,7 +38,7 @@ export default function HubSpotPages() {
 
     const fetchConnection = async () => {
         try {
-            const res = await fetch('/api/hubspot/connections')
+            const res = await fetch(`${API_URL}/api/hubspot/connections`)
             const data = await res.json()
             if (data && data.length > 0) {
                 setConnection(data[0])
@@ -53,7 +54,7 @@ export default function HubSpotPages() {
 
     const fetchPages = async (connId: string) => {
         try {
-            const res = await fetch(`/api/hubspot/pages/${connId}`)
+            const res = await fetch(`${API_URL}/api/hubspot/pages/${connId}`)
             const data = await res.json()
             setPages(data)
         } catch (error) {
@@ -67,7 +68,7 @@ export default function HubSpotPages() {
         if (!connection) return
         setSyncing(true)
         try {
-            await fetch(`/api/hubspot/sync/${connection.id}`, { method: 'POST' })
+            await fetch(`${API_URL}/api/hubspot/sync/${connection.id}`, { method: 'POST' })
             await fetchPages(connection.id)
         } catch (error) {
             console.error(error)
@@ -102,18 +103,17 @@ export default function HubSpotPages() {
             // Wait, the user wants to audit "pages".
             // Let's create a new endpoint /api/audits/batch or just loop here.
 
-            // Loop for now as it's safer with existing API
-            for (const page of selectedPages) {
-                const res = await fetch('/api/audits', {
+            // Process all selected pages in parallel
+            await Promise.all(selectedPages.map(page => 
+                fetch(`${API_URL}/api/v1/audits/`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ url: page.url, source: 'hubspot' })
                 })
-                const audit = await res.json()
-                // We could redirect to the first one
-                router.push(`/audits/${audit.id}`)
-                break; // Just do one for now to demonstrate flow
-            }
+            ))
+
+            // Redirect to the audits list or dashboard after initiating all audits
+            router.push('/audits')
 
         } catch (error) {
             console.error(error)

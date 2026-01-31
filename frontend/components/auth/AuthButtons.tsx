@@ -1,6 +1,7 @@
 "use client";
 
 import { useUser } from "@auth0/nextjs-auth0/client";
+import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import { LogOut, User, Loader2 } from "lucide-react";
 
@@ -19,15 +20,15 @@ export function AuthButtons() {
         return (
             <div className="flex items-center gap-3">
                 <div className="flex items-center gap-2 px-3 py-1.5 bg-white/5 rounded-xl border border-white/10">
-                    <img
-                        src={user.picture || undefined}
-                        alt={user.name || "User"}
-                        className="w-7 h-7 rounded-full border border-white/20"
-                        onError={(e) => {
-                            const target = e.target as HTMLImageElement;
-                            target.style.display = 'none';
-                        }}
-                    />
+                    <div className="relative w-7 h-7">
+                        <Image
+                            src={user.picture || "/default-avatar.png"}
+                            alt={user.name || "User"}
+                            fill
+                            className="rounded-full border border-white/20 object-cover"
+                            unoptimized
+                        />
+                    </div>
                     <span className="text-sm font-medium text-white/80 max-w-[120px] truncate">
                         {user.name || user.email}
                     </span>

@@ -63,7 +63,7 @@ export function AuditChatFlow({ auditId, onComplete }: AuditChatFlowProps) {
         })
         setIsTyping(false)
       }
-    }, 50)
+    }, 15)
   }
 
   const handleSend = async () => {

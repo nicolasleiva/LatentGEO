@@ -211,7 +211,7 @@ async def get_markdown_report(audit_id: int, db: Session = Depends(get_db)):
         return JSONResponse(content={
             "audit_id": audit_id,
             "markdown": audit.report_markdown,
-            "created_at": audit.completed_at,
+            "created_at": audit.completed_at.isoformat() if audit.completed_at else None,
         })
     except HTTPException:
         raise

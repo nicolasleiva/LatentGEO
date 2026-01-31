@@ -1,70 +1,60 @@
 """
-LLM Service - Abstracción para múltiples providers
+LLM Service - Abstracción para KIMI K2 (NVIDIA NIM)
+Exclusivo para el proyecto según requerimientos.
 """
-from openai import OpenAI
+from openai import AsyncOpenAI
 from ..core.config import settings
 from ..core.logger import get_logger
 
 logger = get_logger(__name__)
 
-
-def get_llm_function():
+async def kimi_function(system_prompt: str, user_prompt: str) -> str:
     """
-    Retorna función que ejecuta prompts con KIMI K2 Thinking (NVIDIA NIM)
+    Ejecuta prompts con KIMI K2 Thinking (NVIDIA NIM)
     Usa el modelo configurado en settings para análisis y reportes
     """
     api_key = settings.NV_API_KEY_ANALYSIS or settings.NVIDIA_API_KEY or settings.NV_API_KEY
     
-    if api_key:
-        async def kimi_function(system_prompt: str, user_prompt: str) -> str:
-            try:
-                client = OpenAI(
-                    base_url=settings.NV_BASE_URL,
-                    api_key=api_key
-                )
-                
-                messages = [
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt}
-                ]
-                
-                # Usar KIMI K2 Thinking para análisis (mejor razonamiento)
-                completion = client.chat.completions.create(
-                    model=settings.NV_MODEL_ANALYSIS,  # moonshotai/kimi-k2-thinking
-                    messages=messages,
-                    temperature=1,  # Recomendado para kimi-k2-thinking
-                    top_p=0.9,
-                    max_tokens=settings.NV_MAX_TOKENS,  # 16384
-                    stream=False
-                )
-                
-                return completion.choices[0].message.content.strip()
-            except Exception as e:
-                logger.error(f"Error with KIMI K2 Thinking: {e}")
-                raise
+    if not api_key:
+        logger.error("No NVIDIA API key configured for KIMI")
+        return "Error: No LLM API key configured."
 
-        return kimi_function
-    
-    # GEMINI FALLBACK (comentado pero disponible)
-    # elif settings.GEMINI_API_KEY:
-    #     from google import genai
-    #     async def gemini_function(system_prompt: str, user_prompt: str) -> str:
-    #         try:
-    #             client = genai.Client(api_key=settings.GEMINI_API_KEY)
-    #             prompt_text = system_prompt.strip() + "\n\nJSON de entrada:\n" + user_prompt.strip()
-    #             
-    #             response = client.models.generate_content(
-    #                 model=settings.GEMINI_MODEL,
-    #                 contents=prompt_text
-    #             )
-    #             return response.text.strip()
-    #         except Exception as e:
-    #             logger.error(f"Error with Gemini: {e}")
-    #             raise
-    #     return gemini_function
-    
-    else:
-        logger.warning("No LLM API key configured. Using fallback.")
-        async def fallback_function(system_prompt: str, user_prompt: str) -> str:
-            return "No LLM available - fallback response"
-        return fallback_function
+    try:
+        # Use AsyncOpenAI for non-blocking I/O
+        client = AsyncOpenAI(
+            base_url=settings.NV_BASE_URL,
+            api_key=api_key,
+            timeout=300.0,
+            max_retries=2
+        )
+        
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt}
+        ]
+        
+        # Usar KIMI K2 Standard para análisis
+        logger.info(f"Llamando a KIMI K2 (Modelo: {settings.NV_MODEL_ANALYSIS}). Max tokens: {settings.NV_MAX_TOKENS}")
+        completion = await client.chat.completions.create(
+            model=settings.NV_MODEL_ANALYSIS,  # moonshotai/kimi-k2-instruct-0905
+            messages=messages,
+            temperature=0.6,
+            top_p=0.9,
+            max_tokens=settings.NV_MAX_TOKENS,
+            stream=False
+        )
+        
+        content = completion.choices[0].message.content
+        if not content:
+            raise ValueError("Empty response from LLM")
+        return content.strip()
+        
+    except Exception as e:
+        logger.error(f"Error with KIMI K2: {e}")
+        raise e
+
+def get_llm_function():
+    """
+    Retorna la función principal de LLM (KIMI)
+    """
+    return kimi_function

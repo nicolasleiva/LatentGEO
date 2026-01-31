@@ -90,8 +90,8 @@ PAGE_MARGIN_MM = 16
 HEADER_HEIGHT_MM = 14
 CONTENT_PADDING_TOP = 6
 
-TOC_TITLE = "Índice / Table of Contents"
-REPORT_TITLE_PREFIX = "Informe de Auditoría GEO"
+TOC_TITLE = "\u00cdndice / Table of Contents"
+REPORT_TITLE_PREFIX = "Informe de Auditor\u00eda GEO"
 FOOTER_LEFT = "https://www.linkedin.com/in/nicolasleiva/"
 FOOTER_RIGHT = "Nicolas Leiva"
 
@@ -101,8 +101,15 @@ HEADER_BG = (250, 250, 250)
 JSON_BOX_FILL = (250, 250, 250)
 JSON_BOX_BORDER = (220, 220, 220)
 
-# Rutas de fuentes (si las tenés, se usarán; si no, se usan las internas)
-FONT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fonts")
+# Rutas de fuentes (priorizar local, fallback a raíz del proyecto)
+_base_dir = os.path.dirname(os.path.abspath(__file__))
+FONT_DIR = os.path.join(_base_dir, "fonts")
+if not os.path.exists(FONT_DIR) or not os.listdir(FONT_DIR):
+    # Intentar buscar en la raíz del proyecto (3 niveles arriba si está en backend/app/services)
+    _root_fonts = os.path.abspath(os.path.join(_base_dir, "..", "..", "..", "fonts"))
+    if os.path.exists(_root_fonts):
+        FONT_DIR = _root_fonts
+
 FONT_REGULAR_PATH = os.path.join(FONT_DIR, "Roboto-VariableFont_wdth,wght.ttf")
 FONT_BOLD_PATH = os.path.join(FONT_DIR, "Roboto-VariableFont_wdth,wght.ttf")
 FONT_ITALIC_PATH = os.path.join(FONT_DIR, "Roboto-Italic-VariableFont_wdth,wght.ttf")
@@ -144,6 +151,10 @@ def clean_string_for_pdf(text):
         "💡": "[IDEA]",
         "🎯": "[OBJETIVO]",
         "🚀": "[COHETE]",
+        "\u251c": "|-", # ├
+        "\u2500": "-",  # ─
+        "\u2514": "|_", # └
+        "\u2502": "|",  # │
     }
     for old, new in replacements.items():
         text = text.replace(old, new)
@@ -406,8 +417,7 @@ class PDFReport(FPDF):
             "\u2265": ">=", "\u2264": "<=", # mayor/menor igual
             "\u2026": "...",               # elipsis
             "\u2022": "-",                 # bullet
-            "≥": ">=", "≤": "<=",          # literales
-            "–": "-", "—": "-",
+            "\u2265": ">=", "\u2264": "<=", # duplicados por seguridad
         }
         for k, v in replacements.items():
             text = text.replace(k, v)
@@ -614,7 +624,7 @@ class PDFReport(FPDF):
                     continue
 
                 # Detect headings h1..h4
-                m = re.match(r"^(#{1,4})\s+(.*)", line)
+                m = re.match(r"^\s*(#{1,4})\s+(.*)", line)
                 if m:
                     hashes = len(m.group(1))
                     title = m.group(2).strip()
@@ -623,12 +633,15 @@ class PDFReport(FPDF):
                         if level == 1:
                             self.begin_section(title, level=1, render_title=True)
                         else:
+                            # Render subordinate headings (H2, H3, H4)
                             if level == 2:
+                                self.ln(2)
                                 self.set_font(fam, "B", 14)
                                 self.set_x(self.l_margin)
                                 self.multi_cell(0, LINE_HEIGHT * 1.4, title, 0, "L")
                                 self.ln(1)
                             elif level == 3:
+                                self.ln(1)
                                 self.set_font(fam, "B", 12)
                                 self.set_x(self.l_margin)
                                 self.multi_cell(0, LINE_HEIGHT * 1.2, title, 0, "L")
@@ -638,19 +651,20 @@ class PDFReport(FPDF):
                                 self.set_x(self.l_margin + 6)
                                 self.multi_cell(0, LINE_HEIGHT, title, 0, "L")
                                 self.ln(1)
+                            
                             try:
+                                # Ensure subordinate headings are registered in TOC
                                 link_id = self._add_bookmark_compat(
                                     title, level=level, register=True
                                 )
-                            except Exception:
-                                pass
-                            try:
                                 if link_id is not None:
                                     self.set_link(link_id, page=self.page_no())
-                            except Exception:
-                                pass
+                            except Exception as e:
+                                logger.debug(f"Error registering sub-heading {title}: {e}")
+                        
                         self.set_font(fam, "", BASE_FONT_SIZE)
-                    except Exception:
+                    except Exception as e:
+                        logger.warning(f"Error rendering heading {title}: {e}")
                         self.multi_cell(0, LINE_HEIGHT, title, 0, "L")
                     continue
 
@@ -784,7 +798,17 @@ class PDFReport(FPDF):
             for it in data[:top_n]:
                 if not it:
                     continue
-                val = it.get("description") if isinstance(it, dict) else str(it)
+                # Format based on filename_hint to handle different data types
+                if filename_hint == "keywords.json":
+                    val = f"{it.get('term', it.get('keyword', 'unknown'))}: {it.get('search_volume', it.get('volume', 0))} searches"
+                elif filename_hint == "backlinks.json":
+                    val = f"{it.get('source_url', 'unknown')} -> {it.get('target_url', 'unknown')}"
+                elif filename_hint == "rankings.json":
+                    val = f"{it.get('keyword', 'unknown')}: position {it.get('position', 'unknown')}"
+                elif filename_hint == "llm_visibility.json":
+                    val = f"{it.get('query', 'unknown')}: {'visible' if it.get('is_visible', it.get('mentioned', False)) else 'not visible'}"
+                else:
+                    val = it.get("description") if isinstance(it, dict) else str(it)
                 snippet += f"\n - {str(val)[:120]}"
         else:
             snippet = str(data)[:800]
@@ -981,6 +1005,10 @@ def create_comprehensive_pdf(report_folder_path):
         json_fix_plan_file = os.path.join(report_folder_path, "fix_plan.json")
         json_agg_summary_file = os.path.join(report_folder_path, "aggregated_summary.json")
         json_pagespeed_file = os.path.join(report_folder_path, "pagespeed.json")
+        json_keywords_file = os.path.join(report_folder_path, "keywords.json")
+        json_backlinks_file = os.path.join(report_folder_path, "backlinks.json")
+        json_rankings_file = os.path.join(report_folder_path, "rankings.json")
+        json_llm_visibility_file = os.path.join(report_folder_path, "llm_visibility.json")
         
         # DEBUG: Logs para páginas
         pages_dir = os.path.join(report_folder_path, "pages")
@@ -1017,6 +1045,34 @@ def create_comprehensive_pdf(report_folder_path):
         except Exception:
             logger.warning("No se pudo leer pagespeed.json -> se usará diccionario vacío")
             pagespeed_data = {}
+
+        # Leer Keywords
+        try:
+            with open(json_keywords_file, "r", encoding="utf-8") as f:
+                keywords_data = json.load(f)
+        except Exception:
+            keywords_data = []
+
+        # Leer Backlinks
+        try:
+            with open(json_backlinks_file, "r", encoding="utf-8") as f:
+                backlinks_data = json.load(f)
+        except Exception:
+            backlinks_data = []
+
+        # Leer Rankings
+        try:
+            with open(json_rankings_file, "r", encoding="utf-8") as f:
+                rankings_data = json.load(f)
+        except Exception:
+            rankings_data = []
+
+        # Leer LLM Visibility
+        try:
+            with open(json_llm_visibility_file, "r", encoding="utf-8") as f:
+                llm_visibility_data = json.load(f)
+        except Exception:
+            llm_visibility_data = []
 
         if fix_plan_data is None: fix_plan_data = []
         if agg_summary_data is None: agg_summary_data = {}
@@ -1076,23 +1132,27 @@ def create_comprehensive_pdf(report_folder_path):
             except Exception as e:
                 logger.warning(f"Error leyendo análisis PageSpeed: {e}")
 
-        # --- Anexo A ---
+        # --- Anexo C: Plan de Acción ---
         pdf.add_page()
-        pdf.begin_section("Anexo A: Plan de Acción (fix_plan.json)", level=1)
-        pdf.write_json_raw(fix_plan_data)
+        pdf.begin_section("Anexo C: Plan de Acción (fix_plan.json)", level=1)
+        if not fix_plan_data:
+            pdf.set_font("Roboto" if "Roboto" in pdf._fonts_added else "helvetica", "I", 10)
+            pdf.multi_cell(0, 5, "(No se generaron tareas automáticas en el Plan de Acción. Esto puede ocurrir si la auditoría no encontró problemas críticos o si el análisis por IA falló.)")
+        else:
+            pdf.write_json_raw(fix_plan_data)
 
-        # --- Anexo B ---
+        # --- Anexo D: Resumen Agregado ---
         pdf.add_page()
-        pdf.begin_section("Anexo B: Resumen Agregado de Datos (aggregated_summary.json)", level=1)
+        pdf.begin_section("Anexo D: Resumen Agregado de Datos (aggregated_summary.json)", level=1)
         pdf.write_json_summary_box(agg_summary_data, top_n=4, filename_hint="aggregated_summary.json")
 
-        # --- Anexo B.1 (PageSpeed) ---
+        # --- Anexo D.1 (PageSpeed) ---
         if pagespeed_data:
             # Extract mobile data if it exists
             mobile_data = pagespeed_data.get("mobile", pagespeed_data)
             if mobile_data:
                 pdf.add_page()
-                pdf.begin_section("Anexo B.1: PageSpeed Insights (pagespeed.json)", level=1)
+                pdf.begin_section("Anexo D.1: PageSpeed Insights (pagespeed.json)", level=1)
                 # Renderizar resumen de PageSpeed
                 ps_summary = {
                     "Performance Score": mobile_data.get("performance_score", "N/A"),
@@ -1112,9 +1172,41 @@ def create_comprehensive_pdf(report_folder_path):
                     ps_summary, top_n=5, filename_hint="pagespeed.json"
                 )
 
-        # --- Anexo C ---
+        # --- Anexo D.2 (Keywords) ---
+        if keywords_data:
+            pdf.add_page()
+            pdf.begin_section("Anexo D.2: Análisis de Palabras Clave (keywords.json)", level=1)
+            pdf.write_json_summary_box(
+                keywords_data, top_n=10, filename_hint="keywords.json"
+            )
+
+        # --- Anexo D.3 (Backlinks) ---
+        if backlinks_data:
+            pdf.add_page()
+            pdf.begin_section("Anexo D.3: Perfil de Enlaces (backlinks.json)", level=1)
+            pdf.write_json_summary_box(
+                backlinks_data, top_n=10, filename_hint="backlinks.json"
+            )
+
+        # --- Anexo D.4 (Rankings) ---
+        if rankings_data:
+            pdf.add_page()
+            pdf.begin_section("Anexo D.4: Monitoreo de Posiciones (rankings.json)", level=1)
+            pdf.write_json_summary_box(
+                rankings_data, top_n=10, filename_hint="rankings.json"
+            )
+
+        # --- Anexo D.5 (LLM Visibility) ---
+        if llm_visibility_data:
+            pdf.add_page()
+            pdf.begin_section("Anexo D.5: Visibilidad en LLMs (llm_visibility.json)", level=1)
+            pdf.write_json_summary_box(
+                llm_visibility_data, top_n=5, filename_hint="llm_visibility.json"
+            )
+
+        # --- Anexo E ---
         pdf.add_page()
-        pdf.begin_section("Anexo C: Reportes de Páginas Individuales (resumen)", level=1)
+        pdf.begin_section("Anexo E: Reportes de Páginas Individuales (resumen)", level=1)
         
         if not page_json_files:
             pdf.set_font("Roboto" if "Roboto" in pdf._fonts_added else "helvetica", "", 10)
@@ -1143,9 +1235,9 @@ def create_comprehensive_pdf(report_folder_path):
             
             pdf.write_json_summary_box(page_data, top_n=3, filename_hint=os.path.join("pages", os.path.basename(page_file)))
 
-        # --- Anexo D: Competidores ---
+        # --- Anexo F: Competidores ---
         pdf.add_page()
-        pdf.begin_section("Anexo D: Análisis Detallado de Competidores", level=1)
+        pdf.begin_section("Anexo F: Análisis Detallado de Competidores", level=1)
         
         # Buscar archivos JSON de competidores
         competitors_dir = os.path.join(report_folder_path, "competitors")
@@ -1173,18 +1265,65 @@ def create_comprehensive_pdf(report_folder_path):
             pdf.ln(4)
             
             # Cargar scores de todos los competidores
-            competitor_scores = []
+            # Cargar scores de todos los competidores
+            competitor_map = {}
             for comp_file in competitor_json_files:
                 try:
                     with open(comp_file, "r", encoding="utf-8") as f:
                         comp_data = json.load(f)
-                        competitor_scores.append({
-                            "domain": comp_data.get("domain", "Unknown"),
-                            "geo_score": comp_data.get("geo_score", 0),
-                            "url": comp_data.get("url", "")
-                        })
+                        
+                        # 1. Try to get domain from field
+                        raw_domain = comp_data.get("domain")
+                        
+                        # 2. If missing, extract from URL
+                        url = comp_data.get("url", "")
+                        
+                        if not raw_domain and url:
+                            from urllib.parse import urlparse
+                             # Handle cases where url is just "mercadolibre.cl" without scheme
+                            if "://" not in url:
+                                url_for_parse = "http://" + url
+                            else:
+                                url_for_parse = url
+                            raw_domain = urlparse(url_for_parse).netloc
+                        
+                        if not raw_domain:
+                            raw_domain = f"competitor_{len(competitor_map) + 1}"
+                            
+                        # 3. Normalize: lowercase, strip, remove www.
+                        normalized_key = raw_domain.lower().strip().replace("www.", "")
+                        
+                        # 4. Display domain (keep original casing or nicely formatted?)
+                        # We use raw_domain but maybe stripped of www for display
+                        display_domain = raw_domain.replace("www.", "")
+                        
+                        # 5. Deduplicate
+                        # If exists, keep the one with higher score or more data
+                        existing = competitor_map.get(normalized_key)
+                        current_score = comp_data.get("geo_score", 0)
+                        
+                        if existing:
+                            logger.info(f"Duplicate competitor found for key '{normalized_key}': {display_domain} vs {existing['domain']}")
+                            if current_score > existing["geo_score"]:
+                                # Update with better score
+                                competitor_map[normalized_key] = {
+                                    "domain": display_domain,
+                                    "geo_score": current_score,
+                                    "url": url,
+                                    "audit_data": comp_data.get("audit_data", {}) # Keep audit data if needed later
+                                }
+                        else:
+                            competitor_map[normalized_key] = {
+                                "domain": display_domain,
+                                "geo_score": current_score,
+                                "url": url,
+                                "audit_data": comp_data.get("audit_data", {})
+                            }
+                            
                 except Exception as e:
                     logger.error(f"Error cargando competidor {comp_file}: {e}")
+            
+            competitor_scores = list(competitor_map.values())
             
             # Ordenar por GEO Score descendente
             competitor_scores.sort(key=lambda x: x["geo_score"], reverse=True)
@@ -1211,7 +1350,10 @@ def create_comprehensive_pdf(report_folder_path):
                     with open(comp_file, "r", encoding="utf-8") as f:
                         comp_data = json.load(f)
                     
-                    domain = comp_data.get("domain", "Unknown")
+                    domain = comp_data.get("domain")
+                    if not domain:
+                        from urllib.parse import urlparse
+                        domain = urlparse(url).netloc.replace("www.", "") if url else "Unknown"
                     geo_score = comp_data.get("geo_score", 0)
                     url = comp_data.get("url", "")
                     audit_data = comp_data.get("audit_data", {})

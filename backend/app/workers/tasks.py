@@ -39,8 +39,8 @@ def get_db_session():
     bind=True,
     autoretry_for=(Exception,),
     retry_kwargs={"max_retries": 5, "countdown": 60},
-    soft_time_limit=900,  # 15 minutes
-    time_limit=1000,  # 16+ minutes
+    soft_time_limit=3600,  # 60 minutes for 50 pages
+    time_limit=4000,
 )
 def run_audit_task(self, audit_id: int):
     """
@@ -102,31 +102,32 @@ def run_audit_task(self, audit_id: int):
         # are NOT run automatically here. They are executed when the user requests
         # the full PDF report via generate_full_report_task.
         # This keeps the main audit pipeline fast (2-5 minutes) and the dashboard available quickly.
-        pagespeed_data = None
-
-        # Load complete audit context (will be empty for new audits)
-
-        additional_context = {}
-        with get_db_session() as db:
-            additional_context = PipelineService.load_audit_context(db, audit_id)
         
-        # Ejecutar pipeline principal con PageSpeed data y contexto adicional
-        result = asyncio.run(PipelineService.run_complete_audit(
+        # CRITICAL FIX: Run local audit on target URL FIRST to get actual site data
+        # Without this, the LLM cannot detect the correct category and search queries
+        logger.info(f"Running local audit on target URL: {audit_url}")
+        target_audit_result = asyncio.run(audit_local_service_func(audit_url))
+        
+        if not target_audit_result or target_audit_result.get("status") == 500:
+            logger.error(f"Failed to run local audit on target URL: {audit_url}")
+            target_audit_result = {"url": audit_url, "status": 500, "error": "Failed to crawl target site"}
+        else:
+            logger.info(f"Local audit completed for {audit_url}: status={target_audit_result.get('status')}")
+        
+        # Ejecutar pipeline principal de auditoría INICIAL (sin GEO tools, sin reporte pesado)
+        # Este nuevo flujo es exclusivamente para errores (fix plan) y competidores.
+        from app.services.pipeline_service import run_initial_audit
+        result = asyncio.run(run_initial_audit(
             url=audit_url,
-            target_audit={},
+            target_audit=target_audit_result,
             audit_id=audit_id,
-            pagespeed_data=pagespeed_data,
-            additional_context=additional_context,
-            crawler_service=CrawlerService.crawl_site,
-            audit_local_service=audit_local_service_func,
             llm_function=llm_function,
             google_api_key=settings.GOOGLE_API_KEY,
             google_cx_id=settings.CSE_ID,
+            crawler_service=CrawlerService.crawl_site,
+            audit_local_service=audit_local_service_func
         ))
         
-        # Ensure pagespeed is in result
-        if "pagespeed" not in result:
-            result["pagespeed"] = pagespeed_data or {}
 
 
         # GEO Tools (Keywords, Backlinks, Rankings) will be generated on-demand when PDF is requested
@@ -178,7 +179,8 @@ def run_audit_task(self, audit_id: int):
                 except Exception as e:
                     logger.error(f"Error generating PageSpeed analysis: {e}")
 
-            AuditService.set_audit_results(
+            # Guardar resultados y marcar como COMPLETED
+            asyncio.run(AuditService.set_audit_results(
                 db=db,
                 audit_id=audit_id,
                 target_audit=target_audit,
@@ -188,7 +190,7 @@ def run_audit_task(self, audit_id: int):
                 report_markdown=report_markdown,
                 fix_plan=fix_plan,
                 pagespeed_data=pagespeed_data,
-            )
+            ))
 
             AuditService.update_audit_progress(
                 db=db, audit_id=audit_id, progress=100, status=AuditStatus.COMPLETED
@@ -272,6 +274,8 @@ def run_geo_analysis_task(self, audit_id: int):
                 backlinks = await backlink_service.analyze_backlinks(audit_id, domain)
                 
                 logger.info(f"Running LLM Visibility for {domain}")
+                
+                # Use instance method check_visibility to ensure results are saved to DB
                 visibility = await visibility_service.check_visibility(audit_id, brand_name, keywords)
                 
                 return rankings, backlinks, visibility
@@ -343,26 +347,6 @@ def run_geo_analysis_task(self, audit_id: int):
 
     except Exception as e:
         logger.error(f"Error running GEO Analysis task for audit {audit_id}: {e}", exc_info=True)
-        raise
-
-    except Exception as e:
-        logger.error(f"Error running pipeline for audit {audit_id}: {e}", exc_info=True)
-        try:
-            with get_db_session() as db:
-                # 5. Marcar como FAILED en caso de error
-                audit = AuditService.get_audit(db, audit_id)
-                last_progress = getattr(audit, "progress", 0) if audit else 0
-
-                AuditService.update_audit_progress(
-                    db=db,
-                    audit_id=audit_id,
-                    progress=last_progress,
-                    status=AuditStatus.FAILED,
-                    error_message=str(e),
-                )
-            logger.error(f"Audit {audit_id} marked as FAILED.")
-        except Exception as db_error:
-            logger.critical(f"Failed to update audit {audit_id} status to FAILED: {db_error}", exc_info=True)
         raise
 
 
@@ -679,6 +663,9 @@ def generate_full_report_task(audit_id: int):
         
         # Step 3: REGENERATE report with LLM using ALL available context
         with get_db_session() as db:
+            # FORCE refresh of all objects to ensure we see the GEO data from previous step
+            db.expire_all()
+            
             audit = AuditService.get_audit(db, audit_id)
             
             # Load complete context with ALL data
@@ -691,20 +678,37 @@ def generate_full_report_task(audit_id: int):
             competitor_audits = audit.competitor_audits or []
             pagespeed_data = audit.pagespeed_data or {}
             
-            # Get GEO data from context
-            keywords_data = complete_context.get("keywords", [])
+            # Get GEO data from context (now already normalized with 'items' key)
+            keywords_data = complete_context.get("keywords", {})
             backlinks_data = complete_context.get("backlinks", {})
-            rank_tracking_data = complete_context.get("rank_tracking", [])
-            llm_visibility_data = complete_context.get("llm_visibility", [])
-            ai_content_data = complete_context.get("ai_content_suggestions", [])
+            rank_tracking_data = complete_context.get("rank_tracking", {})
+            llm_visibility_data = complete_context.get("llm_visibility", {})
+            ai_content_data = complete_context.get("ai_content_suggestions", {})
             
             logger.info(f"Regenerating report with full context:")
             logger.info(f"  - Target Audit: {'OK' if target_audit else 'MISSING'}")
             logger.info(f"  - PageSpeed: {'OK' if pagespeed_data else 'MISSING'}")
-            logger.info(f"  - Keywords: {len(keywords_data)} items")
-            logger.info(f"  - Backlinks: {backlinks_data.get('total_backlinks', 0)} items")
-            logger.info(f"  - Rank Tracking: {len(rank_tracking_data)} items")
-            logger.info(f"  - LLM Visibility: {len(llm_visibility_data)} items")
+            logger.info(f"  - Keywords: {len(keywords_data.get('items', []))} items")
+            logger.info(f"  - Backlinks: {len(backlinks_data.get('items', []))} items")
+            logger.info(f"  - Rank Tracking: {len(rank_tracking_data.get('items', []))} items")
+            logger.info(f"  - LLM Visibility: {len(llm_visibility_data.get('items', []))} items")
+
+            # Persist all data to disk for consistency and debugging before LLM call
+            # This updates JSON files in the report folder and final_llm_context.json
+            asyncio.run(AuditService._save_audit_files(
+                audit_id=audit_id,
+                target_audit=target_audit,
+                external_intelligence=external_intelligence,
+                search_results=search_results,
+                competitor_audits=competitor_audits,
+                fix_plan=fix_plan,
+                pagespeed_data=pagespeed_data,
+                keywords=keywords_data.get("items", []),
+                backlinks=backlinks_data.get("items", []),
+                rankings=rank_tracking_data.get("items", []),
+                llm_visibility=llm_visibility_data.get("items", [])
+            ))
+            logger.info("Audit files persisted to disk successfully.")
             
             # Regenerate report markdown with LLM
             new_report_markdown, new_fix_plan = asyncio.run(
@@ -714,9 +718,9 @@ def generate_full_report_task(audit_id: int):
                     search_results=search_results,
                     competitor_audits=competitor_audits,
                     pagespeed_data=pagespeed_data,
-                    keywords_data={"keywords": keywords_data, "total_keywords": len(keywords_data)},
+                    keywords_data=keywords_data,
                     backlinks_data=backlinks_data,
-                    rank_tracking_data={"rankings": rank_tracking_data, "total_keywords": len(rank_tracking_data)},
+                    rank_tracking_data=rank_tracking_data,
                     llm_visibility_data=llm_visibility_data,
                     ai_content_suggestions=ai_content_data,
                     llm_function=llm_function
@@ -724,12 +728,12 @@ def generate_full_report_task(audit_id: int):
             )
             
             # Update audit with new report
-            if new_report_markdown and len(new_report_markdown) > 500:
+            if new_report_markdown and len(new_report_markdown) > 200:
                 audit.report_markdown = new_report_markdown
-                if new_fix_plan:
-                    audit.fix_plan = new_fix_plan
+                # Always update fix_plan if we got a response (even if empty)
+                audit.fix_plan = new_fix_plan if new_fix_plan is not None else []
                 db.commit()
-                logger.info("Report regenerated with full context.")
+                logger.info(f"Report regenerated with full context. Fix plan items: {len(audit.fix_plan)}")
             else:
                 logger.warning("Report regeneration returned short content, keeping original.")
         

@@ -22,6 +22,103 @@ class GitHubService:
     
     def __init__(self, db: Session):
         self.db = db
+
+    def _map_issue_to_fix_type(self, issue: str) -> str:
+        """
+        Mapea issues detectados en auditoría a tipos de fixes aplicables en código
+        """
+        if not issue:
+            return "other"
+        
+        issue_lower = issue.lower()
+        
+        # Meta Description
+        if any(term in issue_lower for term in ["meta description", "description tag", "meta desc"]):
+            return "meta_description"
+        
+        # Title
+        if any(term in issue_lower for term in ["title tag", "page title", "<title>"]):
+            return "title"
+        
+        # H1
+        if any(term in issue_lower for term in ["h1", "heading 1", "main heading"]):
+            return "h1"
+        
+        # Alt Text
+        if any(term in issue_lower for term in ["alt text", "alt attribute", "image alt", "missing alt"]):
+            return "alt_text"
+        
+        # Open Graph
+        if "og:title" in issue_lower or "open graph title" in issue_lower:
+            return "og_title"
+        
+        if "og:description" in issue_lower or "open graph description" in issue_lower:
+            return "og_description"
+        
+        # Schema/Structured Data
+        if any(term in issue_lower for term in ["schema", "structured data", "json-ld"]):
+            return "schema"
+        
+        # Canonical
+        if "canonical" in issue_lower:
+            return "canonical"
+        
+        # Keywords
+        if "meta keywords" in issue_lower:
+            return "meta_keywords"
+
+        # Content / GEO (New mappings for robustness)
+        if any(term in issue_lower for term in ["content", "text", "readability", "keyword", "topic"]):
+            return "content_improvement"
+        
+        return "other"
+
+    def prepare_fixes_from_audit(self, audit: Audit) -> List[Dict[str, Any]]:
+        """
+        Prepara una lista de fixes estructurados a partir de una auditoría.
+        Maneja la lógica de fallback si no hay fixes mapeables.
+        Soporta múltiples formatos de fix_plan (legacy y V11).
+        """
+        raw_fixes = audit.fix_plan or []
+        
+        # 1. Try to map existing fixes
+        fixes = []
+        if raw_fixes:
+            for item in raw_fixes:
+                # Soporte para múltiples formatos de campo (issue, description, issue_code)
+                issue_text = item.get("issue") or item.get("description") or item.get("issue_code") or ""
+                recommended_value = item.get("recommended_value") or item.get("suggestion") or item.get("value") or ""
+                page_url = item.get("page") or item.get("page_url") or item.get("page_path") or ""
+                
+                fix_type = self._map_issue_to_fix_type(issue_text)
+                
+                # Only include specific fix types, ignore 'other' to allow fallback to defaults if no specific fixes found
+                if fix_type != "other": 
+                    fixes.append({
+                        "type": fix_type,
+                        "priority": item.get("priority", "MEDIUM"),
+                        "value": recommended_value,
+                        "page_url": page_url,
+                        "description": issue_text,
+                        "current_value": item.get("current_value"),
+                        "impact": item.get("impact", "")
+                    })
+        
+        # 2. Check if we have valid fixes
+        if not fixes:
+            logger.info(f"No mappeable fixes found for audit {audit.id}, using default SEO/GEO fixes")
+            # Default fixes pack
+            fixes = [
+                {"type": "title", "priority": "HIGH", "description": "Optimize page title for SEO and Click-Through Rate"},
+                {"type": "meta_description", "priority": "HIGH", "description": "Add compelling meta description with keywords"},
+                {"type": "schema", "priority": "MEDIUM", "description": "Add Schema.org structured data for rich snippets"},
+                {"type": "add_faq_section", "priority": "MEDIUM", "description": "Add FAQ section to capture PAA (People Also Ask)"},
+            ]
+        else:
+            logger.info(f"Mapped {len(fixes)} fixes from fix_plan for audit {audit.id}")
+
+        return fixes
+
     
     def get_audit_context_for_fixes(self, audit_id: int) -> Dict[str, Any]:
         """
@@ -322,8 +419,8 @@ class GitHubService:
         # 3. Generar nombre de branch
         branch_name = PRGeneratorService.generate_branch_name(audit_id)
         
-        # 4. Crear branch
-        logger.info(f"Creating branch: {branch_name}")
+        # 4. Crear branch (client.create_branch handles deletion if exists)
+        logger.info(f"Creating/Resetting branch: {branch_name}")
         client.create_branch(gh_repo, branch_name, repo.default_branch)
         
         # 5. Encontrar archivos a modificar

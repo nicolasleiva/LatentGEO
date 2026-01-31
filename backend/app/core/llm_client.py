@@ -1,38 +1,52 @@
-from google import genai
+from openai import AsyncOpenAI
 import logging
+import json
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
-async def call_gemini_api(name: str, system_prompt: str, user_message: str) -> str:
+async def call_kimi_api(name: str, system_prompt: str, user_message: str) -> str:
     """
-    Calls the Gemini API with the given system prompt and user message.
-
-    Args:
-        name: A name for the agent/call (for logging purposes).
-        system_prompt: The system-level instructions for the LLM.
-        user_message: The user's input/message for the LLM.
-
-    Returns:
-        The generated text response from the LLM.
+    Calls the Kimi API with the given system prompt and user message.
     """
-    if not settings.GEMINI_API_KEY:
-        logger.error("GEMINI_API_KEY no está configurada. No se puede llamar a la API de Gemini.")
-        return "Error: GEMINI_API_KEY no configurada."
+    api_key = settings.NV_API_KEY_ANALYSIS or settings.NVIDIA_API_KEY or settings.NV_API_KEY
+    
+    if not api_key:
+        logger.error("NVIDIA API key no está configurada. No se puede llamar a KIMI.")
+        return "Error: API key no configurada."
 
     try:
-        client = genai.Client(api_key=settings.GEMINI_API_KEY)
-        full_message = f"{system_prompt}\n\n{user_message}"
+        client = AsyncOpenAI(
+            base_url=settings.NV_BASE_URL,
+            api_key=api_key,
+            timeout=300.0
+        )
 
-        logger.info(f"Calling Gemini API for {name} with model {settings.GEMINI_MODEL}")
-        response = client.models.generate_content(
-            model=settings.GEMINI_MODEL,
-            contents=full_message
+        logger.info(f"Calling KIMI API for {name} with model {settings.NV_MODEL_ANALYSIS}")
+        
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_message}
+        ]
+        
+        completion = await client.chat.completions.create(
+            model=settings.NV_MODEL_ANALYSIS,
+            messages=messages,
+            temperature=0.6,
+            top_p=0.9,
+            max_tokens=settings.NV_MAX_TOKENS,
+            stream=False
         )
         
-        logger.info(f"Gemini API call for {name} successful.")
-        return response.text.strip()
+        content = completion.choices[0].message.content
+        logger.info(f"KIMI API call for {name} successful.")
+        return content.strip() if content else ""
 
     except Exception as e:
-        logger.exception(f"Error al llamar a la API de Gemini para {name}: {e}")
-        return f"Error al llamar a la API de Gemini: {str(e)}"
+        logger.exception(f"Error al llamar a la API de KIMI para {name}: {e}")
+        return f"Error al llamar a la API de KIMI: {str(e)}"
+
+# Mantener compatibilidad temporal si es necesario
+async def call_gemini_api(name: str, system_prompt: str, user_message: str) -> str:
+    logger.warning(f"call_gemini_api called for {name}, but Gemini is disabled. Using KIMI instead.")
+    return await call_kimi_api(name, system_prompt, user_message)

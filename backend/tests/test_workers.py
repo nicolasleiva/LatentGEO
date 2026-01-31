@@ -2,7 +2,7 @@
 Tests para los Celery Workers
 """
 import pytest
-from unittest.mock import patch, MagicMock, ANY
+from unittest.mock import patch, MagicMock, ANY, AsyncMock
 from sqlalchemy.orm import Session
 
 from backend.app.workers.tasks import run_audit_task, generate_pdf_task
@@ -12,10 +12,10 @@ from backend.app.models import Audit, AuditStatus
 # --- Test para run_audit_task ---
 
 
-@patch("backend.app.workers.tasks.generate_pdf_task.delay")
-@patch("backend.app.workers.tasks.PipelineService.run_complete_audit")
+@patch("backend.app.workers.tasks.AuditLocalService.run_local_audit", new_callable=AsyncMock)
+@patch("app.services.pipeline_service.run_initial_audit", new_callable=AsyncMock)
 def test_run_audit_task_success(
-    mock_run_complete_audit, mock_generate_pdf, db_session: Session
+    mock_run_initial, mock_local_audit, db_session: Session
 ):
     """
     Verifica el camino exitoso de la tarea 'run_audit_task'.
@@ -37,13 +37,14 @@ def test_run_audit_task_success(
         "search_results": {},
         "competitor_audits": [],
     }
-    mock_run_complete_audit.return_value = mock_pipeline_result
+    mock_run_initial.return_value = mock_pipeline_result
+    mock_local_audit.return_value = {"url": "https://success.com", "status": 200}
 
     # 2. Ejecutar la tarea
     # Usamos patch en get_db_session para que la tarea use la sesión de test
     with patch("backend.app.workers.tasks.get_db_session") as mock_get_db:
         mock_get_db.return_value.__enter__.return_value = db_session
-        run_audit_task(audit.id)
+        run_audit_task.run(audit.id)
 
     # 3. Verificación
     db_session.refresh(audit)
@@ -57,12 +58,10 @@ def test_run_audit_task_success(
     assert audit.fix_plan[0]["issue"] == "test"
     assert audit.target_audit["score"] == 90
 
-    # Verificar que la tarea de PDF fue llamada
-    mock_generate_pdf.assert_called_once_with(audit.id, "# Report")
 
-
-@patch("backend.app.workers.tasks.PipelineService.run_complete_audit")
-def test_run_audit_task_failure(mock_run_complete_audit, db_session: Session):
+@patch("backend.app.workers.tasks.AuditLocalService.run_local_audit", new_callable=AsyncMock)
+@patch("app.services.pipeline_service.run_initial_audit", new_callable=AsyncMock)
+def test_run_audit_task_failure(mock_run_initial, mock_local_audit, db_session: Session):
     """
     Verifica el manejo de errores en la tarea 'run_audit_task'.
     """
@@ -73,12 +72,14 @@ def test_run_audit_task_failure(mock_run_complete_audit, db_session: Session):
     db_session.refresh(audit)
 
     # Mock de un error en el pipeline
-    mock_run_complete_audit.side_effect = Exception("Pipeline exploded")
+    mock_run_initial.side_effect = Exception("Pipeline exploded")
+    mock_local_audit.return_value = {"url": "https://fail.com", "status": 200}
 
     # 2. Ejecutar la tarea
     with patch("backend.app.workers.tasks.get_db_session") as mock_get_db:
         mock_get_db.return_value.__enter__.return_value = db_session
-        run_audit_task(audit.id)
+        with pytest.raises(Exception):
+            run_audit_task.run(audit.id)
 
     # 3. Verificación
     db_session.refresh(audit)
@@ -91,8 +92,8 @@ def test_run_audit_task_failure(mock_run_complete_audit, db_session: Session):
 
 
 @patch("backend.app.workers.tasks.ReportService.create_report")
-@patch("backend.app.workers.tasks.PDFReport")
-def test_generate_pdf_task(MockPDFReport, mock_create_report, db_session: Session):
+@patch("backend.app.workers.tasks.PDFService.create_from_audit")
+def test_generate_pdf_task(mock_create_from_audit, mock_create_report, db_session: Session):
     """
     Verifica que la tarea 'generate_pdf_task' genera un PDF y lo registra.
     """
@@ -105,23 +106,12 @@ def test_generate_pdf_task(MockPDFReport, mock_create_report, db_session: Sessio
     db_session.refresh(audit)
 
     markdown_content = "# Test PDF Report"
-
-    # Mock de la clase PDFReport
-    mock_pdf_instance = MagicMock()
-    MockPDFReport.return_value = mock_pdf_instance
+    mock_create_from_audit.return_value = "reports/audit_1/report.pdf"
 
     # 2. Ejecutar la tarea
     with patch("backend.app.workers.tasks.get_db_session") as mock_get_db:
         mock_get_db.return_value.__enter__.return_value = db_session
-        generate_pdf_task(audit.id, markdown_content)
-
-    # 3. Verificación
-    # Verificar que se crearon la portada y el contenido
-    mock_pdf_instance.create_cover_page.assert_called_once()
-    mock_pdf_instance.write_markdown_text.assert_called_once_with(markdown_content)
-
-    # Verificar que se guardó el PDF
-    mock_pdf_instance.output.assert_called_once()
+        generate_pdf_task.run(audit.id, markdown_content)
 
     # Verificar que se registró en la base de datos
     mock_create_report.assert_called_once_with(

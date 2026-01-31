@@ -126,7 +126,7 @@ class CitationTrackerService:
                         'sentiment': sentiment,
                         'position': position,
                         'response_length': len(response_text),
-                        'timestamp': datetime.utcnow().isoformat(),
+                        'timestamp': datetime.now(timezone.utc).isoformat(),
                         'full_response': response_text
                     }
                     
@@ -283,7 +283,7 @@ class CitationTrackerService:
                     sentiment=citation.get('sentiment'),
                     position=citation.get('position'),
                     full_response=citation.get('full_response'),
-                    tracked_at=datetime.utcnow()
+                    tracked_at=datetime.now(timezone.utc)
                 )
                 db.add(tracking)
             
@@ -308,7 +308,7 @@ class CitationTrackerService:
         try:
             from app.models import CitationTracking
             
-            since_date = datetime.utcnow() - timedelta(days=days)
+            since_date = datetime.now(timezone.utc) - timedelta(days=days)
             
             citations = db.query(CitationTracking).filter(
                 CitationTracking.audit_id == audit_id,

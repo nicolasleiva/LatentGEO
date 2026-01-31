@@ -73,24 +73,42 @@ class AuditLocalService:
         session: aiohttp.ClientSession, url: str, timeout: int = 20
     ) -> Tuple[Optional[int], Optional[str], str]:
         """
-        Descarga el contenido de una URL.
-
-        Args:
-            session: Sesión aiohttp
-            url: URL a descargar
-            timeout: Timeout en segundos
-
-        Returns:
-            Tupla (status, html, content_type) o (None, None, "") si falla
+        Descarga el contenido de una URL con reintentos y manejo de redirecciones.
         """
+        import ssl
+        
+        # Headers más realistas
+        USER_AGENTS = [
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        ]
+        
+        import random
+        headers = HEADERS.copy()
+        headers["User-Agent"] = random.choice(USER_AGENTS)
+        headers["Accept"] = "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8"
+        headers["Accept-Language"] = "es-ES,es;q=0.9,en;q=0.8"
+        
         try:
-            async with session.get(url, timeout=timeout) as resp:
+            # Intento 1: Con SSL verificado
+            async with session.get(url, timeout=timeout, headers=headers, allow_redirects=True) as resp:
                 text = await resp.text(errors="ignore")
                 content_type = resp.headers.get("content-type", "")
                 return resp.status, text, content_type
         except Exception as e:
-            logger.error(f"Error descargando {url}: {e}")
-            return None, None, ""
+            logger.warning(f"Primer intento fallido para {url}: {e}. Reintentando con SSL relajado...")
+            try:
+                # Intento 2: Sin verificación SSL (por si es problema de certs en Docker)
+                connector = aiohttp.TCPConnector(ssl=False)
+                async with aiohttp.ClientSession(connector=connector, headers=headers) as backup_session:
+                    async with backup_session.get(url, timeout=timeout, allow_redirects=True) as resp:
+                        text = await resp.text(errors="ignore")
+                        content_type = resp.headers.get("content-type", "")
+                        return resp.status, text, content_type
+            except Exception as e2:
+                logger.error(f"Error definitivo descargando {url}: {e2}")
+                return None, None, ""
 
     @staticmethod
     def analyze_structure(soup: BeautifulSoup) -> Dict[str, Any]:

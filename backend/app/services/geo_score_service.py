@@ -170,48 +170,41 @@ class GEOScoreService:
     async def _calculate_eeat_score(self, url: str, audit_data: Optional[Dict]) -> float:
         """
         Score de E-E-A-T (0-100)
-        
-        Experience, Expertise, Authoritativeness, Trustworthiness
-        
-        Evalúa:
-        - Presencia de autores
-        - Fuentes citadas
-        - Backlinks de autoridad
-        - Datos originales
         """
-        score = 0.0
+        score = 40.0  # Base neutral
         
-        # Base score si hay audit data
         if audit_data:
-            score += 30
+            # Bonus por tener datos de auditoría
+            score += 10
             
-            # Bonus por contenido autoritativo
+            # Bonus por inteligencia externa
             external_intel = audit_data.get("external_intelligence", {})
             if external_intel:
-                score += 10
+                score += 15
             
-            # Penalty por falta de autor/fuentes
+            # Penalizaciones basadas en fix_plan
             fix_plan = audit_data.get("fix_plan", [])
-            has_author_issues = any("author" in fix.get("issue", "").lower() for fix in fix_plan)
-            if has_author_issues:
-                score -= 20
+            
+            # Author issues
+            if any("author" in fix.get("issue", "").lower() for fix in fix_plan):
+                score -= 25
+            else:
+                score += 10 # Bonus por tener autor (o no tener issues de autor)
         
-        # Bonus por domain authority (simplificado)
-        if "edu" in url or "gov" in url:
-            score += 30
+        # Bonus por domain authority
+        if any(ext in url for ext in [".edu", ".gov", ".org"]):
+            score += 20
         
         return max(0, min(100, score))
     
     async def _calculate_schema_score(self, audit_data: Optional[Dict]) -> float:
         """
         Score de Schema markup (0-100)
-        
-        Evalúa presencia y calidad de datos estructurados
         """
         if not audit_data:
             return 0.0
         
-        score = 50.0  # Base
+        score = 70.0  # Base si no se detectan problemas
         
         fix_plan = audit_data.get("fix_plan", [])
         
@@ -223,11 +216,13 @@ class GEOScoreService:
         ]
         
         if schema_issues:
-            score = 0.0  # Sin schema = 0
+            # Si hay muchos issues, bajar más el score
+            score -= (len(schema_issues) * 20)
         else:
-            score = 90.0  # Tiene schema = excelente
+            # Si no hay issues detectados, es muy bueno
+            score = 95.0
         
-        return score
+        return max(0, min(100, score))
     
     async def _calculate_content_score(self, audit_data: Optional[Dict]) -> float:
         """

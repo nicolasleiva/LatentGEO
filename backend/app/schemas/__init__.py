@@ -2,6 +2,8 @@ from pydantic import BaseModel, HttpUrl
 from typing import Optional, List, Dict, Any
 from datetime import datetime
 from enum import Enum
+from .validators import validate_url, validate_market
+from pydantic import field_validator
 
 class AuditStatus(str, Enum):
     PENDING = "pending"
@@ -10,7 +12,7 @@ class AuditStatus(str, Enum):
     FAILED = "failed"
 
 class AuditCreate(BaseModel):
-    url: HttpUrl
+    url: str  # We use str to apply custom validation
     max_pages: Optional[int] = 100
     language: Optional[str] = "es"  # "en" o "es"
     competitors: Optional[List[str]] = None  # URLs de competidores
@@ -19,6 +21,43 @@ class AuditCreate(BaseModel):
     # User association (Auth0)
     user_id: Optional[str] = None  # Auth0 user sub
     user_email: Optional[str] = None  # User email
+
+    @field_validator('url')
+    @classmethod
+    def validate_audit_url(cls, v):
+        if not validate_url(v):
+            raise ValueError('URL inválida o no permitida para auditoría')
+        return v
+    
+    @field_validator('competitors')
+    @classmethod
+    def validate_competitors(cls, v):
+        if v is None: return v
+        for url in v:
+            if not validate_url(url):
+                raise ValueError(f'URL de competidor inválida: {url}')
+        return v
+    
+    @field_validator('market')
+    @classmethod
+    def validate_market_field(cls, v):
+        return validate_market(v) if v else v
+
+class AuditUpdate(BaseModel):
+    status: Optional[AuditStatus] = None
+    progress: Optional[int] = None
+    target_audit: Optional[Dict[str, Any]] = None
+    external_intelligence: Optional[Dict[str, Any]] = None
+    competitor_audits: Optional[List[Dict[str, Any]]] = None
+    fix_plan: Optional[List[Dict[str, Any]]] = None
+    report_markdown: Optional[str] = None
+    total_pages: Optional[int] = None
+    critical_issues: Optional[int] = None
+    high_issues: Optional[int] = None
+    medium_issues: Optional[int] = None
+    pagespeed_data: Optional[Dict[str, Any]] = None
+    category: Optional[str] = None
+    geo_score: Optional[float] = None
 
 class AuditResponse(BaseModel):
     id: int
@@ -48,9 +87,12 @@ class AuditResponse(BaseModel):
 class AuditSummary(BaseModel):
     id: int
     url: str
+    domain: Optional[str] = None
     status: str
     progress: int
     created_at: datetime
+    geo_score: Optional[float] = 0
+    total_pages: Optional[int] = 0
     
     class Config:
         from_attributes = True
@@ -106,6 +148,20 @@ class AuditConfigRequest(BaseModel):
     language: Optional[str] = None
     competitors: Optional[List[str]] = None
     market: Optional[str] = None
+
+    @field_validator('competitors')
+    @classmethod
+    def validate_competitors(cls, v):
+        if v is None: return v
+        for url in v:
+            if not validate_url(url):
+                raise ValueError(f'URL de competidor inválida: {url}')
+        return v
+    
+    @field_validator('market')
+    @classmethod
+    def validate_market_field(cls, v):
+        return validate_market(v) if v else v
 
 class ChatMessage(BaseModel):
     """Mensaje de chat"""
