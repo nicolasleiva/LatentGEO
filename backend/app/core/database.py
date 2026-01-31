@@ -24,6 +24,11 @@ else:
         settings.DATABASE_URL,
         echo=settings.SQLALCHEMY_ECHO,
         pool_pre_ping=True,
+        # Production Pool Configuration
+        pool_size=10,  # Conexiones mantenidas abiertas
+        max_overflow=20,  # Conexiones adicionales bajo demanda
+        pool_timeout=30,  # Segundos antes de timeout
+        pool_recycle=1800,  # Reciclar conexiones cada 30min
     )
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)

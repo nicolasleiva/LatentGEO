@@ -105,9 +105,7 @@ class Audit(Base):
     task_id = Column(String(255), nullable=True, unique=True, index=True)
     error_message = Column(Text, nullable=True)
     
-    # GEO Score (0-10) basado en target_audit
-    geo_score = Column(Float, default=0)
-    
+
     # Propiedad dinámica para report_pdf_path (se calcula desde reports)
     @property
     def report_pdf_path(self):
@@ -126,7 +124,7 @@ class Report(Base):
     __tablename__ = "reports"
 
     id = Column(Integer, primary_key=True, index=True)
-    audit_id = Column(Integer, ForeignKey("audits.id"), nullable=False)
+    audit_id = Column(Integer, ForeignKey("audits.id"), nullable=False, index=True)
 
     report_type = Column(String(50))  # "markdown", "pdf", "json"
     file_path = Column(String(500), nullable=True)
@@ -143,7 +141,7 @@ class AuditedPage(Base):
     __tablename__ = "audited_pages"
 
     id = Column(Integer, primary_key=True, index=True)
-    audit_id = Column(Integer, ForeignKey("audits.id"), nullable=False)
+    audit_id = Column(Integer, ForeignKey("audits.id"), nullable=False, index=True)
 
     url = Column(String(500), nullable=False)
     path = Column(String(500))
@@ -195,7 +193,7 @@ class Competitor(Base):
     __tablename__ = "competitors"
 
     id = Column(Integer, primary_key=True, index=True)
-    audit_id = Column(Integer, ForeignKey("audits.id"), nullable=True)
+    audit_id = Column(Integer, ForeignKey("audits.id"), nullable=True, index=True)
 
     url = Column(String(500), nullable=False)
     domain = Column(String(255), index=True)
@@ -212,7 +210,7 @@ class Backlink(Base):
     __tablename__ = "backlinks"
 
     id = Column(Integer, primary_key=True, index=True)
-    audit_id = Column(Integer, ForeignKey("audits.id"), nullable=False)
+    audit_id = Column(Integer, ForeignKey("audits.id"), nullable=False, index=True)
     
     source_url = Column(String(500), nullable=False)
     target_url = Column(String(500), nullable=False)
@@ -230,7 +228,7 @@ class Keyword(Base):
     __tablename__ = "keywords"
 
     id = Column(Integer, primary_key=True, index=True)
-    audit_id = Column(Integer, ForeignKey("audits.id"), nullable=False)
+    audit_id = Column(Integer, ForeignKey("audits.id"), nullable=False, index=True)
     
     term = Column(String(255), nullable=False)
     volume = Column(Integer, default=0)
@@ -248,7 +246,7 @@ class RankTracking(Base):
     __tablename__ = "rank_trackings"
 
     id = Column(Integer, primary_key=True, index=True)
-    audit_id = Column(Integer, ForeignKey("audits.id"), nullable=False)
+    audit_id = Column(Integer, ForeignKey("audits.id"), nullable=False, index=True)
     
     keyword = Column(String(255), nullable=False)
     position = Column(Integer, nullable=False)
@@ -268,7 +266,7 @@ class LLMVisibility(Base):
     __tablename__ = "llm_visibilities"
 
     id = Column(Integer, primary_key=True, index=True)
-    audit_id = Column(Integer, ForeignKey("audits.id"), nullable=False)
+    audit_id = Column(Integer, ForeignKey("audits.id"), nullable=False, index=True)
     
     llm_name = Column(String(50), nullable=False) # ChatGPT, Perplexity, Gemini
     query = Column(String(500), nullable=False)
@@ -286,7 +284,7 @@ class AIContentSuggestion(Base):
     __tablename__ = "ai_content_suggestions"
 
     id = Column(Integer, primary_key=True, index=True)
-    audit_id = Column(Integer, ForeignKey("audits.id"), nullable=False)
+    audit_id = Column(Integer, ForeignKey("audits.id"), nullable=False, index=True)
     
     page_url = Column(String(500), nullable=True)
     topic = Column(String(255), nullable=False)
@@ -304,7 +302,7 @@ class CitationTracking(Base):
     __tablename__ = "citation_tracking"
 
     id = Column(Integer, primary_key=True, index=True)
-    audit_id = Column(Integer, ForeignKey("audits.id"), nullable=False)
+    audit_id = Column(Integer, ForeignKey("audits.id"), nullable=False, index=True)
     
     query = Column(String(500), nullable=False)
     llm_name = Column(String(50), nullable=False)  # kimi, chatgpt, perplexity
@@ -322,7 +320,7 @@ class DiscoveredQuery(Base):
     __tablename__ = "discovered_queries"
 
     id = Column(Integer, primary_key=True, index=True)
-    audit_id = Column(Integer, ForeignKey("audits.id"), nullable=False)
+    audit_id = Column(Integer, ForeignKey("audits.id"), nullable=False, index=True)
     
     query = Column(String(500), nullable=False)
     intent = Column(String(50), nullable=True)  # informational, commercial, transactional
@@ -338,7 +336,7 @@ class CompetitorCitationAnalysis(Base):
     __tablename__ = "competitor_citation_analysis"
 
     id = Column(Integer, primary_key=True, index=True)
-    audit_id = Column(Integer, ForeignKey("audits.id"), nullable=False)
+    audit_id = Column(Integer, ForeignKey("audits.id"), nullable=False, index=True)
     
     your_mentions = Column(Integer, default=0)
     competitor_data = Column(JSON, nullable=True)  # Datos de competidores
@@ -380,7 +378,7 @@ class ScoreHistory(Base):
     llm_mentions = Column(Integer, default=0)
     
     # Metadata
-    audit_id = Column(Integer, ForeignKey("audits.id"), nullable=True)
+    audit_id = Column(Integer, ForeignKey("audits.id"), nullable=True, index=True)
     recorded_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
 
 

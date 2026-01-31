@@ -24,7 +24,7 @@ class KeywordService:
             logger.info("✅ Kimi/NVIDIA API configurada para keywords")
         else:
             self.client = None
-            logger.warning("⚠️  No se encontró NVIDIA_API_KEY. Usando MOCK data.")
+            logger.error("❌ No se encontró NVIDIA_API_KEY. El servicio de keywords fallará.")
 
     async def research_keywords(self, audit_id: int, domain: str, seed_keywords: List[str] = None) -> List[Keyword]:
         """
@@ -34,9 +34,8 @@ class KeywordService:
         if self.client:
             return await self._research_kimi(audit_id, domain, seed_keywords)
         
-        # Fallback to Mock
-        logger.warning("No AI keys set. Using MOCK data for keywords.")
-        return self._get_mock_keywords(audit_id, domain, seed_keywords)
+        logger.error("No AI keys set. Cannot generate keywords.")
+        return []
 
     async def _research_kimi(self, audit_id: int, domain: str, seeds: List[str]) -> List[Keyword]:
         """Genera keywords usando Kimi (Moonshot AI vía NVIDIA)"""
@@ -61,7 +60,7 @@ class KeywordService:
             
         except Exception as e:
             logger.error(f"Kimi API error: {e}")
-            return self._get_mock_keywords(audit_id, domain, seeds)
+            return []
 
     def _get_prompt(self, domain: str, seeds: List[str]) -> str:
         return f"""
@@ -125,33 +124,6 @@ class KeywordService:
             logger.error(f"Error processing Kimi response: {e}")
             return []
 
-
-    def _get_mock_keywords(self, audit_id: int, domain: str, seeds: List[str] = None) -> List[Keyword]:
-        """Returns realistic mock data for testing without API key."""
-        base_seeds = seeds if seeds else ["software", "solutions", "platform", "tools"]
-        intents = ["Informational", "Commercial", "Transactional"]
-        
-        mock_results = []
-        for i in range(10):
-            seed = random.choice(base_seeds)
-            term = f"{seed} for {domain.split('.')[0]}" if i % 2 == 0 else f"best {seed} 2025"
-            
-            kw = Keyword(
-                audit_id=audit_id,
-                term=term,
-                volume=random.randint(100, 10000),
-                difficulty=random.randint(20, 90),
-                cpc=round(random.uniform(0.5, 15.0), 2),
-                intent=random.choice(intents)
-            )
-            self.db.add(kw)
-            mock_results.append(kw)
-        
-        self.db.commit()
-        for kw in mock_results:
-            self.db.refresh(kw)
-            
-        return mock_results  # Return SQLAlchemy objects
 
     def get_keywords(self, audit_id: int) -> List[Keyword]:
         keywords = self.db.query(Keyword).filter(Keyword.audit_id == audit_id).all()

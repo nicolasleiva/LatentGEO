@@ -3,7 +3,7 @@ from typing import Optional
 from ...services.pagespeed_service import PageSpeedService
 from ...core.config import settings
 
-router = APIRouter(prefix="/api/pagespeed", tags=["pagespeed"])
+router = APIRouter(prefix="/pagespeed", tags=["pagespeed"])
 
 @router.get("/analyze")
 async def analyze_pagespeed(
@@ -18,6 +18,7 @@ async def compare_strategies(
 ):
     import asyncio
     mobile = await PageSpeedService.analyze_url(url, settings.GOOGLE_PAGESPEED_API_KEY, "mobile")
-    await asyncio.sleep(3)
+    sleep_time = 0.5 if settings.GOOGLE_PAGESPEED_API_KEY else 3
+    await asyncio.sleep(sleep_time)
     desktop = await PageSpeedService.analyze_url(url, settings.GOOGLE_PAGESPEED_API_KEY, "desktop")
     return {"mobile": mobile, "desktop": desktop}

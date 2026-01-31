@@ -10,6 +10,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { API_URL } from '@/lib/api';
 
 interface GEODashboardData {
     audit_id: number;
@@ -45,7 +46,7 @@ export default function GEODashboardPage() {
     const [data, setData] = useState<GEODashboardData | null>(null);
     const [error, setError] = useState<string | null>(null);
 
-    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
+    const backendUrl = API_URL;
 
     useEffect(() => {
         const fetchData = async () => {
@@ -206,8 +207,13 @@ export default function GEODashboardPage() {
                     <TabsList className="bg-white/5 p-1 rounded-2xl border border-white/10 w-full md:w-auto inline-flex">
                         <TabsTrigger value="opportunities" className="rounded-xl data-[state=active]:bg-white/10 data-[state=active]:text-white text-white/50 px-6 py-3">Top Opportunities</TabsTrigger>
                         <TabsTrigger value="citations" className="rounded-xl data-[state=active]:bg-white/10 data-[state=active]:text-white text-white/50 px-6 py-3">Recent Citations</TabsTrigger>
+                        <TabsTrigger value="history" className="rounded-xl data-[state=active]:bg-white/10 data-[state=active]:text-white text-white/50 px-6 py-3">Citation History</TabsTrigger>
+                        <TabsTrigger value="query" className="rounded-xl data-[state=active]:bg-white/10 data-[state=active]:text-white text-white/50 px-6 py-3">Query Discovery</TabsTrigger>
+                        <TabsTrigger value="competitors" className="rounded-xl data-[state=active]:bg-white/10 data-[state=active]:text-white text-white/50 px-6 py-3">Competitors</TabsTrigger>
                         <TabsTrigger value="schema" className="rounded-xl data-[state=active]:bg-white/10 data-[state=active]:text-white text-white/50 px-6 py-3">Schema Generator</TabsTrigger>
+                        <TabsTrigger value="schema-multiple" className="rounded-xl data-[state=active]:bg-white/10 data-[state=active]:text-white text-white/50 px-6 py-3">Schema Multiple</TabsTrigger>
                         <TabsTrigger value="templates" className="rounded-xl data-[state=active]:bg-white/10 data-[state=active]:text-white text-white/50 px-6 py-3">Content Templates</TabsTrigger>
+                        <TabsTrigger value="content-analyze" className="rounded-xl data-[state=active]:bg-white/10 data-[state=active]:text-white text-white/50 px-6 py-3">Analyze Content</TabsTrigger>
                     </TabsList>
 
                     <TabsContent value="opportunities">
@@ -273,6 +279,51 @@ export default function GEODashboardPage() {
                         </div>
                     </TabsContent>
 
+                    <TabsContent value="history">
+                        <div className="glass-card p-8">
+                            <div className="flex items-center gap-3 mb-6">
+                                <div className="p-3 bg-green-500/20 rounded-xl">
+                                    <TrendingUp className="w-6 h-6 text-green-400" />
+                                </div>
+                                <div>
+                                    <h2 className="text-2xl font-bold text-white">Citation History</h2>
+                                    <p className="text-white/50">Histórico agregado para seguimiento mensual</p>
+                                </div>
+                            </div>
+                            <CitationHistory auditId={Number(auditId)} backendUrl={backendUrl} />
+                        </div>
+                    </TabsContent>
+
+                    <TabsContent value="query">
+                        <div className="glass-card p-8">
+                            <div className="flex items-center gap-3 mb-6">
+                                <div className="p-3 bg-blue-500/20 rounded-xl">
+                                    <Search className="w-6 h-6 text-blue-400" />
+                                </div>
+                                <div>
+                                    <h2 className="text-2xl font-bold text-white">Query Discovery</h2>
+                                    <p className="text-white/50">Descubrí queries y oportunidades para que te citen los LLMs</p>
+                                </div>
+                            </div>
+                            <QueryDiscovery auditId={Number(auditId)} backendUrl={backendUrl} />
+                        </div>
+                    </TabsContent>
+
+                    <TabsContent value="competitors">
+                        <div className="glass-card p-8">
+                            <div className="flex items-center gap-3 mb-6">
+                                <div className="p-3 bg-purple-500/20 rounded-xl">
+                                    <BarChart3 className="w-6 h-6 text-purple-400" />
+                                </div>
+                                <div>
+                                    <h2 className="text-2xl font-bold text-white">Competitor Analysis</h2>
+                                    <p className="text-white/50">Arrancar análisis y ver benchmark vs competidores</p>
+                                </div>
+                            </div>
+                            <CompetitorAnalysis auditId={Number(auditId)} backendUrl={backendUrl} />
+                        </div>
+                    </TabsContent>
+
                     <TabsContent value="schema">
                         <div className="glass-card p-8">
                             <div className="flex items-center gap-3 mb-6">
@@ -285,6 +336,21 @@ export default function GEODashboardPage() {
                                 </div>
                             </div>
                             <SchemaGenerator backendUrl={backendUrl} />
+                        </div>
+                    </TabsContent>
+
+                    <TabsContent value="schema-multiple">
+                        <div className="glass-card p-8">
+                            <div className="flex items-center gap-3 mb-6">
+                                <div className="p-3 bg-purple-500/20 rounded-xl">
+                                    <FileText className="w-6 h-6 text-purple-400" />
+                                </div>
+                                <div>
+                                    <h2 className="text-2xl font-bold text-white">Multiple Schemas</h2>
+                                    <p className="text-white/50">Generar múltiples schemas sugeridos para una página</p>
+                                </div>
+                            </div>
+                            <SchemaMultipleGenerator backendUrl={backendUrl} />
                         </div>
                     </TabsContent>
 
@@ -302,10 +368,316 @@ export default function GEODashboardPage() {
                             <ContentTemplates backendUrl={backendUrl} />
                         </div>
                     </TabsContent>
+
+                    <TabsContent value="content-analyze">
+                        <div className="glass-card p-8">
+                            <div className="flex items-center gap-3 mb-6">
+                                <div className="p-3 bg-pink-500/20 rounded-xl">
+                                    <Award className="w-6 h-6 text-pink-400" />
+                                </div>
+                                <div>
+                                    <h2 className="text-2xl font-bold text-white">Analyze Content for GEO</h2>
+                                    <p className="text-white/50">Analizar contenido libre para detectar gaps GEO</p>
+                                </div>
+                            </div>
+                            <ContentAnalyze backendUrl={backendUrl} />
+                        </div>
+                    </TabsContent>
                 </Tabs>
             </div>
         </div>
     );
+}
+
+function CitationHistory({ auditId, backendUrl }: { auditId: number; backendUrl: string }) {
+    const [days, setDays] = useState('30')
+    const [loading, setLoading] = useState(false)
+    const [result, setResult] = useState<any>(null)
+
+    const load = async () => {
+        setLoading(true)
+        try {
+            const res = await fetch(`${backendUrl}/api/geo/citation-tracking/history/${auditId}?days=${encodeURIComponent(days)}`)
+            const data = await res.json()
+            setResult(data)
+        } catch (e) {
+            console.error(e)
+            setResult(null)
+        } finally {
+            setLoading(false)
+        }
+    }
+
+    return (
+        <div className="space-y-6">
+            <div className="flex flex-col md:flex-row gap-3 md:items-end">
+                <div className="space-y-2">
+                    <Label className="text-white/80">Days</Label>
+                    <Input value={days} onChange={(e) => setDays(e.target.value)} className="glass-input h-12 w-40" inputMode="numeric" />
+                </div>
+                <Button onClick={load} disabled={loading} className="glass-button-primary px-8 py-6">
+                    {loading ? 'Loading...' : 'Load History'}
+                </Button>
+            </div>
+            {result && (
+                <pre className="bg-black/50 text-white/80 p-6 rounded-xl overflow-x-auto text-sm font-mono border border-white/10">
+                    {JSON.stringify(result, null, 2)}
+                </pre>
+            )}
+        </div>
+    )
+}
+
+function QueryDiscovery({ auditId, backendUrl }: { auditId: number; backendUrl: string }) {
+    const [brandName, setBrandName] = useState('')
+    const [domain, setDomain] = useState('')
+    const [industry, setIndustry] = useState('general')
+    const [keywords, setKeywords] = useState('')
+    const [loading, setLoading] = useState(false)
+    const [result, setResult] = useState<any>(null)
+    const [opps, setOpps] = useState<any>(null)
+
+    const discover = async () => {
+        setLoading(true)
+        try {
+            const res = await fetch(`${backendUrl}/api/geo/query-discovery/discover`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    brand_name: brandName,
+                    domain,
+                    industry,
+                    keywords: keywords.split(',').map((k) => k.trim()).filter(Boolean),
+                }),
+            })
+            const data = await res.json()
+            setResult(data)
+        } catch (e) {
+            console.error(e)
+            setResult(null)
+        } finally {
+            setLoading(false)
+        }
+    }
+
+    const loadOpportunities = async () => {
+        try {
+            const res = await fetch(`${backendUrl}/api/geo/query-discovery/opportunities/${auditId}?limit=20`)
+            const data = await res.json()
+            setOpps(data)
+        } catch (e) {
+            console.error(e)
+            setOpps(null)
+        }
+    }
+
+    return (
+        <div className="space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="space-y-2">
+                    <Label className="text-white/80">Brand Name</Label>
+                    <Input value={brandName} onChange={(e) => setBrandName(e.target.value)} className="glass-input h-12" placeholder="Ej: AuditorGeo" />
+                </div>
+                <div className="space-y-2">
+                    <Label className="text-white/80">Domain</Label>
+                    <Input value={domain} onChange={(e) => setDomain(e.target.value)} className="glass-input h-12" placeholder="Ej: auditorgeo.com" />
+                </div>
+                <div className="space-y-2">
+                    <Label className="text-white/80">Industry</Label>
+                    <Input value={industry} onChange={(e) => setIndustry(e.target.value)} className="glass-input h-12" />
+                </div>
+                <div className="space-y-2">
+                    <Label className="text-white/80">Keywords (comma separated)</Label>
+                    <Input value={keywords} onChange={(e) => setKeywords(e.target.value)} className="glass-input h-12" placeholder="seo, geo, auditoria" />
+                </div>
+            </div>
+            <div className="flex flex-col md:flex-row gap-3">
+                <Button onClick={discover} disabled={loading} className="glass-button-primary px-8 py-6">
+                    {loading ? 'Discovering...' : 'Discover Queries'}
+                </Button>
+                <Button onClick={loadOpportunities} variant="outline" className="glass-button border-white/20 hover:bg-white/10 px-8 py-6">
+                    Load Opportunities (saved)
+                </Button>
+            </div>
+
+            {result && (
+                <pre className="bg-black/50 text-white/80 p-6 rounded-xl overflow-x-auto text-sm font-mono border border-white/10">
+                    {JSON.stringify(result, null, 2)}
+                </pre>
+            )}
+            {opps && (
+                <pre className="bg-black/50 text-white/80 p-6 rounded-xl overflow-x-auto text-sm font-mono border border-white/10">
+                    {JSON.stringify(opps, null, 2)}
+                </pre>
+            )}
+        </div>
+    )
+}
+
+function CompetitorAnalysis({ auditId, backendUrl }: { auditId: number; backendUrl: string }) {
+    const [competitors, setCompetitors] = useState('')
+    const [queries, setQueries] = useState('')
+    const [loading, setLoading] = useState(false)
+    const [result, setResult] = useState<any>(null)
+    const [benchmark, setBenchmark] = useState<any>(null)
+
+    const start = async () => {
+        setLoading(true)
+        try {
+            const res = await fetch(`${backendUrl}/api/geo/competitor-analysis/analyze`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    audit_id: auditId,
+                    competitor_domains: competitors.split(',').map((c) => c.trim()).filter(Boolean),
+                    queries: queries.split('\n').map((q) => q.trim()).filter(Boolean),
+                }),
+            })
+            const data = await res.json()
+            setResult(data)
+        } catch (e) {
+            console.error(e)
+            setResult(null)
+        } finally {
+            setLoading(false)
+        }
+    }
+
+    const loadBenchmark = async () => {
+        try {
+            const res = await fetch(`${backendUrl}/api/geo/competitor-analysis/benchmark/${auditId}`)
+            const data = await res.json()
+            setBenchmark(data)
+        } catch (e) {
+            console.error(e)
+            setBenchmark(null)
+        }
+    }
+
+    return (
+        <div className="space-y-6">
+            <div className="space-y-2">
+                <Label className="text-white/80">Competitor domains (comma separated)</Label>
+                <Input value={competitors} onChange={(e) => setCompetitors(e.target.value)} className="glass-input h-12" placeholder="comp1.com, comp2.com" />
+            </div>
+            <div className="space-y-2">
+                <Label className="text-white/80">Queries (one per line)</Label>
+                <Textarea value={queries} onChange={(e) => setQueries(e.target.value)} className="glass-input min-h-[140px] font-mono text-xs" placeholder="best seo tool\nhow to improve geo score" />
+            </div>
+            <div className="flex flex-col md:flex-row gap-3">
+                <Button onClick={start} disabled={loading} className="glass-button-primary px-8 py-6">
+                    {loading ? 'Starting...' : 'Start Analysis'}
+                </Button>
+                <Button onClick={loadBenchmark} variant="outline" className="glass-button border-white/20 hover:bg-white/10 px-8 py-6">
+                    Load Benchmark
+                </Button>
+            </div>
+            {result && (
+                <pre className="bg-black/50 text-white/80 p-6 rounded-xl overflow-x-auto text-sm font-mono border border-white/10">
+                    {JSON.stringify(result, null, 2)}
+                </pre>
+            )}
+            {benchmark && (
+                <pre className="bg-black/50 text-white/80 p-6 rounded-xl overflow-x-auto text-sm font-mono border border-white/10">
+                    {JSON.stringify(benchmark, null, 2)}
+                </pre>
+            )}
+        </div>
+    )
+}
+
+function SchemaMultipleGenerator({ backendUrl }: { backendUrl: string }) {
+    const [url, setUrl] = useState('')
+    const [html, setHtml] = useState('')
+    const [result, setResult] = useState<any>(null)
+    const [loading, setLoading] = useState(false)
+
+    const generate = async () => {
+        setLoading(true)
+        try {
+            const res = await fetch(`${backendUrl}/api/geo/schema/multiple`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ url, html_content: html }),
+            })
+            const data = await res.json()
+            setResult(data)
+        } catch (e) {
+            console.error(e)
+            alert('Error generating schemas')
+        } finally {
+            setLoading(false)
+        }
+    }
+
+    return (
+        <div className="space-y-6 max-w-4xl">
+            <div className="grid grid-cols-1 gap-6">
+                <div className="space-y-2">
+                    <Label className="text-white/80">Page URL</Label>
+                    <Input placeholder="https://example.com/page" value={url} onChange={(e) => setUrl(e.target.value)} className="glass-input h-12" />
+                </div>
+                <div className="space-y-2">
+                    <Label className="text-white/80">HTML Content</Label>
+                    <Textarea placeholder="Paste HTML here..." className="glass-input min-h-[150px] font-mono text-xs" value={html} onChange={(e) => setHtml(e.target.value)} />
+                </div>
+                <Button onClick={generate} disabled={loading} className="glass-button-primary w-full md:w-auto px-8 py-6">
+                    {loading ? 'Generating...' : 'Generate Schemas'}
+                </Button>
+            </div>
+            {result && (
+                <pre className="bg-black/50 text-white/80 p-6 rounded-xl overflow-x-auto text-sm font-mono border border-white/10">
+                    {JSON.stringify(result, null, 2)}
+                </pre>
+            )}
+        </div>
+    )
+}
+
+function ContentAnalyze({ backendUrl }: { backendUrl: string }) {
+    const [content, setContent] = useState('')
+    const [loading, setLoading] = useState(false)
+    const [result, setResult] = useState<any>(null)
+
+    const analyze = async () => {
+        setLoading(true)
+        try {
+            const res = await fetch(`${backendUrl}/api/geo/content-templates/analyze`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(content),
+            })
+            const data = await res.json()
+            setResult(data)
+        } catch (e) {
+            console.error(e)
+            setResult(null)
+        } finally {
+            setLoading(false)
+        }
+    }
+
+    return (
+        <div className="space-y-6 max-w-4xl">
+            <div className="space-y-2">
+                <Label className="text-white/80">Content</Label>
+                <Textarea
+                    placeholder="Pegá el contenido a analizar..."
+                    className="glass-input min-h-[220px] font-mono text-xs"
+                    value={content}
+                    onChange={(e) => setContent(e.target.value)}
+                />
+            </div>
+            <Button onClick={analyze} disabled={loading} className="glass-button-primary w-full md:w-auto px-8 py-6">
+                {loading ? 'Analyzing...' : 'Analyze'}
+            </Button>
+            {result && (
+                <pre className="bg-black/50 text-white/80 p-6 rounded-xl overflow-x-auto text-sm font-mono border border-white/10">
+                    {JSON.stringify(result, null, 2)}
+                </pre>
+            )}
+        </div>
+    )
 }
 
 // Sub-components

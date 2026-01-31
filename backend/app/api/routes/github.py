@@ -1,7 +1,7 @@
 """
 GitHub API Routes
 """
-from fastapi import APIRouter, Depends, HTTPException, Request, Header
+from fastapi import APIRouter, Depends, HTTPException, Request, Header, BackgroundTasks
 from sqlalchemy.orm import Session
 from typing import List, Dict, Any, Optional
 from pydantic import BaseModel
@@ -16,7 +16,7 @@ from ...integrations.github.oauth import GitHubOAuth
 from ...integrations.github.service import GitHubService
 from ...models.github import GitHubConnection, GitHubRepository, GitHubPullRequest, PRStatus
 
-router = APIRouter()
+router = APIRouter(prefix="/github", tags=["github"])
 logger = get_logger(__name__)
 
 
@@ -89,7 +89,11 @@ def oauth_authorize():
 
 
 @router.post("/callback")
-async def oauth_callback(request: CallbackRequest, db: Session = Depends(get_db)):
+async def oauth_callback(
+    request: CallbackRequest, 
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db)
+):
     """Maneja callback de OAuth"""
     try:
         # 1. Exchange code for token
@@ -102,12 +106,8 @@ async def oauth_callback(request: CallbackRequest, db: Session = Depends(get_db)
         service = GitHubService(db)
         connection = await service.create_or_update_connection(token_data, user_info)
         
-        # 4. Sync repositories in background
-        # (En producción, esto debería ser una tarea de Celery)
-        try:
-            await service.sync_repositories(connection.id)
-        except Exception as e:
-            logger.warning(f"Error syncing repos during callback: {e}")
+        # 4. Sync repositories in background to avoid blocking the user
+        background_tasks.add_task(service.sync_repositories, connection.id)
         
         return {
             "status": "success",
@@ -147,6 +147,7 @@ async def sync_repositories(connection_id: str, db: Session = Depends(get_db)):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.get("/repositories/{connection_id}", response_model=List[RepositoryResponse])
 @router.get("/repos/{connection_id}", response_model=List[RepositoryResponse])
 def get_repositories(connection_id: str, db: Session = Depends(get_db)):
     """Obtiene repositorios de una conexión"""
@@ -338,6 +339,7 @@ async def create_blog_fixes_pr(
 
 
 @router.get("/audit-to-fixes/{audit_id}")
+
 def convert_audit_to_fixes(audit_id: int, db: Session = Depends(get_db)):
     """
     Convierte el fix_plan de una auditoría en fixes aplicables a código
@@ -352,31 +354,15 @@ def convert_audit_to_fixes(audit_id: int, db: Session = Depends(get_db)):
         Dict con audit_id y lista de fixes formateados para aplicar
     """
     from ...models import Audit
+    from ...integrations.github.service import GitHubService
     
     audit = db.query(Audit).filter(Audit.id == audit_id).first()
     
     if not audit:
         raise HTTPException(status_code=404, detail="Audit not found")
     
-    if not audit.fix_plan:
-        raise HTTPException(status_code=400, detail="Audit has no fix plan")
-    
-    # Convertir fix_plan a fixes aplicables
-    fixes = []
-    for item in audit.fix_plan:
-        fix_type = _map_issue_to_fix_type(item.get("issue", ""))
-        
-        if fix_type != "other":  # Solo incluir fixes que podemos aplicar
-            fix = {
-                "type": fix_type,
-                "priority": item.get("priority", "MEDIUM"),
-                "value": item.get("recommended_value", ""),
-                "page_url": item.get("page", ""),
-                "description": item.get("issue", ""),
-                "current_value": item.get("current_value"),
-                "impact": item.get("impact", "")
-            }
-            fixes.append(fix)
+    service = GitHubService(db)
+    fixes = service.prepare_fixes_from_audit(audit)
     
     return {
         "audit_id": audit_id,
@@ -387,57 +373,7 @@ def convert_audit_to_fixes(audit_id: int, db: Session = Depends(get_db)):
     }
 
 
-def _map_issue_to_fix_type(issue: str) -> str:
-    """
-    Mapea issues detectados en auditoría a tipos de fixes aplicables en código
-    
-    Args:
-        issue: Descripción del issue de la auditoría
-        
-    Returns:
-        Tipo de fix (meta_description, title, h1, etc.)
-    """
-    if not issue:
-        return "other"
-    
-    issue_lower = issue.lower()
-    
-    # Meta Description
-    if any(term in issue_lower for term in ["meta description", "description tag", "meta desc"]):
-        return "meta_description"
-    
-    # Title
-    if any(term in issue_lower for term in ["title tag", "page title", "<title>"]):
-        return "title"
-    
-    # H1
-    if any(term in issue_lower for term in ["h1", "heading 1", "main heading"]):
-        return "h1"
-    
-    # Alt Text
-    if any(term in issue_lower for term in ["alt text", "alt attribute", "image alt", "missing alt"]):
-        return "alt_text"
-    
-    # Open Graph
-    if "og:title" in issue_lower or "open graph title" in issue_lower:
-        return "og_title"
-    
-    if "og:description" in issue_lower or "open graph description" in issue_lower:
-        return "og_description"
-    
-    # Schema/Structured Data
-    if any(term in issue_lower for term in ["schema", "structured data", "json-ld"]):
-        return "schema"
-    
-    # Canonical
-    if "canonical" in issue_lower:
-        return "canonical"
-    
-    # Keywords (menos común ahora, pero por si acaso)
-    if "meta keywords" in issue_lower:
-        return "meta_keywords"
-    
-    return "other"
+
 
 
 # ===== GEO (Generative Engine Optimization) Endpoints =====
@@ -823,198 +759,6 @@ async def _handle_installation_event(payload: Dict, db: Session):
 class CreateAutoFixRequest(BaseModel):
     audit_id: int
 
-
-@router.get("/geo-compare/{audit_id}")
-async def compare_geo_with_competitors(
-    audit_id: int,
-    competitor_urls: Optional[List[str]] = None,
-    db: Session = Depends(get_db)
-):
-    """
-    Compara GEO score con competidores
-    
-    Útil para ver gaps de optimización vs competencia directa
-    
-    Args:
-        audit_id: ID de la auditoría a comparar
-        competitor_urls: Lista de URLs de competidores (opcional)
-        
-    Returns:
-        Análisis comparativo con ranking y gaps
-    """
-    from ...services.geo_score_service import GEOScoreService
-    from ...models import Audit
-    
-    audit = db.query(Audit).filter(Audit.id == audit_id).first()
-    
-    if not audit:
-        raise HTTPException(status_code=404, detail="Audit not found")
-    
-    # Si no se proveen competidores, usar los de la auditoría
-    if not competitor_urls:
-        external_intel = audit.external_intelligence or {}
-        competitor_urls = [
-            comp.get("url") 
-            for comp in external_intel.get("competitors", [])[:3]
-        ]
-    
-    if not competitor_urls:
-        raise HTTPException(
-            status_code=400,
-            detail="No competitor URLs provided or found in audit"
-        )
-    
-    try:
-        geo_service = GEOScoreService(db)
-        comparison = await geo_service.compare_with_competitors(
-            url=audit.url,
-            competitor_urls=competitor_urls
-        )
-        
-        return comparison
-        
-    except Exception as e:
-        logger.error(f"Error comparing GEO scores: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-
-
-@router.post("/webhook")
-async def github_webhook(
-    request: Request,
-    x_github_event: Optional[str] = Header(None),
-    x_hub_signature_256: Optional[str] = Header(None),
-    db: Session = Depends(get_db)
-):
-    """
-    Maneja webhooks de GitHub
-    
-    Eventos soportados:
-    - push: Auto-auditar cuando hay cambios
-    - pull_request: Actualizar estado del PR
-    - installation: Manejar instalación de la app
-    """
-    # 1. Verificar firma del webhook
-    body = await request.body()
-    
-    if not _verify_webhook_signature(body, x_hub_signature_256):
-        logger.warning("Invalid GitHub webhook signature")
-        raise HTTPException(status_code=401, detail="Invalid signature")
-    
-    # 2. Parsear payload
-    payload = await request.json()
-    
-    # 3. Procesar según tipo de evento
-    try:
-        from ...models.github import GitHubWebhookEvent
-        
-        # Guardar evento
-        event = GitHubWebhookEvent(
-            event_type=x_github_event,
-            event_id=request.headers.get("x-github-delivery", ""),
-            payload=payload
-        )
-        db.add(event)
-        db.commit()
-        
-        # Procesar según tipo
-        if x_github_event == "push":
-            await _handle_push_event(payload, db)
-        elif x_github_event == "pull_request":
-            await _handle_pr_event(payload, db)
-        elif x_github_event == "installation":
-            await _handle_installation_event(payload, db)
-        
-        # Marcar como procesado
-        event.processed = True
-        event.processed_at = datetime.utcnow()
-        db.commit()
-        
-        return {"status": "success", "event": x_github_event}
-        
-    except Exception as e:
-        logger.error(f"Error processing webhook: {e}")
-        if 'event' in locals():
-            event.error_message = str(e)
-            db.commit()
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-# Helper functions
-
-def _verify_webhook_signature(payload_body: bytes, signature_header: str) -> bool:
-    """Verifica la firma del webhook de GitHub"""
-    if not signature_header or not settings.GITHUB_WEBHOOK_SECRET:
-        return True  # Skip verification in development
-    
-    hash_object = hmac.new(
-        settings.GITHUB_WEBHOOK_SECRET.encode(),
-        msg=payload_body,
-        digestmod=hashlib.sha256
-    )
-    expected_signature = "sha256=" + hash_object.hexdigest()
-    
-    return hmac.compare_digest(expected_signature, signature_header)
-
-
-async def _handle_push_event(payload: Dict, db: Session):
-    """Maneja evento push - potencialmente auto-auditar"""
-    repo_full_name = payload["repository"]["full_name"]
-    
-    # Buscar repo en BD
-    repo = db.query(GitHubRepository).filter(
-        GitHubRepository.full_name == repo_full_name
-    ).first()
-    
-    if repo and repo.auto_audit:
-        logger.info(f"Auto-audit triggered for {repo_full_name}")
-        # TODO: Disparar auditoría en background con Celery
-        # from ...workers.tasks import run_audit_task
-        # run_audit_task.delay(repo.homepage_url or repo.url)
-
-
-async def _handle_pr_event(payload: Dict, db: Session):
-    """Maneja evento pull_request - actualizar estado"""
-    pr_number = payload["pull_request"]["number"]
-    action = payload["action"]  # opened, closed, merged, etc.
-    
-    # Buscar PR en BD
-    pr = db.query(GitHubPullRequest).filter(
-        GitHubPullRequest.pr_number == pr_number
-    ).first()
-    
-    if pr:
-        if action == "closed":
-            if payload["pull_request"].get("merged"):
-                pr.status = PRStatus.MERGED
-                pr.merged_at = datetime.utcnow()
-            else:
-                pr.status = PRStatus.CLOSED
-                pr.closed_at = datetime.utcnow()
-            
-            db.commit()
-            logger.info(f"PR #{pr_number} status updated to {action}")
-
-
-async def _handle_installation_event(payload: Dict, db: Session):
-    """Maneja evento installation"""
-    action = payload["action"]
-    installation_id = payload["installation"]["id"]
-    
-    if action == "created":
-        # Nueva instalación de la app
-        logger.info(f"GitHub App installed: {installation_id}")
-        # TODO: Guardar installation_id en GitHubConnection
-    
-    elif action == "deleted":
-        # App desinstalada
-        logger.info(f"GitHub App uninstalled: {installation_id}")
-        # TODO: Desactivar conexión
-
-class CreateAutoFixRequest(BaseModel):
-    audit_id: int
-
 @router.post("/create-auto-fix-pr/{connection_id}/{repo_id}")
 async def create_auto_fix_pr(
     connection_id: str,
@@ -1042,71 +786,8 @@ async def create_auto_fix_pr(
         if audit.status != AuditStatus.COMPLETED:
             raise HTTPException(status_code=400, detail="Audit is not completed yet")
             
-        # 2. Convertir fix_plan a fixes con formato correcto para el modificador
-        raw_fixes = audit.fix_plan or []
-        
-        # Si no hay fix_plan, generar fixes básicos de SEO/GEO
-        if not raw_fixes:
-            logger.info(f"No fix_plan found for audit {request.audit_id}, using default SEO/GEO fixes")
-            fixes = [
-                {"type": "title", "priority": "HIGH", "description": "Optimize page title for SEO"},
-                {"type": "meta_description", "priority": "HIGH", "description": "Add/optimize meta description"},
-                {"type": "schema", "priority": "MEDIUM", "description": "Add Schema.org structured data"},
-                {"type": "add_faq_section", "priority": "MEDIUM", "description": "Add FAQ section for better user engagement"},
-            ]
-        else:
-            # Convertir fix_plan existente
-            fixes = []
-            for item in raw_fixes:
-                fix_type = _map_issue_to_fix_type(item.get("issue", ""))
-                
-                if fix_type != "other":  # Solo incluir fixes que podemos aplicar
-                    fixes.append({
-                        "type": fix_type,
-                        "priority": item.get("priority", "MEDIUM"),
-                        "value": item.get("recommended_value", ""),
-                        "page_url": item.get("page", ""),
-                        "description": item.get("issue", ""),
-                        "current_value": item.get("current_value"),
-                        "impact": item.get("impact", "")
-                    })
-            
-            # Si después del mapeo no hay fixes, usar los por defecto
-            if not fixes:
-                logger.info(f"No mappeable fixes found for audit {request.audit_id}, using default SEO/GEO fixes")
-                fixes = [
-                    {"type": "title", "priority": "HIGH", "description": "Optimize page title for SEO"},
-                    {"type": "meta_description", "priority": "HIGH", "description": "Add/optimize meta description"},
-                    {"type": "schema", "priority": "MEDIUM", "description": "Add Schema.org structured data"},
-                    {"type": "add_faq_section", "priority": "MEDIUM", "description": "Add FAQ section for better user engagement"},
-                ]
-        
-        # Convertir cada item del fix_plan al formato que espera el modificador
-        fixes = []
-        for item in raw_fixes:
-            fix_type = _map_issue_to_fix_type(item.get("issue", ""))
-            
-            if fix_type != "other":  # Solo incluir fixes que podemos aplicar
-                fixes.append({
-                    "type": fix_type,
-                    "priority": item.get("priority", "MEDIUM"),
-                    "value": item.get("recommended_value", ""),
-                    "page_url": item.get("page", ""),
-                    "description": item.get("issue", ""),
-                    "current_value": item.get("current_value"),
-                    "impact": item.get("impact", "")
-                })
-        
-        if not fixes:
-            # Si no hay fixes mapeables, usar fixes mínimos para mejorar SEO/GEO
-            fixes = [
-                {"type": "title", "priority": "HIGH", "description": "Optimize title"},
-                {"type": "meta_description", "priority": "HIGH", "description": "Add/update meta description"},
-                {"type": "schema", "priority": "MEDIUM", "description": "Add Schema.org structured data"},
-                {"type": "add_faq_section", "priority": "MEDIUM", "description": "Add FAQ section"},
-            ]
-        
-        logger.info(f"Mapped {len(fixes)} fixes from fix_plan for audit {request.audit_id}")
+        # 2. Prepare fixes using centralized logic
+        fixes = service.prepare_fixes_from_audit(audit)
         
         # 3. Llamar al método existente que ya tiene toda la lógica
         # Este método extrae automáticamente:

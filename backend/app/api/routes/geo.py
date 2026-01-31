@@ -19,7 +19,7 @@ from app.core.logger import get_logger
 logger = get_logger(__name__)
 
 router = APIRouter(
-    prefix="/api/geo",
+    prefix="/geo",
     tags=["GEO Features"],
     responses={404: {"description": "Not found"}},
 )

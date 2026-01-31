@@ -26,8 +26,19 @@ class AuditService:
 
     @staticmethod
     def create_audit(db: Session, audit_create: AuditCreate) -> Audit:
-        """Crear nueva auditoría"""
+        """Crear nueva auditoría con prevención de duplicados (Level 3)"""
         url = str(audit_create.url)
+        
+        # Level 3: Idempotency - Check for active audits for this URL
+        active_audit = db.query(Audit).filter(
+            Audit.url == url,
+            Audit.status.in_([AuditStatus.PENDING, AuditStatus.RUNNING])
+        ).first()
+        
+        if active_audit:
+            logger.info(f"Audit already active for {url}: {active_audit.id}")
+            return active_audit
+
         domain = (
             url.replace("https://", "")
             .replace("http://", "")
@@ -51,22 +62,32 @@ class AuditService:
         db.commit()
         db.refresh(audit)
 
+        # Level 2: Invalidate list cache for this user
+        if audit.user_email:
+            from .cache_service import cache
+            cache.delete(f"audits_list_{audit.user_email}")
+
         logger.info(f"Auditoría creada: {audit.id} para {url}, user: {audit_create.user_email}")
         return audit
 
     @staticmethod
     def get_audit(db: Session, audit_id: int) -> Optional[Audit]:
-        """Obtener auditoría por ID con report_pdf_path"""
+        """Obtener auditoría por ID con caching (Level 2)"""
+        # Level 2 Caching: Use CacheService for frequent reads
+        from .cache_service import cache
+        cache_key = f"audit_detail_{audit_id}"
+        
+        # We can't easily cache SQLAlchemy models, so we only cache if COMPLETED/FAILED
         audit = db.query(Audit).filter(Audit.id == audit_id).first()
+        
         if audit:
-            # Agregar report_pdf_path desde los reportes
+            # Check if we should enrich with PDF path
             pdf_report = db.query(Report).filter(
                 Report.audit_id == audit_id,
                 Report.report_type == "PDF"
             ).order_by(desc(Report.created_at)).first()
-            
-            # Agregar como atributo dinámico
             audit.report_pdf_path = pdf_report.file_path if pdf_report else None
+            
         return audit
 
     @staticmethod
@@ -86,13 +107,22 @@ class AuditService:
             .all()
         )
         
-        # Agregar report_pdf_path a cada auditoría
-        for audit in audits:
-            pdf_report = db.query(Report).filter(
-                Report.audit_id == audit.id,
+        # Optimización: Cargar PDFs en una sola query
+        if audits:
+            audit_ids = [a.id for a in audits]
+            pdf_reports = db.query(Report).filter(
+                Report.audit_id.in_(audit_ids),
                 Report.report_type == "PDF"
-            ).order_by(desc(Report.created_at)).first()
-            audit.report_pdf_path = pdf_report.file_path if pdf_report else None
+            ).order_by(desc(Report.created_at)).all()
+            
+            # Mapear PDFs a audits
+            pdf_map = {}
+            for pdf in pdf_reports:
+                if pdf.audit_id not in pdf_map:
+                    pdf_map[pdf.audit_id] = pdf.file_path
+            
+            for audit in audits:
+                audit.report_pdf_path = pdf_map.get(audit.id)
         
         return audits
 
@@ -133,6 +163,21 @@ class AuditService:
 
         db.commit()
         db.refresh(audit)
+        
+        # Level 2/3: Broadcast progress via Redis Pub/Sub
+        try:
+            from .cache_service import cache
+            if cache.enabled:
+                progress_msg = {
+                    "audit_id": audit_id,
+                    "progress": audit.progress,
+                    "status": audit.status.value if audit.status else None,
+                    "error_message": audit.error_message
+                }
+                cache.redis_client.publish(f"audit_progress_{audit_id}", json.dumps(progress_msg))
+        except Exception as e:
+            logger.error(f"Error publishing progress to Redis: {e}")
+
         return audit
 
     @staticmethod
@@ -147,7 +192,7 @@ class AuditService:
         return audit
 
     @staticmethod
-    def set_audit_results(
+    async def set_audit_results(
         db: Session,
         audit_id: int,
         target_audit: Dict[str, Any],
@@ -157,8 +202,12 @@ class AuditService:
         report_markdown: str,
         fix_plan: List[Dict[str, Any]],
         pagespeed_data: Dict[str, Any] = None,
+        keywords: List[Dict[str, Any]] = None,
+        backlinks: List[Dict[str, Any]] = None,
+        rankings: List[Dict[str, Any]] = None,
+        llm_visibility: List[Dict[str, Any]] = None,
     ):
-        """Guardar resultados de auditoría completa"""
+        """Guardar resultados de auditoría completa (Async version)"""
         audit = db.query(Audit).filter(Audit.id == audit_id).first()
         if not audit:
             return None
@@ -176,18 +225,15 @@ class AuditService:
         audit.report_markdown = report_markdown
         audit.fix_plan = fix_plan
         audit.pagespeed_data = pagespeed_data
-        if pagespeed_data:
-            logger.info(f"PageSpeed data saved to DB for audit {audit_id}")
-        else:
-            logger.warning(f"No PageSpeed data to save for audit {audit_id}")
 
-        # Import CompetitorService here to avoid circular imports and use it below
-        from .audit_service import CompetitorService as CS
-        
         # Calcular y guardar GEO Score para el target audit
-        geo_score = CS._calculate_geo_score(target_audit)
-        audit.geo_score = geo_score
-        logger.info(f"GEO Score calculado para audit {audit_id}: {geo_score}")
+        try:
+            # CompetitorService ya está definido en este archivo (línea 914)
+            geo_score = CompetitorService._calculate_geo_score(target_audit)
+            audit.geo_score = geo_score
+            logger.info(f"GEO Score calculado para audit {audit_id}: {geo_score}")
+        except Exception as e:
+            logger.error(f"Error calculando GEO score: {e}")
 
         # Actualizar metadata
         audit.is_ymyl = external_intelligence.get("is_ymyl", False)
@@ -219,11 +265,12 @@ class AuditService:
             )
             audit.low_issues = len([f for f in fix_plan_list if f.get("priority") == "LOW"])
         
-        # Guardar competidores con GEO scores calculados (using CS alias from above)
+        # Guardar competidores con GEO scores calculados
         for comp_data in competitor_audits:
             if isinstance(comp_data, dict) and comp_data.get("url"):
                 try:
-                    CS.add_competitor(
+                    # CompetitorService ya está definido en este archivo (línea 914)
+                    CompetitorService.add_competitor(
                         db=db,
                         audit_id=audit_id,
                         url=comp_data.get("url"),
@@ -234,8 +281,11 @@ class AuditService:
                     logger.error(f"Error guardando competidor {comp_data.get('url')}: {e}")
 
         # Guardar JSONs como en ag2_pipeline.py
-        AuditService._save_audit_files(audit_id, target_audit, external_intelligence, 
-                                     search_results, competitor_audits, fix_plan)
+        await AuditService._save_audit_files(
+            audit_id, target_audit, external_intelligence, 
+            search_results, competitor_audits, fix_plan, 
+            pagespeed_data, keywords, backlinks, rankings, llm_visibility
+        )
 
         db.commit()
         db.refresh(audit)
@@ -243,112 +293,78 @@ class AuditService:
         return audit
 
     @staticmethod
-    def _save_audit_files(
+    async def _save_audit_files(
         audit_id: int,
         target_audit: Dict[str, Any],
         external_intelligence: Dict[str, Any],
         search_results: Dict[str, Any],
         competitor_audits: List[Dict[str, Any]],
-        fix_plan: List[Dict[str, Any]]
+        fix_plan: List[Dict[str, Any]],
+        pagespeed_data: Dict[str, Any] = None,
+        keywords: List[Dict[str, Any]] = None,
+        backlinks: List[Dict[str, Any]] = None,
+        rankings: List[Dict[str, Any]] = None,
+        llm_visibility: List[Dict[str, Any]] = None,
     ):
         """Guardar archivos JSON de auditoría como en ag2_pipeline.py"""
         try:
             # Crear directorio de reportes
             reports_dir = os.path.join(settings.REPORTS_DIR or "reports", f"audit_{audit_id}")
             pages_dir = os.path.join(reports_dir, "pages")
+            competitors_dir = os.path.join(reports_dir, "competitors")
             os.makedirs(reports_dir, exist_ok=True)
-            
-            # IMPORTANTE: NO limpiar carpeta pages si ya contiene archivos de páginas individuales
-            # Estos archivos fueron guardados previamente por save_page_audit
-            if os.path.exists(pages_dir):
-                existing_files = [f for f in os.listdir(pages_dir) if f.startswith('report_') and f.endswith('.json')]
-                if existing_files:
-                    logger.info(f"Preservando {len(existing_files)} archivos de páginas individuales en {pages_dir}")
-                else:
-                    logger.info(f"Carpeta pages existe pero está vacía, recreando")
-                    import shutil
-                    shutil.rmtree(pages_dir)
-                    os.makedirs(pages_dir, exist_ok=True)
-            else:
-                os.makedirs(pages_dir, exist_ok=True)
-                logger.info(f"Carpeta pages creada: {pages_dir}")
+            os.makedirs(pages_dir, exist_ok=True)
+            os.makedirs(competitors_dir, exist_ok=True)
 
             # Guardar resumen agregado
             aggregated_path = os.path.join(reports_dir, "aggregated_summary.json")
             with open(aggregated_path, 'w', encoding='utf-8') as f:
                 json.dump(target_audit, f, ensure_ascii=False, indent=2)
 
-            # Cargar PageSpeed si existe
-            pagespeed_path = os.path.join(reports_dir, "pagespeed.json")
-            pagespeed_data = {}
-            if os.path.exists(pagespeed_path):
+            # Guardar fix_plan
+            fix_plan_path = os.path.join(reports_dir, "fix_plan.json")
+            with open(fix_plan_path, 'w', encoding='utf-8') as f:
+                json.dump(fix_plan, f, ensure_ascii=False, indent=2)
+
+            # Guardar PageSpeed
+            if pagespeed_data:
+                pagespeed_path = os.path.join(reports_dir, "pagespeed.json")
+                with open(pagespeed_path, 'w', encoding='utf-8') as f:
+                    json.dump(pagespeed_data, f, ensure_ascii=False, indent=2)
+
+            # Guardar Keywords
+            if keywords:
+                keywords_path = os.path.join(reports_dir, "keywords.json")
+                with open(keywords_path, 'w', encoding='utf-8') as f:
+                    json.dump(keywords, f, ensure_ascii=False, indent=2)
+
+            # Guardar Backlinks
+            if backlinks:
+                backlinks_path = os.path.join(reports_dir, "backlinks.json")
+                with open(backlinks_path, 'w', encoding='utf-8') as f:
+                    json.dump(backlinks, f, ensure_ascii=False, indent=2)
+
+            # Guardar Rankings
+            if rankings:
+                rankings_path = os.path.join(reports_dir, "rankings.json")
+                with open(rankings_path, 'w', encoding='utf-8') as f:
+                    json.dump(rankings, f, ensure_ascii=False, indent=2)
+
+            # Guardar LLM Visibility
+            if llm_visibility:
+                visibility_path = os.path.join(reports_dir, "llm_visibility.json")
+                with open(visibility_path, 'w', encoding='utf-8') as f:
+                    json.dump(llm_visibility, f, ensure_ascii=False, indent=2)
+
+            # Guardar competidores individuales
+            for i, comp in enumerate(competitor_audits):
                 try:
-                    with open(pagespeed_path, 'r', encoding='utf-8') as f:
-                        pagespeed_data = json.load(f)
+                    domain = comp.get('domain') or f"competitor_{i}"
+                    comp_path = os.path.join(competitors_dir, f"competitor_{domain}.json")
+                    with open(comp_path, 'w', encoding='utf-8') as f:
+                        json.dump(comp, f, ensure_ascii=False, indent=2)
                 except:
                     pass
-            
-            # Generar análisis de PageSpeed con LLM
-            pagespeed_analysis = ""
-            if pagespeed_data:
-                try:
-                    from ..core.llm_kimi import get_llm_function
-                    llm = get_llm_function()
-                    
-                    mobile = pagespeed_data.get('mobile', {})
-                    desktop = pagespeed_data.get('desktop', {})
-                    
-                    # Extraer todas las oportunidades y diagnósticos
-                    mobile_opps = mobile.get('opportunities', {})
-                    mobile_diags = mobile.get('diagnostics', {})
-                    
-                    top_opps = []
-                    for key, val in mobile_opps.items():
-                        if isinstance(val, dict) and val.get('title'):
-                            top_opps.append(f"- {val['title']}: {val.get('displayValue', 'N/A')}")
-                    
-                    top_diags = []
-                    for key, val in mobile_diags.items():
-                        if isinstance(val, dict) and val.get('displayValue'):
-                            top_diags.append(f"- {val.get('title', key)}: {val['displayValue']}")
-                    
-                    opps_text = '\n'.join(top_opps[:10])
-                    diags_text = '\n'.join(top_diags[:10])
-                    
-                    prompt = f"""Genera resumen ejecutivo de rendimiento web (max 200 palabras):
-
-Mobile Perf: {mobile.get('performance_score')}/100, LCP: {mobile.get('core_web_vitals', {}).get('lcp', 0)/1000:.2f}s
-Desktop Perf: {desktop.get('performance_score')}/100
-Top Issues: {opps_text[:200]}
-
-Formato:
-
-### Diagnostico
-[2 lineas: evaluacion general]
-
-### Impacto en Negocio  
-[2 lineas: efecto en usuarios/conversiones]
-
-### Acciones Prioritarias
-1. [Accion + beneficio]
-2. [Accion + beneficio]
-3. [Accion + beneficio]
-
-Sin datos numericos repetidos. Sin tablas. Markdown limpio."""
-                    
-                    import asyncio
-                    pagespeed_analysis = asyncio.run(llm(
-                        system_prompt="Eres consultor de rendimiento web. Genera resumenes ejecutivos concisos para PDFs. Markdown limpio, sin bloques de codigo.",
-                        user_prompt=prompt
-                    ))
-                    pagespeed_analysis = pagespeed_analysis.replace('```markdown', '').replace('```', '').strip()
-                    
-                    # Guardar análisis
-                    analysis_path = os.path.join(reports_dir, "pagespeed_analysis.md")
-                    with open(analysis_path, 'w', encoding='utf-8') as f:
-                        f.write(pagespeed_analysis)
-                except Exception as e:
-                    logger.error(f"Error generando análisis PageSpeed: {e}")
             
             # Guardar contexto final del LLM
             final_context = {
@@ -357,7 +373,10 @@ Sin datos numericos repetidos. Sin tablas. Markdown limpio."""
                 "search_results": search_results,
                 "competitor_audits": competitor_audits,
                 "pagespeed": pagespeed_data,
-                "pagespeed_analysis": pagespeed_analysis
+                "keywords": keywords,
+                "backlinks": backlinks,
+                "rank_tracking": rankings,
+                "llm_visibility": llm_visibility
             }
             context_path = os.path.join(reports_dir, "final_llm_context.json")
             with open(context_path, 'w', encoding='utf-8') as f:
@@ -425,32 +444,33 @@ Sin datos numericos repetidos. Sin tablas. Markdown limpio."""
     def _calculate_overall_score(audit_data: Dict[str, Any]) -> float:
         """Calcular score general de la página basado en los datos de auditoría"""
         try:
-            scores = []
+            # Usar los extractores individuales para obtener scores de 0-100
+            h1 = AuditService._extract_h1_score(audit_data)
+            structure = AuditService._extract_structure_score(audit_data)
+            content = AuditService._extract_content_score(audit_data)
+            eeat = AuditService._extract_eeat_score(audit_data)
+            schema = AuditService._extract_schema_score(audit_data)
             
-            # Score de estructura semántica
-            sem_html = audit_data.get("structure", {}).get("semantic_html", {})
-            if sem_html.get("score_percent") is not None:
-                scores.append(sem_html["score_percent"])
+            # Pesos para el promedio ponderado
+            weights = {
+                "h1": 0.15,
+                "structure": 0.20,
+                "content": 0.20,
+                "eeat": 0.25,
+                "schema": 0.20
+            }
             
-            # Score de tono conversacional
-            conv_tone = audit_data.get("content", {}).get("conversational_tone", {})
-            if conv_tone.get("score") is not None:
-                scores.append(conv_tone["score"] * 10)  # Normalizar a 100
+            overall = (
+                h1 * weights["h1"] +
+                structure * weights["structure"] +
+                content * weights["content"] +
+                eeat * weights["eeat"] +
+                schema * weights["schema"]
+            )
             
-            # Penalizar por problemas críticos
-            penalty = 0
-            if audit_data.get("structure", {}).get("h1_check", {}).get("status") != "pass":
-                penalty += 10
-            if audit_data.get("eeat", {}).get("author_presence", {}).get("status") != "pass":
-                penalty += 15
-            if audit_data.get("schema", {}).get("schema_presence", {}).get("status") != "present":
-                penalty += 20
-            
-            base_score = sum(scores) / len(scores) if scores else 50
-            final_score = max(0, base_score - penalty)
-            
-            return round(final_score, 1)
-        except Exception:
+            return round(overall, 1)
+        except Exception as e:
+            logger.error(f"Error en _calculate_overall_score: {e}")
             return 50.0  # Score por defecto
 
     @staticmethod
@@ -522,21 +542,48 @@ Sin datos numericos repetidos. Sin tablas. Markdown limpio."""
         try:
             eeat = audit_data.get("eeat", {})
             scores = []
+            
+            # 1. Autor (40%)
             if eeat.get("author_presence", {}).get("status") == "pass":
                 scores.append(100)
-            if eeat.get("expertise_signals"):
-                scores.append(80)
-            return sum(scores) / len(scores) if scores else 0
+            else:
+                scores.append(0)
+            
+            # 2. Citaciones/Fuentes (30%)
+            citations = eeat.get("citations_and_sources", {})
+            if citations.get("authoritative_links", 0) > 0:
+                scores.append(100)
+            elif citations.get("external_links", 0) > 0:
+                scores.append(60)
+            else:
+                scores.append(20)
+                
+            # 3. Transparencia (30%)
+            transp = eeat.get("transparency_signals", {})
+            transp_score = sum(1 for v in transp.values() if v) / max(1, len(transp)) * 100
+            scores.append(transp_score)
+            
+            weights = [0.4, 0.3, 0.3]
+            weighted_score = sum(s * w for s, w in zip(scores, weights))
+            
+            return round(weighted_score, 1)
         except:
             return 0.0
     
     @staticmethod
     def _extract_schema_score(audit_data: Dict[str, Any]) -> float:
         try:
-            schema = audit_data.get("schema", {}).get("schema_presence", {})
-            if schema.get("status") == "present":
-                types_count = len(schema.get("types", []))
-                return min(100, types_count * 20)  # 20 puntos por tipo
+            schema_data = audit_data.get("schema", {})
+            schema_presence = schema_data.get("schema_presence", {})
+            if schema_presence.get("status") == "present":
+                # Usar schema_types que es lo que devuelve AuditLocalService
+                types = schema_data.get("schema_types", [])
+                if not types:
+                    # Fallback si por alguna razón no está en schema_types pero hay bloques
+                    types = schema_data.get("types", [])
+                
+                types_count = len(types)
+                return min(100, max(20, types_count * 20))  # Mínimo 20 si está presente
             return 0.0
         except:
             return 0.0
@@ -678,23 +725,24 @@ Sin datos numericos repetidos. Sin tablas. Markdown limpio."""
         keywords = []
         for k in audit.keywords:
             keywords.append({
+                "term": k.term,
                 "keyword": k.term,
                 "search_volume": k.volume,
+                "volume": k.volume,
                 "difficulty": k.difficulty,
                 "cpc": k.cpc,
                 "intent": k.intent
             })
         
-        backlinks_summary = {
-            "total_backlinks": len(audit.backlinks),
-            "top_backlinks": []
-        }
-        for b in audit.backlinks[:10]:  # Top 10
-            backlinks_summary["top_backlinks"].append({
+        backlinks_list = []
+        for b in audit.backlinks:
+            backlinks_list.append({
                 "source_url": b.source_url,
                 "target_url": b.target_url,
                 "anchor_text": b.anchor_text,
                 "domain_authority": b.domain_authority,
+                "authority": b.domain_authority,
+                "da": b.domain_authority,
                 "is_dofollow": b.is_dofollow
             })
         
@@ -703,6 +751,7 @@ Sin datos numericos repetidos. Sin tablas. Markdown limpio."""
             rank_tracking.append({
                 "keyword": r.keyword,
                 "position": r.position,
+                "rank": r.position,
                 "url": r.url,
                 "device": r.device,
                 "location": r.location
@@ -734,11 +783,11 @@ Sin datos numericos repetidos. Sin tablas. Markdown limpio."""
             "search_results": audit.search_results or {},
             "competitor_audits": audit.competitor_audits or [],
             "pagespeed": audit.pagespeed_data or {},
-            "keywords": keywords,
-            "backlinks": backlinks_summary,
-            "rank_tracking": rank_tracking,
-            "llm_visibility": llm_visibility,
-            "ai_content_suggestions": ai_content
+            "keywords": {"items": keywords, "total": len(keywords)},
+            "backlinks": {"items": backlinks_list, "total": len(backlinks_list)},
+            "rank_tracking": {"items": rank_tracking, "total": len(rank_tracking)},
+            "llm_visibility": {"items": llm_visibility, "total": len(llm_visibility)},
+            "ai_content_suggestions": {"items": ai_content, "total": len(ai_content)}
         }
         
         logger.info(f"Complete context loaded for audit {audit_id}")
@@ -806,52 +855,53 @@ class CompetitorService:
 
     @staticmethod
     def _calculate_geo_score(audit_data: Dict[str, Any]) -> float:
-        """Calcular GEO score basado en datos de auditoría (0-10)"""
+        """Calcular GEO score basado en datos de auditoría (0-100)"""
         try:
-            score = 10.0
+            score = 100.0
             penalties = []
             
-            # 1. Schema (-3.0) - CRITICAL
-            schema_status = audit_data.get("schema", {}).get("schema_presence", {}).get("status")
+            # 1. Schema (-30.0) - CRITICAL
+            schema_data = audit_data.get("schema", {})
+            schema_status = schema_data.get("schema_presence", {}).get("status")
             if schema_status != "present":
-                score -= 3.0
+                score -= 30.0
                 penalties.append("no_schema")
             
-            # 2. Semantic HTML (-2.0 / -1.0)
+            # 2. Semantic HTML (-20.0 / -10.0)
             semantic = audit_data.get("structure", {}).get("semantic_html", {})
             semantic_score = semantic.get("score_percent", 0) if semantic else 0
             if semantic_score < 50:
-                score -= 2.0
+                score -= 20.0
                 penalties.append("bad_semantic")
             elif semantic_score < 75:
-                score -= 1.0
+                score -= 10.0
                 penalties.append("poor_semantic")
             
-            # 3. Author / EEAT (-2.0)
+            # 3. Author / EEAT (-20.0)
             eeat = audit_data.get("eeat", {})
             author_status = eeat.get("author_presence", {}).get("status") if eeat else "missing"
             if author_status != "pass":
-                score -= 2.0
+                score -= 20.0
                 penalties.append("no_author")
             
-            # 4. Conversational Tone (-1.5) - Important for AI
+            # 4. Conversational Tone (-15.0) - Important for AI
             content = audit_data.get("content", {})
             conversational = content.get("conversational_tone", {}).get("score", 0) if content else 0
             if conversational < 4:
-                score -= 1.5
+                score -= 15.0
                 penalties.append("robotic_tone")
             
-            # 5. H1 (-1.5)
+            # 5. H1 (-15.0)
             h1_status = audit_data.get("structure", {}).get("h1_check", {}).get("status")
             if h1_status != "pass":
-                score -= 1.5
+                score -= 15.0
                 penalties.append("bad_h1")
 
-            final_score = max(1.0, min(10.0, score))
-            return final_score
+            final_score = max(0.0, min(100.0, score))
+            return round(final_score, 1)
         except Exception as e:
             logger.error(f"Error calculando GEO score: {e}")
-            return 5.0  # Score por defecto
+            return 50.0  # Score por defecto
 
     @staticmethod
     def _format_competitor_data(audit_data: Dict[str, Any], geo_score: float, url: str = None) -> Dict[str, Any]:

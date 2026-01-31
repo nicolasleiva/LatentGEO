@@ -6,6 +6,7 @@ import { useUser } from '@auth0/nextjs-auth0/client'
 import { Header } from '@/components/header'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { API_URL } from '@/lib/api'
 import {
   RefreshCw, Globe, Clock, ArrowRight, Plus,
   Search, Filter, ChevronDown
@@ -26,10 +27,10 @@ export default function AuditsListPage() {
   const { user } = useUser()
   const [audits, setAudits] = useState<Audit[]>([])
   const [loading, setLoading] = useState(true)
-  const [filter, setFilter] = useState<'all' | 'completed' | 'running' | 'pending'>('all')
+  const [filter, setFilter] = useState<'all' | 'completed' | 'processing' | 'pending' | 'failed'>('all')
   const [searchQuery, setSearchQuery] = useState('')
 
-  const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000'
+  const backendUrl = API_URL
 
   useEffect(() => {
     const fetchAudits = async () => {
@@ -47,6 +48,19 @@ export default function AuditsListPage() {
     }
     fetchAudits()
   }, [backendUrl, user])
+
+  const deleteAudit = async (auditId: number) => {
+    const confirmed = window.confirm(`¿Borrar auditoría #${auditId}? Esta acción no se puede deshacer.`)
+    if (!confirmed) return
+    try {
+      const res = await fetch(`${backendUrl}/api/audits/${auditId}`, { method: 'DELETE' })
+      if (!res.ok) throw new Error(`Failed to delete audit: ${res.status}`)
+      setAudits((prev) => prev.filter(a => a.id !== auditId))
+    } catch (err) {
+      console.error(err)
+      alert('No se pudo borrar la auditoría.')
+    }
+  }
 
   const filteredAudits = audits
     .filter(audit => filter === 'all' || audit.status === filter)
@@ -107,7 +121,7 @@ export default function AuditsListPage() {
             />
           </div>
           <div className="flex gap-2">
-            {(['all', 'completed', 'running', 'pending'] as const).map((status) => (
+            {(['all', 'completed', 'processing', 'pending', 'failed'] as const).map((status) => (
               <button
                 key={status}
                 onClick={() => setFilter(status)}
@@ -170,6 +184,18 @@ export default function AuditsListPage() {
                     <Badge variant="outline" className={getStatusColor(audit.status)}>
                       {audit.status}
                     </Badge>
+
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="text-red-400 hover:text-red-300 hover:bg-red-500/10"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        deleteAudit(audit.id)
+                      }}
+                    >
+                      Delete
+                    </Button>
 
                     <div className="text-right hidden md:block">
                       <p className="text-sm text-muted-foreground">Created</p>

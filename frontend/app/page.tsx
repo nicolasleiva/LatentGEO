@@ -25,6 +25,7 @@ export default function HomePage() {
   const [audits, setAudits] = useState<Audit[]>([])
   const [loading, setLoading] = useState(false)
   const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000'
 
@@ -55,7 +56,22 @@ export default function HomePage() {
 
   const handleAudit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!url) return
+    e.stopPropagation()
+
+    setError(null)
+
+    if (!url || !url.trim()) {
+      setError('Por favor, ingresa una URL válida')
+      return
+    }
+
+    // Validar formato de URL básico
+    try {
+      new URL(url)
+    } catch {
+      setError('Por favor, ingresa una URL válida (ej: https://example.com)')
+      return
+    }
 
     // Si no está logueado, redirigir a login
     if (!user) {
@@ -67,26 +83,86 @@ export default function HomePage() {
 
     setSubmitting(true)
     try {
-      const res = await fetch(`${backendUrl}/api/audits`, {
+      // Asegurar que la URL tenga el formato correcto
+      const endpoint = `${backendUrl}/api/audits/`.replace(/\/+$/, '/') // Asegurar un solo trailing slash
+      const requestBody = {
+        url: url.trim(),
+        user_id: user.sub,  // Auth0 user ID
+        user_email: user.email,
+        // Don't provide config - let chat flow handle it
+      }
+
+      if (process.env.NODE_ENV === 'development') {
+        console.log('Creating audit:', { endpoint, body: requestBody, backendUrl })
+      }
+
+      const res = await fetch(endpoint, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          url,
-          user_id: user.sub,  // Auth0 user ID
-          user_email: user.email,
-          // Don't provide config - let chat flow handle it
-        })
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        },
+        body: JSON.stringify(requestBody),
+        credentials: 'include'
       })
 
-      if (res.ok) {
+      if (process.env.NODE_ENV === 'development') {
+        console.log('Response status:', res.status, res.statusText)
+      }
+
+      // Manejar redirecciones 307 manualmente
+      if (res.status === 307 || res.status === 308) {
+        const location = res.headers.get('Location')
+        if (location) {
+          if (process.env.NODE_ENV === 'development') {
+            console.log('Following redirect to:', location)
+          }
+          const redirectUrl = location.startsWith('http') ? location : `${backendUrl}${location}`
+          const redirectRes = await fetch(redirectUrl, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Accept': 'application/json'
+            },
+            body: JSON.stringify(requestBody),
+            credentials: 'include'
+          })
+
+          if (redirectRes.ok || redirectRes.status === 202) {
+            const newAudit = await redirectRes.json()
+            if (process.env.NODE_ENV === 'development') {
+              console.log('Audit created successfully:', newAudit)
+            }
+            router.push(`/audits/${newAudit.id}`)
+            return
+          } else {
+            throw new Error(`Error después de redirección: ${redirectRes.status}`)
+          }
+        }
+      }
+
+      if (res.ok || res.status === 202) {
         const newAudit = await res.json()
+        if (process.env.NODE_ENV === 'development') {
+          console.log('Audit created successfully:', newAudit)
+        }
         router.push(`/audits/${newAudit.id}`)
       } else {
-        console.error('Error creating audit:', await res.text())
+        let errorText = 'Error desconocido'
+        try {
+          const errorData = await res.text()
+          errorText = errorData || `Error ${res.status}: ${res.statusText}`
+        } catch {
+          errorText = `Error ${res.status}: ${res.statusText}`
+        }
+        console.error('Error creating audit:', { status: res.status, statusText: res.statusText, errorText })
+        setError(`Error al crear la auditoría (${res.status}): ${errorText}`)
         setSubmitting(false)
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error creating audit:', error)
+      const errorMessage = error.message || 'Por favor, verifica que el servidor esté funcionando.'
+      setError(`Error de conexión: ${errorMessage}`)
       setSubmitting(false)
     }
   }
@@ -152,32 +228,53 @@ export default function HomePage() {
           {/* Search Bar */}
           <form onSubmit={handleAudit} className="max-w-2xl mx-auto relative group mt-8">
             <div className="absolute inset-0 bg-gradient-to-r from-blue-500/30 to-purple-500/30 rounded-2xl blur-xl opacity-0 group-hover:opacity-100 transition duration-500" />
-            <div className="relative flex items-center glass-panel backdrop-blur-xl border border-border rounded-2xl p-2 shadow-2xl">
-              <Search className="w-5 h-5 text-muted-foreground ml-4" />
-              <input
-                type="url"
-                placeholder="Enter your website URL (e.g., https://example.com)"
-                className="flex-1 bg-transparent border-none text-foreground placeholder:text-muted-foreground focus:ring-0 px-4 py-4 outline-none text-lg"
-                value={url}
-                onChange={(e) => setUrl(e.target.value)}
-                required
-              />
-              <button
-                type="submit"
-                disabled={submitting}
-                className="bg-gradient-to-r from-blue-500 to-purple-500 text-white px-8 py-4 rounded-xl font-semibold hover:opacity-90 transition-all active:scale-95 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-blue-500/25"
-              >
-                {submitting ? (
-                  <>
-                    <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                    Analyzing...
-                  </>
-                ) : (
-                  <>
-                    Analyze <ArrowRight className="w-5 h-5" />
-                  </>
-                )}
-              </button>
+            <div className="relative flex flex-col gap-2">
+              <div className="relative flex items-center glass-panel backdrop-blur-xl border border-border rounded-2xl p-2 shadow-2xl">
+                <Search className="w-5 h-5 text-muted-foreground ml-4" />
+                <input
+                  type="url"
+                  placeholder="Enter your website URL (e.g., https://example.com)"
+                  className="flex-1 bg-transparent border-none text-foreground placeholder:text-muted-foreground focus:ring-0 px-4 py-4 outline-none text-lg"
+                  value={url}
+                  onChange={(e) => {
+                    setUrl(e.target.value)
+                    setError(null)
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !submitting) {
+                      e.preventDefault()
+                      handleAudit(e as any)
+                    }
+                  }}
+                  required
+                  disabled={submitting}
+                />
+                <button
+                  type="submit"
+                  disabled={submitting || !url.trim()}
+                  className="bg-gradient-to-r from-blue-500 to-purple-500 text-white px-8 py-4 rounded-xl font-semibold hover:opacity-90 transition-all active:scale-95 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-blue-500/25"
+                  onClick={(e) => {
+                    e.preventDefault()
+                    handleAudit(e as any)
+                  }}
+                >
+                  {submitting ? (
+                    <>
+                      <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                      Analyzing...
+                    </>
+                  ) : (
+                    <>
+                      Analyze <ArrowRight className="w-5 h-5" />
+                    </>
+                  )}
+                </button>
+              </div>
+              {error && (
+                <div className="text-red-500 text-sm px-4 py-2 bg-red-500/10 border border-red-500/20 rounded-lg">
+                  {error}
+                </div>
+              )}
             </div>
           </form>
 

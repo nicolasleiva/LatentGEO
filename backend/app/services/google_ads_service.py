@@ -1,5 +1,15 @@
-from google.ads.googleads.client import GoogleAdsClient
-from google.ads.googleads.errors import GoogleAdsException
+try:
+    from google.ads.googleads.client import GoogleAdsClient
+    from google.ads.googleads.errors import GoogleAdsException
+    GOOGLE_ADS_AVAILABLE = True
+except ImportError:
+    GOOGLE_ADS_AVAILABLE = False
+    class GoogleAdsClient:
+        @staticmethod
+        def load_from_dict(config):
+            raise ImportError("google-ads package not installed")
+    class GoogleAdsException(Exception):
+        pass
 from ..core.config import settings
 import logging
 from typing import List, Dict, Any
@@ -11,7 +21,7 @@ class GoogleAdsService:
         self.client = None
         self.customer_id = settings.GOOGLE_ADS_CUSTOMER_ID
         
-        if settings.GOOGLE_ADS_DEVELOPER_TOKEN and settings.GOOGLE_ADS_REFRESH_TOKEN:
+        if GOOGLE_ADS_AVAILABLE and settings.GOOGLE_ADS_DEVELOPER_TOKEN and settings.GOOGLE_ADS_REFRESH_TOKEN:
             try:
                 # Configuración desde variables de entorno
                 config = {
@@ -28,7 +38,10 @@ class GoogleAdsService:
             except Exception as e:
                 logger.error(f"Failed to initialize Google Ads Client: {e}")
         else:
-            logger.warning("Google Ads credentials not found. Real data will be unavailable.")
+            if not GOOGLE_ADS_AVAILABLE:
+                logger.warning("google-ads package not installed. Real data will be unavailable.")
+            else:
+                logger.warning("Google Ads credentials not found. Real data will be unavailable.")
 
     def get_keyword_metrics(self, keywords: List[str], location_id: str = "2840", language_id: str = "1000") -> Dict[str, Any]:
         """

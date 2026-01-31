@@ -27,7 +27,7 @@ export function useSmartPolling(
     if (isComplete || hasTimedOut) return;
 
     const getBackoffDelay = (count: number) => {
-      const delays = [2000, 4000, 8000, 16000];
+      const delays = [1000, 2000, 4000, 8000];
       return delays[Math.min(count, delays.length - 1)];
     };
 

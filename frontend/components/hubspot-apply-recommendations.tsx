@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { CheckCircle, XCircle, AlertTriangle, ExternalLink, Zap } from 'lucide-react'
+import { API_URL } from '@/lib/api'
 
 interface HubSpotRecommendation {
     id: string
@@ -39,7 +40,7 @@ export default function HubSpotApplyRecommendations({ auditId }: { auditId: stri
 
     const fetchRecommendations = useCallback(async () => {
         try {
-            const response = await fetch(`/api/hubspot/recommendations/${auditId}`)
+            const response = await fetch(`${API_URL}/api/hubspot/recommendations/${auditId}`)
             const data = await response.json()
             setRecommendations(data.recommendations)
 
@@ -92,7 +93,7 @@ export default function HubSpotApplyRecommendations({ auditId }: { auditId: stri
                 selectedRecs.has(r.id)
             )
 
-            const response = await fetch('/api/hubspot/apply-recommendations', {
+            const response = await fetch(`${API_URL}/api/hubspot/apply-recommendations`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({

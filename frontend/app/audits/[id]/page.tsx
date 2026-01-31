@@ -1,19 +1,27 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
+
+import dynamic from 'next/dynamic';
 import { useParams, useRouter } from 'next/navigation';
+import Image from 'next/image';
+import logger from '@/lib/logger';
 import { Header } from '@/components/header';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { CoreWebVitalsChart } from '@/components/core-web-vitals-chart';
-import { KeywordGapChart } from '@/components/keyword-gap-chart';
-import { IssuesHeatmap } from '@/components/issues-heatmap';
 import { ArrowLeft, Download, RefreshCw, ExternalLink, Globe, AlertTriangle, CheckCircle, Clock, FileText, Target, Search, Link as LinkIcon, TrendingUp, Edit, Sparkles, Github, GitPullRequest } from 'lucide-react';
-import { GitHubIntegration } from '@/components/github-integration';
-import { HubSpotIntegration } from '@/components/hubspot-integration';
-import { AuditChatFlow } from '@/components/audit-chat-flow';
-import { AuditProgressIndicator } from '@/components/audit-progress-indicator';
 import { Dialog, DialogContent, DialogTrigger, DialogTitle } from '@/components/ui/dialog';
+import { useAuditSSE } from '@/hooks/useAuditSSE';
+import { API_URL } from '@/lib/api';
+
+// Dynamic imports for heavy components
+const CoreWebVitalsChart = dynamic(() => import('@/components/core-web-vitals-chart').then(mod => mod.CoreWebVitalsChart), { ssr: false });
+const KeywordGapChart = dynamic(() => import('@/components/keyword-gap-chart').then(mod => mod.KeywordGapChart), { ssr: false });
+const IssuesHeatmap = dynamic(() => import('@/components/issues-heatmap').then(mod => mod.IssuesHeatmap), { ssr: false });
+const GitHubIntegration = dynamic(() => import('@/components/github-integration').then(mod => mod.GitHubIntegration), { ssr: false });
+const HubSpotIntegration = dynamic(() => import('@/components/hubspot-integration').then(mod => mod.HubSpotIntegration), { ssr: false });
+const AuditChatFlow = dynamic(() => import('@/components/audit-chat-flow').then(mod => mod.AuditChatFlow), { ssr: false });
+const AuditProgressIndicator = dynamic(() => import('@/components/audit-progress-indicator').then(mod => mod.AuditProgressIndicator), { ssr: false });
 
 
 export default function AuditDetailPage() {
@@ -29,40 +37,102 @@ export default function AuditDetailPage() {
   const [keywordGapData, setKeywordGapData] = useState<any>(null);
   const [pageSpeedLoading, setPageSpeedLoading] = useState(false);
   const [pdfGenerating, setPdfGenerating] = useState(false);
-  const [pollingTimeout, setPollingTimeout] = useState(false);
-  const [pollCount, setPollCount] = useState(0);
 
-  const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
-  const MAX_POLL_TIME = 240000; // 4 minutos
-  const MAX_POLLS = 30;
+  const backendUrl = API_URL;
+  const [activeTab, setActiveTab] = useState<'overview' | 'report' | 'fix-plan'>('overview');
+  const [reportMarkdown, setReportMarkdown] = useState<string | null>(null);
+  const [reportLoading, setReportLoading] = useState(false);
+  const [fixPlan, setFixPlan] = useState<any[] | null>(null);
+  const [fixPlanLoading, setFixPlanLoading] = useState(false);
+
+  const loadReport = useCallback(async () => {
+    if (reportLoading || reportMarkdown) return;
+    setReportLoading(true);
+    try {
+      const res = await fetch(`${backendUrl}/api/reports/markdown/${auditId}`);
+      if (res.ok) {
+        const data = await res.json();
+        setReportMarkdown(data?.markdown || '');
+        return;
+      }
+
+      const fallbackRes = await fetch(`${backendUrl}/api/audits/${auditId}/report`);
+      if (fallbackRes.ok) {
+        const data = await fallbackRes.json();
+        setReportMarkdown(data?.report || data?.markdown || '');
+        return;
+      }
+
+      setReportMarkdown('');
+    } catch (err) {
+      console.error(err);
+      setReportMarkdown('');
+    } finally {
+      setReportLoading(false);
+    }
+  }, [auditId, backendUrl, reportLoading, reportMarkdown]);
+
+  const loadFixPlan = useCallback(async () => {
+    if (fixPlanLoading || fixPlan) return;
+    setFixPlanLoading(true);
+    try {
+      const res = await fetch(`${backendUrl}/api/audits/${auditId}/fix_plan`);
+      if (!res.ok) {
+        setFixPlan([]);
+        return;
+      }
+      const data = await res.json();
+      setFixPlan(Array.isArray(data?.fix_plan) ? data.fix_plan : Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error(err);
+      setFixPlan([]);
+    } finally {
+      setFixPlanLoading(false);
+    }
+  }, [auditId, backendUrl, fixPlanLoading, fixPlan]);
 
   const fetchData = useCallback(async () => {
     try {
-      const [auditRes, pagesRes] = await Promise.all([
-        fetch(`${backendUrl}/api/audits/${auditId}`),
-        fetch(`${backendUrl}/api/audits/${auditId}/pages`),
-      ]);
-      const auditData = await auditRes.json();
-      const pagesData = await pagesRes.json();
-
-      setAudit(auditData);
-      setPages(pagesData);
-
-      // Competitors (only when audit is finished)
-      if (auditData.status === 'completed') {
-        try {
-          const compRes = await fetch(`${backendUrl}/api/audits/${auditId}/competitors`);
-          if (compRes.ok) {
-            const compData = await compRes.json();
-            setCompetitors(compData);
-          }
-        } catch {
-          console.log('No competitors data');
+      // Fetch audit first
+      const auditRes = await fetch(`${backendUrl}/api/audits/${auditId}`);
+      if (!auditRes.ok) {
+        if (auditRes.status === 429) {
+          logger.log('Rate limited, retrying in 2s...');
+          await new Promise(resolve => setTimeout(resolve, 2000));
+          return fetchData();
         }
+        throw new Error(`Failed to fetch audit: ${auditRes.status}`);
+      }
+      const auditData = await auditRes.json();
+      setAudit(auditData);
+
+      // Stop loading immediately so Chat appears ASAP
+      setLoading(false);
+
+      // Fetch pages and competitors in parallel (non-blocking for initial render)
+      const [pagesRes, compRes] = await Promise.all([
+        fetch(`${backendUrl}/api/audits/${auditId}/pages`),
+        auditData.status === 'completed'
+          ? fetch(`${backendUrl}/api/audits/${auditId}/competitors`).catch(() => null)
+          : Promise.resolve(null)
+      ]);
+
+      if (pagesRes.ok) {
+        const pagesData = await pagesRes.json();
+        setPages(pagesData);
+      }
+
+      if (compRes?.ok) {
+        const compData = await compRes.json();
+        setCompetitors(compData);
+      }
+
+      // Initialize PageSpeed data if available in audit
+      if (auditData.pagespeed_data) {
+        setPageSpeedData(auditData.pagespeed_data);
       }
     } catch (err) {
       console.error(err);
-    } finally {
       setLoading(false);
     }
   }, [auditId, backendUrl]);
@@ -70,27 +140,30 @@ export default function AuditDetailPage() {
   // Initial load
   useEffect(() => {
     fetchData();
-    setPageSpeedData(null);
   }, [fetchData]);
 
   // Limpiar PageSpeed cuando status cambia a 'running'
   useEffect(() => {
-    if (audit?.status === 'running') {
+    if (audit?.status === 'processing') {
       setPageSpeedData(null);
     }
   }, [audit?.status]);
 
-  // Polling SOLO cuando está pending (esperando config)
-  useEffect(() => {
-    if (audit?.status !== 'pending' || pollingTimeout) return;
-
-    const pollTimer = setTimeout(() => {
+  // SSE for real-time status updates (replaces polling)
+  useAuditSSE(auditId, {
+    onMessage: (statusData) => {
+      setAudit((prev: any) => ({
+        ...prev,
+        ...statusData
+      }));
+    },
+    onComplete: (statusData) => {
       fetchData();
-      setPollCount(c => c + 1);
-    }, 2000); // Poll cada 2s mientras está pending
-
-    return () => clearTimeout(pollTimer);
-  }, [audit?.status, fetchData, pollCount, auditId, pollingTimeout]);
+    },
+    onError: (error) => {
+      console.error('SSE error:', error);
+    }
+  });
 
   if (loading) {
     return (
@@ -108,15 +181,25 @@ export default function AuditDetailPage() {
   const analyzePageSpeed = async () => {
     setPageSpeedLoading(true);
     try {
+      logger.log('Analyzing PageSpeed...');
       const res = await fetch(`${backendUrl}/api/audits/${auditId}/pagespeed`, {
         method: 'POST',
       });
+      logger.log('PageSpeed response:', res.status);
       if (res.ok) {
         const data = await res.json();
-        setPageSpeedData(data);
+        logger.log('PageSpeed data:', data);
+        // Use data.data if it exists (new backend response structure)
+        setPageSpeedData(data.data || data);
+        alert('✅ PageSpeed analysis completed!');
+      } else {
+        const error = await res.json().catch(() => ({ detail: 'Unknown error' }));
+        console.error('PageSpeed error:', error);
+        alert(`❌ Error: ${error.detail || 'Failed to analyze PageSpeed'}`);
       }
     } catch (err) {
-      console.error(err);
+      console.error('PageSpeed exception:', err);
+      alert(`❌ Error: ${err instanceof Error ? err.message : 'Failed to analyze PageSpeed'}`);
     } finally {
       setPageSpeedLoading(false);
     }
@@ -252,7 +335,7 @@ export default function AuditDetailPage() {
           <AuditProgressIndicator
             progress={audit?.progress ?? 0}
             status={audit?.status ?? ''}
-            hasTimedOut={pollingTimeout}
+            hasTimedOut={false}
           />
         </div>
 
@@ -262,6 +345,12 @@ export default function AuditDetailPage() {
             <AuditChatFlow
               auditId={parseInt(auditId)}
               onComplete={() => {
+                // Optimistically update status to hide chat and show progress immediately
+                setAudit((prev: any) => ({
+                  ...prev,
+                  status: 'processing',
+                  progress: 1
+                }));
                 // Refresh audit data after configuration
                 fetchData();
               }}
@@ -269,56 +358,70 @@ export default function AuditDetailPage() {
           </div>
         )}
 
-        {/* Stats cards */}
-        {audit?.status === 'completed' && (
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-            <div className="glass-card p-6">
-              <div className="flex items-center gap-3 mb-2 text-muted-foreground">
-                <FileText className="w-4 h-4" />
-                <span className="text-sm font-medium uppercase tracking-wider">Pages</span>
-              </div>
-              <div className="text-3xl font-bold text-foreground">{audit.total_pages}</div>
-            </div>
-            <div className="glass-card p-6">
-              <div className="flex items-center gap-3 mb-2 text-red-400/70">
-                <AlertTriangle className="w-4 h-4" />
-                <span className="text-sm font-medium uppercase tracking-wider">Critical</span>
-              </div>
-              <div className="text-3xl font-bold text-red-400">{audit.critical_issues}</div>
-            </div>
-            <div className="glass-card p-6">
-              <div className="flex items-center gap-3 mb-2 text-orange-400/70">
-                <AlertTriangle className="w-4 h-4" />
-                <span className="text-sm font-medium uppercase tracking-wider">High</span>
-              </div>
-              <div className="text-3xl font-bold text-orange-400">{audit.high_issues}</div>
-            </div>
-            <div className="glass-card p-6">
-              <div className="flex items-center gap-3 mb-2 text-yellow-400/70">
-                <AlertTriangle className="w-4 h-4" />
-                <span className="text-sm font-medium uppercase tracking-wider">Medium</span>
-              </div>
-              <div className="text-3xl font-bold text-yellow-400">{audit.medium_issues}</div>
-            </div>
-          </div>
-        )}
+        <Tabs
+          defaultValue="overview"
+          value={activeTab}
+          onValueChange={(v) => {
+            const nextTab = (v as 'overview' | 'report' | 'fix-plan');
+            setActiveTab(nextTab);
+            if (nextTab === 'report') loadReport();
+            if (nextTab === 'fix-plan') loadFixPlan();
+          }}
+        >
+          <TabsList className="mb-8">
+            <TabsTrigger value="overview">Overview</TabsTrigger>
+            <TabsTrigger value="report">Report</TabsTrigger>
+            <TabsTrigger value="fix-plan">Fix Plan</TabsTrigger>
+          </TabsList>
 
-        {/* PageSpeed COMPLETE Section */}
-        {pageSpeedData && (
-          <div className="glass-card p-8 mb-8">
-            <h2 className="text-2xl font-bold text-foreground mb-6 flex items-center gap-3">
-              <Clock className="w-6 h-6 text-blue-400" />
-              PageSpeed Insights
-            </h2>
+          <TabsContent value="overview">
+            {/* Stats cards */}
+            {audit?.status === 'completed' && (
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+                <div className="glass-card p-6">
+                  <div className="flex items-center gap-3 mb-2 text-muted-foreground">
+                    <FileText className="w-4 h-4" />
+                    <span className="text-sm font-medium uppercase tracking-wider">Pages</span>
+                  </div>
+                  <div className="text-3xl font-bold text-foreground">{audit.total_pages}</div>
+                </div>
+                <div className="glass-card p-6">
+                  <div className="flex items-center gap-3 mb-2 text-red-400/70">
+                    <AlertTriangle className="w-4 h-4" />
+                    <span className="text-sm font-medium uppercase tracking-wider">Critical</span>
+                  </div>
+                  <div className="text-3xl font-bold text-red-400">{audit.critical_issues}</div>
+                </div>
+                <div className="glass-card p-6">
+                  <div className="flex items-center gap-3 mb-2 text-orange-400/70">
+                    <AlertTriangle className="w-4 h-4" />
+                    <span className="text-sm font-medium uppercase tracking-wider">High</span>
+                  </div>
+                  <div className="text-3xl font-bold text-orange-400">{audit.high_issues}</div>
+                </div>
+                <div className="glass-card p-6">
+                  <div className="flex items-center gap-3 mb-2 text-yellow-400/70">
+                    <AlertTriangle className="w-4 h-4" />
+                    <span className="text-sm font-medium uppercase tracking-wider">Medium</span>
+                  </div>
+                  <div className="text-3xl font-bold text-yellow-400">{audit.medium_issues}</div>
+                </div>
+              </div>
+            )}
 
             {(() => {
-              // Helper to get data whether it's flat or nested (mobile/desktop)
-              const psData = pageSpeedData.mobile || (pageSpeedData.performance_score !== undefined ? pageSpeedData : null);
+              const rawData = pageSpeedData?.data || pageSpeedData;
+              const psData = rawData?.mobile || (rawData?.performance_score !== undefined ? rawData : null);
 
-              if (!psData) return <div className="text-muted-foreground">No detailed PageSpeed data available.</div>;
+              if (!psData) return null;
 
               return (
-                <>
+                <div className="glass-card p-8 mb-8">
+                  <h2 className="text-2xl font-bold text-foreground mb-6 flex items-center gap-3">
+                    <Clock className="w-6 h-6 text-blue-400" />
+                    PageSpeed Insights
+                  </h2>
+
                   {/* Category Scores */}
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
                     <div className="bg-muted/50 p-4 rounded-xl border border-border text-center">
@@ -506,11 +609,14 @@ export default function AuditDetailPage() {
                           <div key={idx} className="rounded-lg border border-border overflow-hidden bg-muted/50">
                             <div className="text-[10px] text-muted-foreground p-1 text-center">{(screenshot.timestamp / 1000).toFixed(1)}s</div>
                             {screenshot.data && (
-                              <img
-                                src={screenshot.data}
-                                alt={`Screenshot at ${screenshot.timestamp}ms`}
-                                className="w-full h-auto max-h-24 object-cover object-top"
-                              />
+                              <div className="relative w-full h-24">
+                                <Image
+                                  src={screenshot.data}
+                                  alt={`Screenshot at ${screenshot.timestamp}ms`}
+                                  fill
+                                  className="object-cover object-top"
+                                />
+                              </div>
                             )}
                           </div>
                         ))}
@@ -527,7 +633,6 @@ export default function AuditDetailPage() {
                           if (!audit || !audit.title) return null;
 
                           const isPass = audit.scoreDisplayMode === 'pass';
-                          const isBinary = audit.scoreDisplayMode === 'binary';
                           const score = audit.score !== null && audit.score !== undefined ? audit.score : null;
 
                           return (
@@ -584,397 +689,476 @@ export default function AuditDetailPage() {
                       </div>
                     </div>
                   )}
-                </>
+                </div>
               );
             })()}
-          </div>
-        )}
 
-        {/* Tools Section - COMPLETE */}
-        {audit?.status === 'completed' && (
-          <div className="glass-card p-8 mb-8">
-            <h2 className="text-2xl font-bold text-foreground mb-6">SEO & GEO Tools</h2>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {/* GEO Dashboard */}
-              <button
-                onClick={() => router.push(`/audits/${auditId}/geo`)}
-                className="group glass-panel p-6 rounded-2xl transition-all text-left hover:-translate-y-1"
-              >
-                <div className="flex items-start justify-between mb-3">
-                  <div className="p-3 bg-purple-500/20 rounded-xl">
-                    <Target className="w-6 h-6 text-purple-400" />
-                  </div>
-                  <ExternalLink className="w-5 h-5 text-muted-foreground group-hover:text-foreground transition-colors" />
-                </div>
-                <h3 className="text-lg font-semibold text-foreground mb-2">GEO Dashboard</h3>
-                <p className="text-sm text-muted-foreground">
-                  Citation tracking, query discovery, and LLM optimization
-                </p>
-              </button>
-
-              {/* Keywords Research */}
-              <button
-                onClick={() => router.push(`/audits/${auditId}/keywords`)}
-                className="group glass-panel p-6 rounded-2xl transition-all text-left hover:-translate-y-1"
-              >
-                <div className="flex items-start justify-between mb-3">
-                  <div className="p-3 bg-blue-500/20 rounded-xl">
-                    <Search className="w-6 h-6 text-blue-400" />
-                  </div>
-                  <ExternalLink className="w-5 h-5 text-muted-foreground group-hover:text-foreground transition-colors" />
-                </div>
-                <h3 className="text-lg font-semibold text-foreground mb-2">Keywords Research</h3>
-                <p className="text-sm text-muted-foreground">
-                  Discover and track relevant keywords for your niche
-                </p>
-              </button>
-
-              {/* Backlinks Analysis */}
-              <button
-                onClick={() => router.push(`/audits/${auditId}/backlinks`)}
-                className="group glass-panel p-6 rounded-2xl transition-all text-left hover:-translate-y-1"
-              >
-                <div className="flex items-start justify-between mb-3">
-                  <div className="p-3 bg-green-500/20 rounded-xl">
-                    <LinkIcon className="w-6 h-6 text-green-400" />
-                  </div>
-                  <ExternalLink className="w-5 h-5 text-muted-foreground group-hover:text-foreground transition-colors" />
-                </div>
-                <h3 className="text-lg font-semibold text-foreground mb-2">Backlinks</h3>
-                <p className="text-sm text-muted-foreground">
-                  Analyze your backlink profile and opportunities
-                </p>
-              </button>
-
-              {/* Rank Tracking */}
-              <button
-                onClick={() => router.push(`/audits/${auditId}/rank-tracking`)}
-                className="group glass-panel p-6 rounded-2xl transition-all text-left hover:-translate-y-1"
-              >
-                <div className="flex items-start justify-between mb-3">
-                  <div className="p-3 bg-orange-500/20 rounded-xl">
-                    <TrendingUp className="w-6 h-6 text-orange-400" />
-                  </div>
-                  <ExternalLink className="w-5 h-5 text-muted-foreground group-hover:text-foreground transition-colors" />
-                </div>
-                <h3 className="text-lg font-semibold text-foreground mb-2">Rank Tracking</h3>
-                <p className="text-sm text-muted-foreground">
-                  Monitor your rankings across search engines
-                </p>
-              </button>
-
-              {/* Content Editor */}
-              <button
-                onClick={() => router.push(`/tools/content-editor?url=${encodeURIComponent(audit?.url || '')}`)}
-                className="group glass-panel p-6 rounded-2xl transition-all text-left hover:-translate-y-1"
-              >
-                <div className="flex items-start justify-between mb-3">
-                  <div className="p-3 bg-pink-500/20 rounded-xl">
-                    <Edit className="w-6 h-6 text-pink-400" />
-                  </div>
-                  <ExternalLink className="w-5 h-5 text-muted-foreground group-hover:text-foreground transition-colors" />
-                </div>
-                <h3 className="text-lg font-semibold text-foreground mb-2">Content Editor</h3>
-                <p className="text-sm text-muted-foreground">
-                  AI-powered content optimization for better visibility
-                </p>
-              </button>
-
-              {/* AI Content Suggestions */}
-              <button
-                onClick={() => router.push(`/audits/${auditId}/ai-content`)}
-                className="group glass-panel p-6 rounded-2xl transition-all text-left hover:-translate-y-1"
-              >
-                <div className="flex items-start justify-between mb-3">
-                  <div className="p-3 bg-cyan-500/20 rounded-xl">
-                    <Sparkles className="w-6 h-6 text-cyan-400" />
-                  </div>
-                  <ExternalLink className="w-5 h-5 text-muted-foreground group-hover:text-foreground transition-colors" />
-                </div>
-                <h3 className="text-lg font-semibold text-foreground mb-2">AI Content Ideas</h3>
-                <p className="text-sm text-muted-foreground">
-                  Generate content suggestions based on your audit
-                </p>
-              </button>
-
-              {/* GitHub Auto-Fix */}
-              <Dialog>
-                <DialogTrigger asChild>
-                  <button className="group glass-panel p-6 rounded-2xl transition-all text-left hover:-translate-y-1">
+            {/* Tools Section - COMPLETE */}
+            {audit?.status === 'completed' && (
+              <div className="glass-card p-8 mb-8">
+                <h2 className="text-2xl font-bold text-foreground mb-6">SEO & GEO Tools</h2>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  {/* GEO Dashboard */}
+                  <button
+                    onClick={() => router.push(`/audits/${auditId}/geo`)}
+                    className="group glass-panel p-6 rounded-2xl transition-all text-left hover:-translate-y-1"
+                  >
                     <div className="flex items-start justify-between mb-3">
                       <div className="p-3 bg-purple-500/20 rounded-xl">
-                        <GitPullRequest className="w-6 h-6 text-purple-400" />
+                        <Target className="w-6 h-6 text-purple-400" />
                       </div>
                       <ExternalLink className="w-5 h-5 text-muted-foreground group-hover:text-foreground transition-colors" />
                     </div>
-                    <h3 className="text-lg font-semibold text-foreground mb-2">GitHub Auto-Fix</h3>
+                    <h3 className="text-lg font-semibold text-foreground mb-2">GEO Dashboard</h3>
                     <p className="text-sm text-muted-foreground">
-                      Create Pull Requests with AI-powered SEO/GEO fixes
+                      Citation tracking, query discovery, and LLM optimization
                     </p>
                   </button>
-                </DialogTrigger>
-                <DialogContent className="glass-card border-border sm:max-w-2xl">
-                  <DialogTitle className="text-xl font-bold text-foreground">GitHub Auto-Fix Integration</DialogTitle>
-                  <GitHubIntegration auditId={auditId} auditUrl={audit?.url || ''} />
-                </DialogContent>
-              </Dialog>
 
-              {/* HubSpot Auto-Apply */}
-              <Dialog>
-                <DialogTrigger asChild>
-                  <button className="group glass-panel p-6 rounded-2xl transition-all text-left hover:-translate-y-1">
+                  {/* Keywords Research */}
+                  <button
+                    onClick={() => router.push(`/audits/${auditId}/keywords`)}
+                    className="group glass-panel p-6 rounded-2xl transition-all text-left hover:-translate-y-1"
+                  >
+                    <div className="flex items-start justify-between mb-3">
+                      <div className="p-3 bg-blue-500/20 rounded-xl">
+                        <Search className="w-6 h-6 text-blue-400" />
+                      </div>
+                      <ExternalLink className="w-5 h-5 text-muted-foreground group-hover:text-foreground transition-colors" />
+                    </div>
+                    <h3 className="text-lg font-semibold text-foreground mb-2">Keywords Research</h3>
+                    <p className="text-sm text-muted-foreground">
+                      Discover and track relevant keywords for your niche
+                    </p>
+                  </button>
+
+                  {/* Backlinks Analysis */}
+                  <button
+                    onClick={() => router.push(`/audits/${auditId}/backlinks`)}
+                    className="group glass-panel p-6 rounded-2xl transition-all text-left hover:-translate-y-1"
+                  >
+                    <div className="flex items-start justify-between mb-3">
+                      <div className="p-3 bg-green-500/20 rounded-xl">
+                        <LinkIcon className="w-6 h-6 text-green-400" />
+                      </div>
+                      <ExternalLink className="w-5 h-5 text-muted-foreground group-hover:text-foreground transition-colors" />
+                    </div>
+                    <h3 className="text-lg font-semibold text-foreground mb-2">Backlinks</h3>
+                    <p className="text-sm text-muted-foreground">
+                      Analyze your backlink profile and opportunities
+                    </p>
+                  </button>
+
+                  {/* Rank Tracking */}
+                  <button
+                    onClick={() => router.push(`/audits/${auditId}/rank-tracking`)}
+                    className="group glass-panel p-6 rounded-2xl transition-all text-left hover:-translate-y-1"
+                  >
                     <div className="flex items-start justify-between mb-3">
                       <div className="p-3 bg-orange-500/20 rounded-xl">
-                        <Sparkles className="w-6 h-6 text-orange-400" />
+                        <TrendingUp className="w-6 h-6 text-orange-400" />
                       </div>
                       <ExternalLink className="w-5 h-5 text-muted-foreground group-hover:text-foreground transition-colors" />
                     </div>
-                    <h3 className="text-lg font-semibold text-foreground mb-2">HubSpot Auto-Apply</h3>
+                    <h3 className="text-lg font-semibold text-foreground mb-2">Rank Tracking</h3>
                     <p className="text-sm text-muted-foreground">
-                      Apply SEO/GEO recommendations directly to HubSpot CMS
+                      Monitor your rankings across search engines
                     </p>
                   </button>
-                </DialogTrigger>
-                <DialogContent className="glass-card border-border sm:max-w-2xl">
-                  <DialogTitle className="text-xl font-bold text-foreground">HubSpot Auto-Apply Integration</DialogTitle>
-                  <HubSpotIntegration auditId={auditId} auditUrl={audit?.url || ''} />
-                </DialogContent>
-              </Dialog>
-            </div>
-          </div>
-        )}
 
-        {/* Pages analysis */}
-        <div className="glass-card p-8 mb-8">
-          <h2 className="text-2xl font-bold text-foreground mb-6">Analyzed Pages</h2>
-          <div className="space-y-4">
-            {pages.map((page: any) => {
-              const issues = [] as any[];
-              if (page.audit_data?.structure?.h1_check?.status !== 'pass') {
-                issues.push({ severity: 'critical', msg: 'Missing or multiple H1' });
-              }
-              if (!page.audit_data?.schema?.schema_presence?.status || page.audit_data?.schema?.schema_presence?.status !== 'present') {
-                issues.push({ severity: 'high', msg: 'Missing Schema markup' });
-              }
-              if (page.audit_data?.eeat?.author_presence?.status !== 'pass') {
-                issues.push({ severity: 'high', msg: 'Author not identified' });
-              }
-              if (page.audit_data?.structure?.semantic_html?.score_percent < 50) {
-                issues.push({ severity: 'medium', msg: 'Low semantic HTML score' });
-              }
+                  {/* Content Editor */}
+                  <button
+                    onClick={() => router.push(`/tools/content-editor?url=${encodeURIComponent(audit?.url || '')}`)}
+                    className="group glass-panel p-6 rounded-2xl transition-all text-left hover:-translate-y-1"
+                  >
+                    <div className="flex items-start justify-between mb-3">
+                      <div className="p-3 bg-pink-500/20 rounded-xl">
+                        <Edit className="w-6 h-6 text-pink-400" />
+                      </div>
+                      <ExternalLink className="w-5 h-5 text-muted-foreground group-hover:text-foreground transition-colors" />
+                    </div>
+                    <h3 className="text-lg font-semibold text-foreground mb-2">Content Editor</h3>
+                    <p className="text-sm text-muted-foreground">
+                      AI-powered content optimization for better visibility
+                    </p>
+                  </button>
 
-              return (
-                <div key={page.id} className="glass-panel p-6 rounded-2xl transition-colors">
-                  <div className="flex flex-col md:flex-row justify-between items-start gap-4 mb-4">
-                    <div className="flex-1 min-w-0">
-                      <h3 className="font-semibold text-lg text-foreground truncate">{page.url}</h3>
-                      <p className="text-sm text-muted-foreground truncate">{page.path}</p>
+                  {/* AI Content Suggestions */}
+                  <button
+                    onClick={() => router.push(`/audits/${auditId}/ai-content`)}
+                    className="group glass-panel p-6 rounded-2xl transition-all text-left hover:-translate-y-1"
+                  >
+                    <div className="flex items-start justify-between mb-3">
+                      <div className="p-3 bg-cyan-500/20 rounded-xl">
+                        <Sparkles className="w-6 h-6 text-cyan-400" />
+                      </div>
+                      <ExternalLink className="w-5 h-5 text-muted-foreground group-hover:text-foreground transition-colors" />
                     </div>
-                    <div className="text-right flex-shrink-0">
-                      <div className="text-3xl font-bold text-foreground">{page.overall_score?.toFixed(1) || 0}</div>
-                      <div className="text-xs text-muted-foreground uppercase tracking-wider">Score</div>
-                    </div>
-                  </div>
+                    <h3 className="text-lg font-semibold text-foreground mb-2">AI Content Ideas</h3>
+                    <p className="text-sm text-muted-foreground">
+                      Generate content suggestions based on your audit
+                    </p>
+                  </button>
 
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
-                    <div className="bg-muted/50 p-3 rounded-xl border border-border">
-                      <div className="text-xs text-muted-foreground mb-1">H1</div>
-                      <div className="font-semibold text-foreground">{page.h1_score?.toFixed(0) || 0}</div>
-                    </div>
-                    <div className="bg-muted/50 p-3 rounded-xl border border-border">
-                      <div className="text-xs text-muted-foreground mb-1">Structure</div>
-                      <div className="font-semibold text-foreground">{page.structure_score?.toFixed(0) || 0}</div>
-                    </div>
-                    <div className="bg-muted/50 p-3 rounded-xl border border-border">
-                      <div className="text-xs text-muted-foreground mb-1">Content</div>
-                      <div className="font-semibold text-foreground">{page.content_score?.toFixed(0) || 0}</div>
-                    </div>
-                    <div className="bg-muted/50 p-3 rounded-xl border border-border">
-                      <div className="text-xs text-muted-foreground mb-1">E-E-A-T</div>
-                      <div className="font-semibold text-foreground">{page.eeat_score?.toFixed(0) || 0}</div>
-                    </div>
-                  </div>
-
-                  {issues.length > 0 && (
-                    <div className="space-y-2">
-                      {issues.map((issue, idx) => (
-                        <div
-                          key={idx}
-                          className={`text-sm p-3 rounded-xl border flex items-center gap-2 ${issue.severity === 'critical'
-                            ? 'bg-red-500/10 text-red-200 border-red-500/20'
-                            : issue.severity === 'high'
-                              ? 'bg-orange-500/10 text-orange-200 border-orange-500/20'
-                              : 'bg-yellow-500/10 text-yellow-200 border-yellow-500/20'
-                            }`}
-                        >
-                          <AlertTriangle className="w-4 h-4 flex-shrink-0" />
-                          {issue.msg}
+                  {/* GitHub Auto-Fix */}
+                  <Dialog>
+                    <DialogTrigger asChild>
+                      <button className="group glass-panel p-6 rounded-2xl transition-all text-left hover:-translate-y-1">
+                        <div className="flex items-start justify-between mb-3">
+                          <div className="p-3 bg-purple-500/20 rounded-xl">
+                            <GitPullRequest className="w-6 h-6 text-purple-400" />
+                          </div>
+                          <ExternalLink className="w-5 h-5 text-muted-foreground group-hover:text-foreground transition-colors" />
                         </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </div>
+                        <h3 className="text-lg font-semibold text-foreground mb-2">GitHub Auto-Fix</h3>
+                        <p className="text-sm text-muted-foreground">
+                          Create Pull Requests with AI-powered SEO/GEO fixes
+                        </p>
+                      </button>
+                    </DialogTrigger>
+                    <DialogContent className="glass-card border-border sm:max-w-2xl">
+                      <DialogTitle className="text-xl font-bold text-foreground">GitHub Auto-Fix Integration</DialogTitle>
+                      <GitHubIntegration auditId={auditId} auditUrl={audit?.url || ''} />
+                    </DialogContent>
+                  </Dialog>
 
-        {/* Competitive analysis */}
-        {competitors.length > 0 && (
-          <div className="glass-card p-8 mb-8">
-            <h2 className="text-2xl font-bold text-foreground mb-6">Competitive Analysis</h2>
-            {/* Comparison chart (same SVG as before but styled for dark mode) */}
-            <div className="mb-8 overflow-x-auto">
-              <h3 className="text-lg font-semibold text-foreground/80 mb-4">GEO/SEO Score Comparison</h3>
-              <div className="relative h-80 bg-muted/50 border border-border rounded-2xl p-6 min-w-[600px]">
-                <svg className="w-full h-full" viewBox="0 0 800 300">
-                  {[0, 2, 4, 6, 8, 10].map((val) => (
-                    <g key={val}>
-                      <line x1="60" y1={280 - val * 25} x2="780" y2={280 - val * 25} stroke="rgba(255,255,255,0.1)" strokeWidth="1" />
-                      <text x="40" y={285 - val * 25} fontSize="12" fill="rgba(255,255,255,0.4)">
-                        {val}
-                      </text>
-                    </g>
-                  ))}
-                  {(() => {
-                    const allSites = [
-                      {
-                        name: 'Your Site',
-                        score:
-                          audit.geo_score !== undefined && audit.geo_score !== null
-                            ? audit.geo_score
-                            : (audit.total_pages > 0
-                              ? 10 - (audit.critical_issues * 2 + audit.high_issues) / Math.max(1, audit.total_pages)
-                              : 5),
-                        color: '#a855f7', // Purple
-                      },
-                      ...competitors.slice(0, 5).map((comp: any) => {
-                        const domain = comp.domain || new URL(comp.url).hostname.replace('www.', '');
-                        const geoScore = comp.geo_score || 5;
-                        return { name: domain, score: geoScore, color: '#94a3b8' }; // Slate 400
-                      }),
-                    ];
-                    const spacing = 720 / (allSites.length - 1);
-                    return (
-                      <>
-                        {allSites.map((site, idx) => {
-                          if (idx === allSites.length - 1) return null;
-                          const x1 = 60 + idx * spacing;
-                          const y1 = 280 - site.score * 25;
-                          const x2 = 60 + (idx + 1) * spacing;
-                          const y2 = 280 - allSites[idx + 1].score * 25;
-                          return (
-                            <line
-                              key={`line-${idx}`}
-                              x1={x1}
-                              y1={y1}
-                              x2={x2}
-                              y2={y2}
-                              stroke={site.color}
-                              strokeWidth="2"
-                              strokeOpacity="0.5"
-                            />
-                          );
-                        })}
-                        {allSites.map((site, idx) => {
-                          const x = 60 + idx * spacing;
-                          const y = 280 - site.score * 25;
-                          return (
-                            <g key={`point-${idx}`}>
-                              <circle cx={x} cy={y} r="6" fill={site.color} />
-                              <circle cx={x} cy={y} r="3" fill="#000" />
-                              <text
-                                x={x}
-                                y="295"
-                                fontSize="11"
-                                fill="rgba(255,255,255,0.7)"
-                                textAnchor="middle"
-                                transform={`rotate(-45, ${x}, 295)`}
-                              >
-                                {site.name.length > 15 ? site.name.substring(0, 15) + '...' : site.name}
-                              </text>
-                              <text x={x} y={y - 12} fontSize="12" fontWeight="bold" fill={site.color} textAnchor="middle">
-                                {site.score.toFixed(1)}
-                              </text>
-                            </g>
-                          );
-                        })}
-                      </>
-                    );
-                  })()}
-                </svg>
+                  {/* HubSpot Auto-Apply */}
+                  <Dialog>
+                    <DialogTrigger asChild>
+                      <button className="group glass-panel p-6 rounded-2xl transition-all text-left hover:-translate-y-1">
+                        <div className="flex items-start justify-between mb-3">
+                          <div className="p-3 bg-orange-500/20 rounded-xl">
+                            <Sparkles className="w-6 h-6 text-orange-400" />
+                          </div>
+                          <ExternalLink className="w-5 h-5 text-muted-foreground group-hover:text-foreground transition-colors" />
+                        </div>
+                        <h3 className="text-lg font-semibold text-foreground mb-2">HubSpot Auto-Apply</h3>
+                        <p className="text-sm text-muted-foreground">
+                          Apply SEO/GEO recommendations directly to HubSpot CMS
+                        </p>
+                      </button>
+                    </DialogTrigger>
+                    <DialogContent className="glass-card border-border sm:max-w-2xl">
+                      <DialogTitle className="text-xl font-bold text-foreground">HubSpot Auto-Apply Integration</DialogTitle>
+                      <HubSpotIntegration auditId={auditId} auditUrl={audit?.url || ''} />
+                    </DialogContent>
+                  </Dialog>
+                </div>
+              </div>
+            )}
+
+            {/* Pages analysis */}
+            <div className="glass-card p-8 mb-8">
+              <h2 className="text-2xl font-bold text-foreground mb-6">Analyzed Pages</h2>
+              <div className="space-y-4">
+                {pages.map((page: any) => {
+                  const issues = [] as any[];
+                  if (page.audit_data?.structure?.h1_check?.status !== 'pass') {
+                    issues.push({ severity: 'critical', msg: 'Missing or multiple H1' });
+                  }
+                  if (!page.audit_data?.schema?.schema_presence?.status || page.audit_data?.schema?.schema_presence?.status !== 'present') {
+                    issues.push({ severity: 'high', msg: 'Missing Schema markup' });
+                  }
+                  if (page.audit_data?.eeat?.author_presence?.status !== 'pass') {
+                    issues.push({ severity: 'high', msg: 'Author not identified' });
+                  }
+                  if (page.audit_data?.structure?.semantic_html?.score_percent < 50) {
+                    issues.push({ severity: 'medium', msg: 'Low semantic HTML score' });
+                  }
+
+                  return (
+                    <div key={page.id} className="glass-panel p-6 rounded-2xl transition-colors">
+                      <div className="flex flex-col md:flex-row justify-between items-start gap-4 mb-4">
+                        <div className="flex-1 min-w-0">
+                          <h3 className="font-semibold text-lg text-foreground truncate">{page.url}</h3>
+                          <p className="text-sm text-muted-foreground truncate">{page.path}</p>
+                        </div>
+                        <div className="text-right flex-shrink-0">
+                          <div className="text-3xl font-bold text-foreground">{page.overall_score?.toFixed(1) || 0}</div>
+                          <div className="text-xs text-muted-foreground uppercase tracking-wider">Score</div>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+                        <div className="bg-muted/50 p-3 rounded-xl border border-border">
+                          <div className="text-xs text-muted-foreground mb-1">H1</div>
+                          <div className="font-semibold text-foreground">{page.h1_score?.toFixed(0) || 0}</div>
+                        </div>
+                        <div className="bg-muted/50 p-3 rounded-xl border border-border">
+                          <div className="text-xs text-muted-foreground mb-1">Structure</div>
+                          <div className="font-semibold text-foreground">{page.structure_score?.toFixed(0) || 0}</div>
+                        </div>
+                        <div className="bg-muted/50 p-3 rounded-xl border border-border">
+                          <div className="text-xs text-muted-foreground mb-1">Content</div>
+                          <div className="font-semibold text-foreground">{page.content_score?.toFixed(0) || 0}</div>
+                        </div>
+                        <div className="bg-muted/50 p-3 rounded-xl border border-border">
+                          <div className="text-xs text-muted-foreground mb-1">E-E-A-T</div>
+                          <div className="font-semibold text-foreground">{page.eeat_score?.toFixed(0) || 0}</div>
+                        </div>
+                      </div>
+
+                      {issues.length > 0 && (
+                        <div className="space-y-2">
+                          {issues.map((issue, idx) => (
+                            <div
+                              key={idx}
+                              className={`text-sm p-3 rounded-xl border flex items-center gap-2 ${issue.severity === 'critical'
+                                ? 'bg-red-500/10 text-red-200 border-red-500/20'
+                                : issue.severity === 'high'
+                                  ? 'bg-orange-500/10 text-orange-200 border-orange-500/20'
+                                  : 'bg-yellow-500/10 text-yellow-200 border-yellow-500/20'
+                                }`}
+                            >
+                              <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+                              {issue.msg}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             </div>
-            {/* Detailed comparison table */}
-            <div className="overflow-x-auto">
-              <h3 className="text-lg font-semibold text-foreground/80 mb-4">Detailed Benchmark</h3>
-              <table className="w-full text-sm text-left">
-                <thead>
-                  <tr className="border-b border-border text-muted-foreground">
-                    <th className="p-4 font-medium">Website</th>
-                    <th className="text-center p-4 font-medium">GEO Score</th>
-                    <th className="text-center p-4 font-medium">Schema</th>
-                    <th className="text-center p-4 font-medium">Semantic HTML</th>
-                    <th className="text-center p-4 font-medium">E-E-A-T</th>
-                    <th className="text-center p-4 font-medium">H1</th>
-                    <th className="text-center p-4 font-medium">Tone</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border">
-                  {/* Your site row */}
-                  <tr className="bg-muted/30">
-                    <td className="p-4 font-semibold text-foreground">
-                      <div className="flex items-center gap-2">
-                        <span className="w-2 h-2 bg-purple-500 rounded-full shadow-[0_0_10px_rgba(168,85,247,0.5)]" />
-                        Your Site
-                      </div>
-                    </td>
-                    <td className="text-center p-4 font-bold text-purple-400">
+
+            {/* Competitive analysis */}
+            {competitors.length > 0 && (
+              <div className="glass-card p-8 mb-8">
+                <h2 className="text-2xl font-bold text-foreground mb-6">Competitive Analysis</h2>
+                {/* Comparison chart (same SVG as before but styled for dark mode) */}
+                <div className="mb-8 overflow-x-auto">
+                  <h3 className="text-lg font-semibold text-foreground/80 mb-4">GEO/SEO Score Comparison</h3>
+                  <div className="relative h-80 bg-muted/50 border border-border rounded-2xl p-6 min-w-[600px]">
+                    <svg className="w-full h-full" viewBox="0 0 800 300">
+                      {[0, 20, 40, 60, 80, 100].map((val) => (
+                        <g key={val}>
+                          <line x1="60" y1={280 - val * 2.5} x2="780" y2={280 - val * 2.5} stroke="rgba(255,255,255,0.1)" strokeWidth="1" />
+                          <text x="40" y={285 - val * 2.5} fontSize="12" fill="rgba(255,255,255,0.4)">
+                            {val}
+                          </text>
+                        </g>
+                      ))}
                       {(() => {
-                        if (audit.geo_score !== undefined && audit.geo_score !== null) {
-                          return audit.geo_score.toFixed(1);
-                        }
-                        const comp = audit.comparative_analysis;
-                        if (comp?.scores?.[0]) {
-                          return comp.scores[0].scores.total.toFixed(1);
-                        }
-                        return (10 - (audit.critical_issues * 2 + audit.high_issues) / Math.max(1, audit.total_pages)).toFixed(1);
+                        const allSites = [
+                          {
+                            name: 'Your Site',
+                            score:
+                              audit.geo_score !== undefined && audit.geo_score !== null
+                                ? audit.geo_score
+                                : (audit.total_pages > 0
+                                  ? 100 - (audit.critical_issues * 2 + audit.high_issues) * 10 / Math.max(1, audit.total_pages)
+                                  : 50),
+                            color: '#a855f7', // Purple
+                          },
+                          ...competitors.slice(0, 5).map((comp: any) => {
+                            const domain = comp.domain || new URL(comp.url).hostname.replace('www.', '');
+                            const geoScore = comp.geo_score || 50;
+                            return { name: domain, score: geoScore, color: '#94a3b8' }; // Slate 400
+                          }),
+                        ];
+                        const spacing = 720 / (allSites.length - 1);
+                        return (
+                          <>
+                            {allSites.map((site, idx) => {
+                              if (idx === allSites.length - 1) return null;
+                              const x1 = 60 + idx * spacing;
+                              const y1 = 280 - site.score * 2.5;
+                              const x2 = 60 + (idx + 1) * spacing;
+                              const y2 = 280 - allSites[idx + 1].score * 2.5;
+                              return (
+                                <line
+                                  key={`line-${idx}`}
+                                  x1={x1}
+                                  y1={y1}
+                                  x2={x2}
+                                  y2={y2}
+                                  stroke={site.color}
+                                  strokeWidth="2"
+                                  strokeOpacity="0.5"
+                                />
+                              );
+                            })}
+                            {allSites.map((site, idx) => {
+                              const x = 60 + idx * spacing;
+                              const y = 280 - site.score * 2.5;
+                              return (
+                                <g key={`point-${idx}`}>
+                                  <circle cx={x} cy={y} r="6" fill={site.color} />
+                                  <circle cx={x} cy={y} r="3" fill="#000" />
+                                  <text
+                                    x={x}
+                                    y="295"
+                                    fontSize="11"
+                                    fill="rgba(255,255,255,0.7)"
+                                    textAnchor="middle"
+                                    transform={`rotate(-45, ${x}, 295)`}
+                                  >
+                                    {site.name.length > 15 ? site.name.substring(0, 15) + '...' : site.name}
+                                  </text>
+                                  <text x={x} y={y - 12} fontSize="12" fontWeight="bold" fill={site.color} textAnchor="middle">
+                                    {site.score.toFixed(1)}
+                                  </text>
+                                </g>
+                              );
+                            })}
+                          </>
+                        );
                       })()}
-                    </td>
-                    <td className="text-center p-4 text-foreground/70">{audit.target_audit?.schema?.schema_presence?.status === 'present' ? '✓' : '✗'}</td>
-                    <td className="text-center p-4 text-foreground/70">{audit.target_audit?.structure?.semantic_html?.score_percent?.toFixed(0) || 'N/A'}%</td>
-                    <td className="text-center p-4 text-foreground/70">{audit.target_audit?.eeat?.author_presence?.status === 'pass' ? '✓' : '✗'}</td>
-                    <td className="text-center p-4 text-foreground/70">{audit.target_audit?.structure?.h1_check?.status === 'pass' ? '✓' : '✗'}</td>
-                    <td className="text-center p-4 text-foreground/70">{audit.target_audit?.content?.conversational_tone?.score || 0}/10</td>
-                  </tr>
-                  {/* Competitor rows */}
-                  {competitors.map((comp: any, idx: number) => {
-                    const domain = new URL(comp.url).hostname.replace('www.', '');
-                    return (
-                      <tr key={idx} className="hover:bg-muted/20 transition-colors">
-                        <td className="p-4 text-muted-foreground">
+                    </svg>
+                  </div>
+                </div>
+                {/* Detailed comparison table */}
+                <div className="overflow-x-auto">
+                  <h3 className="text-lg font-semibold text-foreground/80 mb-4">Detailed Benchmark</h3>
+                  <table className="w-full text-sm text-left">
+                    <thead>
+                      <tr className="border-b border-border text-muted-foreground">
+                        <th className="p-4 font-medium">Website</th>
+                        <th className="text-center p-4 font-medium">GEO Score</th>
+                        <th className="text-center p-4 font-medium">Schema</th>
+                        <th className="text-center p-4 font-medium">Semantic HTML</th>
+                        <th className="text-center p-4 font-medium">E-E-A-T</th>
+                        <th className="text-center p-4 font-medium">H1</th>
+                        <th className="text-center p-4 font-medium">Tone</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border">
+                      {/* Your site row */}
+                      <tr className="bg-muted/30">
+                        <td className="p-4 font-semibold text-foreground">
                           <div className="flex items-center gap-2">
-                            <span className="w-2 h-2 bg-slate-500 rounded-full" />
-                            <a href={comp.url} target="_blank" rel="noopener noreferrer" className="hover:text-foreground hover:underline">
-                              {domain}
-                            </a>
+                            <span className="w-2 h-2 bg-purple-500 rounded-full shadow-[0_0_10px_rgba(168,85,247,0.5)]" />
+                            Your Site
                           </div>
                         </td>
-                        <td className="text-center p-4 font-bold text-foreground/90">{comp.geo_score?.toFixed(1) || '5.0'}</td>
-                        <td className="text-center p-4 text-muted-foreground">{comp.schema_present ? '✓' : '✗'}</td>
-                        <td className="text-center p-4 text-muted-foreground">{comp.structure_score?.toFixed(0) || 'N/A'}%</td>
-                        <td className="text-center p-4 text-muted-foreground">{comp.eeat_score?.toFixed(0) || 'N/A'}</td>
-                        <td className="text-center p-4 text-muted-foreground">{comp.h1_present ? '✓' : '✗'}</td>
-                        <td className="text-center p-4 text-muted-foreground">{comp.tone_score?.toFixed(0) || '0'}</td>
+                        <td className="text-center p-4 font-bold text-purple-400">
+                          {(() => {
+                            if (audit.geo_score !== undefined && audit.geo_score !== null) {
+                              return audit.geo_score.toFixed(1);
+                            }
+                            const comp = audit.comparative_analysis;
+                            if (comp?.scores?.[0]) {
+                              return comp.scores[0].scores.total.toFixed(1);
+                            }
+                            return (100 - (audit.critical_issues * 2 + audit.high_issues) * 10 / Math.max(1, audit.total_pages)).toFixed(1);
+                          })()}
+                        </td>
+                        <td className="text-center p-4 text-foreground/70">{audit.target_audit?.schema?.schema_presence?.status === 'present' ? '✓' : '✗'}</td>
+                        <td className="text-center p-4 text-foreground/70">{audit.target_audit?.structure?.semantic_html?.score_percent?.toFixed(0) || 'N/A'}%</td>
+                        <td className="text-center p-4 text-foreground/70">{audit.target_audit?.eeat?.author_presence?.status === 'pass' ? '✓' : '✗'}</td>
+                        <td className="text-center p-4 text-foreground/70">{audit.target_audit?.structure?.h1_check?.status === 'pass' ? '✓' : '✗'}</td>
+                        <td className="text-center p-4 text-foreground/70">{audit.target_audit?.content?.conversational_tone?.score || 0}/10</td>
                       </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+                      {/* Competitor rows */}
+                      {competitors.map((comp: any, idx: number) => {
+                        const domain = new URL(comp.url).hostname.replace('www.', '');
+                        return (
+                          <tr key={idx} className="hover:bg-muted/20 transition-colors">
+                            <td className="p-4 text-muted-foreground">
+                              <div className="flex items-center gap-2">
+                                <span className="w-2 h-2 bg-slate-500 rounded-full" />
+                                <a href={comp.url} target="_blank" rel="noopener noreferrer" className="hover:text-foreground hover:underline">
+                                  {domain}
+                                </a>
+                              </div>
+                            </td>
+                            <td className="text-center p-4 font-bold text-foreground/90">{comp.geo_score?.toFixed(1) || '5.0'}</td>
+                            <td className="text-center p-4 text-muted-foreground">{comp.schema_present ? '✓' : '✗'}</td>
+                            <td className="text-center p-4 text-muted-foreground">{comp.structure_score?.toFixed(0) || 'N/A'}%</td>
+                            <td className="text-center p-4 text-muted-foreground">{comp.eeat_score?.toFixed(0) || 'N/A'}</td>
+                            <td className="text-center p-4 text-muted-foreground">{comp.h1_present ? '✓' : '✗'}</td>
+                            <td className="text-center p-4 text-muted-foreground">{comp.tone_score?.toFixed(0) || '0'}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </TabsContent>
+
+          <TabsContent value="report">
+            <div className="glass-card p-8">
+              <div className="flex items-center justify-between gap-4 mb-6">
+                <h2 className="text-2xl font-bold text-foreground flex items-center gap-3">
+                  <FileText className="w-6 h-6 text-blue-400" />
+                  Report (Markdown)
+                </h2>
+                <Button variant="outline" onClick={() => { setReportMarkdown(null); loadReport(); }}>
+                  <RefreshCw className="h-4 w-4 mr-2" />
+                  Reload
+                </Button>
+              </div>
+
+              {reportLoading ? (
+                <div className="flex items-center gap-2 text-muted-foreground">
+                  <RefreshCw className="h-4 w-4 animate-spin" />
+                  Loading report...
+                </div>
+              ) : (
+                <pre className="whitespace-pre-wrap break-words text-sm bg-muted/40 border border-border rounded-xl p-4 overflow-auto max-h-[70vh]">
+                  {reportMarkdown || 'No report available.'}
+                </pre>
+              )}
             </div>
-          </div>
-        )}
+          </TabsContent>
+
+          <TabsContent value="fix-plan">
+            <div className="glass-card p-8">
+              <div className="flex items-center justify-between gap-4 mb-6">
+                <h2 className="text-2xl font-bold text-foreground flex items-center gap-3">
+                  <Target className="w-6 h-6 text-purple-400" />
+                  Fix Plan
+                </h2>
+                <Button variant="outline" onClick={() => { setFixPlan(null); loadFixPlan(); }}>
+                  <RefreshCw className="h-4 w-4 mr-2" />
+                  Reload
+                </Button>
+              </div>
+
+              {fixPlanLoading ? (
+                <div className="flex items-center gap-2 text-muted-foreground">
+                  <RefreshCw className="h-4 w-4 animate-spin" />
+                  Loading fix plan...
+                </div>
+              ) : (fixPlan && fixPlan.length > 0) ? (
+                <div className="space-y-3">
+                  {fixPlan.map((item: any, idx: number) => (
+                    <div key={idx} className="bg-muted/40 border border-border rounded-xl p-4">
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="min-w-0">
+                          <div className="text-sm font-semibold text-foreground">
+                            {item?.title || item?.issue || `Fix #${idx + 1}`}
+                          </div>
+                          {item?.description && (
+                            <div className="text-sm text-muted-foreground mt-1 whitespace-pre-wrap break-words">
+                              {item.description}
+                            </div>
+                          )}
+                        </div>
+                        {item?.priority && (
+                          <span className="text-xs px-2 py-1 rounded-full border border-border text-muted-foreground capitalize">
+                            {item.priority}
+                          </span>
+                        )}
+                      </div>
+                      {(item?.files || item?.recommendations || item?.steps) && (
+                        <pre className="mt-3 text-xs bg-muted/30 border border-border rounded-lg p-3 overflow-auto">
+                          {JSON.stringify({ files: item.files, recommendations: item.recommendations, steps: item.steps }, null, 2)}
+                        </pre>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-muted-foreground">No fix plan available.</div>
+              )}
+            </div>
+          </TabsContent>
+        </Tabs>
       </main>
-    </div>
+    </div >
   );
 }

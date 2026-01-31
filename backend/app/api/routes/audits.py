@@ -8,7 +8,7 @@ from pydantic import BaseModel
 
 from app.core.database import get_db
 from app.core.config import settings
-from app.models import Audit, AuditStatus
+from app.models import Audit, AuditStatus, Competitor
 from app.schemas import AuditCreate, AuditResponse, AuditSummary, AuditConfigRequest, ChatMessage
 from app.services.audit_service import AuditService
 # from app.services.github_service import GitHubService # Deprecated - now using app.integrations.github
@@ -18,7 +18,7 @@ from app.services.pipeline_service import PipelineService
 from app.services.audit_local_service import AuditLocalService
 from app.core.logger import get_logger
 
-from app.core.llm_client import call_gemini_api
+from app.core.llm_client import call_kimi_api
 
 # Importar la tarea de Celery
 from app.workers.tasks import run_audit_task
@@ -26,6 +26,7 @@ from app.workers.tasks import run_audit_task
 logger = get_logger(__name__)
 
 router = APIRouter(
+    prefix="/audits",
     tags=["audits"],
     responses={404: {"description": "No encontrado"}},
 )
@@ -34,7 +35,7 @@ router = APIRouter(
 async def run_audit_sync(audit_id: int):
     """
     Función auxiliar para ejecutar auditoría de forma síncrona como fallback.
-    NOTE: PageSpeed is NOT run here. It's executed on-demand when user requests PDF.
+    PageSpeed is NOT run here - it's executed on-demand when user requests it.
     """
     from app.core.llm_kimi import get_llm_function
     from app.core.database import SessionLocal
@@ -53,11 +54,8 @@ async def run_audit_sync(audit_id: int):
             logger.error(f"Audit {audit_id} not found")
             return
         
-        # NOTE: PageSpeed NOT collected here - it runs when user generates PDF
-        pagespeed_data = None
-        
-        # Load complete audit context (keywords, backlinks, rankings, etc.)
-        additional_context = PipelineService.load_audit_context(db, audit_id)
+        # PageSpeed NOT collected here - runs on-demand only.
+        logger.info("PageSpeed skipped - will run on-demand when user requests it")
         
         # Ejecutar pipeline
         llm_function = get_llm_function()
@@ -68,17 +66,16 @@ async def run_audit_sync(audit_id: int):
         if not target_audit_result:
             raise Exception("Local audit failed to produce results.")
         
-        result = await PipelineService.run_complete_audit(
+        from app.services.pipeline_service import run_initial_audit
+        result = await run_initial_audit(
             url=str(audit.url),
             target_audit=target_audit_result,
             audit_id=audit_id,
-            pagespeed_data=pagespeed_data,
-            additional_context=additional_context,
-            crawler_service=None,
-            audit_local_service=None,
             llm_function=llm_function,
             google_api_key=settings.GOOGLE_API_KEY,
             google_cx_id=settings.CSE_ID,
+            crawler_service=CrawlerService.crawl_site,
+            audit_local_service=AuditLocalService.run_local_audit,
         )
         
         # Guardar resultados
@@ -89,7 +86,7 @@ async def run_audit_sync(audit_id: int):
         search_results = result.get("search_results", {})
         competitor_audits = result.get("competitor_audits", [])
         
-        AuditService.set_audit_results(
+        await AuditService.set_audit_results(
             db=db,
             audit_id=audit_id,
             target_audit=target_audit,
@@ -98,7 +95,7 @@ async def run_audit_sync(audit_id: int):
             competitor_audits=competitor_audits,
             report_markdown=report_markdown,
             fix_plan=fix_plan,
-            pagespeed_data=pagespeed_data,
+            pagespeed_data=None, # Not collected during initial audit
         )
         
         AuditService.update_audit_progress(
@@ -120,21 +117,14 @@ async def run_audit_sync(audit_id: int):
         db.close()
 
 
-@router.post("", response_model=AuditResponse, status_code=status.HTTP_202_ACCEPTED)
-async def create_audit(
+async def _create_audit_internal(
     audit_create: AuditCreate,
     response: Response,
     background_tasks: BackgroundTasks,
-    db: Session = Depends(get_db),
+    db: Session,
 ):
     """
-    Crea auditoría. Si tiene competitors/market, inicia pipeline.
-    Si no, solo crea registro (espera configuración de chat).
-    
-    NOTE: PageSpeed is NOT collected here. It runs when user:
-    - Clicks "Analyze PageSpeed" button
-    - Generates the full PDF report
-    This keeps audit creation fast and responsive.
+    Función interna para crear auditoría.
     """
     audit = AuditService.create_audit(db, audit_create)
 
@@ -150,11 +140,34 @@ async def create_audit(
     else:
         logger.info(f"Audit {audit.id} created, waiting for chat config")
 
-    response.headers["Location"] = f"/audits/{audit.id}"
+    response.headers["Location"] = f"/api/audits/{audit.id}"
     return audit
 
 
-@router.get("", response_model=List[AuditSummary])
+@router.post("", response_model=AuditResponse, status_code=status.HTTP_202_ACCEPTED, include_in_schema=False)
+@router.post("/", response_model=AuditResponse, status_code=status.HTTP_202_ACCEPTED)
+async def create_audit(
+    audit_create: AuditCreate,
+    response: Response,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+):
+    """
+    Crea auditoría. Si tiene competitors/market, inicia pipeline.
+    Si no, solo crea registro (espera configuración de chat).
+    
+    NOTE: PageSpeed is NOT collected here. It runs when user:
+    - Clicks "Analyze PageSpeed" button
+    - Generates the full PDF report
+    This keeps audit creation fast and responsive.
+    
+    Acepta tanto /api/audits como /api/audits/ para evitar redirecciones 307.
+    """
+    return await _create_audit_internal(audit_create, response, background_tasks, db)
+
+
+@router.get("", response_model=List[AuditSummary], include_in_schema=False)
+@router.get("/", response_model=List[AuditSummary])
 def list_audits(
     db: Session = Depends(get_db),
     skip: int = 0,
@@ -169,33 +182,34 @@ def list_audits(
     return audits
 
 
-@router.get("/{audit_id}", response_model=AuditResponse)
-def get_audit(audit_id: int, db: Session = Depends(get_db)):
+@router.get("/{audit_id}/status", response_model=AuditSummary)
+@router.get("/{audit_id}/progress", response_model=AuditSummary)
+def get_audit_status(audit_id: int, db: Session = Depends(get_db)):
     """
-    Get audit details WITHOUT triggering PageSpeed analysis.
-    
-    This endpoint loads quickly and returns cached PageSpeed data if available.
-    Frontend should display "Run PageSpeed" button if data is missing.
-    
-    Response includes:
-    - pagespeed_available: boolean flag indicating if PageSpeed data exists
-    - pagespeed_stale: boolean flag indicating if cached data is >24 hours old
+    Get lightweight audit status for polling.
+    Only returns id, url, status, progress, geo_score, and total_pages.
     """
-    from app.services.pdf_service import PDFService
-    
     audit = AuditService.get_audit(db, audit_id)
     if not audit:
         raise HTTPException(status_code=404, detail="Auditoría no encontrada")
+    return audit
+
+
+@router.get("/{audit_id}", response_model=AuditResponse)
+def get_audit(audit_id: int, db: Session = Depends(get_db)):
+    """
+    Get audit details WITHOUT triggering PageSpeed or GEO tools.
     
+    This endpoint loads quickly and returns basic audit information and fix plan.
+    Frontend should display "Generate PDF" for full analysis.
+    """
+    audit = AuditService.get_audit(db, audit_id)
+    if not audit:
+        raise HTTPException(status_code=404, detail="Auditoría no encontrada")
+        
     # Load audited pages (fast operation)
     pages = AuditService.get_audited_pages(db, audit_id)
     audit.pages = pages
-    
-    # Add PageSpeed availability flags (NO PageSpeed trigger)
-    audit.pagespeed_available = audit.pagespeed_data is not None and bool(audit.pagespeed_data)
-    audit.pagespeed_stale = PDFService._is_pagespeed_stale(audit.pagespeed_data) if audit.pagespeed_data else True
-    
-    logger.info(f"Audit {audit_id} loaded (PageSpeed available: {audit.pagespeed_available}, stale: {audit.pagespeed_stale})")
     
     return audit
 
@@ -332,9 +346,10 @@ def get_page_details(audit_id: int, page_id: int, db: Session = Depends(get_db))
 
 
 @router.get("/{audit_id}/competitors", response_model=list)
-def get_competitors(audit_id: int, db: Session = Depends(get_db)):
+def get_competitors(audit_id: int, limit: int = 10, db: Session = Depends(get_db)):
     """
     Obtiene datos de competidores de una auditoría con GEO scores calculados.
+    Limitado a 10 por defecto para evitar memory issues.
     """
     from app.services.audit_service import CompetitorService
     
@@ -348,8 +363,10 @@ def get_competitors(audit_id: int, db: Session = Depends(get_db)):
             detail="La auditoría aún no está completada. Los datos de competidores estarán disponibles al finalizar."
         )
     
-    # Obtener competidores de la base de datos
-    competitors_db = CompetitorService.get_competitors(db, audit_id)
+    # Obtener competidores de la base de datos (con límite)
+    competitors_db = db.query(Competitor).filter(
+        Competitor.audit_id == audit_id
+    ).limit(limit).all()
     
     # Si hay competidores en la BD, usarlos
     if competitors_db:
@@ -363,13 +380,12 @@ def get_competitors(audit_id: int, db: Session = Depends(get_db)):
             result.append(formatted)
         return result
     
-    # Fallback: usar competitor_audits del JSON y calcular scores
-    competitors = audit.competitor_audits or []
+    # Fallback: usar competitor_audits del JSON (con límite)
+    competitors = (audit.competitor_audits or [])[:limit]
     result = []
     for comp in competitors:
         if isinstance(comp, dict):
             geo_score = comp.get("geo_score", 0)
-            # Si no tiene score, calcularlo
             if geo_score == 0 or geo_score is None:
                 geo_score = CompetitorService._calculate_geo_score(comp)
             formatted = CompetitorService._format_competitor_data(comp, geo_score)
@@ -379,6 +395,7 @@ def get_competitors(audit_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/{audit_id}/run-pagespeed")
+@router.post("/{audit_id}/pagespeed")
 async def run_pagespeed_analysis(
     audit_id: int,
     strategy: str = "both",
@@ -407,31 +424,44 @@ async def run_pagespeed_analysis(
     
     try:
         logger.info(f"Manual PageSpeed analysis triggered for audit {audit_id}, strategy: {strategy}")
+        logger.info(f"Audit URL: {audit.url}")
+        logger.info(f"API Key present: {bool(settings.GOOGLE_PAGESPEED_API_KEY)}")
         
         if strategy == "both":
             # Run both strategies
+            logger.info("Running mobile analysis...")
             mobile = await PageSpeedService.analyze_url(
                 url=str(audit.url),
                 api_key=settings.GOOGLE_PAGESPEED_API_KEY,
                 strategy="mobile"
             )
-            await asyncio.sleep(3)  # Rate limiting
+            logger.info(f"Mobile analysis completed. Keys: {list(mobile.keys()) if mobile else 'None'}")
+            
+            # Reduced sleep if API key is present
+            sleep_time = 0.5 if settings.GOOGLE_PAGESPEED_API_KEY else 3
+            await asyncio.sleep(sleep_time)
+            
+            logger.info("Running desktop analysis...")
             desktop = await PageSpeedService.analyze_url(
                 url=str(audit.url),
                 api_key=settings.GOOGLE_PAGESPEED_API_KEY,
                 strategy="desktop"
             )
+            logger.info(f"Desktop analysis completed. Keys: {list(desktop.keys()) if desktop else 'None'}")
             pagespeed_data = {"mobile": mobile, "desktop": desktop}
         else:
             # Run single strategy
+            logger.info(f"Running {strategy} analysis...")
             result = await PageSpeedService.analyze_url(
                 url=str(audit.url),
                 api_key=settings.GOOGLE_PAGESPEED_API_KEY,
                 strategy=strategy
             )
+            logger.info(f"{strategy.capitalize()} analysis completed. Keys: {list(result.keys()) if result else 'None'}")
             pagespeed_data = {strategy: result}
         
         # Store complete data in database
+        logger.info(f"Storing PageSpeed data in database...")
         AuditService.set_pagespeed_data(db, audit_id, pagespeed_data)
         
         logger.info(f"PageSpeed analysis completed for audit {audit_id}")
@@ -620,6 +650,14 @@ async def configure_audit_chat(
     if not audit:
         raise HTTPException(status_code=404, detail="Audit not found")
     
+    # Prevenir doble ejecución si ya está en curso
+    if audit.status in [AuditStatus.RUNNING, AuditStatus.COMPLETED]:
+        logger.warning(f"Audit {audit.id} already {audit.status}. Skipping duplicate trigger.")
+        return ChatMessage(
+            role="assistant",
+            content="This audit is already in progress or completed."
+        )
+
     if config.language:
         audit.language = config.language
     if config.competitors:

@@ -9,7 +9,7 @@ from ...integrations.hubspot.auth import HubSpotAuth
 from ...integrations.hubspot.service import HubSpotService
 from ...models.hubspot import HubSpotConnection, HubSpotPage, HubSpotChange
 
-router = APIRouter()
+router = APIRouter(prefix="/hubspot", tags=["hubspot"])
 
 class ConnectRequest(BaseModel):
     code: str
@@ -64,9 +64,18 @@ async def oauth_callback(request: ConnectRequest, db: Session = Depends(get_db))
 
 @router.get("/connections")
 def get_connections(db: Session = Depends(get_db)):
-    """Lista las conexiones activas"""
-    connections = db.query(HubSpotConnection).filter(HubSpotConnection.is_active == True).all()
-    return [{"id": c.id, "portal_id": c.portal_id, "created_at": c.created_at} for c in connections]
+    """Lista conexiones activas de HubSpot"""
+    connections = db.query(HubSpotConnection).filter(
+        HubSpotConnection.is_active == True
+    ).all()
+    
+    return [{
+        "id": c.id,
+        "portal_id": c.portal_id,
+        "created_at": c.created_at,
+        "is_active": c.is_active
+    } for c in connections]
+
 
 @router.post("/sync/{connection_id}")
 async def sync_pages(connection_id: str, db: Session = Depends(get_db)):

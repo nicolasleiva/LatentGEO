@@ -3,7 +3,7 @@ from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
 from app.services.content_editor_service import ContentEditorService
 
-router = APIRouter()
+router = APIRouter(prefix="/tools/content-editor", tags=["content-editor"])
 service = ContentEditorService()
 
 class AnalyzeRequest(BaseModel):
