@@ -281,7 +281,7 @@ IMPORTANT: Return the ENTIRE modified file. Do not truncate.
             response = client.chat.completions.create(
                 model=settings.NV_MODEL_CODE,  # mistralai/devstral-2-123b-instruct-2512
                 messages=[{"role": "user", "content": prompt}],
-                temperature=0.15,  # Low temp for precise code generation
+                temperature=0.0,  # Deterministic output for production
                 top_p=0.95,
                 max_tokens=settings.NV_MAX_TOKENS_CODE,  # 8192
                 seed=42  # Reproducible outputs
@@ -436,7 +436,7 @@ Respond ONLY with valid JSON, no markdown:
             response = client.chat.completions.create(
                 model=settings.NV_MODEL_CODE,  # Devstral para código
                 messages=[{"role": "user", "content": prompt}],
-                temperature=0.15,
+                temperature=0.0,
                 top_p=0.95,
                 max_tokens=300,
                 seed=42

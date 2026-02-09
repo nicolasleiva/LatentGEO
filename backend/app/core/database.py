@@ -50,6 +50,50 @@ def create_all_tables():
     Base.metadata.create_all(bind=engine)
 
 
+def ensure_performance_indexes(engine_ref=None) -> None:
+    """Crea índices críticos si no existen (seguro para re-ejecutar)."""
+    engine_to_use = engine_ref or engine
+    inspector = inspect(engine_to_use)
+    table_names = set(inspector.get_table_names())
+    if not table_names:
+        return
+
+    existing = {
+        table: {idx["name"] for idx in inspector.get_indexes(table)}
+        for table in table_names
+    }
+
+    indexes = [
+        ("idx_audits_user_created", "audits", ["user_email", "created_at DESC"]),
+        ("idx_audits_user_status", "audits", ["user_email", "status"]),
+        ("idx_audited_pages_audit", "audited_pages", ["audit_id"]),
+        ("idx_competitors_audit", "competitors", ["audit_id"]),
+        ("idx_reports_audit_type", "reports", ["audit_id", "report_type"]),
+        ("idx_keywords_audit", "keywords", ["audit_id"]),
+        ("idx_backlinks_audit", "backlinks", ["audit_id"]),
+        ("idx_rank_tracking_audit", "rank_trackings", ["audit_id"]),
+        ("idx_llm_visibility_audit", "llm_visibilities", ["audit_id"]),
+        ("idx_score_history_domain_date", "score_history", ["domain", "recorded_at DESC"]),
+    ]
+
+    dialect = engine_to_use.dialect.name
+
+    def normalize_cols(cols):
+        if dialect == "sqlite":
+            return [c.replace(" DESC", "") for c in cols]
+        return cols
+
+    with engine_to_use.begin() as conn:
+        for idx_name, table, columns in indexes:
+            if table not in table_names:
+                continue
+            if idx_name in existing.get(table, set()):
+                continue
+            cols = normalize_cols(columns)
+            sql = f"CREATE INDEX IF NOT EXISTS {idx_name} ON {table} ({', '.join(cols)})"
+            conn.execute(text(sql))
+
+
 async def init_db():
     """
     Inicializa la base de datos.
@@ -80,6 +124,13 @@ async def init_db():
                             logger.info("[DB] Columna 'source' agregada exitosamente.")
                         except Exception as e:
                             logger.error(f"[DB] Error agregando columna 'source': {e}")
+
+                # Crear índices de performance si faltan
+                try:
+                    ensure_performance_indexes(engine)
+                    logger.info("[DB] Índices de performance verificados/creados.")
+                except Exception as e:
+                    logger.warning(f"[DB] No se pudieron crear índices de performance: {e}")
                 
                 return
         except Exception as e:

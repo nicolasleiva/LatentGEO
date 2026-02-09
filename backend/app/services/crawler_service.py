@@ -15,13 +15,15 @@ Proporciona:
 
 import asyncio
 import aiohttp
+import gzip
 import logging
 import sys
+import xml.etree.ElementTree as ET
 from urllib.parse import urljoin, urlparse, ParseResult
 from bs4 import BeautifulSoup
 import urllib.robotparser
 import re
-from typing import Optional, Set, List
+from typing import Optional, Set, List, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -256,6 +258,158 @@ class CrawlerService:
         return rp
 
     @staticmethod
+    def _parse_sitemap_xml(xml_text: str) -> Tuple[List[str], bool]:
+        """
+        Parsea XML de sitemap.
+
+        Returns:
+            (locs, is_index)
+        """
+        if not xml_text:
+            return [], False
+        try:
+            root = ET.fromstring(xml_text)
+        except Exception:
+            return [], False
+
+        tag = root.tag.lower()
+        is_index = tag.endswith("sitemapindex")
+        locs = []
+        for loc in root.findall(".//{*}loc"):
+            if loc is not None and loc.text:
+                locs.append(loc.text.strip())
+        return locs, is_index
+
+    @staticmethod
+    async def _fetch_text_url(
+        session: aiohttp.ClientSession,
+        url: str,
+        timeout: int = 10,
+        allow_insecure_fallback: bool = True,
+    ) -> Optional[str]:
+        try:
+            async with session.get(url, timeout=aiohttp.ClientTimeout(total=timeout)) as resp:
+                if resp.status != 200:
+                    return None
+                raw = await resp.read()
+                if not raw:
+                    return None
+                encoding = resp.headers.get("Content-Encoding", "").lower()
+                content_type = resp.headers.get("Content-Type", "").lower()
+                if "gzip" in encoding or url.endswith(".gz") or "application/x-gzip" in content_type:
+                    try:
+                        raw = gzip.decompress(raw)
+                    except Exception:
+                        pass
+                try:
+                    return raw.decode(errors="ignore")
+                except Exception:
+                    return None
+        except Exception:
+            if not allow_insecure_fallback:
+                return None
+            try:
+                connector = aiohttp.TCPConnector(ssl=False)
+                headers = session.headers if hasattr(session, "headers") else None
+                async with aiohttp.ClientSession(headers=headers, connector=connector) as insecure_session:
+                    async with insecure_session.get(
+                        url, timeout=aiohttp.ClientTimeout(total=timeout)
+                    ) as resp:
+                        if resp.status != 200:
+                            return None
+                        raw = await resp.read()
+                        if not raw:
+                            return None
+                        encoding = resp.headers.get("Content-Encoding", "").lower()
+                        content_type = resp.headers.get("Content-Type", "").lower()
+                        if "gzip" in encoding or url.endswith(".gz") or "application/x-gzip" in content_type:
+                            try:
+                                raw = gzip.decompress(raw)
+                            except Exception:
+                                pass
+                        try:
+                            return raw.decode(errors="ignore")
+                        except Exception:
+                            return None
+            except Exception:
+                return None
+
+    @staticmethod
+    async def fetch_sitemap_urls(
+        base_url: str,
+        allow_subdomains: bool = False,
+        max_urls: int = 500,
+        mobile_first: bool = True,
+    ) -> List[str]:
+        """
+        Descubre URLs desde sitemaps (robots.txt + sitemap.xml).
+        """
+        urls: List[str] = []
+        if not base_url:
+            return urls
+
+        parsed = urlparse(base_url)
+        if not parsed.scheme or not parsed.hostname:
+            return urls
+
+        base_root = CrawlerService.strip_www(parsed.hostname)
+        if not base_root:
+            return urls
+
+        candidate_sitemaps = set()
+        robots_url = f"{parsed.scheme}://{parsed.hostname}/robots.txt"
+        candidate_sitemaps.add(f"{parsed.scheme}://{parsed.hostname}/sitemap.xml")
+        candidate_sitemaps.add(f"{parsed.scheme}://{parsed.hostname}/sitemap.xml.gz")
+        candidate_sitemaps.add(f"{parsed.scheme}://{parsed.hostname}/sitemap_index.xml")
+        candidate_sitemaps.add(f"{parsed.scheme}://{parsed.hostname}/sitemap_index.xml.gz")
+        candidate_sitemaps.add(f"{parsed.scheme}://{parsed.hostname}/sitemap/sitemap.xml")
+        candidate_sitemaps.add(f"{parsed.scheme}://{parsed.hostname}/sitemap/sitemap-index.xml")
+
+        headers = HEADERS_MOBILE if mobile_first else HEADERS_DESKTOP
+
+        async with aiohttp.ClientSession(headers=headers) as session:
+            robots_text = await CrawlerService._fetch_text_url(
+                session, robots_url, timeout=6, allow_insecure_fallback=True
+            )
+            if robots_text:
+                for line in robots_text.splitlines():
+                    if line.lower().startswith("sitemap:"):
+                        sitemap_url = line.split(":", 1)[-1].strip()
+                        if sitemap_url:
+                            candidate_sitemaps.add(sitemap_url)
+
+            seen_sitemaps = set()
+            while candidate_sitemaps and len(urls) < max_urls:
+                sitemap_url = candidate_sitemaps.pop()
+                if not sitemap_url or sitemap_url in seen_sitemaps:
+                    continue
+                seen_sitemaps.add(sitemap_url)
+
+                xml_text = await CrawlerService._fetch_text_url(
+                    session, sitemap_url, timeout=10, allow_insecure_fallback=True
+                )
+                if not xml_text:
+                    continue
+
+                locs, is_index = CrawlerService._parse_sitemap_xml(xml_text)
+                if is_index:
+                    for loc in locs:
+                        if loc and loc not in seen_sitemaps:
+                            candidate_sitemaps.add(loc)
+                    continue
+
+                for loc in locs:
+                    normalized = CrawlerService.normalize_url(
+                        loc, base_root, allow_subdomains=allow_subdomains
+                    )
+                    if normalized and normalized not in urls:
+                        urls.append(normalized)
+                        if len(urls) >= max_urls:
+                            break
+
+        return urls
+
+    @staticmethod
     async def crawl_site(
         base_url: str,
         max_pages: int = 1000,
@@ -304,9 +458,32 @@ class CrawlerService:
 
             # Descargar robots.txt
             rp = await CrawlerService.fetch_robots(base_url, mobile_first)
+            try:
+                from app.core.config import settings
+
+                respect_robots = getattr(settings, "RESPECT_ROBOTS", False)
+            except Exception:
+                respect_robots = False
 
             await queue.put(start_url)
             visited.add(start_url)
+
+            # Seed con URLs desde sitemap si están disponibles
+            try:
+                sitemap_urls = await CrawlerService.fetch_sitemap_urls(
+                    base_url,
+                    allow_subdomains=allow_subdomains,
+                    max_urls=max_pages,
+                    mobile_first=mobile_first,
+                )
+                for sm_url in sitemap_urls:
+                    if len(visited) >= max_pages:
+                        break
+                    if sm_url not in visited:
+                        visited.add(sm_url)
+                        await queue.put(sm_url)
+            except Exception as e:
+                logger.warning(f"Error obteniendo sitemap para {base_url}: {e}")
 
             logger.info(f"Iniciando rastreo: {base_hostname} (max_pages={max_pages})")
             if callback:
@@ -337,6 +514,13 @@ class CrawlerService:
                         try:
                             # Intento normal
                             try:
+                                if respect_robots and rp and hasattr(rp, "can_fetch"):
+                                    if not rp.can_fetch("*", url):
+                                        logger.debug(f"Bloqueado por robots.txt: {url}")
+                                        if callback:
+                                            callback(url, "blocked")
+                                        continue
+
                                 async with session.get(url, allow_redirects=True) as resp:
                                     if resp.status == 200 and "text/html" in resp.headers.get("content-type", ""):
                                         try:

@@ -1,6 +1,6 @@
 # ------------------------------------------------------------
 # Dockerfile.frontend
-# Multistage build para Next.js + pnpm
+# Multistage build para Next.js + pnpm (standalone)
 # ------------------------------------------------------------
 
 # Etapa: builder - compila la aplicación Next.js
@@ -14,14 +14,20 @@ RUN corepack enable && corepack prepare pnpm@latest --activate
 # Asegurate que el contexto de build contenga la carpeta 'frontend'
 COPY frontend/ ./
 
+# Public envs required at build time (do NOT bake secrets)
+ARG NEXT_PUBLIC_API_URL
+ARG NEXT_PUBLIC_BACKEND_URL
+ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
+ENV NEXT_PUBLIC_BACKEND_URL=$NEXT_PUBLIC_BACKEND_URL
+
 # Indicar que estamos en CI para evitar prompts interactivos durante pnpm install
 ENV CI=true
 
+# Hardening de red para instalaciones más estables en Docker
+RUN printf "fetch-retries=5\nfetch-retry-factor=2\nfetch-retry-mintimeout=10000\nfetch-retry-maxtimeout=120000\n" > /root/.npmrc
+
 # Instalar dependencias (NO usar --production aquí; el build necesita dev deps)
 RUN pnpm install --frozen-lockfile --strict-peer-dependencies=false
-
-# Opcional: listar para debug (descomenta si necesitas inspeccionar la capa)
-# RUN echo ">>> /app" && ls -la /app && echo ">>> /app/node_modules/next/dist/bin" && ls -la /app/node_modules/next/dist/bin || true
 
 # Añadir node_modules/.bin al PATH (formato key=value)
 ENV PATH=/app/node_modules/.bin:$PATH
@@ -35,39 +41,24 @@ RUN pnpm run build
 FROM node:20.9-slim AS runner
 WORKDIR /app
 
-# Habilitar corepack en runtime (por si el start usa pnpm)
-RUN corepack enable && corepack prepare pnpm@latest --activate
-
-# Copiar artefactos desde builder
-COPY --from=builder /app/.next ./.next
-COPY --from=builder /app/public ./public
-COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/package.json ./package.json
-
-# Copiar archivos de configuración necesarios
-COPY --from=builder /app/next.config.mjs ./next.config.mjs
-
 # Crear usuario no-root y cambiar permisos
-RUN addgroup --system --gid 1001 nodejs \
- && adduser --system --uid 1001 nextjs \
- && chown -R nextjs:nodejs /app
+RUN addgroup --system --gid 1001 nodejs  && adduser --system --uid 1001 nextjs
 
-ENV HOME=/app
+# Copiar artefactos standalone
+COPY --from=builder /app/.next/standalone ./
+COPY --from=builder /app/.next/static ./.next/static
+COPY --from=builder /app/public ./public
+
+ENV NODE_ENV=production
+ENV PORT=3000
+ENV HOSTNAME=0.0.0.0
 
 # Cambiar a usuario no-root
 USER nextjs
 
-# Variables de entorno para producción
-ENV NODE_ENV=production
-ENV PORT=3000
-ENV PATH=/app/node_modules/.bin:$PATH
-
 EXPOSE 3000
 
 # Healthcheck simple (ajusta la URL/puerto si usas custom server)
-HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
-  CMD ["node", "-e", "require('http').get('http://localhost:3000', (res) => process.exit(res.statusCode == 200 ? 0 : 1))"]
+HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3   CMD ["node", "-e", "require('http').get('http://localhost:3000/en', (res) => process.exit((res.statusCode >= 200 && res.statusCode < 400) ? 0 : 1)).on('error', () => process.exit(1))"]
 
-# Nota: tu package.json debe tener:
-# "scripts": { "build": "next build", "start": "next start -p $PORT" }
-CMD ["pnpm", "start"]
+CMD ["node", "server.js"]

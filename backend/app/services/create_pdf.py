@@ -17,9 +17,6 @@ import re
 import math
 from datetime import datetime
 
-import logging
-import sys  # Asegúrate que sys esté importado aquí arriba
-
 # --- INICIO DE LA CORRECCIÓN ---
 # Definir FPDF_AVAILABLE para que otros scripts puedan importarlo
 try:
@@ -151,15 +148,15 @@ def clean_string_for_pdf(text):
         "💡": "[IDEA]",
         "🎯": "[OBJETIVO]",
         "🚀": "[COHETE]",
-        "\u251c": "|-", # ├
+        "\u251c": "|-",  # ├
         "\u2500": "-",  # ─
-        "\u2514": "|_", # └
+        "\u2514": "|_",  # └
         "\u2502": "|",  # │
     }
     for old, new in replacements.items():
         text = text.replace(old, new)
-    text = re.sub(r'[\U0001F300-\U0001F9FF]', '', text)
-    
+    text = re.sub(r"[\U0001F300-\U0001F9FF]", "", text)
+
     return (
         text.replace("\r", "")
         .replace("\\r", "")
@@ -409,33 +406,38 @@ class PDFReport(FPDF):
         """Reemplaza caracteres Unicode no soportados por Latin-1."""
         if not isinstance(text, str):
             return str(text)
-        
+
         replacements = {
-            "\u201c": '"', "\u201d": '"',  # comillas curvas
-            "\u2018": "'", "\u2019": "'",  # comillas simples curvas
-            "\u2013": "-", "\u2014": "-",  # guiones
-            "\u2265": ">=", "\u2264": "<=", # mayor/menor igual
-            "\u2026": "...",               # elipsis
-            "\u2022": "-",                 # bullet
-            "\u2265": ">=", "\u2264": "<=", # duplicados por seguridad
+            "\u201c": '"',
+            "\u201d": '"',  # comillas curvas
+            "\u2018": "'",
+            "\u2019": "'",  # comillas simples curvas
+            "\u2013": "-",
+            "\u2014": "-",  # guiones
+            "\u2265": ">=",
+            "\u2264": "<=",  # mayor/menor igual
+            "\u2026": "...",  # elipsis
+            "\u2022": "-",  # bullet
+            "\u2265": ">=",
+            "\u2264": "<=",  # duplicados por seguridad
         }
         for k, v in replacements.items():
             text = text.replace(k, v)
-        
+
         # Fallback final: intentar codificar en latin-1, reemplazando errores
         try:
-            text.encode('latin-1')
+            text.encode("latin-1")
             return text
         except UnicodeEncodeError:
             # Reemplazar caracteres restantes por '?' o similar
-            return text.encode('latin-1', 'replace').decode('latin-1')
+            return text.encode("latin-1", "replace").decode("latin-1")
 
     def write_markdown_text(self, text):
         """Render simple de markdown básico y tablas estilo markdown.
         Mantiene sangrías y márgenes consistentes con la portada y TOC.
         """
         text = clean_string_for_pdf(text or "")
-        
+
         # --- FIX: Sanitizar si no hay fuentes Unicode ---
         if "Roboto" not in self._fonts_added:
             text = self.clean_latin1(text)
@@ -651,7 +653,7 @@ class PDFReport(FPDF):
                                 self.set_x(self.l_margin + 6)
                                 self.multi_cell(0, LINE_HEIGHT, title, 0, "L")
                                 self.ln(1)
-                            
+
                             try:
                                 # Ensure subordinate headings are registered in TOC
                                 link_id = self._add_bookmark_compat(
@@ -660,8 +662,10 @@ class PDFReport(FPDF):
                                 if link_id is not None:
                                     self.set_link(link_id, page=self.page_no())
                             except Exception as e:
-                                logger.debug(f"Error registering sub-heading {title}: {e}")
-                        
+                                logger.debug(
+                                    f"Error registering sub-heading {title}: {e}"
+                                )
+
                         self.set_font(fam, "", BASE_FONT_SIZE)
                     except Exception as e:
                         logger.warning(f"Error rendering heading {title}: {e}")
@@ -686,7 +690,7 @@ class PDFReport(FPDF):
         )
         font_size = 7
         line_height = 3.5  # mm por línea
-        
+
         self.set_font(mono, "", font_size)
         self.set_fill_color(*JSON_BOX_FILL)
         self.set_draw_color(*JSON_BOX_BORDER)
@@ -696,63 +700,62 @@ class PDFReport(FPDF):
             text = json.dumps(data, indent=2, ensure_ascii=False)
         except Exception:
             text = str(data)
-        
+
         text = clean_string_for_pdf(text)
         lines = text.splitlines()
-        
+
         if not lines:
             lines = ["(No data)"]
 
         # Iterar sobre las líneas e imprimir paginando manualmente
         i = 0
         total_lines = len(lines)
-        
+
         while i < total_lines:
             # Calcular espacio disponible en la página actual
             current_y = self.get_y()
             page_height = self.h
             bottom_margin = self.b_margin
             space_left = page_height - bottom_margin - current_y
-            
+
             # Si queda muy poco espacio (menos de 15mm), saltar de página
             # Pero solo si no estamos ya al principio de una página (para evitar bucles)
             if space_left < 15 and current_y > (self.t_margin + 20):
                 self.add_page()
                 current_y = self.get_y()
                 space_left = page_height - bottom_margin - current_y
-            
+
             # Calcular cuántas líneas caben en el espacio restante
             # Restamos 1 línea de margen de seguridad
             lines_that_fit = int(space_left / line_height) - 1
-            
+
             if lines_that_fit <= 0:
                 self.add_page()
                 continue
-                
+
             # Determinar el chunk a imprimir
             end_i = min(i + lines_that_fit, total_lines)
             chunk = lines[i:end_i]
-            
+
             if not chunk:
                 break
-                
+
             chunk_text = "\n".join(chunk)
-            
+
             # Imprimir el bloque
             # Usamos multi_cell. Como ya calculamos que cabe, no debería saltar de página automáticamente
             # salvo error de cálculo menor.
             # FIX: Asegurar posición X en margen izquierdo para evitar error de espacio horizontal
             self.set_x(self.l_margin)
-            self.multi_cell(0, line_height, chunk_text, border=1, fill=True, align='L')
-            
+            self.multi_cell(0, line_height, chunk_text, border=1, fill=True, align="L")
+
             # Avanzar índice
             i = end_i
-            
+
         # Restaurar fuente normal al finalizar
         fam = "Roboto" if "Roboto" in self._fonts_added else "helvetica"
         self.set_font(fam, "", BASE_FONT_SIZE)
         self.ln(5)
-
 
     def write_json_summary_box(self, data, top_n=3, filename_hint=None):
         """Caja resumen de JSON (snippet) en estilo monoespaciado."""
@@ -997,24 +1000,32 @@ def create_comprehensive_pdf(report_folder_path):
         if not os.path.isdir(report_folder_path):
             logger.error("La carpeta no existe: %s", report_folder_path)
             return
-        
+
         # Definir rutas
-        pdf_file_name = f"Reporte_Consolidado_{os.path.basename(report_folder_path)}.pdf"
+        pdf_file_name = (
+            f"Reporte_Consolidado_{os.path.basename(report_folder_path)}.pdf"
+        )
         pdf_file_path = os.path.join(report_folder_path, pdf_file_name)
         md_file = os.path.join(report_folder_path, "ag2_report.md")
         json_fix_plan_file = os.path.join(report_folder_path, "fix_plan.json")
-        json_agg_summary_file = os.path.join(report_folder_path, "aggregated_summary.json")
+        json_agg_summary_file = os.path.join(
+            report_folder_path, "aggregated_summary.json"
+        )
         json_pagespeed_file = os.path.join(report_folder_path, "pagespeed.json")
         json_keywords_file = os.path.join(report_folder_path, "keywords.json")
         json_backlinks_file = os.path.join(report_folder_path, "backlinks.json")
         json_rankings_file = os.path.join(report_folder_path, "rankings.json")
-        json_llm_visibility_file = os.path.join(report_folder_path, "llm_visibility.json")
-        
+        json_llm_visibility_file = os.path.join(
+            report_folder_path, "llm_visibility.json"
+        )
+
         # DEBUG: Logs para páginas
         pages_dir = os.path.join(report_folder_path, "pages")
         page_json_files = sorted(glob.glob(os.path.join(pages_dir, "*.json")))
         logger.info(f"DEBUG: Buscando reportes de páginas en: {pages_dir}")
-        logger.info(f"DEBUG: Encontrados {len(page_json_files)} archivos: {[os.path.basename(f) for f in page_json_files]}")
+        logger.info(
+            f"DEBUG: Encontrados {len(page_json_files)} archivos: {[os.path.basename(f) for f in page_json_files]}"
+        )
 
         # Leer Markdown
         markdown_text = ""
@@ -1035,7 +1046,9 @@ def create_comprehensive_pdf(report_folder_path):
             with open(json_agg_summary_file, "r", encoding="utf-8") as f:
                 agg_summary_data = json.load(f)
         except Exception:
-            logger.warning("No se pudo leer aggregated_summary.json -> se usará diccionario vacío")
+            logger.warning(
+                "No se pudo leer aggregated_summary.json -> se usará diccionario vacío"
+            )
             agg_summary_data = {}
 
         # Leer PageSpeed
@@ -1043,7 +1056,9 @@ def create_comprehensive_pdf(report_folder_path):
             with open(json_pagespeed_file, "r", encoding="utf-8") as f:
                 pagespeed_data = json.load(f)
         except Exception:
-            logger.warning("No se pudo leer pagespeed.json -> se usará diccionario vacío")
+            logger.warning(
+                "No se pudo leer pagespeed.json -> se usará diccionario vacío"
+            )
             pagespeed_data = {}
 
         # Leer Keywords
@@ -1074,16 +1089,22 @@ def create_comprehensive_pdf(report_folder_path):
         except Exception:
             llm_visibility_data = []
 
-        if fix_plan_data is None: fix_plan_data = []
-        if agg_summary_data is None: agg_summary_data = {}
+        if fix_plan_data is None:
+            fix_plan_data = []
+        if agg_summary_data is None:
+            agg_summary_data = {}
 
         # Inicializar PDF
         pdf = PDFReport()
-        
+
         # Datos para portada
         url_base = "N/A"
         try:
-            url_tmp = agg_summary_data.get("url") if isinstance(agg_summary_data, dict) else None
+            url_tmp = (
+                agg_summary_data.get("url")
+                if isinstance(agg_summary_data, dict)
+                else None
+            )
             url_base = (url_tmp or "N/A").replace("SITE-WIDE AGGREGATE: ", "")
         except Exception:
             url_base = "N/A"
@@ -1108,26 +1129,49 @@ def create_comprehensive_pdf(report_folder_path):
             # Fallback (Resumen Ejecutivo)
             pdf.begin_section("Resumen Ejecutivo (Fallback)", level=1)
             try:
-                pages_audited = agg_summary_data.get("audited_pages_count", "N/A") if agg_summary_data else "N/A"
-            except: pages_audited = "N/A"
-            
+                pages_audited = (
+                    agg_summary_data.get("audited_pages_count", "N/A")
+                    if agg_summary_data
+                    else "N/A"
+                )
+            except:
+                pages_audited = "N/A"
+
             summary = summarize_fix_plan(fix_plan_data, top_n=3)
-            pdf.set_font("Roboto" if "Roboto" in pdf._fonts_added else "helvetica", "B", 12)
-            pdf.cell(0, LINE_HEIGHT * 1.8, "Resumen Ejecutivo de Hallazgos", 0, new_x=XPos.LMARGIN, new_y=YPos.NEXT, align="L")
+            pdf.set_font(
+                "Roboto" if "Roboto" in pdf._fonts_added else "helvetica", "B", 12
+            )
+            pdf.cell(
+                0,
+                LINE_HEIGHT * 1.8,
+                "Resumen Ejecutivo de Hallazgos",
+                0,
+                new_x=XPos.LMARGIN,
+                new_y=YPos.NEXT,
+                align="L",
+            )
             pdf.ln(2)
-            
-            pdf.set_font("Roboto" if "Roboto" in pdf._fonts_added else "helvetica", "", BASE_FONT_SIZE)
+
+            pdf.set_font(
+                "Roboto" if "Roboto" in pdf._fonts_added else "helvetica",
+                "",
+                BASE_FONT_SIZE,
+            )
             pdf.multi_cell(0, LINE_HEIGHT, f"Total Páginas Auditadas: {pages_audited}")
             pdf.ln(4)
 
         # --- Análisis PageSpeed ---
-        pagespeed_analysis_file = os.path.join(report_folder_path, "pagespeed_analysis.md")
+        pagespeed_analysis_file = os.path.join(
+            report_folder_path, "pagespeed_analysis.md"
+        )
         if os.path.exists(pagespeed_analysis_file):
             try:
                 with open(pagespeed_analysis_file, "r", encoding="utf-8") as f:
                     ps_analysis = f.read()
                 pdf.add_page()
-                pdf.begin_section("Análisis de Rendimiento (PageSpeed Insights)", level=1)
+                pdf.begin_section(
+                    "Análisis de Rendimiento (PageSpeed Insights)", level=1
+                )
                 pdf.write_markdown_text(ps_analysis)
             except Exception as e:
                 logger.warning(f"Error leyendo análisis PageSpeed: {e}")
@@ -1136,37 +1180,95 @@ def create_comprehensive_pdf(report_folder_path):
         pdf.add_page()
         pdf.begin_section("Anexo C: Plan de Acción (fix_plan.json)", level=1)
         if not fix_plan_data:
-            pdf.set_font("Roboto" if "Roboto" in pdf._fonts_added else "helvetica", "I", 10)
-            pdf.multi_cell(0, 5, "(No se generaron tareas automáticas en el Plan de Acción. Esto puede ocurrir si la auditoría no encontró problemas críticos o si el análisis por IA falló.)")
+            pdf.set_font(
+                "Roboto" if "Roboto" in pdf._fonts_added else "helvetica", "I", 10
+            )
+            pdf.multi_cell(
+                0,
+                5,
+                "(No se generaron tareas automáticas en el Plan de Acción. Esto puede ocurrir si la auditoría no encontró problemas críticos o si el análisis por IA falló.)",
+            )
         else:
             pdf.write_json_raw(fix_plan_data)
 
         # --- Anexo D: Resumen Agregado ---
         pdf.add_page()
-        pdf.begin_section("Anexo D: Resumen Agregado de Datos (aggregated_summary.json)", level=1)
-        pdf.write_json_summary_box(agg_summary_data, top_n=4, filename_hint="aggregated_summary.json")
+        pdf.begin_section(
+            "Anexo D: Resumen Agregado de Datos (aggregated_summary.json)", level=1
+        )
+        pdf.write_json_summary_box(
+            agg_summary_data, top_n=4, filename_hint="aggregated_summary.json"
+        )
 
         # --- Anexo D.1 (PageSpeed) ---
         if pagespeed_data:
             # Extract mobile data if it exists
             mobile_data = pagespeed_data.get("mobile", pagespeed_data)
             if mobile_data:
+                def _format_ms(value):
+                    if value is None:
+                        return "N/A"
+                    if isinstance(value, str):
+                        raw = value.strip().lower()
+                        if not raw:
+                            return "N/A"
+                        is_seconds = False
+                        if raw.endswith("ms"):
+                            raw = raw[:-2]
+                        elif raw.endswith("s"):
+                            raw = raw[:-1]
+                            is_seconds = True
+                        # extract numeric part only
+                        match = re.search(r"[0-9]+(?:[\\.,][0-9]+)?", raw)
+                        if not match:
+                            return value
+                        raw = match.group(0)
+                        # remove thousands separators
+                        raw = raw.replace(",", "")
+                        try:
+                            value = float(raw)
+                            if is_seconds:
+                                value = value * 1000
+                        except Exception:
+                            return value
+                    try:
+                        value_f = float(value)
+                    except Exception:
+                        return value
+                    if value_f <= 0:
+                        return "N/A"
+                    return f"{value_f/1000:.2f}s ({int(round(value_f))} ms)"
+
                 pdf.add_page()
-                pdf.begin_section("Anexo D.1: PageSpeed Insights (pagespeed.json)", level=1)
+                pdf.begin_section(
+                    "Anexo D.1: PageSpeed Insights (pagespeed.json)", level=1
+                )
                 # Renderizar resumen de PageSpeed
                 ps_summary = {
                     "Performance Score": mobile_data.get("performance_score", "N/A"),
-                    "Accessibility Score": mobile_data.get("accessibility_score", "N/A"),
-                    "Best Practices Score": mobile_data.get("best_practices_score", "N/A"),
+                    "Accessibility Score": mobile_data.get(
+                        "accessibility_score", "N/A"
+                    ),
+                    "Best Practices Score": mobile_data.get(
+                        "best_practices_score", "N/A"
+                    ),
                     "SEO Score": mobile_data.get("seo_score", "N/A"),
                     "Strategy": mobile_data.get("strategy", "N/A"),
                     "Core Web Vitals": {
-                        "LCP (ms)": mobile_data.get("core_web_vitals", {}).get("lcp", "N/A"),
-                        "FID (ms)": mobile_data.get("core_web_vitals", {}).get("fid", "N/A"),
+                        "LCP": _format_ms(
+                            mobile_data.get("core_web_vitals", {}).get("lcp", "N/A")
+                        ),
+                        "FID": _format_ms(
+                            mobile_data.get("core_web_vitals", {}).get("fid", "N/A")
+                        ),
                         "CLS": mobile_data.get("core_web_vitals", {}).get("cls", "N/A"),
-                        "FCP (ms)": mobile_data.get("core_web_vitals", {}).get("fcp", "N/A"),
-                        "TTFB (ms)": mobile_data.get("core_web_vitals", {}).get("ttfb", "N/A"),
-                    }
+                        "FCP": _format_ms(
+                            mobile_data.get("core_web_vitals", {}).get("fcp", "N/A")
+                        ),
+                        "TTFB": _format_ms(
+                            mobile_data.get("core_web_vitals", {}).get("ttfb", "N/A")
+                        ),
+                    },
                 }
                 pdf.write_json_summary_box(
                     ps_summary, top_n=5, filename_hint="pagespeed.json"
@@ -1175,7 +1277,9 @@ def create_comprehensive_pdf(report_folder_path):
         # --- Anexo D.2 (Keywords) ---
         if keywords_data:
             pdf.add_page()
-            pdf.begin_section("Anexo D.2: Análisis de Palabras Clave (keywords.json)", level=1)
+            pdf.begin_section(
+                "Anexo D.2: Análisis de Palabras Clave (keywords.json)", level=1
+            )
             pdf.write_json_summary_box(
                 keywords_data, top_n=10, filename_hint="keywords.json"
             )
@@ -1191,7 +1295,9 @@ def create_comprehensive_pdf(report_folder_path):
         # --- Anexo D.4 (Rankings) ---
         if rankings_data:
             pdf.add_page()
-            pdf.begin_section("Anexo D.4: Monitoreo de Posiciones (rankings.json)", level=1)
+            pdf.begin_section(
+                "Anexo D.4: Monitoreo de Posiciones (rankings.json)", level=1
+            )
             pdf.write_json_summary_box(
                 rankings_data, top_n=10, filename_hint="rankings.json"
             )
@@ -1199,71 +1305,114 @@ def create_comprehensive_pdf(report_folder_path):
         # --- Anexo D.5 (LLM Visibility) ---
         if llm_visibility_data:
             pdf.add_page()
-            pdf.begin_section("Anexo D.5: Visibilidad en LLMs (llm_visibility.json)", level=1)
+            pdf.begin_section(
+                "Anexo D.5: Visibilidad en LLMs (llm_visibility.json)", level=1
+            )
             pdf.write_json_summary_box(
                 llm_visibility_data, top_n=5, filename_hint="llm_visibility.json"
             )
 
         # --- Anexo E ---
         pdf.add_page()
-        pdf.begin_section("Anexo E: Reportes de Páginas Individuales (resumen)", level=1)
-        
+        pdf.begin_section(
+            "Anexo E: Reportes de Páginas Individuales (resumen)", level=1
+        )
+
         if not page_json_files:
-            pdf.set_font("Roboto" if "Roboto" in pdf._fonts_added else "helvetica", "", 10)
-            pdf.multi_cell(0, 5, "(No se encontraron reportes individuales en la carpeta 'pages')")
-        
+            pdf.set_font(
+                "Roboto" if "Roboto" in pdf._fonts_added else "helvetica", "", 10
+            )
+            pdf.multi_cell(
+                0, 5, "(No se encontraron reportes individuales en la carpeta 'pages')"
+            )
+
         for i, page_file in enumerate(page_json_files):
             page_title = f"Archivo: {os.path.basename(page_file)}"
             if i > 0:
                 pdf.ln(4)
                 pdf.set_draw_color(200, 200, 200)
-                pdf.line(pdf.get_x(), pdf.get_y(), pdf.get_x() + (pdf.w - pdf.l_margin - pdf.r_margin), pdf.get_y())
+                pdf.line(
+                    pdf.get_x(),
+                    pdf.get_y(),
+                    pdf.get_x() + (pdf.w - pdf.l_margin - pdf.r_margin),
+                    pdf.get_y(),
+                )
                 pdf.ln(4)
-            
-            pdf.set_font("Roboto" if "Roboto" in pdf._fonts_added else "helvetica", "B", 11)
-            pdf.cell(0, LINE_HEIGHT * 1.3, page_title, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+
+            pdf.set_font(
+                "Roboto" if "Roboto" in pdf._fonts_added else "helvetica", "B", 11
+            )
+            pdf.cell(
+                0, LINE_HEIGHT * 1.3, page_title, new_x=XPos.LMARGIN, new_y=YPos.NEXT
+            )
             pdf.ln(6)
 
             try:
                 with open(page_file, "r", encoding="utf-8") as f:
                     page_data = json.load(f)
                 # DEBUG LOG
-                logger.info(f"DEBUG: Cargado {os.path.basename(page_file)}. Keys: {list(page_data.keys()) if isinstance(page_data, dict) else 'No dict'}")
+                logger.info(
+                    f"DEBUG: Cargado {os.path.basename(page_file)}. Keys: {list(page_data.keys()) if isinstance(page_data, dict) else 'No dict'}"
+                )
             except Exception as e:
                 logger.error(f"DEBUG: Error cargando {page_file}: {e}")
                 page_data = None
-            
-            pdf.write_json_summary_box(page_data, top_n=3, filename_hint=os.path.join("pages", os.path.basename(page_file)))
+
+            pdf.write_json_summary_box(
+                page_data,
+                top_n=3,
+                filename_hint=os.path.join("pages", os.path.basename(page_file)),
+            )
 
         # --- Anexo F: Competidores ---
         pdf.add_page()
         pdf.begin_section("Anexo F: Análisis Detallado de Competidores", level=1)
-        
+
         # Buscar archivos JSON de competidores
         competitors_dir = os.path.join(report_folder_path, "competitors")
         competitor_json_files = []
-        
+
         logger.info(f"DEBUG: Buscando competidores en: {competitors_dir}")
-        
+
         if os.path.isdir(competitors_dir):
-            competitor_json_files = sorted(glob.glob(os.path.join(competitors_dir, "competitor_*.json")))
-            logger.info(f"DEBUG: Encontrados {len(competitor_json_files)} competidores: {[os.path.basename(f) for f in competitor_json_files]}")
-        
+            competitor_json_files = sorted(
+                glob.glob(os.path.join(competitors_dir, "competitor_*.json"))
+            )
+            logger.info(
+                f"DEBUG: Encontrados {len(competitor_json_files)} competidores: {[os.path.basename(f) for f in competitor_json_files]}"
+            )
+
         if not competitor_json_files:
-            pdf.set_font("Roboto" if "Roboto" in pdf._fonts_added else "helvetica", "", 10)
-            pdf.multi_cell(0, 5, "(No se encontraron reportes de competidores en la carpeta 'competitors')")
+            pdf.set_font(
+                "Roboto" if "Roboto" in pdf._fonts_added else "helvetica", "", 10
+            )
+            pdf.multi_cell(
+                0,
+                5,
+                "(No se encontraron reportes de competidores en la carpeta 'competitors')",
+            )
         else:
             # Introducción del anexo
-            pdf.set_font("Roboto" if "Roboto" in pdf._fonts_added else "helvetica", "", 10)
+            pdf.set_font(
+                "Roboto" if "Roboto" in pdf._fonts_added else "helvetica", "", 10
+            )
             intro_text = f"Se analizaron {len(competitor_json_files)} competidores identificados durante la auditoría. A continuación se presenta un análisis detallado de cada uno, incluyendo su GEO Score y comparación con el sitio objetivo."
             pdf.multi_cell(0, 5, intro_text)
             pdf.ln(6)
-            
+
             # Tabla comparativa de GEO Scores
-            pdf.set_font("Roboto" if "Roboto" in pdf._fonts_added else "helvetica", "B", 11)
-            pdf.cell(0, LINE_HEIGHT * 1.3, "Tabla Comparativa de GEO Scores", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+            pdf.set_font(
+                "Roboto" if "Roboto" in pdf._fonts_added else "helvetica", "B", 11
+            )
+            pdf.cell(
+                0,
+                LINE_HEIGHT * 1.3,
+                "Tabla Comparativa de GEO Scores",
+                new_x=XPos.LMARGIN,
+                new_y=YPos.NEXT,
+            )
             pdf.ln(4)
-            
+
             # Cargar scores de todos los competidores
             # Cargar scores de todos los competidores
             competitor_map = {}
@@ -1271,206 +1420,360 @@ def create_comprehensive_pdf(report_folder_path):
                 try:
                     with open(comp_file, "r", encoding="utf-8") as f:
                         comp_data = json.load(f)
-                        
+
                         # 1. Try to get domain from field
                         raw_domain = comp_data.get("domain")
-                        
+
                         # 2. If missing, extract from URL
                         url = comp_data.get("url", "")
-                        
+
                         if not raw_domain and url:
                             from urllib.parse import urlparse
-                             # Handle cases where url is just "mercadolibre.cl" without scheme
+
+                            # Handle cases where url is just "mercadolibre.cl" without scheme
                             if "://" not in url:
                                 url_for_parse = "http://" + url
                             else:
                                 url_for_parse = url
                             raw_domain = urlparse(url_for_parse).netloc
-                        
+
                         if not raw_domain:
                             raw_domain = f"competitor_{len(competitor_map) + 1}"
-                            
+
                         # 3. Normalize: lowercase, strip, remove www.
                         normalized_key = raw_domain.lower().strip().replace("www.", "")
-                        
+
                         # 4. Display domain (keep original casing or nicely formatted?)
                         # We use raw_domain but maybe stripped of www for display
                         display_domain = raw_domain.replace("www.", "")
-                        
+
                         # 5. Deduplicate
                         # If exists, keep the one with higher score or more data
                         existing = competitor_map.get(normalized_key)
-                        current_score = comp_data.get("geo_score", 0)
-                        
+                        current_score = comp_data.get("geo_score", None)
+                        if not isinstance(current_score, (int, float)):
+                            current_score = None
+                        if current_score is None or current_score == 0:
+                            try:
+                                from app.services.audit_service import CompetitorService
+
+                                current_score = CompetitorService._calculate_geo_score(
+                                    comp_data
+                                )
+                            except Exception:
+                                current_score = current_score or 0
+
                         if existing:
-                            logger.info(f"Duplicate competitor found for key '{normalized_key}': {display_domain} vs {existing['domain']}")
+                            logger.info(
+                                f"Duplicate competitor found for key '{normalized_key}': {display_domain} vs {existing['domain']}"
+                            )
                             if current_score > existing["geo_score"]:
                                 # Update with better score
                                 competitor_map[normalized_key] = {
                                     "domain": display_domain,
                                     "geo_score": current_score,
                                     "url": url,
-                                    "audit_data": comp_data.get("audit_data", {}) # Keep audit data if needed later
+                                    "audit_data": comp_data.get(
+                                        "audit_data", {}
+                                    ),  # Keep audit data if needed later
                                 }
                         else:
                             competitor_map[normalized_key] = {
                                 "domain": display_domain,
                                 "geo_score": current_score,
                                 "url": url,
-                                "audit_data": comp_data.get("audit_data", {})
+                                "audit_data": comp_data.get("audit_data", {}),
                             }
-                            
+
                 except Exception as e:
                     logger.error(f"Error cargando competidor {comp_file}: {e}")
-            
+
             competitor_scores = list(competitor_map.values())
-            
+
             # Ordenar por GEO Score descendente
             competitor_scores.sort(key=lambda x: x["geo_score"], reverse=True)
-            
+
             # Mostrar tabla
-            pdf.set_font("Roboto" if "Roboto" in pdf._fonts_added else "helvetica", "B", 9)
+            pdf.set_font(
+                "Roboto" if "Roboto" in pdf._fonts_added else "helvetica", "B", 9
+            )
             col_widths = [100, 40, 40]
             pdf.cell(col_widths[0], 6, "Competidor", border=1)
-            pdf.cell(col_widths[1], 6, "GEO Score", border=1, align="C")
-            pdf.cell(col_widths[2], 6, "Ranking", border=1, align="C", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-            
-            pdf.set_font("Roboto" if "Roboto" in pdf._fonts_added else "helvetica", "", 9)
+            pdf.cell(col_widths[1], 6, "GEO Score (%)", border=1, align="C")
+            pdf.cell(
+                col_widths[2],
+                6,
+                "Ranking",
+                border=1,
+                align="C",
+                new_x=XPos.LMARGIN,
+                new_y=YPos.NEXT,
+            )
+
+            pdf.set_font(
+                "Roboto" if "Roboto" in pdf._fonts_added else "helvetica", "", 9
+            )
             for idx, comp in enumerate(competitor_scores, 1):
-                domain_text = pdf.clean_latin1(comp["domain"][:45])  # Truncar si es muy largo
+                domain_text = pdf.clean_latin1(
+                    comp["domain"][:45]
+                )  # Truncar si es muy largo
                 pdf.cell(col_widths[0], 6, domain_text, border=1)
-                pdf.cell(col_widths[1], 6, f"{comp['geo_score']:.1f}/10", border=1, align="C")
-                pdf.cell(col_widths[2], 6, f"#{idx}", border=1, align="C", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-            
+                pdf.cell(
+                    col_widths[1], 6, f"{comp['geo_score']:.1f}%", border=1, align="C"
+                )
+                pdf.cell(
+                    col_widths[2],
+                    6,
+                    f"#{idx}",
+                    border=1,
+                    align="C",
+                    new_x=XPos.LMARGIN,
+                    new_y=YPos.NEXT,
+                )
+
             pdf.ln(8)
-            
+
             # Reportes individuales de cada competidor
             for i, comp_file in enumerate(competitor_json_files):
                 try:
                     with open(comp_file, "r", encoding="utf-8") as f:
                         comp_data = json.load(f)
-                    
+
                     domain = comp_data.get("domain")
                     if not domain:
                         from urllib.parse import urlparse
-                        domain = urlparse(url).netloc.replace("www.", "") if url else "Unknown"
+
+                        domain = (
+                            urlparse(url).netloc.replace("www.", "")
+                            if url
+                            else "Unknown"
+                        )
                     geo_score = comp_data.get("geo_score", 0)
                     url = comp_data.get("url", "")
                     audit_data = comp_data.get("audit_data", {})
-                    
+
                     # Separador entre competidores
                     if i > 0:
                         pdf.ln(6)
                         pdf.set_draw_color(200, 200, 200)
-                        pdf.line(pdf.get_x(), pdf.get_y(), pdf.get_x() + (pdf.w - pdf.l_margin - pdf.r_margin), pdf.get_y())
+                        pdf.line(
+                            pdf.get_x(),
+                            pdf.get_y(),
+                            pdf.get_x() + (pdf.w - pdf.l_margin - pdf.r_margin),
+                            pdf.get_y(),
+                        )
                         pdf.ln(6)
-                    
+
                     # Título del competidor
-                    pdf.set_font("Roboto" if "Roboto" in pdf._fonts_added else "helvetica", "B", 12)
+                    pdf.set_font(
+                        "Roboto" if "Roboto" in pdf._fonts_added else "helvetica",
+                        "B",
+                        12,
+                    )
                     comp_title = pdf.clean_latin1(f"Competidor: {domain}")
-                    pdf.cell(0, LINE_HEIGHT * 1.5, comp_title, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+                    pdf.cell(
+                        0,
+                        LINE_HEIGHT * 1.5,
+                        comp_title,
+                        new_x=XPos.LMARGIN,
+                        new_y=YPos.NEXT,
+                    )
                     pdf.ln(2)
-                    
+
                     # URL y GEO Score
-                    pdf.set_font("Roboto" if "Roboto" in pdf._fonts_added else "helvetica", "", 9)
+                    pdf.set_font(
+                        "Roboto" if "Roboto" in pdf._fonts_added else "helvetica", "", 9
+                    )
                     url_text = pdf.clean_latin1(f"URL: {url}")
                     pdf.cell(0, 5, url_text, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-                    
+
                     # GEO Score con color
-                    score_text = f"GEO Score: {geo_score:.1f}/10"
-                    if geo_score >= 7:
+                    score_text = f"GEO Score: {geo_score:.1f}%"
+                    if geo_score >= 85:
                         pdf.set_text_color(0, 128, 0)  # Verde
                         interpretation = "(Excelente optimización para IA)"
-                    elif geo_score >= 5:
+                    elif geo_score >= 70:
                         pdf.set_text_color(255, 140, 0)  # Naranja
                         interpretation = "(Optimización moderada)"
                     else:
                         pdf.set_text_color(255, 0, 0)  # Rojo
                         interpretation = "(Optimización deficiente)"
-                    
-                    pdf.set_font("Roboto" if "Roboto" in pdf._fonts_added else "helvetica", "B", 10)
-                    pdf.cell(0, 5, f"{score_text} {interpretation}", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+
+                    pdf.set_font(
+                        "Roboto" if "Roboto" in pdf._fonts_added else "helvetica",
+                        "B",
+                        10,
+                    )
+                    pdf.cell(
+                        0,
+                        5,
+                        f"{score_text} {interpretation}",
+                        new_x=XPos.LMARGIN,
+                        new_y=YPos.NEXT,
+                    )
                     pdf.set_text_color(0, 0, 0)  # Reset color
                     pdf.ln(4)
-                    
+
                     # Análisis de fortalezas y debilidades
-                    pdf.set_font("Roboto" if "Roboto" in pdf._fonts_added else "helvetica", "B", 10)
+                    pdf.set_font(
+                        "Roboto" if "Roboto" in pdf._fonts_added else "helvetica",
+                        "B",
+                        10,
+                    )
                     pdf.cell(0, 5, "Fortalezas:", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-                    pdf.set_font("Roboto" if "Roboto" in pdf._fonts_added else "helvetica", "", 9)
-                    
+                    pdf.set_font(
+                        "Roboto" if "Roboto" in pdf._fonts_added else "helvetica", "", 9
+                    )
+
                     strengths = []
                     weaknesses = []
-                    
+
                     # Analizar estructura
-                    if audit_data.get("structure", {}).get("h1_check", {}).get("status") == "pass":
+                    if (
+                        audit_data.get("structure", {})
+                        .get("h1_check", {})
+                        .get("status")
+                        == "pass"
+                    ):
                         strengths.append("✓ H1 correctamente implementado")
                     else:
                         weaknesses.append("✗ Falta H1 o está mal implementado")
-                    
+
                     # Analizar Schema
-                    schema_status = audit_data.get("schema", {}).get("schema_presence", {}).get("status")
+                    schema_status = (
+                        audit_data.get("schema", {})
+                        .get("schema_presence", {})
+                        .get("status")
+                    )
                     if schema_status == "present":
-                        schema_types = audit_data.get("schema", {}).get("schema_types", [])
-                        strengths.append(f"✓ Schema.org implementado ({len(schema_types)} tipos)")
+                        schema_types = audit_data.get("schema", {}).get(
+                            "schema_types", []
+                        )
+                        strengths.append(
+                            f"✓ Schema.org implementado ({len(schema_types)} tipos)"
+                        )
                     else:
                         weaknesses.append("✗ Sin Schema.org")
-                    
+
                     # Analizar E-E-A-T
-                    author_status = audit_data.get("eeat", {}).get("author_presence", {}).get("status")
+                    author_status = (
+                        audit_data.get("eeat", {})
+                        .get("author_presence", {})
+                        .get("status")
+                    )
                     if author_status == "pass":
                         strengths.append("✓ Información de autor presente")
                     else:
                         weaknesses.append("✗ Sin información de autor")
-                    
+
                     # Analizar HTML semántico
-                    semantic_score = audit_data.get("structure", {}).get("semantic_html", {}).get("score_percent", 0)
+                    semantic_score = (
+                        audit_data.get("structure", {})
+                        .get("semantic_html", {})
+                        .get("score_percent", 0)
+                    )
                     if semantic_score >= 70:
-                        strengths.append(f"✓ HTML semántico bien implementado ({semantic_score}%)")
+                        strengths.append(
+                            f"✓ HTML semántico bien implementado ({semantic_score}%)"
+                        )
                     elif semantic_score >= 50:
-                        weaknesses.append(f"⚠ HTML semántico moderado ({semantic_score}%)")
+                        weaknesses.append(
+                            f"⚠ HTML semántico moderado ({semantic_score}%)"
+                        )
                     else:
-                        weaknesses.append(f"✗ HTML semántico deficiente ({semantic_score}%)")
-                    
+                        weaknesses.append(
+                            f"✗ HTML semántico deficiente ({semantic_score}%)"
+                        )
+
                     # Mostrar fortalezas
                     for strength in strengths:
                         strength_text = pdf.clean_latin1(f"  {strength}")
-                        pdf.cell(0, 5, strength_text, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-                    
+                        pdf.cell(
+                            0, 5, strength_text, new_x=XPos.LMARGIN, new_y=YPos.NEXT
+                        )
+
                     if not strengths:
-                        pdf.cell(0, 5, "  (No se identificaron fortalezas significativas)", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-                    
+                        pdf.cell(
+                            0,
+                            5,
+                            "  (No se identificaron fortalezas significativas)",
+                            new_x=XPos.LMARGIN,
+                            new_y=YPos.NEXT,
+                        )
+
                     pdf.ln(3)
-                    
+
                     # Mostrar debilidades
-                    pdf.set_font("Roboto" if "Roboto" in pdf._fonts_added else "helvetica", "B", 10)
+                    pdf.set_font(
+                        "Roboto" if "Roboto" in pdf._fonts_added else "helvetica",
+                        "B",
+                        10,
+                    )
                     pdf.cell(0, 5, "Debilidades:", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-                    pdf.set_font("Roboto" if "Roboto" in pdf._fonts_added else "helvetica", "", 9)
-                    
+                    pdf.set_font(
+                        "Roboto" if "Roboto" in pdf._fonts_added else "helvetica", "", 9
+                    )
+
                     for weakness in weaknesses:
                         weakness_text = pdf.clean_latin1(f"  {weakness}")
-                        pdf.cell(0, 5, weakness_text, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-                    
+                        pdf.cell(
+                            0, 5, weakness_text, new_x=XPos.LMARGIN, new_y=YPos.NEXT
+                        )
+
                     if not weaknesses:
-                        pdf.cell(0, 5, "  (No se identificaron debilidades significativas)", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-                    
+                        pdf.cell(
+                            0,
+                            5,
+                            "  (No se identificaron debilidades significativas)",
+                            new_x=XPos.LMARGIN,
+                            new_y=YPos.NEXT,
+                        )
+
                     pdf.ln(4)
-                    
+
                     # Oportunidades de aprendizaje
                     if strengths:
-                        pdf.set_font("Roboto" if "Roboto" in pdf._fonts_added else "helvetica", "B", 10)
-                        pdf.cell(0, 5, "Oportunidades de Aprendizaje:", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-                        pdf.set_font("Roboto" if "Roboto" in pdf._fonts_added else "helvetica", "I", 9)
-                        opp_text = pdf.clean_latin1(f"Este competidor destaca en {len(strengths)} área(s). Considere implementar prácticas similares para mejorar su GEO Score.")
+                        pdf.set_font(
+                            "Roboto" if "Roboto" in pdf._fonts_added else "helvetica",
+                            "B",
+                            10,
+                        )
+                        pdf.cell(
+                            0,
+                            5,
+                            "Oportunidades de Aprendizaje:",
+                            new_x=XPos.LMARGIN,
+                            new_y=YPos.NEXT,
+                        )
+                        pdf.set_font(
+                            "Roboto" if "Roboto" in pdf._fonts_added else "helvetica",
+                            "I",
+                            9,
+                        )
+                        opp_text = pdf.clean_latin1(
+                            f"Este competidor destaca en {len(strengths)} área(s). Considere implementar prácticas similares para mejorar su GEO Score."
+                        )
                         pdf.multi_cell(0, 5, opp_text)
-                    
+
                 except Exception as e:
                     logger.error(f"Error procesando competidor {comp_file}: {e}")
-                    pdf.set_font("Roboto" if "Roboto" in pdf._fonts_added else "helvetica", "", 9)
-                    pdf.cell(0, 5, f"Error cargando datos del competidor: {os.path.basename(comp_file)}", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-
+                    pdf.set_font(
+                        "Roboto" if "Roboto" in pdf._fonts_added else "helvetica", "", 9
+                    )
+                    pdf.cell(
+                        0,
+                        5,
+                        f"Error cargando datos del competidor: {os.path.basename(comp_file)}",
+                        new_x=XPos.LMARGIN,
+                        new_y=YPos.NEXT,
+                    )
 
         # --- Rellenar TOC ---
-        logger.info("Rendering TOC (entries=%d) on page %s", len(pdf._toc_entries), pdf._toc_page_no)
+        logger.info(
+            "Rendering TOC (entries=%d) on page %s",
+            len(pdf._toc_entries),
+            pdf._toc_page_no,
+        )
         pdf.render_manual_toc()
 
         # --- Guardar PDF ---

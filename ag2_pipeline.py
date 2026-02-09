@@ -65,11 +65,16 @@ except Exception as e:
 
 # --- Cargar variables de entorno ---
 load_dotenv()
+
+# NVIDIA Configuration
+NV_API_KEY = os.getenv("NV_API_KEY")
+NVIDIA_API_KEY = os.getenv("NVIDIA_API_KEY")
+NV_BASE_URL = os.getenv("NV_BASE_URL", "https://integrate.api.nvidia.com/v1")
+NV_MODEL = os.getenv("NV_MODEL", "moonshotai/kimi-k2-thinking")
+
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash-lite")
-
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 CSE_ID = os.getenv("CSE_ID")
@@ -405,18 +410,20 @@ def filter_competitor_urls(search_items: list, target_domain: str) -> list:
 # (Sin cambios) build_llm_config
 # ----------------------------------------------------------------------
 def build_llm_config():
-    if OPENAI_API_KEY and LLMConfig is not None:
+    api_key = NVIDIA_API_KEY or NV_API_KEY
+    if api_key and LLMConfig is not None:
         try:
             return LLMConfig(
                 config_list={
                     "api_type": "openai",
-                    "model": "gpt-4o-mini",
-                    "api_key": OPENAI_API_KEY,
+                    "base_url": NV_BASE_URL,
+                    "model": NV_MODEL,
+                    "api_key": api_key,
                 },
-                temperature=0.0,
+                temperature=1.0,
             )
         except Exception as e:
-            logger.warning("LLMConfig construction for OpenAI failed: %s", e)
+            logger.warning("LLMConfig construction for NVIDIA failed: %s", e)
             return None
     if GEMINI_API_KEY:
         return None
@@ -429,6 +436,28 @@ def build_llm_config():
 async def run_conversable_agent_once(
     name: str, system_prompt: str, user_message: str, llm_config
 ):
+    # Try NVIDIA first if available via llm_config
+    if llm_config and hasattr(llm_config, 'config_list') and llm_config.config_list:
+        try:
+            from openai import OpenAI
+            api_key = NVIDIA_API_KEY or NV_API_KEY
+            client = OpenAI(base_url=NV_BASE_URL, api_key=api_key)
+            
+            messages = [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_message}
+            ]
+            
+            completion = client.chat.completions.create(
+                model=NV_MODEL,
+                messages=messages,
+                temperature=1.0,
+                top_p=0.9
+            )
+            return completion.choices[0].message.content.strip()
+        except Exception as e:
+            logger.warning("Direct NVIDIA call failed, falling back: %s", e)
+
     if GEMINI_API_KEY:
         if not GENAI_AVAILABLE:
             logger.exception(
@@ -817,7 +846,7 @@ async def pipeline(
     llm_conf = build_llm_config()
     if not (GEMINI_API_KEY or (AG2_AVAILABLE and llm_conf)):
         logger.error(
-            "No se ha configurado GEMINI_API_KEY (preferido) ni OPENAI_API_KEY. Saliendo."
+            "No se ha configurado GEMINI_API_KEY (preferido) ni NVIDIA_API_KEY. Saliendo."
         )
         return {"mode": "error", "md": "API Key no configurada."}
 

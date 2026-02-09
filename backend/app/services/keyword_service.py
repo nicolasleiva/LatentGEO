@@ -10,54 +10,61 @@ from .google_ads_service import GoogleAdsService
 
 logger = logging.getLogger(__name__)
 
+
 class KeywordService:
     def __init__(self, db: Session):
         self.db = db
-        
+
         # Primary: Usar Kimi vía NVIDIA
         self.nvidia_api_key = settings.NVIDIA_API_KEY or settings.NV_API_KEY
         if self.nvidia_api_key:
             self.client = AsyncOpenAI(
-                api_key=self.nvidia_api_key,
-                base_url=settings.NV_BASE_URL
+                api_key=self.nvidia_api_key, base_url=settings.NV_BASE_URL
             )
             logger.info("✅ Kimi/NVIDIA API configurada para keywords")
         else:
             self.client = None
-            logger.error("❌ No se encontró NVIDIA_API_KEY. El servicio de keywords fallará.")
+            logger.error(
+                "❌ No se encontró NVIDIA_API_KEY. El servicio de keywords fallará."
+            )
 
-    async def research_keywords(self, audit_id: int, domain: str, seed_keywords: List[str] = None) -> List[Keyword]:
+    async def research_keywords(
+        self, audit_id: int, domain: str, seed_keywords: List[str] = None
+    ) -> List[Keyword]:
         """
         Generates keyword ideas using Kimi (Moonshot AI).
         """
         # Usar Kimi vía NVIDIA
         if self.client:
             return await self._research_kimi(audit_id, domain, seed_keywords)
-        
-        logger.error("No AI keys set. Cannot generate keywords.")
+
+        logger.error("No AI keys set. Cannot generate keywords without NVIDIA API.")
         return []
 
-    async def _research_kimi(self, audit_id: int, domain: str, seeds: List[str]) -> List[Keyword]:
+    async def _research_kimi(
+        self, audit_id: int, domain: str, seeds: List[str]
+    ) -> List[Keyword]:
         """Genera keywords usando Kimi (Moonshot AI vía NVIDIA)"""
         try:
             prompt = self._get_prompt(domain, seeds)
-            
+
             response = await self.client.chat.completions.create(
                 model=settings.NV_MODEL,
                 messages=[{"role": "user", "content": prompt}],
-                temperature=0.7,
-                max_tokens=settings.NV_MAX_TOKENS
+                temperature=0.0,
+                top_p=1.0,
+                max_tokens=settings.NV_MAX_TOKENS,
             )
-            
+
             content = response.choices[0].message.content.strip()
-            
+
             # Limpiar respuesta si viene con markdown
             if "```" in content:
                 content = content.replace("```json", "").replace("```", "")
-            
+
             logger.info(f"✅ Kimi generó {len(content)} keywords para {domain}")
             return self._process_ai_response(audit_id, content)
-            
+
         except Exception as e:
             logger.error(f"Kimi API error: {e}")
             return []
@@ -66,7 +73,7 @@ class KeywordService:
         return f"""
         Actúa como un experto en SEO. Genera 10 keywords de alto potencial para el dominio: {domain}.
         
-        Contexto/Nicho semillas: {', '.join(seeds) if seeds else 'Análisis general'}
+        Contexto/Nicho semillas: {", ".join(seeds) if seeds else "Análisis general"}
         
         Para cada keyword, estima:
         1. Volumen de búsqueda (mensual)
@@ -82,15 +89,23 @@ class KeywordService:
     def _process_ai_response(self, audit_id: int, content: str) -> List[Keyword]:
         try:
             data = json.loads(content)
-            keywords_list = data.get("keywords", data) if isinstance(data, dict) else data
-            
+            keywords_list = (
+                data.get("keywords", data) if isinstance(data, dict) else data
+            )
+
             # Enriquecer con datos reales de Google Ads si está disponible
             try:
-                terms = [kw.get("term") for kw in keywords_list if isinstance(kw, dict) and kw.get("term")]
+                terms = [
+                    kw.get("term")
+                    for kw in keywords_list
+                    if isinstance(kw, dict) and kw.get("term")
+                ]
                 if terms:
                     real_metrics = GoogleAdsService().get_keyword_metrics(terms)
                     if real_metrics:
-                        logger.info(f"Enriqueciendo {len(real_metrics)} keywords con datos de Google Ads")
+                        logger.info(
+                            f"Enriqueciendo {len(real_metrics)} keywords con datos de Google Ads"
+                        )
                         for kw in keywords_list:
                             term = kw.get("term")
                             if term in real_metrics:
@@ -110,11 +125,11 @@ class KeywordService:
                         volume=kw.get("volume", 0),
                         difficulty=kw.get("difficulty", 50),
                         cpc=kw.get("cpc", 0.0),
-                        intent=kw.get("intent", "Informational")
+                        intent=kw.get("intent", "Informational"),
                     )
                     self.db.add(keyword)
                     results.append(keyword)
-                
+
                 self.db.commit()
                 for kw in results:
                     self.db.refresh(kw)
@@ -123,7 +138,6 @@ class KeywordService:
         except Exception as e:
             logger.error(f"Error processing Kimi response: {e}")
             return []
-
 
     def get_keywords(self, audit_id: int) -> List[Keyword]:
         keywords = self.db.query(Keyword).filter(Keyword.audit_id == audit_id).all()

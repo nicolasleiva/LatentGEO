@@ -11,6 +11,8 @@ from typing import Generator
 import sys
 import os
 
+RUN_INTEGRATION_TESTS = os.getenv("RUN_INTEGRATION_TESTS") == "1"
+
 # Add the backend directory to sys.path
 # In Docker, this is /app. Locally, it's the backend folder.
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -39,6 +41,11 @@ def setup_test_db():
     """
     Fixture para crear y destruir la base de datos de test.
     """
+    if RUN_INTEGRATION_TESTS:
+        # In integration mode we avoid in-memory DB (real DB only)
+        yield None
+        return
+
     # Usar base de datos en memoria para evitar bloqueos de archivo en Windows
     TEST_DATABASE_URL = "sqlite:///:memory:"
     engine = create_engine(
@@ -59,6 +66,9 @@ def db_session(setup_test_db) -> Generator:
     """
     Fixture para obtener una sesión de base de datos de test.
     """
+    if RUN_INTEGRATION_TESTS:
+        pytest.skip("db_session disabled in integration mode")
+
     engine = setup_test_db
     TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 

@@ -15,6 +15,7 @@ async def call_kimi_api(name: str, system_prompt: str, user_message: str) -> str
         logger.error("NVIDIA API key no está configurada. No se puede llamar a KIMI.")
         return "Error: API key no configurada."
 
+    client = None
     try:
         client = AsyncOpenAI(
             base_url=settings.NV_BASE_URL,
@@ -32,8 +33,8 @@ async def call_kimi_api(name: str, system_prompt: str, user_message: str) -> str
         completion = await client.chat.completions.create(
             model=settings.NV_MODEL_ANALYSIS,
             messages=messages,
-            temperature=0.6,
-            top_p=0.9,
+            temperature=0.0,
+            top_p=1.0,
             max_tokens=settings.NV_MAX_TOKENS,
             stream=False
         )
@@ -45,6 +46,13 @@ async def call_kimi_api(name: str, system_prompt: str, user_message: str) -> str
     except Exception as e:
         logger.exception(f"Error al llamar a la API de KIMI para {name}: {e}")
         return f"Error al llamar a la API de KIMI: {str(e)}"
+    finally:
+        if client is not None:
+            try:
+                await client.close()
+            except RuntimeError as close_err:
+                if "Event loop is closed" not in str(close_err):
+                    logger.warning(f"Error closing KIMI client: {close_err}")
 
 # Mantener compatibilidad temporal si es necesario
 async def call_gemini_api(name: str, system_prompt: str, user_message: str) -> str:

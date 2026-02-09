@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { Input } from '@/components/ui/input'
-import { Send } from 'lucide-react'
+import { Send, AlertCircle } from 'lucide-react'
 
 interface AuditChatFlowProps {
   auditId: number | string
@@ -19,16 +19,19 @@ export function AuditChatFlow({ auditId, onComplete }: AuditChatFlowProps) {
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [isTyping, setIsTyping] = useState(false)
-  const [config, setConfig] = useState({ language: '', competitors: [] as string[], market: '' })
+  const [config, setConfig] = useState({ competitors: [] as string[], market: '' })
   const [step, setStep] = useState<'competitors' | 'market' | 'done'>('competitors')
+  const [error, setError] = useState<string | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
-  const inputRef = useRef<HTMLInputElement>(null)
+  const hasInitialized = useRef(false)
 
   useEffect(() => {
-    setConfig(prev => ({ ...prev, language: 'en' }))
+    // Prevenir doble ejecución en React Strict Mode
+    if (hasInitialized.current) return
+    hasInitialized.current = true
+    
     sendAIMessage("Hello. I'm your AI audit assistant. Would you like to add specific competitor URLs for comparison? You can type URLs separated by commas, or just say 'no' to skip.")
     setStep('competitors')
-    inputRef.current?.focus()
   }, [])
 
   useEffect(() => {
@@ -37,33 +40,21 @@ export function AuditChatFlow({ auditId, onComplete }: AuditChatFlowProps) {
 
   const sendAIMessage = (content: string) => {
     setIsTyping(true)
-    const words = content.split(' ')
-    let currentText = ''
-    let wordIndex = 0
-
-    const typingInterval = setInterval(() => {
-      if (wordIndex < words.length) {
-        currentText += (wordIndex > 0 ? ' ' : '') + words[wordIndex]
-        setMessages(prev => {
-          const newMessages = [...prev]
-          if (newMessages[newMessages.length - 1]?.typing) {
-            newMessages[newMessages.length - 1] = { role: 'assistant', content: currentText, typing: true }
-          } else {
-            newMessages.push({ role: 'assistant', content: currentText, typing: true })
-          }
-          return newMessages
-        })
-        wordIndex++
-      } else {
-        clearInterval(typingInterval)
-        setMessages(prev => {
-          const newMessages = [...prev]
-          newMessages[newMessages.length - 1] = { role: 'assistant', content: currentText }
-          return newMessages
-        })
-        setIsTyping(false)
-      }
-    }, 15)
+    // Mostrar mensaje inmediatamente con typing indicator
+    setMessages(prev => [...prev, { role: 'assistant', content, typing: true }])
+    
+    // Remover typing indicator después de 300ms (mucho más rápido que antes)
+    setTimeout(() => {
+      setMessages(prev => {
+        const newMessages = [...prev]
+        const lastMsg = newMessages[newMessages.length - 1]
+        if (lastMsg?.typing) {
+          lastMsg.typing = false
+        }
+        return newMessages
+      })
+      setIsTyping(false)
+    }, 300)
   }
 
   const handleSend = async () => {
@@ -76,7 +67,6 @@ export function AuditChatFlow({ auditId, onComplete }: AuditChatFlowProps) {
     if (step === 'competitors') {
       if (userMessage.toLowerCase().includes('no') || userMessage.toLowerCase().includes('skip')) {
         setStep('market')
-        await new Promise(resolve => setTimeout(resolve, 500))
         sendAIMessage("Understood. What about target markets? Would you like to specify countries or regions? (e.g., 'US', 'Latin America', 'Europe', or 'no')")
       } else {
         const urls = userMessage.split(',').map(u => {
@@ -85,33 +75,37 @@ export function AuditChatFlow({ auditId, onComplete }: AuditChatFlowProps) {
             url = 'https://' + url
           }
           return url
-        }).filter(u => u.includes('.'))
+        }).filter(u => u && (u.includes('.') || u.includes('localhost') || u.includes('127.0.0.1')))
         setConfig(prev => ({ ...prev, competitors: urls }))
         setStep('market')
-        await new Promise(resolve => setTimeout(resolve, 500))
         sendAIMessage(`Acknowledged. I've added ${urls.length} competitor(s). Now, what about target markets? Would you like to specify countries or regions? (e.g., 'US', 'Latin America', 'Europe', or 'no')`)
       }
     } else if (step === 'market') {
       const market = userMessage.toLowerCase().includes('no') ? '' : userMessage
       setConfig(prev => ({ ...prev, market }))
       setStep('done')
-      await new Promise(resolve => setTimeout(resolve, 500))
       sendAIMessage("Confirmed. I am initializing your comprehensive audit now. This process will take a few minutes.")
 
       try {
         // Configurar la auditoría existente
         const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 
-        if (auditId && !isNaN(Number(auditId))) {
+        const isValidId = (id: number | string): boolean => {
+          if (typeof id === 'number') return !isNaN(id) && id > 0
+          if (typeof id === 'string') return /^\d+$/.test(id) && parseInt(id, 10) > 0
+          return false
+        }
+
+        if (auditId && isValidId(auditId)) {
           await fetch(`${apiUrl}/api/audits/chat/config`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              audit_id: Number(auditId),
-              language: config.language || 'en',
-              competitors: config.competitors.length > 0 ? config.competitors : null,
-              market: market || null
-            })
+             body: JSON.stringify({
+               audit_id: Number(auditId),
+               language: 'en',
+               competitors: config.competitors.length > 0 ? config.competitors : null,
+               market: market || null
+             })
           })
           // El backend inicia el pipeline automáticamente
           onComplete()
@@ -120,18 +114,15 @@ export function AuditChatFlow({ auditId, onComplete }: AuditChatFlowProps) {
           const createResponse = await fetch(`${apiUrl}/api/audits`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              url: typeof auditId === 'string' ? auditId : '',
-              language: config.language || 'en',
-              competitors: config.competitors.length > 0 ? config.competitors : null,
-              market: market || null
-            })
+             body: JSON.stringify({
+               url: typeof auditId === 'string' ? auditId : '',
+               language: 'en',
+               competitors: config.competitors.length > 0 ? config.competitors : null,
+               market: market || null
+             })
           })
           const audit = await createResponse.json()
-
-          setTimeout(() => {
-            window.location.href = `/audits/${audit.id}`
-          }, 2000)
+          window.location.href = `/audits/${audit.id}`
         }
       } catch (error) {
         console.error('Error:', error)
@@ -170,11 +161,10 @@ export function AuditChatFlow({ auditId, onComplete }: AuditChatFlowProps) {
       {step !== 'done' && (
         <div className="border-t border-border p-4">
           <div className="flex gap-2">
-            <Input
-              ref={inputRef}
-              value={input}
+             <Input
+               value={input}
               onChange={(e) => setInput(e.target.value)}
-              onKeyPress={(e) => e.key === 'Enter' && handleSend()}
+               onKeyDown={(e) => e.key === 'Enter' && handleSend()}
               placeholder="Type your response..."
               disabled={isTyping}
               className="flex-1"

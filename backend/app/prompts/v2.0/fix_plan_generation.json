@@ -1,0 +1,155 @@
+{
+  "version": "2.0.0",
+  "name": "Technical Fix Plan Generation",
+  "description": "Comprehensive technical action plan with prioritization, RACI matrix, and implementation timeline",
+  "language": "en",
+  "system_prompt": "You are a Technical Program Manager at a leading digital agency, responsible for translating audit findings into executable technical plans. You bridge the gap between strategic recommendations and implementation reality.\n\nYour expertise includes:\n1. Technical Prioritization: Ranking fixes by business impact, implementation complexity, and dependencies\n2. Resource Planning: Estimating effort, assigning ownership, identifying skill requirements\n3. Dependency Mapping: Understanding which fixes must happen in sequence vs parallel\n4. Risk Assessment: Identifying potential blockers and mitigation strategies\n5. RACI Matrix Creation: Clear accountability for every action item\n6. Timeline Development: Realistic schedules with milestones and checkpoints\n\nYour output must be immediately actionable by development teams while maintaining strategic alignment with business objectives.",
+  "output_schema": {
+    "type": "object",
+    "required": [
+      "fix_plan",
+      "prioritization_matrix",
+      "implementation_phases",
+      "raci_matrix",
+      "resource_requirements",
+      "risk_assessment",
+      "success_metrics"
+    ],
+    "properties": {
+      "fix_plan": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "id": {"type": "string"},
+            "page_path": {"type": "string"},
+            "issue_code": {"type": "string"},
+            "category": {"type": "string", "enum": ["technical", "content", "schema", "performance", "security"]},
+            "priority": {"type": "string", "enum": ["CRITICAL", "HIGH", "MEDIUM", "LOW"]},
+            "title": {"type": "string"},
+            "description": {"type": "string"},
+            "current_state": {"type": "string"},
+            "target_state": {"type": "string"},
+            "implementation_steps": {"type": "array", "items": {"type": "string"}},
+            "code_example": {"type": "string"},
+            "estimated_effort": {"type": "string"},
+            "business_impact": {"type": "string"},
+            "seo_impact": {"type": "string"},
+            "dependencies": {"type": "array", "items": {"type": "string"}},
+            "testing_requirements": {"type": "array", "items": {"type": "string"}},
+            "rollback_plan": {"type": "string"}
+          }
+        }
+      },
+      "prioritization_matrix": {
+        "type": "object",
+        "properties": {
+          "p1_critical": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "Immediate action required (0-30 days)"
+          },
+          "p2_high": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "Address in next sprint (30-60 days)"
+          },
+          "p3_medium": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "Include in roadmap (60-90 days)"
+          },
+          "p4_low": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "Nice to have (90+ days)"
+          }
+        }
+      },
+      "implementation_phases": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "phase_name": {"type": "string"},
+            "duration": {"type": "string"},
+            "focus_area": {"type": "string"},
+            "fixes_included": {"type": "array", "items": {"type": "string"}},
+            "deliverables": {"type": "array", "items": {"type": "string"}},
+            "milestones": {"type": "array", "items": {"type": "string"}},
+            "resources_needed": {"type": "array", "items": {"type": "string"}},
+            "success_criteria": {"type": "string"}
+          }
+        }
+      },
+      "raci_matrix": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "task_category": {"type": "string"},
+            "responsible": {"type": "string", "description": "Who does the work"},
+            "accountable": {"type": "string", "description": "Who owns the outcome"},
+            "consulted": {"type": "array", "items": {"type": "string"}, "description": "Who provides input"},
+            "informed": {"type": "array", "items": {"type": "string"}, "description": "Who is kept updated"}
+          }
+        }
+      },
+      "resource_requirements": {
+        "type": "object",
+        "properties": {
+          "development_hours": {"type": "string"},
+          "design_hours": {"type": "string"},
+          "qa_hours": {"type": "string"},
+          "total_hours": {"type": "string"},
+          "team_composition": {"type": "array", "items": {"type": "string"}},
+          "external_resources": {"type": "array", "items": {"type": "string"}},
+          "tools_required": {"type": "array", "items": {"type": "string"}}
+        }
+      },
+      "risk_assessment": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "risk": {"type": "string"},
+            "probability": {"type": "string", "enum": ["low", "medium", "high"]},
+            "impact": {"type": "string", "enum": ["low", "medium", "high", "critical"]},
+            "mitigation_strategy": {"type": "string"}
+          }
+        }
+      },
+      "success_metrics": {
+        "type": "object",
+        "properties": {
+          "technical_kpis": {"type": "array", "items": {"type": "string"}},
+          "business_kpis": {"type": "array", "items": {"type": "string"}},
+          "seo_kpis": {"type": "array", "items": {"type": "string"}},
+          "measurement_frequency": {"type": "string"}
+        }
+      }
+    }
+  },
+  "user_template": "Create a comprehensive technical fix plan from the following audit findings:\n\nAUDIT DATA:\n```json\n{audit_data}\n```\n\nEXISTING FIXES:\n```json\n{existing_fixes}\n```\n\nTEAM CONTEXT:\n- Team size: {team_size}
+- Sprint duration: {sprint_duration}
+- Technical stack: {tech_stack}\n\nRequirements:\n1. Generate complete fix_plan array with all technical details\n2. Create prioritization matrix (P1-P4)\n3. Define implementation phases with timelines\n4. Build RACI matrix for accountability\n5. Estimate resource requirements\n6. Identify risks and mitigation strategies\n7. Define success metrics\n\nEach fix must include: implementation steps, code examples, effort estimates, and testing requirements.",
+  "instructions": [
+    "Generate 10-50 specific fix items depending on audit complexity",
+    "Prioritize strictly by: business impact × implementation ease",
+    "Include actual code snippets where applicable",
+    "Make effort estimates realistic (not optimistic)",
+    "Identify dependencies between fixes",
+    "Include rollback plans for high-risk changes",
+    "Define clear acceptance criteria for each fix",
+    "Consider both quick wins and strategic initiatives"
+  ],
+  "quality_gates": {
+    "min_fix_items": 10,
+    "max_fix_items": 50,
+    "require_prioritization": true,
+    "require_raci_matrix": true,
+    "require_phases": true,
+    "require_resource_estimates": true,
+    "require_code_examples": true
+  }
+}

@@ -1,0 +1,148 @@
+{
+  "app": {
+    "name": "Auditor GEO",
+    "tagline": "Enterprise SEO & GEO Intelligence",
+    "description": "Comprehensive digital audits with AI-powered insights"
+  },
+  "navigation": {
+    "home": "Home",
+    "audits": "Audits",
+    "analytics": "Analytics",
+    "docs": "Documentation",
+    "pricing": "Pricing",
+    "login": "Log In",
+    "signup": "Sign Up",
+    "logout": "Log Out",
+    "dashboard": "Dashboard",
+    "settings": "Settings",
+    "back": "Back"
+  },
+  "audit": {
+    "new": "New Audit",
+    "create": "Create Audit",
+    "run": "Run Audit",
+    "processing": "Processing Audit",
+    "completed": "Completed",
+    "pending": "Pending",
+    "failed": "Failed",
+    "status": {
+      "processing": "Processing",
+      "pending": "Pending Configuration",
+      "completed": "Completed",
+      "failed": "Failed"
+    },
+    "details": "Audit Details",
+    "overview": "Overview",
+    "report": "Full Report",
+    "fix_plan": "Fix Plan",
+    "download_pdf": "Download PDF",
+    "export_report": "Export Report",
+    "competitors": "Competitors",
+    "pages_analyzed": "Pages Analyzed",
+    "issues_found": "Issues Found",
+    "critical_issues": "Critical Issues",
+    "high_issues": "High Priority",
+    "medium_issues": "Medium Priority",
+    "score": "SEO Score",
+    "progress": "Progress"
+  },
+  "processing_screen": {
+    "initializing": "Initializing AI analysis engine",
+    "scanning": "Scanning your website",
+    "analyzing_structure": "Analyzing page structure",
+    "detecting_issues": "Detecting technical issues",
+    "crawling_competitors": "Crawling competitor data",
+    "processing_content": "Processing content with LLM",
+    "identifying_gaps": "Identifying optimization gaps",
+    "generating_recommendations": "Generating recommendations",
+    "training_models": "Training models on your data",
+    "synthesizing": "Synthesizing insights",
+    "almost_there": "Almost there",
+    "subtitle": "This may take a few minutes",
+    "title": "AI Audit Assistant"
+  },
+  "chat": {
+    "competitors_question": "Would you like to add specific competitor URLs for comparison? You can type URLs separated by commas, or just say 'no' to skip.",
+    "market_question": "What about target markets? Would you like to specify countries or regions? (e.g., 'US', 'Latin America', 'Europe', or 'no')",
+    "initializing": "Initializing audit",
+    "placeholder": "Type your response...",
+    "powered_by": "Powered by KIMI",
+    "send": "Send"
+  },
+  "progress": {
+    "configuring": "Configuring audit",
+    "analyzing_page": "Analyzing your page",
+    "analyzing_competitors": "Analyzing competitors",
+    "generating_report": "Generating report with AI",
+    "percent": "{{percent}}%"
+  },
+  "errors": {
+    "generic": "An error occurred",
+    "loading": "Error loading data",
+    "generating_pdf": "Error generating PDF",
+    "try_again": "Try Again",
+    "not_found": "Not Found",
+    "server_error": "Server Error"
+  },
+  "buttons": {
+    "analyze": "Analyze",
+    "generate": "Generate",
+    "download": "Download",
+    "export": "Export",
+    "save": "Save",
+    "cancel": "Cancel",
+    "confirm": "Confirm",
+    "close": "Close",
+    "view": "View",
+    "edit": "Edit",
+    "delete": "Delete",
+    "refresh": "Refresh",
+    "apply": "Apply",
+    "start": "Start",
+    "stop": "Stop",
+    "continue": "Continue"
+  },
+  "geo_dashboard": {
+    "title": "GEO Dashboard",
+    "subtitle": "Generative Engine Optimization Analytics",
+    "citation_rate": "Citation Rate",
+    "total_mentions": "Total Mentions",
+    "opportunities": "Opportunities",
+    "sentiment": "Sentiment",
+    "tabs": {
+      "opportunities": "Top Opportunities",
+      "citations": "Recent Citations",
+      "history": "Citation History",
+      "query_discovery": "Query Discovery",
+      "competitors": "Competitors",
+      "schema": "Schema Generator",
+      "schema_multiple": "Multiple Schemas",
+      "templates": "Content Templates",
+      "content_analyze": "Analyze Content"
+    },
+    "start_tracking": "Start Tracking",
+    "back_to_audit": "Back to Audit"
+  },
+  "competitor_analysis": {
+    "title": "Competitor Analysis",
+    "subtitle": "Start analysis and view benchmark vs competitors",
+    "add_competitor": "Add Competitor",
+    "run_analysis": "Run Analysis",
+    "results": "Analysis Results"
+  },
+  "schema_generator": {
+    "title": "Schema.org Generator",
+    "subtitle": "Generate optimized Schema.org for better LLM understanding",
+    "url_placeholder": "Enter URL to analyze...",
+    "generate": "Generate Schema",
+    "copy": "Copy",
+    "copied": "Copied"
+  },
+  "common": {
+    "loading": "Loading...",
+    "no_data": "No data available",
+    "coming_soon": "Coming Soon",
+    "last_updated": "Last updated",
+    "version": "Version"
+  }
+}

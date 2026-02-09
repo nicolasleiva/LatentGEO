@@ -1,4 +1,6 @@
-version: '3.8'
+# Optimized Docker Compose for DEVELOPMENT
+# Features: Fast rebuilds, hot reload, resource limits, caching
+# Usage: docker compose -f docker-compose.dev.yml up
 
 services:
   # Base de Datos PostgreSQL
@@ -15,27 +17,45 @@ services:
       - "5432:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U auditor"]
-      interval: 10s
-      timeout: 5s
+      interval: 5s
+      timeout: 3s
       retries: 5
+    networks:
+      - auditor_network_dev
+    # Resource limits to prevent system slowdown
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          cpus: '0.5'
+          memory: 256M
 
   # Redis (Caché y Cola de Tareas)
   redis:
     image: redis:7-alpine
     container_name: auditor_redis_dev
-    #ports:
-     # - "6379:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+      interval: 5s
+      timeout: 3s
+      retries: 3
+    networks:
+      - auditor_network_dev
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
 
-  # Backend FastAPI (Development)
+  # Backend FastAPI - DEVELOPMENT MODE (Optimized)
   backend:
     build:
       context: .
-      dockerfile: Dockerfile.backend
+      dockerfile: Dockerfile.backend.dev
+      args:
+        BUILDKIT_INLINE_CACHE: 1
     container_name: auditor_backend_dev
     environment:
       DATABASE_URL: postgresql+psycopg2://auditor:auditor_password@postgres:5432/auditor_db
@@ -44,10 +64,25 @@ services:
       CELERY_BACKEND: redis://redis:6379/1
       DEBUG: "True"
       PYTHONUNBUFFERED: "1"
+      PYTHONDONTWRITEBYTECODE: "1"
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
-      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
       CSE_ID: ${CSE_ID:-}
+      NVIDIA_API_KEY: ${NVIDIA_API_KEY:-}
+      NV_API_KEY_CODE: ${NV_API_KEY_CODE:-}
+      NV_API_KEY_ANALYSIS: ${NV_API_KEY_ANALYSIS:-}
+      GOOGLE_PAGESPEED_API_KEY: ${GOOGLE_PAGESPEED_API_KEY:-}
+      SECRET_KEY: ${SECRET_KEY:-}
+      # GitHub Integration
+      GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
+      GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}
+      GITHUB_REDIRECT_URI: ${GITHUB_REDIRECT_URI:-}
+      GITHUB_WEBHOOK_SECRET: ${GITHUB_WEBHOOK_SECRET:-}
+      # HubSpot Integration
+      HUBSPOT_CLIENT_ID: ${HUBSPOT_CLIENT_ID:-}
+      HUBSPOT_CLIENT_SECRET: ${HUBSPOT_CLIENT_SECRET:-}
+      HUBSPOT_REDIRECT_URI: ${HUBSPOT_REDIRECT_URI:-}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-}
     ports:
       - "8000:8000"
     depends_on:
@@ -56,37 +91,126 @@ services:
       redis:
         condition: service_healthy
     volumes:
-      - ./backend:/app
-      - ./reports:/app/reports
-      - ./logs:/app/logs
+      # Use cached mode for better performance on Mac/Windows
+      - ./backend:/app:cached
+      - ./reports:/app/reports:cached
+      - ./logs:/app/logs:cached
+      # tmpfs for temp files (faster I/O)
+      - type: tmpfs
+        target: /tmp
+        tmpfs:
+          size: 100M
     networks:
       - auditor_network_dev
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    # Auto-reload on code changes
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir /app
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
 
-  # Frontend (Development)
+  # Frontend - DEVELOPMENT MODE with Hot Reload (Optimized)
   frontend:
-    build:
-      context: .
-      dockerfile: Dockerfile.frontend # Usará el mismo Dockerfile
-      target: builder # Pero se detendrá en la etapa 'builder'
+    image: node:20.9-slim
     container_name: auditor_frontend_dev
+    working_dir: /app
     ports:
       - "3000:3000"
     environment:
       NEXT_PUBLIC_API_URL: http://localhost:8000
-      # Habilita el Fast Refresh de Next.js a través de polling
+      NEXT_PUBLIC_BACKEND_URL: http://localhost:8000
+      NODE_ENV: development
+      # Speed up Next.js
+      NEXT_TELEMETRY_DISABLED: 1
+      # Enable polling for file watching (more reliable in Docker)
       WATCHPACK_POLLING: "true"
+      CHOKIDAR_USEPOLLING: "true"
+      # Auth0 Configuration
+      AUTH0_SECRET: ${AUTH0_SECRET:-}
+      AUTH0_DOMAIN: ${AUTH0_DOMAIN:-}
+      AUTH0_CLIENT_ID: ${AUTH0_CLIENT_ID:-}
+      AUTH0_CLIENT_SECRET: ${AUTH0_CLIENT_SECRET:-}
+      APP_BASE_URL: http://localhost:3000
+    command: >
+      sh -c "
+        corepack enable && 
+        corepack prepare pnpm@latest --activate &&
+        pnpm install --frozen-lockfile &&
+        pnpm run dev
+      "
     depends_on:
       - backend
-    volumes:
-      # Monta el código fuente para hot-reloading
-      - ./frontend:/app 
     networks:
       - auditor_network_dev
-    command: pnpm run dev
+    volumes:
+      # Use delegated for better performance (Mac/Windows)
+      - ./frontend:/app:delegated
+      # Named volume for node_modules (faster than bind mount)
+      - frontend_node_modules:/app/node_modules
+      - frontend_next:/app/.next
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2G
+        reservations:
+          cpus: '1.0'
+          memory: 1G
+
+  # Celery Worker - DEVELOPMENT MODE (Optional)
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend.dev
+    container_name: auditor_worker_dev
+    command: celery -A app.workers.tasks worker --loglevel=info --concurrency=1
+    environment:
+      DATABASE_URL: postgresql+psycopg2://auditor:auditor_password@postgres:5432/auditor_db
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER: redis://redis:6379/0
+      CELERY_BACKEND: redis://redis:6379/1
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
+      GOOGLE_API_KEY: ${GOOGLE_API_KEY}
+      CSE_ID: ${CSE_ID}
+      NVIDIA_API_KEY: ${NVIDIA_API_KEY}
+      NV_API_KEY_CODE: ${NV_API_KEY_CODE:-}
+      NV_API_KEY_ANALYSIS: ${NV_API_KEY_ANALYSIS:-}
+      GOOGLE_PAGESPEED_API_KEY: ${GOOGLE_PAGESPEED_API_KEY}
+      C_FORCE_ROOT: '1'
+      # GitHub Integration
+      GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
+      GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}
+      GITHUB_REDIRECT_URI: ${GITHUB_REDIRECT_URI:-}
+      GITHUB_WEBHOOK_SECRET: ${GITHUB_WEBHOOK_SECRET:-}
+      # HubSpot Integration
+      HUBSPOT_CLIENT_ID: ${HUBSPOT_CLIENT_ID:-}
+      HUBSPOT_CLIENT_SECRET: ${HUBSPOT_CLIENT_SECRET:-}
+      HUBSPOT_REDIRECT_URI: ${HUBSPOT_REDIRECT_URI:-}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-}
+      CELERYD_CONCURRENCY: 1
+    depends_on:
+      - backend
+      - redis
+    volumes:
+      - ./backend:/app:cached
+      - ./reports:/app/reports:cached
+      - ./logs:/app/logs:cached
+    networks:
+      - auditor_network_dev
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
 
 volumes:
   postgres_data_dev:
+  frontend_node_modules:
+  frontend_next:
 
 networks:
   auditor_network_dev:

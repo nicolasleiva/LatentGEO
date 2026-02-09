@@ -1,0 +1,152 @@
+{
+  "version": "2.0.0",
+  "name": "Auditor GEO Enterprise Prompts",
+  "tier": "premium",
+  "language": "en",
+  "created_at": "2026-02-01",
+  "updated_at": "2026-02-01",
+  "description": "Enterprise-grade SEO/GEO audit prompts with McKinsey-level analysis, financial projections, and competitive intelligence",
+  "author": "Auditor GEO Team",
+  "license": "Enterprise",
+  
+  "metadata": {
+    "target_audience": "enterprise_clients",
+    "report_length": "20-30_pages",
+    "analysis_depth": "comprehensive",
+    "roi_calculations": true,
+    "competitive_intelligence": true,
+    "product_optimization": true,
+    "automated_quality_gates": true
+  },
+  
+  "prompts_structure": {
+    "external_analysis": {
+      "file": "external_analysis.json",
+      "description": "Market intelligence and site classification",
+      "priority": 1
+    },
+    "competitor_intelligence": {
+      "file": "competitor_intelligence.json",
+      "description": "Competitive analysis with matrices and strategies",
+      "priority": 2
+    },
+    "product_intelligence": {
+      "file": "product_intelligence.json",
+      "description": "E-commerce/retail product optimization for LLMs",
+      "priority": 3,
+      "conditional": "detected_ecommerce"
+    },
+    "pagespeed_analysis": {
+      "file": "pagespeed_analysis.json",
+      "description": "Web performance with financial impact analysis",
+      "priority": 4
+    },
+    "executive_summary": {
+      "file": "executive_summary.json",
+      "description": "McKinsey-style 4-page executive summary",
+      "priority": 5
+    },
+    "report_generation": {
+      "file": "report_generation.json",
+      "description": "Complete audit report V12 with 11 sections",
+      "priority": 6
+    },
+    "fix_plan_generation": {
+      "file": "fix_plan_generation.json",
+      "description": "Technical action plan with RACI matrix",
+      "priority": 7
+    },
+    "content_strategy": {
+      "file": "content_strategy.json",
+      "description": "AI-optimized content strategy and calendar",
+      "priority": 8
+    }
+  },
+  
+  "configuration": {
+    "llm_settings": {
+      "model": "kimi-k2",
+      "max_tokens": 256000,
+      "temperature": 0.3,
+      "top_p": 0.95,
+      "language": "en"
+    },
+    "output_settings": {
+      "format": "markdown",
+      "include_delimiter": true,
+      "delimiter": "---START_FIX_PLAN---",
+      "min_report_length": 15000,
+      "max_report_length": 50000
+    },
+    "validation": {
+      "validate_json_schema": true,
+      "validate_output_structure": true,
+      "check_completeness": true,
+      "enforce_english": true
+    },
+    "caching": {
+      "enabled": true,
+      "ttl_seconds": 3600,
+      "max_size_mb": 100
+    }
+  },
+  
+  "business_rules": {
+    "roi_calculations": {
+      "enabled": true,
+      "conversion_rate_default": 0.02,
+      "avg_order_value_default": 100,
+      "traffic_value_per_visitor": 5,
+      "calculation_method": "conservative"
+    },
+    "competitor_analysis": {
+      "max_competitors": 5,
+      "min_competitor_data_points": 10,
+      "include_market_share_estimate": true,
+      "include_vulnerability_mapping": true
+    },
+    "product_analysis": {
+      "detect_ecommerce": true,
+      "min_product_pages": 3,
+      "analyze_product_schema": true,
+      "check_llm_visibility": true,
+      "generate_content_gaps": true
+    },
+    "quality_gates": {
+      "min_report_sections": 10,
+      "required_sections": [
+        "executive_summary",
+        "competitive_intelligence",
+        "technical_performance",
+        "content_strategy",
+        "roadmap"
+      ],
+      "min_fix_plan_items": 5,
+      "max_fix_plan_items": 50
+    }
+  },
+  
+  "versioning": {
+    "current": "2.0.0",
+    "previous": "1.11",
+    "changelog": [
+      "Complete migration to JSON-based prompts",
+      "Added McKinsey-level executive summary",
+      "Implemented financial ROI calculations",
+      "Added competitive intelligence matrices",
+      "Added product intelligence for retail/ecommerce",
+      "Implemented automated quality gates",
+      "Full internationalization (English)",
+      "Added predictive analytics framework",
+      "Implemented CI/CD quality pipeline"
+    ]
+  },
+  
+  "deployment": {
+    "environment": "production",
+    "hot_reload": false,
+    "validation_on_load": true,
+    "fallback_enabled": true,
+    "fallback_version": "1.11"
+  }
+}

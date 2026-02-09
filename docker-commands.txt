@@ -1,0 +1,114 @@
+===========================================
+COMANDOS DOCKER - LIMPIOS Y ORGANIZADOS
+===========================================
+
+🛑 PRIMERO: Detener todo y limpiar
+docker compose down -v
+docker compose -f docker-compose.dev.yml down -v
+docker system prune -f
+
+===========================================
+📦 MODO PRODUCCIÓN (Recomendado)
+===========================================
+
+# 1. Construir y levantar TODO (frontend + backend + db + redis)
+docker compose up --build
+
+# O en segundo plano:
+docker compose up --build -d
+
+# Ver logs:
+docker compose logs -f frontend
+docker compose logs -f backend
+
+# Detener:
+docker compose down
+
+===========================================
+🔧 MODO DESARROLLO (con Hot Reload)
+===========================================
+
+# 1. Construir y levantar TODO con recarga automática
+docker compose -f docker-compose.dev.yml up
+
+# O en segundo plano:
+docker compose -f docker-compose.dev.yml up -d
+
+# Ver logs en tiempo real:
+docker compose -f docker-compose.dev.yml logs -f frontend
+
+# Detener:
+docker compose -f docker-compose.dev.yml down
+
+===========================================
+🧹 COMANDOS DE LIMPIEZA (si hay problemas)
+===========================================
+
+# Limpiar contenedores detenidos, redes y volúmenes no usados
+docker system prune -f
+
+# Limpiar TODO incluyendo volúmenes (⚠️ Pierde datos)
+docker system prune -a -f --volumes
+
+# Reconstruir desde cero sin caché
+docker compose build --no-cache frontend
+docker compose up
+
+# Eliminar imagen específica y reconstruir
+docker rmi auditor_geo-frontend
+docker compose up --build
+
+===========================================
+🔍 COMANDOS ÚTILES DE DIAGNÓSTICO
+===========================================
+
+# Ver contenedores corriendo
+docker ps
+
+# Ver logs de un servicio específico
+docker logs auditor_frontend
+docker logs auditor_backend
+
+# Entrar a un contenedor (debug)
+docker exec -it auditor_frontend sh
+docker exec -it auditor_backend bash
+
+# Verificar estado de healthcheck
+docker ps --format "table {{.Names}}\t{{.Status}}"
+
+# Reiniciar solo el frontend
+docker compose restart frontend
+
+===========================================
+📋 VERIFICACIÓN RÁPIDA
+===========================================
+
+# 1. Verificar que todo esté funcionando:
+curl http://localhost:3000
+curl http://localhost:8000/health
+
+# 2. O en el navegador:
+# Frontend: http://localhost:3000
+# Backend API: http://localhost:8000
+# API Docs: http://localhost:8000/docs
+
+===========================================
+💡 RECOMENDACIONES
+===========================================
+
+1. PRIMERA VEZ: Usa modo producción
+   docker compose up --build
+
+2. DESARROLLO: Usa modo dev para hot reload
+   docker compose -f docker-compose.dev.yml up
+
+3. SI FALLA: Limpia y reconstruye
+   docker compose down -v
+   docker system prune -f
+   docker compose up --build
+
+4. PROBLEMAS DE MEMORIA:
+   - Aumenta recursos en Docker Desktop
+   - Usa docker-compose.dev.yml (tiene límites configurados)
+
+===========================================

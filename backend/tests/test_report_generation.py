@@ -1,29 +1,7 @@
 
 import pytest
-import asyncio
-import sys
-import os
-from unittest.mock import MagicMock
-from pathlib import Path
 
-# Add project root to sys.path to allow importing backend.app
-# Assuming this file is in backend/tests/
-project_root = Path(__file__).resolve().parent.parent.parent
-sys.path.append(str(project_root))
-
-# Mock sqlalchemy to avoid environment issues during import of PipelineService
-sys.modules["sqlalchemy"] = MagicMock()
-sys.modules["sqlalchemy.orm"] = MagicMock()
-
-try:
-    from auditor_geo.backend.app.services.pipeline_service import PipelineService
-except ImportError:
-    # Try alternative import if running directly from root without package structure
-    try:
-        from backend.app.services.pipeline_service import PipelineService
-    except ImportError:
-        # If running from backend directory
-        from app.services.pipeline_service import PipelineService
+from app.services.pipeline_service import PipelineService
 
 @pytest.mark.asyncio
 async def test_generate_report_v11_structure():
