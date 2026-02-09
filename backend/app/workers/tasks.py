@@ -65,8 +65,14 @@ def run_audit_task(self, audit_id: int):
                 db=db, audit_id=audit_id, progress=5, status=AuditStatus.RUNNING
             )
             
-            # Guardamos la URL para usarla fuera del bloque de sesión
+            # Guardamos la URL y el contexto para usarla fuera del bloque de sesión
             audit_url = str(audit.url)
+            audit_market = audit.market
+            audit_language = audit.language
+            audit_domain = audit.domain
+            audit_competitors = (
+                audit.competitors if isinstance(audit.competitors, list) else []
+            )
 
         # 2. Ejecutar el pipeline (fuera de la transacción de DB para no bloquearla)
         llm_function = get_llm_function()
@@ -114,6 +120,17 @@ def run_audit_task(self, audit_id: int):
         else:
             logger.info(f"Local audit completed for {audit_url}: status={target_audit_result.get('status')}")
         
+        # Enriquecer con mercado/idioma/domino desde la auditoría si no viene en el resumen
+        if isinstance(target_audit_result, dict):
+            if audit_market and not target_audit_result.get("market"):
+                target_audit_result["market"] = audit_market
+            if audit_language and not target_audit_result.get("language"):
+                target_audit_result["language"] = audit_language
+            if audit_domain and not target_audit_result.get("domain"):
+                target_audit_result["domain"] = audit_domain
+            if audit_competitors and not target_audit_result.get("competitors"):
+                target_audit_result["competitors"] = audit_competitors
+
         # Ejecutar pipeline principal de auditoría INICIAL (sin GEO tools, sin reporte pesado)
         # Este nuevo flujo es exclusivamente para errores (fix plan) y competidores.
         from app.services.pipeline_service import run_initial_audit
@@ -752,4 +769,3 @@ def generate_full_report_task(audit_id: int):
     except Exception as e:
         logger.error(f"Error generating full report: {e}", exc_info=True)
         raise
-

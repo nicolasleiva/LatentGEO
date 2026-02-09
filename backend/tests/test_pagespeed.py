@@ -1,29 +1,27 @@
-import asyncio
-import sys
-sys.path.insert(0, 'backend')
+import os
+import pytest
 
-from backend.app.services.pagespeed_service import PageSpeedService
+from app.core.config import settings
+from app.services.pagespeed_service import PageSpeedService
 
-async def test():
-    API_KEY = "AIzaSyCOj-uXcsYu94q-HY3SynXgevgLWlEuYD4"
-    URL = "https://www.codegpt.co/"
-    
-    print(f"Testing PageSpeed for: {URL}")
-    print("=" * 50)
-    
-    print("\n[1/2] Analyzing MOBILE...")
-    mobile = await PageSpeedService.analyze_url(URL, API_KEY, "mobile")
-    print(f"Mobile Performance: {mobile.get('performance_score')}")
-    print(f"Mobile LCP: {mobile.get('core_web_vitals', {}).get('lcp')} ms")
-    
-    print("\n[2/2] Analyzing DESKTOP...")
-    await asyncio.sleep(3)
-    desktop = await PageSpeedService.analyze_url(URL, API_KEY, "desktop")
-    print(f"Desktop Performance: {desktop.get('performance_score')}")
-    print(f"Desktop LCP: {desktop.get('core_web_vitals', {}).get('lcp')} ms")
-    
-    print("\n" + "=" * 50)
-    print("✓ Test completed!")
 
-if __name__ == "__main__":
-    asyncio.run(test())
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_pagespeed_api():
+    if os.getenv("RUN_INTEGRATION") != "1":
+        pytest.skip("Set RUN_INTEGRATION=1 to run external PageSpeed API test.")
+
+    if not settings.ENABLE_PAGESPEED or not settings.GOOGLE_PAGESPEED_API_KEY:
+        pytest.skip("PageSpeed disabled or API key missing.")
+
+    url = os.getenv("PAGESPEED_TEST_URL")
+    if not url:
+        pytest.fail("PAGESPEED_TEST_URL is required for real PageSpeed tests.")
+
+    api_key = settings.GOOGLE_PAGESPEED_API_KEY
+
+    mobile = await PageSpeedService.analyze_url(url, api_key, "mobile")
+    assert "performance_score" in mobile
+
+    desktop = await PageSpeedService.analyze_url(url, api_key, "desktop")
+    assert "performance_score" in desktop

@@ -1,0 +1,239 @@
+{
+  "version": "2.0.0",
+  "name": "Web Performance Financial Impact Analysis",
+  "description": "PageSpeed analysis with business impact quantification, ROI calculations, and revenue projections",
+  "language": "en",
+  "system_prompt": "You are a Chief Digital Officer and Web Performance Expert at a Fortune 500 company. You specialize in quantifying the business impact of web performance optimization.\n\nYour analytical approach:\n1. Technical Metrics Translation: Convert Core Web Vitals into business outcomes\n2. Financial Impact Modeling: Calculate revenue loss from poor performance\n3. ROI Projections: Estimate return on optimization investment\n4. Competitive Benchmarking: Compare against industry standards and leaders\n5. Prioritization Framework: Rank optimizations by business value, not just technical severity\n\nKey Data Points You Use:\n- Performance scores (0-100) for mobile and desktop\n- Core Web Vitals: LCP, INP/FID, CLS, FCP, TTFB\n- Opportunity audits: Potential savings in seconds and KB\n- Page weight and request counts\n- Resource utilization (JS, CSS, images)\n\nYour output must be board-room ready: financially quantified, strategically prioritized, and immediately actionable.",
+  "output_schema": {
+    "type": "object",
+    "required": [
+      "executive_summary",
+      "performance_scores",
+      "core_web_vitals_analysis",
+      "financial_impact_analysis",
+      "optimization_opportunities",
+      "competitive_benchmarking",
+      "implementation_roadmap"
+    ],
+    "properties": {
+      "executive_summary": {
+        "type": "object",
+        "properties": {
+          "overall_assessment": {"type": "string"},
+          "business_impact_rating": {"type": "string", "enum": ["critical", "high", "medium", "low"]},
+          "revenue_at_risk": {"type": "string"},
+          "quick_win_potential": {"type": "string"},
+          "investment_required": {"type": "string"},
+          "projected_roi": {"type": "string"}
+        }
+      },
+      "performance_scores": {
+        "type": "object",
+        "properties": {
+          "mobile": {
+            "type": "object",
+            "properties": {
+              "overall_score": {"type": "number"},
+              "rating": {"type": "string", "enum": ["poor", "needs_improvement", "good", "excellent"]},
+              "seo_impact": {"type": "string"}
+            }
+          },
+          "desktop": {
+            "type": "object",
+            "properties": {
+              "overall_score": {"type": "number"},
+              "rating": {"type": "string", "enum": ["poor", "needs_improvement", "good", "excellent"]},
+              "seo_impact": {"type": "string"}
+            }
+          },
+          "score_gap_analysis": {"type": "string"}
+        }
+      },
+      "core_web_vitals_analysis": {
+        "type": "object",
+        "properties": {
+          "lcp": {
+            "type": "object",
+            "properties": {
+              "metric_name": {"type": "string"},
+              "mobile_value": {"type": "string"},
+              "desktop_value": {"type": "string"},
+              "status": {"type": "string", "enum": ["good", "needs_improvement", "poor"]},
+              "business_impact": {"type": "string"},
+              "revenue_impact": {"type": "string"}
+            }
+          },
+          "inp": {
+            "type": "object",
+            "properties": {
+              "metric_name": {"type": "string"},
+              "mobile_value": {"type": "string"},
+              "desktop_value": {"type": "string"},
+              "status": {"type": "string", "enum": ["good", "needs_improvement", "poor"]},
+              "business_impact": {"type": "string"},
+              "conversion_impact": {"type": "string"}
+            }
+          },
+          "cls": {
+            "type": "object",
+            "properties": {
+              "metric_name": {"type": "string"},
+              "mobile_value": {"type": "string"},
+              "desktop_value": {"type": "string"},
+              "status": {"type": "string", "enum": ["good", "needs_improvement", "poor"]},
+              "business_impact": {"type": "string"},
+              "user_experience_impact": {"type": "string"}
+            }
+          }
+        }
+      },
+      "financial_impact_analysis": {
+        "type": "object",
+        "properties": {
+          "current_state_losses": {
+            "type": "object",
+            "properties": {
+              "bounce_rate_increase": {"type": "string"},
+              "conversion_rate_decrease": {"type": "string"},
+              "estimated_monthly_revenue_loss": {"type": "string"},
+              "estimated_annual_revenue_loss": {"type": "string"},
+              "calculation_methodology": {"type": "string"}
+            }
+          },
+          "optimization_value": {
+            "type": "object",
+            "properties": {
+              "potential_conversion_lift": {"type": "string"},
+              "potential_revenue_recovery": {"type": "string"},
+              "seo_ranking_improvement_value": {"type": "string"},
+              "user_retention_value": {"type": "string"}
+            }
+          },
+          "investment_required": {
+            "type": "object",
+            "properties": {
+              "development_hours_estimate": {"type": "string"},
+              "implementation_cost": {"type": "string"},
+              "ongoing_monitoring_cost": {"type": "string"},
+              "total_investment": {"type": "string"}
+            }
+          },
+          "roi_projections": {
+            "type": "object",
+            "properties": {
+              "break_even_timeline": {"type": "string"},
+              "3_month_roi": {"type": "string"},
+              "6_month_roi": {"type": "string"},
+              "12_month_roi": {"type": "string"},
+              "3_year_npv": {"type": "string"}
+            }
+          }
+        }
+      },
+      "optimization_opportunities": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "opportunity": {"type": "string"},
+            "category": {"type": "string", "enum": ["images", "javascript", "css", "fonts", "server", "rendering"]},
+            "savings_potential": {"type": "string"},
+            "implementation_effort": {"type": "string", "enum": ["low", "medium", "high"]},
+            "business_value": {"type": "string", "enum": ["low", "medium", "high", "critical"]},
+            "priority": {"type": "string", "enum": ["p1", "p2", "p3"]},
+            "implementation_steps": {"type": "array", "items": {"type": "string"}},
+            "revenue_impact": {"type": "string"}
+          }
+        }
+      },
+      "competitive_benchmarking": {
+        "type": "object",
+        "properties": {
+          "industry_average": {
+            "type": "object",
+            "properties": {
+              "mobile_score": {"type": "number"},
+              "desktop_score": {"type": "number"},
+              "lcp_average": {"type": "string"}
+            }
+          },
+          "top_performers": {
+            "type": "object",
+            "properties": {
+              "mobile_score": {"type": "number"},
+              "desktop_score": {"type": "number"},
+              "lcp_benchmark": {"type": "string"}
+            }
+          },
+          "current_position": {"type": "string"},
+          "gap_to_leader": {"type": "string"},
+          "competitive_disadvantage": {"type": "string"}
+        }
+      },
+      "implementation_roadmap": {
+        "type": "object",
+        "properties": {
+          "quick_wins": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "action": {"type": "string"},
+                "timeline": {"type": "string"},
+                "effort": {"type": "string"},
+                "impact": {"type": "string"}
+              }
+            }
+          },
+          "strategic_initiatives": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "action": {"type": "string"},
+                "timeline": {"type": "string"},
+                "effort": {"type": "string"},
+                "impact": {"type": "string"}
+              }
+            }
+          },
+          "monitoring_plan": {
+            "type": "array",
+            "items": {"type": "string"}
+          }
+        }
+      }
+    }
+  },
+  "user_template": "Analyze the following PageSpeed Insights data with business impact quantification:\n\nPAGESPEED DATA:\n```json\n{pagespeed_data}\n```\n\nBUSINESS CONTEXT:\n- Monthly visitors: {monthly_visitors}\n- Current conversion rate: {conversion_rate}\n- Average order value: ${avg_order_value}\n- Monthly revenue: ${monthly_revenue}\n\nRequirements:\n1. Translate technical metrics into financial impact\n2. Calculate revenue loss from current performance\n3. Estimate ROI of optimization efforts\n4. Prioritize opportunities by business value (not just technical severity)\n5. Compare against industry benchmarks\n6. Create prioritized implementation roadmap\n7. Provide board-ready executive summary\n\nUse these industry-standard impact multipliers:\n- 1s delay = 7% conversion loss\n- 3s delay = 40% bounce rate increase\n- Poor mobile performance = -15% SEO visibility\n- Good Core Web Vitals = +25% ranking boost potential",
+  "instructions": [
+    "Convert all technical metrics to business language (revenue, conversions, SEO impact)",
+    "Calculate financial impact using provided business metrics or industry defaults",
+    "Prioritize by: High business impact + Low effort = P1, High impact + High effort = P2, etc.",
+    "Include specific dollar amounts for revenue loss and recovery potential",
+    "Provide implementation timeline with resource estimates",
+    "Compare against industry leaders (Amazon, Google, etc.) and sector averages",
+    "Executive summary must be 1-2 paragraphs suitable for C-suite presentation",
+    "Include ROI calculations for 3, 6, 12 months",
+    "Mention SEO ranking impact quantitatively"
+  ],
+  "quality_gates": {
+    "require_financial_calculations": true,
+    "require_roi_projections": true,
+    "require_prioritization": true,
+    "require_competitive_benchmarking": true,
+    "min_optimization_opportunities": 5,
+    "max_optimization_opportunities": 15
+  },
+  "business_metrics_defaults": {
+    "monthly_visitors": 10000,
+    "conversion_rate": 0.02,
+    "avg_order_value": 100,
+    "impact_multipliers": {
+      "one_second_delay_conversion_loss": 0.07,
+      "three_second_delay_bounce_increase": 0.40,
+      "poor_mobile_seo_penalty": 0.15,
+      "good_cwv_ranking_boost": 0.25
+    }
+  }
+}

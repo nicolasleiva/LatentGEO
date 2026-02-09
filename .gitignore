@@ -45,6 +45,7 @@ auditor.db
 htmlcov/
 .coverage
 .coverage.*
+.hypothesis/
 
 # ===================================================================
 # Archivos de Entorno y Secretos
@@ -66,6 +67,7 @@ pnpm-debug.log*
 .next/
 out/
 payload.json
+.next_old/
 
 # ===================================================================
 # Docker
@@ -93,6 +95,18 @@ downloads/
 # Documentación generada
 # ===================================================================
 site/
+
+# ===================================================================
+# Artefactos locales / caches de herramientas
+# ===================================================================
+.trae/
+.zencoder/
+final_test_results*.txt
+single_test_output.txt
+test_output.txt
+security_test_output.txt
+worker_logs.txt
+nul
 
 # ===================================================================
 # MyPy (Type checker)

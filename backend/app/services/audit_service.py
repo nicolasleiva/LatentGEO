@@ -237,7 +237,14 @@ class AuditService:
 
         # Actualizar metadata
         audit.is_ymyl = external_intelligence.get("is_ymyl", False)
-        audit.category = external_intelligence.get("category", "Desconocida")
+        category_value = external_intelligence.get("category", "Desconocida")
+        if isinstance(category_value, dict):
+            # Persist structured category as JSON string for String column compatibility
+            try:
+                category_value = json.dumps(category_value, ensure_ascii=False)
+            except Exception:
+                category_value = str(category_value)
+        audit.category = category_value
         # target_audit ya es dict o {}
         audit.total_pages = target_audit.get("audited_pages_count", 0)
 
@@ -315,6 +322,7 @@ class AuditService:
             os.makedirs(reports_dir, exist_ok=True)
             os.makedirs(pages_dir, exist_ok=True)
             os.makedirs(competitors_dir, exist_ok=True)
+            import re
 
             # Guardar resumen agregado
             aggregated_path = os.path.join(reports_dir, "aggregated_summary.json")
@@ -360,7 +368,14 @@ class AuditService:
             for i, comp in enumerate(competitor_audits):
                 try:
                     domain = comp.get('domain') or f"competitor_{i}"
-                    comp_path = os.path.join(competitors_dir, f"competitor_{domain}.json")
+                    safe_domain = re.sub(r'[^\w\-_.]', '_', domain)
+                    if not comp.get("geo_score"):
+                        comp["geo_score"] = CompetitorService._calculate_geo_score(comp)
+                    if "benchmark" not in comp:
+                        comp["benchmark"] = CompetitorService._format_competitor_data(
+                            comp, comp.get("geo_score", 0.0), comp.get("url")
+                        )
+                    comp_path = os.path.join(competitors_dir, f"competitor_{safe_domain}.json")
                     with open(comp_path, 'w', encoding='utf-8') as f:
                         json.dump(comp, f, ensure_ascii=False, indent=2)
                 except:
@@ -596,9 +611,9 @@ class AuditService:
             struct = audit_data.get("structure", {})
             # H1 missing or multiple is CRITICAL
             h1_status = struct.get("h1_check", {}).get("status")
-            if h1_status == "missing":
+            if h1_status in ["missing", "fail"]:
                 critical += 1
-            elif h1_status == "multiple":
+            elif h1_status in ["multiple", "warn"]:
                 high += 1
             
             # Title missing/empty is CRITICAL, too long/short is MEDIUM
@@ -919,7 +934,21 @@ class CompetitorService:
             # Extraer semantic HTML score
             structure_data = audit_data.get("structure", {})
             semantic_html = structure_data.get("semantic_html", {})
-            structure_score = semantic_html.get("score_percent", 0)
+            semantic_score = semantic_html.get("score_percent", 0)
+            if not isinstance(semantic_score, (int, float)):
+                semantic_score = 0
+
+            # H1 status + header hierarchy health
+            h1_status = structure_data.get("h1_check", {}).get("status")
+            h1_coverage = 100 if h1_status == "pass" else 0
+            header_issues = structure_data.get("header_hierarchy", {}).get("issues") or []
+            header_hierarchy_coverage = 100 if not header_issues else 0
+
+            # Prefer site_metrics if present (aggregate)
+            site_metrics = audit_data.get("site_metrics", {}) if isinstance(audit_data.get("site_metrics"), dict) else {}
+            structure_score = site_metrics.get("structure_score_percent")
+            if not isinstance(structure_score, (int, float)):
+                structure_score = round((semantic_score + h1_coverage + header_hierarchy_coverage) / 3, 1)
             
             # Extraer E-E-A-T
             eeat_data = audit_data.get("eeat", {})
@@ -927,7 +956,6 @@ class CompetitorService:
             eeat_score = 100 if author_status == "pass" else 0
             
             # Extraer H1
-            h1_status = structure_data.get("h1_check", {}).get("status")
             h1_present = h1_status == "pass"
             
             # Extraer conversational tone
@@ -943,8 +971,8 @@ class CompetitorService:
                 "structure_score": structure_score,
                 "eeat_score": eeat_score,
                 "h1_present": h1_present,
+                "h1_status": h1_status,
                 "tone_score": tone_score,
-                "audit_data": audit_data  # Mantener datos completos para otros usos
             }
         except Exception as e:
             logger.error(f"Error formateando datos de competidor: {e}")
@@ -957,7 +985,6 @@ class CompetitorService:
                 "eeat_score": 0,
                 "h1_present": False,
                 "tone_score": 0,
-                "audit_data": audit_data
             }
 
     @staticmethod

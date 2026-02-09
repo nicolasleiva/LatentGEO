@@ -1,0 +1,35 @@
+# BORRA TODO lo anterior y usa SOLO esto:
+
+# CRÍTICO PARA PNPM - Evita symlinks corruptos en Windows
+node_modules/
+**/.pnpm-store/
+# Directorios de build
+.next/
+out/
+build/
+dist/
+
+# Archivos pesados y sensibles
+reports/
+logs/
+db/
+*.db
+*.sqlite
+.env*
+!.env.example
+
+# IDEs y git
+.git/
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Logs
+*.log
+pnpm-debug.log*

@@ -1,0 +1,42 @@
+version: '3.8'
+
+# Archivo de override para producción - NO commitear
+# Usar con: docker-compose -f docker-compose.yml -f docker-compose.prod.yml up
+
+services:
+  # Base de Datos - Sin puertos expuestos
+  db:
+    environment:
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    ports: []  # No exponer en producción
+
+  # Redis - Sin puertos expuestos
+  redis:
+    ports: []  # No exponer en producción
+
+  # Backend - Configuración de producción
+  backend:
+    environment:
+      DEBUG: False
+      ENVIRONMENT: production
+      DATABASE_URL: ${DATABASE_URL}
+      SECRET_KEY: ${SECRET_KEY}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
+      CORS_ORIGINS: ${CORS_ORIGINS}
+    ports:
+      - "8000:8000"  # Solo para desarrollo, en AWS usar ALB
+
+  # Frontend - Configuración de producción
+  frontend:
+    environment:
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
+      NEXT_PUBLIC_BACKEND_URL: ${NEXT_PUBLIC_BACKEND_URL}
+      NODE_ENV: production
+      APP_BASE_URL: ${APP_BASE_URL}
+    ports:
+      - "3000:3000"  # Solo para desarrollo, en AWS usar CloudFront/S3
+
+  # Worker - Configuración de producción
+  worker:
+    environment:
+      ENVIRONMENT: production

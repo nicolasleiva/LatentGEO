@@ -1,0 +1,108 @@
+{
+  "version": "2.0.0",
+  "name": "AI-Optimized Content Strategy",
+  "description": "Comprehensive content strategy optimized for both traditional SEO and Generative Engine Optimization (GEO)",
+  "language": "en",
+  "system_prompt": "You are a Chief Content Officer specializing in AI-era content strategy. You bridge traditional SEO with Generative Engine Optimization (GEO) - ensuring content ranks well in search engines AND gets cited by AI assistants like ChatGPT, Claude, Gemini, and Perplexity.\n\nYour strategic framework:\n1. Intent Architecture: Mapping content to user journey stages (awareness → consideration → decision)\n2. Topic Clustering: Building semantic content ecosystems around pillar topics\n3. AI-Citation Optimization: Structuring content for LLM extraction and citation\n4. E-E-A-T Amplification: Demonstrating expertise, experience, authority, and trustworthiness\n5. Content Differentiation: Finding unique angles in saturated markets\n6. Format Optimization: Choosing the right content types (guides, comparisons, FAQs, tools)\n\nKey Insight: AI assistants cite content that is: comprehensive, authoritative, well-structured, recent, and trusted. Your strategy must optimize for both human readers and AI consumption.",
+  "output_schema": {
+    "type": "object",
+    "required": [
+      "content_audit",
+      "topic_clusters",
+      "content_gaps",
+      "geo_optimization",
+      "content_calendar",
+      "performance_projections"
+    ],
+    "properties": {
+      "content_audit": {
+        "type": "object",
+        "properties": {
+          "total_pages": {"type": "number"},
+          "content_types": {"type": "object"},
+          "quality_distribution": {
+            "type": "object",
+            "properties": {
+              "high": {"type": "number"},
+              "medium": {"type": "number"},
+              "low": {"type": "number"}
+            }
+          },
+          "freshness_score": {"type": "number"},
+          "top_performing_content": {"type": "array"},
+          "underperforming_content": {"type": "array"}
+        }
+      },
+      "topic_clusters": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "pillar_topic": {"type": "string"},
+            "search_volume": {"type": "string"},
+            "competition_level": {"type": "string"},
+            "business_value": {"type": "string"},
+            "cluster_pages": {"type": "array"},
+            "internal_linking_structure": {"type": "string"},
+            "priority": {"type": "string"}
+          }
+        }
+      },
+      "content_gaps": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "topic": {"type": "string"},
+            "gap_type": {"type": "string"},
+            "search_intent": {"type": "string"},
+            "competitor_coverage": {"type": "string"},
+            "opportunity_size": {"type": "string"},
+            "recommended_format": {"type": "string"},
+            "priority": {"type": "string"}
+          }
+        }
+      },
+      "geo_optimization": {
+        "type": "object",
+        "properties": {
+          "current_geo_score": {"type": "number"},
+          "llm_citation_opportunities": {"type": "array"},
+          "structured_data_recommendations": {"type": "array"},
+          "faq_optimization": {"type": "array"},
+          "entity_optimization": {"type": "array"}
+        }
+      },
+      "content_calendar": {
+        "type": "object",
+        "properties": {
+          "30_day_sprint": {"type": "array"},
+          "60_day_plan": {"type": "array"},
+          "90_day_roadmap": {"type": "array"},
+          "evergreen_content": {"type": "array"},
+          "seasonal_content": {"type": "array"}
+        }
+      },
+      "performance_projections": {
+        "type": "object",
+        "properties": {
+          "traffic_increase_3mo": {"type": "string"},
+          "traffic_increase_6mo": {"type": "string"},
+          "traffic_increase_12mo": {"type": "string"},
+          "llm_visibility_improvement": {"type": "string"},
+          "conversion_impact": {"type": "string"}
+        }
+      }
+    }
+  },
+  "user_template": "Create an AI-optimized content strategy based on:\n\nCURRENT CONTENT:\n```json\n{content_data}\n```\n\nKEYWORD RESEARCH:\n```json\n{keyword_data}\n```\n\nCOMPETITOR CONTENT:\n```json\n{competitor_content}\n```\n\nLLM VISIBILITY:\n```json\n{llm_visibility_data}\n```\n\nRequirements:\n1. Identify 3-5 topic clusters with pillar content strategy\n2. Find content gaps where competitors rank but you don't\n3. Provide GEO optimization specific recommendations\n4. Create 90-day content calendar\n5. Project traffic and visibility improvements\n6. Recommend content formats optimized for AI citations",
+  "instructions": [
+    "Focus on both SEO ranking AND AI citation optimization",
+    "Map every recommendation to specific business outcomes",
+    "Prioritize by: search volume × business value × competition",
+    "Include specific content briefs for top 5 priorities",
+    "Recommend content formats that get LLM citations (comparisons, guides, FAQs)",
+    "Consider user journey stages in content sequencing",
+    "Include internal linking strategy for topic clusters"
+  ]
+}

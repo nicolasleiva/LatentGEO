@@ -19,6 +19,7 @@ async def kimi_function(system_prompt: str, user_prompt: str) -> str:
         logger.error("No NVIDIA API key configured for KIMI")
         return "Error: No LLM API key configured."
 
+    client = None
     try:
         # Use AsyncOpenAI for non-blocking I/O
         client = AsyncOpenAI(
@@ -34,12 +35,12 @@ async def kimi_function(system_prompt: str, user_prompt: str) -> str:
         ]
         
         # Usar KIMI K2 Standard para análisis
-        logger.info(f"Llamando a KIMI K2 (Modelo: {settings.NV_MODEL_ANALYSIS}). Max tokens: {settings.NV_MAX_TOKENS}")
+        logger.info(f"Llamando a KIMI (Modelo: {settings.NV_MODEL_ANALYSIS}). Max tokens: {settings.NV_MAX_TOKENS}")
         completion = await client.chat.completions.create(
-            model=settings.NV_MODEL_ANALYSIS,  # moonshotai/kimi-k2-instruct-0905
+            model=settings.NV_MODEL_ANALYSIS,  # moonshotai/kimi-k2.5
             messages=messages,
-            temperature=0.6,
-            top_p=0.9,
+            temperature=0.0,
+            top_p=1.0,
             max_tokens=settings.NV_MAX_TOKENS,
             stream=False
         )
@@ -50,8 +51,16 @@ async def kimi_function(system_prompt: str, user_prompt: str) -> str:
         return content.strip()
         
     except Exception as e:
-        logger.error(f"Error with KIMI K2: {e}")
+        logger.error(f"Error with KIMI: {e}")
         raise e
+    finally:
+        if client is not None:
+            try:
+                await client.close()
+            except RuntimeError as close_err:
+                # Avoid crashing on shutdown when the event loop is already closed
+                if "Event loop is closed" not in str(close_err):
+                    logger.warning(f"Error closing KIMI client: {close_err}")
 
 def get_llm_function():
     """

@@ -1,0 +1,42 @@
+# syntax=docker/dockerfile:1
+# Optimized for DEVELOPMENT - fast rebuilds and hot reload
+
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Install system dependencies (keep layer cached)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc \
+    postgresql-client \
+    && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+
+# Copy only requirements first (better layer caching)
+COPY backend/requirements.txt .
+
+# Install Python dependencies with BuildKit cache mount (faster rebuilds)
+# Mount cache persists between builds, avoiding re-download
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install --default-timeout=100 -r requirements.txt
+
+# Copy application code (this layer changes often)
+COPY backend/ .
+
+# Development optimizations
+ENV PYTHONUNBUFFERED=1 \
+    HOST=0.0.0.0 \
+    PORT=8000 \
+    PYTHONPATH=/app \
+    # Speed up Python startup
+    PYTHONDONTWRITEBYTECODE=1 \
+    # Disable pip cache in container (we use mount cache instead)
+    PIP_NO_CACHE_DIR=1
+
+EXPOSE 8000
+
+# Faster healthcheck for development (starts quicker)
+HEALTHCHECK --interval=5s --timeout=3s --start-period=10s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')" || exit 1
+
+# Use reload for development (auto-restart on code changes)
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload", "--reload-dir", "/app"]

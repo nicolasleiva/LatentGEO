@@ -3,13 +3,16 @@ from typing import Optional, List, Dict, Any
 from datetime import datetime
 from enum import Enum
 from .validators import validate_url, validate_market
+from app.core.security import normalize_url
 from pydantic import field_validator
+
 
 class AuditStatus(str, Enum):
     PENDING = "pending"
     RUNNING = "running"
     COMPLETED = "completed"
     FAILED = "failed"
+
 
 class AuditCreate(BaseModel):
     url: str  # We use str to apply custom validation
@@ -22,26 +25,31 @@ class AuditCreate(BaseModel):
     user_id: Optional[str] = None  # Auth0 user sub
     user_email: Optional[str] = None  # User email
 
-    @field_validator('url')
+    @field_validator("url")
     @classmethod
     def validate_audit_url(cls, v):
         if not validate_url(v):
-            raise ValueError('URL inválida o no permitida para auditoría')
-        return v
-    
-    @field_validator('competitors')
+            raise ValueError("URL inválida o no permitida para auditoría")
+        # Normalizar la URL antes de guardar
+        return normalize_url(v)
+
+    @field_validator("competitors")
     @classmethod
     def validate_competitors(cls, v):
-        if v is None: return v
+        if v is None:
+            return v
+        normalized_competitors = []
         for url in v:
             if not validate_url(url):
-                raise ValueError(f'URL de competidor inválida: {url}')
-        return v
-    
-    @field_validator('market')
+                raise ValueError(f"URL de competidor inválida: {url}")
+            normalized_competitors.append(normalize_url(url))
+        return normalized_competitors
+
+    @field_validator("market")
     @classmethod
     def validate_market_field(cls, v):
         return validate_market(v) if v else v
+
 
 class AuditUpdate(BaseModel):
     status: Optional[AuditStatus] = None
@@ -58,6 +66,7 @@ class AuditUpdate(BaseModel):
     pagespeed_data: Optional[Dict[str, Any]] = None
     category: Optional[str] = None
     geo_score: Optional[float] = None
+
 
 class AuditResponse(BaseModel):
     id: int
@@ -79,10 +88,11 @@ class AuditResponse(BaseModel):
     category: Optional[str] = None  # Business category (e.g., "AI coding assistant")
     competitors: Optional[List[str]] = None
     market: Optional[str] = None
-    geo_score: float = 0  # GEO Score (0-10)
-    
+    geo_score: float = 0  # GEO Score (0-100)
+
     class Config:
         from_attributes = True
+
 
 class AuditSummary(BaseModel):
     id: int
@@ -93,9 +103,10 @@ class AuditSummary(BaseModel):
     created_at: datetime
     geo_score: Optional[float] = 0
     total_pages: Optional[int] = 0
-    
+
     class Config:
         from_attributes = True
+
 
 class AuditDetail(BaseModel):
     id: int
@@ -107,9 +118,10 @@ class AuditDetail(BaseModel):
     target_audit: Optional[Dict[str, Any]] = None
     report_markdown: Optional[str] = None
     fix_plan: Optional[List[Dict[str, Any]]] = None
-    
+
     class Config:
         from_attributes = True
+
 
 class ReportResponse(BaseModel):
     id: int
@@ -117,17 +129,20 @@ class ReportResponse(BaseModel):
     report_type: str
     file_path: Optional[str] = None
     created_at: datetime
-    
+
     class Config:
         from_attributes = True
 
+
 class PDFRequest(BaseModel):
     audit_id: int
+
 
 class PDFResponse(BaseModel):
     success: bool
     file_path: Optional[str] = None
     message: str
+
 
 class AuditAnalytics(BaseModel):
     total_audits: int
@@ -136,40 +151,48 @@ class AuditAnalytics(BaseModel):
     failed: int
     success_rate: float
 
+
 class CompetitorAnalysis(BaseModel):
     url: str
     domain: str
     geo_score: float
     audit_data: Dict[str, Any]
 
+
 class AuditConfigRequest(BaseModel):
     """Request para configurar auditoría con chat"""
+
     audit_id: int
     language: Optional[str] = None
     competitors: Optional[List[str]] = None
     market: Optional[str] = None
 
-    @field_validator('competitors')
+    @field_validator("competitors")
     @classmethod
     def validate_competitors(cls, v):
-        if v is None: return v
+        if v is None:
+            return v
         for url in v:
             if not validate_url(url):
-                raise ValueError(f'URL de competidor inválida: {url}')
+                raise ValueError(f"URL de competidor inválida: {url}")
         return v
-    
-    @field_validator('market')
+
+    @field_validator("market")
     @classmethod
     def validate_market_field(cls, v):
         return validate_market(v) if v else v
 
+
 class ChatMessage(BaseModel):
     """Mensaje de chat"""
+
     role: str  # "user" o "assistant"
     content: str
     options: Optional[List[str]] = None  # Opciones de respuesta
 
+
 # --- New Schemas for AI Features ---
+
 
 class BacklinkResponse(BaseModel):
     id: int
@@ -184,6 +207,7 @@ class BacklinkResponse(BaseModel):
     class Config:
         from_attributes = True
 
+
 class KeywordResponse(BaseModel):
     id: int
     audit_id: int
@@ -196,6 +220,7 @@ class KeywordResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
 
 class RankTrackingResponse(BaseModel):
     id: int
@@ -211,6 +236,7 @@ class RankTrackingResponse(BaseModel):
     class Config:
         from_attributes = True
 
+
 class LLMVisibilityResponse(BaseModel):
     id: int
     audit_id: int
@@ -223,6 +249,7 @@ class LLMVisibilityResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
 
 class AIContentSuggestionResponse(BaseModel):
     id: int

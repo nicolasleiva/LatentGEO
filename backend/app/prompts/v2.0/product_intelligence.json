@@ -1,0 +1,239 @@
+{
+  "version": "2.0.0",
+  "name": "Product Intelligence for LLM Visibility",
+  "description": "Enterprise-grade product optimization analysis for retail and e-commerce to maximize visibility in LLMs and AI assistants",
+  "language": "en",
+  "system_prompt": "You are a Senior Product Strategy Consultant specializing in AI/LLM optimization for e-commerce. You help major retailers and brands optimize their product visibility in AI assistants like ChatGPT, Claude, Gemini, and Perplexity.\n\nYour expertise covers:\n1. Product Schema Optimization: JSON-LD structured data for rich snippets and AI comprehension\n2. LLM Product Discovery: How to appear when users ask 'best [product] for [use case]'\n3. Content Gaps Analysis: What information is missing that prevents LLM recommendations\n4. E-E-A-T for Products: Trust signals that make products AI-recommendable\n5. Competitive Product Intelligence: How competitor products outperform in LLM visibility\n6. Conversion Optimization: Turning LLM visibility into actual sales\n\nKey Insight: LLMs recommend products based on comprehensive, structured, trustworthy information. Your job is to identify gaps and create a roadmap for product pages to become AI-recommendable.",
+  "output_schema": {
+    "type": "object",
+    "required": [
+      "product_detection",
+      "schema_analysis",
+      "llm_visibility_analysis",
+      "content_gaps",
+      "competitive_product_analysis",
+      "eeat_assessment",
+      "optimization_recommendations",
+      "priority_action_items"
+    ],
+    "properties": {
+      "product_detection": {
+        "type": "object",
+        "properties": {
+          "is_ecommerce": {"type": "boolean"},
+          "confidence_score": {"type": "number", "minimum": 0, "maximum": 100},
+          "product_pages_detected": {"type": "number"},
+          "category_pages_detected": {"type": "number"},
+          "product_page_patterns": {"type": "array", "items": {"type": "string"}},
+          "categories_identified": {"type": "array", "items": {"type": "string"}},
+          "platform_detected": {"type": "string", "description": "Shopify, WooCommerce, Magento, Custom, etc."}
+        }
+      },
+      "schema_analysis": {
+        "type": "object",
+        "properties": {
+          "overall_score": {"type": "number", "minimum": 0, "maximum": 100},
+          "schema_type": {"type": "string", "description": "Product, ItemList, CollectionPage, etc."},
+          "critical_fields_present": {"type": "array", "items": {"type": "string"}},
+          "critical_fields_missing": {"type": "array", "items": {"type": "string"}},
+          "recommended_fields_missing": {"type": "array", "items": {"type": "string"}},
+          "schema_issues": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "field": {"type": "string"},
+                "severity": {"type": "string", "enum": ["critical", "high", "medium", "low"]},
+                "issue": {"type": "string"},
+                "impact": {"type": "string"},
+                "recommendation": {"type": "string"}
+              }
+            }
+          },
+          "rich_snippets_opportunities": {"type": "array", "items": {"type": "string"}},
+          "example_improved_schema": {"type": "string", "description": "JSON-LD example of optimized schema"}
+        }
+      },
+      "llm_visibility_analysis": {
+        "type": "object",
+        "properties": {
+          "overall_visibility_score": {"type": "number", "minimum": 0, "maximum": 100},
+          "analysis_summary": {"type": "string"},
+          "queries_analyzed": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "query": {"type": "string"},
+                "intent": {"type": "string", "enum": ["informational", "commercial", "transactional"]},
+                "llm_mentions": {"type": "number"},
+                "brand_mentioned": {"type": "boolean"},
+                "products_mentioned": {"type": "array", "items": {"type": "string"}},
+                "ranking": {"type": "number", "description": "Position in LLM recommendations (1-10)"},
+                "why_not_ranking": {"type": "string"}
+              }
+            }
+          },
+          "visibility_gaps": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "category": {"type": "string"},
+                "gap_description": {"type": "string"},
+                "business_impact": {"type": "string"},
+                "priority": {"type": "string", "enum": ["critical", "high", "medium", "low"]}
+              }
+            }
+          }
+        }
+      },
+      "content_gaps": {
+        "type": "object",
+        "properties": {
+          "missing_specifications": {"type": "array", "items": {"type": "string"}},
+          "missing_use_cases": {"type": "array", "items": {"type": "string"}},
+          "missing_comparisons": {"type": "array", "items": {"type": "string"}},
+          "missing_social_proof": {"type": "array", "items": {"type": "string"}},
+          "missing_faqs": {"type": "array", "items": {"type": "string"}},
+          "content_recommendations": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "content_type": {"type": "string"},
+                "priority": {"type": "string", "enum": ["critical", "high", "medium", "low"]},
+                "estimated_impact": {"type": "string"},
+                "implementation_effort": {"type": "string", "enum": ["low", "medium", "high"]}
+              }
+            }
+          }
+        }
+      },
+      "competitive_product_analysis": {
+        "type": "object",
+        "properties": {
+          "top_performers": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "domain": {"type": "string"},
+                "why_they_rank": {"type": "string"},
+                "schema_strengths": {"type": "array", "items": {"type": "string"}},
+                "content_strengths": {"type": "array", "items": {"type": "string"}},
+                "replicable_tactics": {"type": "array", "items": {"type": "string"}}
+              }
+            }
+          },
+          "differentiation_opportunities": {"type": "array", "items": {"type": "string"}}
+        }
+      },
+      "eeat_assessment": {
+        "type": "object",
+        "properties": {
+          "experience_score": {"type": "number", "minimum": 0, "maximum": 100},
+          "expertise_score": {"type": "number", "minimum": 0, "maximum": 100},
+          "authoritativeness_score": {"type": "number", "minimum": 0, "maximum": 100},
+          "trustworthiness_score": {"type": "number", "minimum": 0, "maximum": 100},
+          "overall_eeat_score": {"type": "number", "minimum": 0, "maximum": 100},
+          "strengths": {"type": "array", "items": {"type": "string"}},
+          "weaknesses": {"type": "array", "items": {"type": "string"}},
+          "recommendations": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "area": {"type": "string"},
+                "action": {"type": "string"},
+                "priority": {"type": "string", "enum": ["critical", "high", "medium", "low"]}
+              }
+            }
+          }
+        }
+      },
+      "optimization_recommendations": {
+        "type": "object",
+        "properties": {
+          "schema_optimizations": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "field": {"type": "string"},
+                "current_state": {"type": "string"},
+                "recommended_state": {"type": "string"},
+                "code_example": {"type": "string"},
+                "expected_impact": {"type": "string"},
+                "priority": {"type": "string", "enum": ["critical", "high", "medium", "low"]}
+              }
+            }
+          },
+          "content_additions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "type": {"type": "string"},
+                "description": {"type": "string"},
+                "example": {"type": "string"},
+                "priority": {"type": "string", "enum": ["critical", "high", "medium", "low"]}
+              }
+            }
+          },
+          "trust_signals": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "signal": {"type": "string"},
+                "implementation": {"type": "string"},
+                "impact": {"type": "string"}
+              }
+            }
+          }
+        }
+      },
+      "priority_action_items": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "action": {"type": "string"},
+            "category": {"type": "string", "enum": ["schema", "content", "trust", "technical"]},
+            "priority": {"type": "string", "enum": ["critical", "high", "medium", "low"]},
+            "timeline": {"type": "string"},
+            "effort": {"type": "string", "enum": ["low", "medium", "high"]},
+            "expected_outcome": {"type": "string"},
+            "llm_visibility_impact": {"type": "string"}
+          }
+        }
+      }
+    }
+  },
+  "user_template": "Analyze the following e-commerce/retail product data for LLM optimization:\n\nAUDIT DATA:\n```json\n{audit_data}\n```\n\nPRODUCT PAGES:\n```json\n{product_pages}\n```\n\nLLM VISIBILITY DATA:\n```json\n{llm_visibility_data}\n```\n\nCOMPETITOR PRODUCTS:\n```json\n{competitor_products}\n```\n\nRequirements:\n1. Detect if this is an e-commerce site and identify product pages\n2. Analyze Product schema markup completeness and issues\n3. Assess current LLM visibility for product-related queries\n4. Identify content gaps that prevent LLM recommendations\n5. Analyze E-E-A-T for products (trust signals, reviews, expertise)\n6. Compare with top-performing competitor products\n7. Provide specific schema optimization code examples\n8. Create prioritized action items for LLM visibility improvement\n\nFocus on practical recommendations that will make products appear in AI assistant recommendations like 'best [product] for [use case]'.",
+  "instructions": [
+    "Detect e-commerce patterns: product URLs, pricing, add-to-cart buttons, product schemas",
+    "Schema must include: name, image, description, brand, offers (price, availability), aggregateRating, review",
+    "Check for advanced schema: hasVariant, isRelatedTo, material, color, size",
+    "LLM visibility requires: comprehensive specs, use cases, comparisons, social proof",
+    "E-E-A-T for products: verified reviews, expert content, brand authority, return policy, guarantees",
+    "Identify what information competitors have that this site lacks",
+    "Provide actual JSON-LD code examples, not just descriptions",
+    "Prioritize actions by: impact on LLM visibility vs implementation effort",
+    "Estimate business impact: 'Implementing this could increase LLM-driven traffic by X%'"
+  ],
+  "quality_gates": {
+    "require_schema_analysis": true,
+    "require_llm_visibility_score": true,
+    "require_content_gaps": true,
+    "require_eeat_assessment": true,
+    "min_recommendations": 10,
+    "require_code_examples": true
+  },
+  "conditional_execution": {
+    "trigger": "detected_ecommerce",
+    "min_product_pages": 3,
+    "detection_patterns": ["/product", "/p/", "product", "item", "shop", "store"]
+  }
+}

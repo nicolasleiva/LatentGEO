@@ -1,0 +1,283 @@
+{
+  "version": "2.0.0",
+  "name": "Competitive Intelligence Matrix",
+  "description": "McKinsey-level competitive analysis with positioning matrices, moat analysis, and strategic recommendations",
+  "language": "en",
+  "system_prompt": "You are a Senior Partner at a top-tier strategy consulting firm (McKinsey, Bain, or BCG), specializing in competitive intelligence and digital strategy. You advise Fortune 500 companies and high-growth startups on competitive positioning and market strategy.\n\nYour analytical framework includes:\n1. Market Positioning Matrix (2x2): Vision vs Execution capability\n2. Competitive Moat Analysis: Barriers to entry and sustainable advantages\n3. Vulnerability Mapping: Weaknesses exploitable by the client\n4. Best Practice Replication: How to match or exceed market leaders\n5. Market Share Estimation: TAM/SAM/SOM analysis\n6. Differentiation Strategy: Unique value proposition development\n\nThink in terms of:\n- Strategic groups and competitive clusters\n- Resource-based view of the firm\n- Porter's Five Forces applied to digital markets\n- Blue Ocean Strategy opportunities\n- Economies of scale and scope in digital\n\nYour analysis must be: data-driven, quantified where possible, actionable, and provide clear strategic recommendations with priority rankings.",
+  "output_schema": {
+    "type": "object",
+    "required": [
+      "market_overview",
+      "positioning_matrix",
+      "competitor_analysis",
+      "client_positioning",
+      "strategic_recommendations",
+      "market_share_analysis",
+      "action_plan"
+    ],
+    "properties": {
+      "market_overview": {
+        "type": "object",
+        "properties": {
+          "market_size_estimate": {
+            "type": "string",
+            "description": "Estimated TAM (Total Addressable Market) with methodology"
+          },
+          "growth_rate": {
+            "type": "string",
+            "description": "Annual growth rate (CAGR) of the market"
+          },
+          "market_maturity": {
+            "type": "string",
+            "enum": ["emerging", "growth", "mature", "declining"]
+          },
+          "key_trends": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "Major market trends affecting competition"
+          },
+          "barriers_to_entry": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "Factors making it difficult for new competitors"
+          }
+        }
+      },
+      "positioning_matrix": {
+        "type": "object",
+        "description": "2x2 matrix: Market Vision vs Execution Capability",
+        "properties": {
+          "x_axis": {
+            "type": "string",
+            "description": "Execution Capability (Operational Excellence)"
+          },
+          "y_axis": {
+            "type": "string",
+            "description": "Market Vision (Strategic Positioning)"
+          },
+          "quadrants": {
+            "type": "object",
+            "properties": {
+              "leaders": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "High Vision + High Execution (Market Leaders)"
+              },
+              "visionaries": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "High Vision + Low Execution (Innovators)"
+              },
+              "performers": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Low Vision + High Execution (Efficient Operators)"
+              },
+              "challengers": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Low Vision + Low Execution (Followers)"
+              }
+            }
+          },
+          "client_quadrant": {
+            "type": "string",
+            "enum": ["leaders", "visionaries", "performers", "challengers"]
+          }
+        }
+      },
+      "competitor_analysis": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "domain": {"type": "string"},
+            "position": {"type": "string", "description": "Market position (Leader, Challenger, Niche, etc.)"},
+            "strengths": {
+              "type": "array",
+              "items": {"type": "string"},
+              "description": "Competitive advantages and moats"
+            },
+            "weaknesses": {
+              "type": "array",
+              "items": {"type": "string"},
+              "description": "Vulnerabilities and gaps"
+            },
+            "moat_analysis": {
+              "type": "object",
+              "properties": {
+                "type": {"type": "string", "description": "Network effects, brand, scale, switching costs, etc."},
+                "strength": {"type": "string", "enum": ["weak", "moderate", "strong", "very_strong"]},
+                "durability": {"type": "string", "description": "How sustainable is this advantage?"}
+              }
+            },
+            "digital_metrics": {
+              "type": "object",
+              "properties": {
+                "estimated_traffic": {"type": "string"},
+                "domain_authority_estimate": {"type": "number"},
+                "backlink_profile_quality": {"type": "string", "enum": ["poor", "fair", "good", "excellent"]},
+                "content_volume": {"type": "string", "description": "Estimated pages/content pieces"},
+                "technical_sophistication": {"type": "string", "enum": ["basic", "intermediate", "advanced", "cutting_edge"]}
+              }
+            },
+            "strategy_analysis": {
+              "type": "object",
+              "properties": {
+                "apparent_strategy": {"type": "string", "description": "What strategy are they executing?"},
+                "investment_areas": {"type": "array", "items": {"type": "string"}},
+                "neglected_areas": {"type": "array", "items": {"type": "string"}},
+                "predicted_moves": {"type": "array", "items": {"type": "string"}, "description": "Likely future strategic actions"}
+              }
+            },
+            "replication_difficulty": {
+              "type": "string",
+              "enum": ["easy", "moderate", "difficult", "very_difficult"],
+              "description": "How hard would it be to copy their advantages?"
+            }
+          }
+        }
+      },
+      "client_positioning": {
+        "type": "object",
+        "properties": {
+          "current_position": {"type": "string", "description": "Where client sits in competitive landscape"},
+          "relative_strengths": {"type": "array", "items": {"type": "string"}},
+          "relative_weaknesses": {"type": "array", "items": {"type": "string"}},
+          "competitive_gaps": {"type": "array", "items": {"type": "string"}},
+          "vulnerabilities": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "threat": {"type": "string"},
+                "exploited_by": {"type": "string"},
+                "severity": {"type": "string", "enum": ["low", "medium", "high", "critical"]},
+                "urgency": {"type": "string", "enum": ["monitor", "plan", "act_now"]}
+              }
+            }
+          }
+        }
+      },
+      "strategic_recommendations": {
+        "type": "object",
+        "properties": {
+          "defensive_strategies": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "strategy": {"type": "string"},
+                "purpose": {"type": "string"},
+                "implementation_complexity": {"type": "string", "enum": ["low", "medium", "high"]},
+                "timeline": {"type": "string"},
+                "expected_outcome": {"type": "string"}
+              }
+            }
+          },
+          "offensive_strategies": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "strategy": {"type": "string"},
+                "target_competitor": {"type": "string"},
+                "exploited_weakness": {"type": "string"},
+                "implementation_complexity": {"type": "string", "enum": ["low", "medium", "high"]},
+                "timeline": {"type": "string"},
+                "expected_outcome": {"type": "string"}
+              }
+            }
+          },
+          "differentiation_opportunities": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "opportunity": {"type": "string"},
+                "blue_ocean_potential": {"type": "boolean"},
+                "investment_required": {"type": "string", "enum": ["low", "medium", "high"]},
+                "time_to_impact": {"type": "string"},
+                "competitive_advantage_duration": {"type": "string"}
+              }
+            }
+          }
+        }
+      },
+      "market_share_analysis": {
+        "type": "object",
+        "properties": {
+          "tam": {"type": "string", "description": "Total Addressable Market size"},
+          "sam": {"type": "string", "description": "Serviceable Addressable Market"},
+          "som": {"type": "string", "description": "Serviceable Obtainable Market (realistic target)"},
+          "client_current_share": {"type": "string", "description": "Estimated current market share"},
+          "share_projection_12mo": {"type": "string", "description": "Projected share in 12 months with optimization"},
+          "share_projection_24mo": {"type": "string", "description": "Projected share in 24 months with optimization"},
+          "market_leaders": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "domain": {"type": "string"},
+                "estimated_share": {"type": "string"},
+                "share_trend": {"type": "string", "enum": ["growing", "stable", "declining"]}
+              }
+            }
+          }
+        }
+      },
+      "action_plan": {
+        "type": "object",
+        "properties": {
+          "immediate_actions": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "Actions to take in next 30 days"
+          },
+          "short_term": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "Actions for months 2-3"
+          },
+          "medium_term": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "Actions for months 4-6"
+          },
+          "investment_priorities": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "area": {"type": "string"},
+                "priority": {"type": "string", "enum": ["critical", "high", "medium", "low"]},
+                "rationale": {"type": "string"},
+                "estimated_investment": {"type": "string"}
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "user_template": "Perform a comprehensive competitive intelligence analysis using the following data:\n\nCLIENT AUDIT DATA:\n```json\n{client_audit}\n```\n\nCOMPETITOR AUDITS:\n```json\n{competitor_audits}\n```\n\nSEARCH INTELLIGENCE:\n```json\n{search_results}\n```\n\nEXTERNAL INTELLIGENCE:\n```json\n{external_intelligence}\n```\n\nRequirements:\n1. Map all competitors on a 2x2 Vision vs Execution matrix\n2. Analyze each competitor's moat and vulnerabilities in detail\n3. Identify client's current position and competitive gaps\n4. Calculate market share estimates (TAM/SAM/SOM)\n5. Provide offensive strategies to exploit competitor weaknesses\n6. Provide defensive strategies to protect against threats\n7. Identify blue ocean differentiation opportunities\n8. Create prioritized 6-month action plan\n\nYour analysis should be suitable for a C-suite presentation at a Fortune 500 company.",
+  "instructions": [
+    "Be specific and data-driven in all assessments",
+    "Quantify market shares and metrics where possible (use estimates with clear methodology)",
+    "Identify at least 3 exploitable weaknesses per major competitor",
+    "Consider both direct competitors and indirect substitutes",
+    "Factor in digital presence as a competitive weapon",
+    "Think about sustainable advantages, not just temporary tactics",
+    "Prioritize recommendations by impact vs effort",
+    "Include both defensive (protect position) and offensive (gain ground) strategies"
+  ],
+  "quality_gates": {
+    "min_competitors_analyzed": 3,
+    "max_competitors_analyzed": 5,
+    "require_positioning_matrix": true,
+    "require_moat_analysis": true,
+    "require_market_share_estimates": true,
+    "require_action_plan": true,
+    "min_strategic_recommendations": 5
+  }
+}
