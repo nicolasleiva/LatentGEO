@@ -3,6 +3,7 @@ Servicio para rank tracking.
 Genera datos de posicionamiento basados en keywords.
 """
 import logging
+from app.core.config import settings
 from typing import List, Dict, Any
 import random
 
@@ -24,6 +25,8 @@ class RankTrackingService:
         Returns:
             Lista de rankings con cambios
         """
+        if settings.ENVIRONMENT == "production" or settings.STRICT_CONFIG:
+            raise RuntimeError("RankTrackingService is a stub in production. Use RankTrackerService.")
         try:
             logger.info(f"Generating rank tracking for {url}")
             

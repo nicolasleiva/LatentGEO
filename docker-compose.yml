@@ -1,14 +1,12 @@
-version: '3.8'
-
 services:
   # Base de Datos PostgreSQL
   db:
     image: postgres:16-alpine
     container_name: auditor_db
     environment:
-      POSTGRES_USER: auditor
-      POSTGRES_PASSWORD: auditor_password
-      POSTGRES_DB: auditor_db
+      POSTGRES_USER: ${DB_USER:-auditor}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME:-auditor_db}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     ports:
@@ -42,20 +40,33 @@ services:
       dockerfile: Dockerfile.backend
     container_name: auditor_backend
     environment:
-      DATABASE_URL: postgresql+psycopg2://auditor:auditor_password@db:5432/auditor_db
-      REDIS_URL: redis://redis:6379/0
-      CELERY_BROKER: redis://redis:6379/0
+      DATABASE_URL: ${DATABASE_URL}
+      REDIS_URL: ${REDIS_URL}
+      CELERY_BROKER_URL: ${CELERY_BROKER_URL}
+      CELERY_RESULT_BACKEND: ${CELERY_RESULT_BACKEND}
       DEBUG: ${DEBUG:-False}
+      ENVIRONMENT: ${ENVIRONMENT:-development}
       PYTHONUNBUFFERED: "1"
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
-      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
       CSE_ID: ${CSE_ID:-}
       NVIDIA_API_KEY: ${NVIDIA_API_KEY:-}
+      NV_API_KEY: ${NV_API_KEY:-}
       NV_API_KEY_CODE: ${NV_API_KEY_CODE:-}
       NV_API_KEY_ANALYSIS: ${NV_API_KEY_ANALYSIS:-}
+      NV_BASE_URL: ${NV_BASE_URL:-}
+      NV_MAX_TOKENS: ${NV_MAX_TOKENS:-8192}
+      NV_MAX_CONTEXT_TOKENS: ${NV_MAX_CONTEXT_TOKENS:-262144}
+      NV_CONTEXT_SAFETY_RATIO: ${NV_CONTEXT_SAFETY_RATIO:-0.7}
       GOOGLE_PAGESPEED_API_KEY: ${GOOGLE_PAGESPEED_API_KEY:-}
+      ENABLE_PAGESPEED: ${ENABLE_PAGESPEED:-True}
       SECRET_KEY: ${SECRET_KEY:-}
+      SENTRY_DSN: ${SENTRY_DSN:-}
+      FRONTEND_URL: ${FRONTEND_URL:-}
+      WEBHOOK_SECRET: ${WEBHOOK_SECRET:-}
+      DEFAULT_WEBHOOK_URL: ${DEFAULT_WEBHOOK_URL:-}
+      CORS_ORIGINS: ${CORS_ORIGINS:-}
+      TRUSTED_HOSTS: ${TRUSTED_HOSTS:-}
       # GitHub Integration
       GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
       GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}
@@ -74,6 +85,7 @@ services:
       redis:
         condition: service_healthy
     volumes:
+      - ./backend:/app
       - ./reports:/app/reports
       - ./logs:/app/logs
       - shared_db:/app/db
@@ -82,34 +94,35 @@ services:
       - auditor_network
     restart: unless-stopped
 
-  # Frontend
+  # Frontend (MODO PRODUCCIÓN - usa la imagen construida sin volúmenes de código)
   frontend:
     build:
       context: .
       dockerfile: Dockerfile.frontend
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
+        NEXT_PUBLIC_BACKEND_URL: ${NEXT_PUBLIC_BACKEND_URL}
     container_name: auditor_frontend
     ports:
       - "3000:3000"
     environment:
-      NEXT_PUBLIC_API_URL: http://localhost:8000
-      NEXT_PUBLIC_BACKEND_URL: http://localhost:8000
-      NODE_ENV: development
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
+      NEXT_PUBLIC_BACKEND_URL: ${NEXT_PUBLIC_BACKEND_URL}
+      API_URL: ${API_URL}
+      NODE_ENV: production
       # Auth0 Configuration
-      AUTH0_SECRET: a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0u1v2w3x4
-      AUTH0_DOMAIN: dev-1tje44xertslyavv.us.auth0.com
-      AUTH0_CLIENT_ID: PDaM0CxCRvFfdJa1LvRdn5o551QDWY10
-      AUTH0_CLIENT_SECRET: ymu3QhZ4i9mHgA3UMSa17yCGlxeM-a-05rMKbWgUgjn2FI4Vq5Nv8UAeLn4QcYfp
-      APP_BASE_URL: http://localhost:3000
-    command: pnpm run dev
+      AUTH0_SECRET: ${AUTH0_SECRET:-}
+      AUTH0_DOMAIN: ${AUTH0_DOMAIN:-}
+      AUTH0_CLIENT_ID: ${AUTH0_CLIENT_ID:-}
+      AUTH0_CLIENT_SECRET: ${AUTH0_CLIENT_SECRET:-}
+      APP_BASE_URL: ${APP_BASE_URL:-}
     depends_on:
       - backend
     networks:
       - auditor_network
     restart: unless-stopped
-    volumes:
-      - ./frontend:/app
-      - /app/node_modules
-      - /app/.next
+    # NOTA: No hay volúmenes de código para producción
+    # El código viene de la imagen Docker construida con 'output: standalone'
 
   # Celery Worker (Opcional - para tareas asincrónicas)
   worker:
@@ -119,18 +132,29 @@ services:
     container_name: auditor_worker
     command: celery -A app.workers.tasks worker --loglevel=info
     environment:
-      DATABASE_URL: postgresql+psycopg2://auditor:auditor_password@db:5432/auditor_db
-      REDIS_URL: redis://redis:6379/0
-      CELERY_BROKER: redis://redis:6379/0
-      GEMINI_API_KEY: ${GEMINI_API_KEY}
-      OPENAI_API_KEY: ${OPENAI_API_KEY}
-      GOOGLE_API_KEY: ${GOOGLE_API_KEY}
-      CSE_ID: ${CSE_ID}
-      NVIDIA_API_KEY: ${NVIDIA_API_KEY}
+      DATABASE_URL: ${DATABASE_URL}
+      REDIS_URL: ${REDIS_URL}
+      CELERY_BROKER_URL: ${CELERY_BROKER_URL}
+      CELERY_RESULT_BACKEND: ${CELERY_RESULT_BACKEND}
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
+      CSE_ID: ${CSE_ID:-}
+      NVIDIA_API_KEY: ${NVIDIA_API_KEY:-}
+      NV_API_KEY: ${NV_API_KEY:-}
       NV_API_KEY_CODE: ${NV_API_KEY_CODE:-}
       NV_API_KEY_ANALYSIS: ${NV_API_KEY_ANALYSIS:-}
-      GOOGLE_PAGESPEED_API_KEY: ${GOOGLE_PAGESPEED_API_KEY}
-      C_FORCE_ROOT: '1'
+      NV_BASE_URL: ${NV_BASE_URL:-}
+      NV_MAX_TOKENS: ${NV_MAX_TOKENS:-8192}
+      NV_MAX_CONTEXT_TOKENS: ${NV_MAX_CONTEXT_TOKENS:-262144}
+      NV_CONTEXT_SAFETY_RATIO: ${NV_CONTEXT_SAFETY_RATIO:-0.7}
+      GOOGLE_PAGESPEED_API_KEY: ${GOOGLE_PAGESPEED_API_KEY:-}
+      ENABLE_PAGESPEED: ${ENABLE_PAGESPEED:-True}
+      SECRET_KEY: ${SECRET_KEY:-}
+      SENTRY_DSN: ${SENTRY_DSN:-}
+      FRONTEND_URL: ${FRONTEND_URL:-}
+      WEBHOOK_SECRET: ${WEBHOOK_SECRET:-}
+      DEFAULT_WEBHOOK_URL: ${DEFAULT_WEBHOOK_URL:-}
       # GitHub Integration
       GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
       GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}
@@ -141,9 +165,19 @@ services:
       HUBSPOT_CLIENT_SECRET: ${HUBSPOT_CLIENT_SECRET:-}
       HUBSPOT_REDIRECT_URI: ${HUBSPOT_REDIRECT_URI:-}
       ENCRYPTION_KEY: ${ENCRYPTION_KEY:-}
+      CELERYD_CONCURRENCY: 2
+    # Health check disabled for worker to prevent restarts during long tasks
+    # Worker health is monitored via logs and task completion
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+        reservations:
+          memory: 512M
     depends_on:
       - backend
     volumes:
+      - ./backend:/app
       - ./reports:/app/reports
       - ./logs:/app/logs
       - shared_db:/app/db

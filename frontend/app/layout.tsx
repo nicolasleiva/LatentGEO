@@ -16,13 +16,21 @@ export const metadata: Metadata = {
   description: 'Enterprise-grade AI auditing platform.',
 }
 
+// Supported locales (used for runtime validation)
+const locales = ['en', 'es']
+
 export default function RootLayout({
   children,
-}: Readonly<{
+  params,
+}: {
   children: React.ReactNode
-}>) {
+  params?: { locale?: string }
+}) {
+  const locale = params?.locale
+  const validLocale = locale && locales.includes(locale) ? locale : 'en'
+
   return (
-    <html lang="en" className={inter.variable} suppressHydrationWarning>
+    <html lang={validLocale} className={inter.variable} suppressHydrationWarning>
       <body className="font-sans antialiased min-h-screen">
         <ThemeProvider
           attribute="class"
@@ -30,9 +38,7 @@ export default function RootLayout({
           enableSystem={false}
           disableTransitionOnChange={false}
         >
-          <Auth0Provider>
-            {children}
-          </Auth0Provider>
+          <Auth0Provider>{children}</Auth0Provider>
         </ThemeProvider>
         <Analytics />
       </body>

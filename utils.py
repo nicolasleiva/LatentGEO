@@ -1,11 +1,11 @@
 # utils.py
-from datetime import datetime
+from datetime import datetime, timezone
 import json
 import os
 
 
 def now_iso():
-    return datetime.utcnow().isoformat()
+    return datetime.now(timezone.utc).isoformat()
 
 
 def save_json(path, data):

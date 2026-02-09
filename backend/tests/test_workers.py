@@ -5,14 +5,14 @@ import pytest
 from unittest.mock import patch, MagicMock, ANY, AsyncMock
 from sqlalchemy.orm import Session
 
-from backend.app.workers.tasks import run_audit_task, generate_pdf_task
-from backend.app.services.audit_service import AuditService
-from backend.app.models import Audit, AuditStatus
+from app.workers.tasks import run_audit_task, generate_pdf_task
+from app.services.audit_service import AuditService
+from app.models import Audit, AuditStatus
 
 # --- Test para run_audit_task ---
 
 
-@patch("backend.app.workers.tasks.AuditLocalService.run_local_audit", new_callable=AsyncMock)
+@patch("app.workers.tasks.AuditLocalService.run_local_audit", new_callable=AsyncMock)
 @patch("app.services.pipeline_service.run_initial_audit", new_callable=AsyncMock)
 def test_run_audit_task_success(
     mock_run_initial, mock_local_audit, db_session: Session
@@ -42,7 +42,7 @@ def test_run_audit_task_success(
 
     # 2. Ejecutar la tarea
     # Usamos patch en get_db_session para que la tarea use la sesión de test
-    with patch("backend.app.workers.tasks.get_db_session") as mock_get_db:
+    with patch("app.workers.tasks.get_db_session") as mock_get_db:
         mock_get_db.return_value.__enter__.return_value = db_session
         run_audit_task.run(audit.id)
 
@@ -59,7 +59,7 @@ def test_run_audit_task_success(
     assert audit.target_audit["score"] == 90
 
 
-@patch("backend.app.workers.tasks.AuditLocalService.run_local_audit", new_callable=AsyncMock)
+@patch("app.workers.tasks.AuditLocalService.run_local_audit", new_callable=AsyncMock)
 @patch("app.services.pipeline_service.run_initial_audit", new_callable=AsyncMock)
 def test_run_audit_task_failure(mock_run_initial, mock_local_audit, db_session: Session):
     """
@@ -76,7 +76,7 @@ def test_run_audit_task_failure(mock_run_initial, mock_local_audit, db_session: 
     mock_local_audit.return_value = {"url": "https://fail.com", "status": 200}
 
     # 2. Ejecutar la tarea
-    with patch("backend.app.workers.tasks.get_db_session") as mock_get_db:
+    with patch("app.workers.tasks.get_db_session") as mock_get_db:
         mock_get_db.return_value.__enter__.return_value = db_session
         with pytest.raises(Exception):
             run_audit_task.run(audit.id)
@@ -91,8 +91,8 @@ def test_run_audit_task_failure(mock_run_initial, mock_local_audit, db_session: 
 # --- Test para generate_pdf_task ---
 
 
-@patch("backend.app.workers.tasks.ReportService.create_report")
-@patch("backend.app.workers.tasks.PDFService.create_from_audit")
+@patch("app.workers.tasks.ReportService.create_report")
+@patch("app.workers.tasks.PDFService.create_from_audit")
 def test_generate_pdf_task(mock_create_from_audit, mock_create_report, db_session: Session):
     """
     Verifica que la tarea 'generate_pdf_task' genera un PDF y lo registra.
@@ -109,7 +109,7 @@ def test_generate_pdf_task(mock_create_from_audit, mock_create_report, db_sessio
     mock_create_from_audit.return_value = "reports/audit_1/report.pdf"
 
     # 2. Ejecutar la tarea
-    with patch("backend.app.workers.tasks.get_db_session") as mock_get_db:
+    with patch("app.workers.tasks.get_db_session") as mock_get_db:
         mock_get_db.return_value.__enter__.return_value = db_session
         generate_pdf_task.run(audit.id, markdown_content)
 

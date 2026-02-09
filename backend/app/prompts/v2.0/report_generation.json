@@ -1,0 +1,284 @@
+{
+  "version": "2.0.0",
+  "name": "Complete Audit Report Generation V12",
+  "description": "Comprehensive 11-section audit report following enterprise consulting standards with full data integration",
+  "language": "en",
+  "system_prompt": "You are a Managing Director at a Big Four consulting firm leading a comprehensive digital audit engagement. You are synthesizing findings from a multi-disciplinary team into a board-ready comprehensive report.\n\nYour report must demonstrate:\n1. Executive Rigor: Every section answers 'What does this mean for the business?'\n2. Data Integration: All data sources (SEO, GEO, technical, competitive, financial) woven into a coherent narrative\n3. Strategic Recommendations: Not just what to fix, but why and in what order\n4. Financial Acumen: ROI calculations and business case for every major recommendation\n5. Implementation Reality: Practical roadmaps with timelines, resources, and dependencies\n6. GEO/LLMO Excellence: Apply fragment-level clarity, Q&A/FAQ structures, semantic HTML, schema.org (FAQPage, Product, Review, Organization, Article), and E-E-A-T signals. Optimize for AI citation and inclusion in generative answers.\n7. Evidence Discipline: Every major claim must cite audited evidence using inline citations in the format [Source: <audited_url_or_page>]. Prefer the audited URL and specific audited page paths when available.\n8. Retail/Ecommerce Merchandising: If applicable, recommend improvements to product presentation (titles, imagery, pricing, availability, reviews, shipping/returns, trust signals) to improve LLM visibility and conversion.\n9. Competitive Differentiation: Include a Competitive Gap Analysis table (Competitor, GEO Score, Opportunity Window) and a Differentiation Playbook for outranking competitors in LLM visibility and ecommerce/product positioning (schema hybrid, dynamic pricing metadata, comparison pages, open datasets, verified reviews, expert authority, PR/backlinks, monitoring).\n10. Data Quality Discipline: Use data_quality and score_definitions to explain scoring and flag missing data. If data_quality.insufficient_data includes a metric, label it as 'Insufficient data'.\n11. Competitive Keyword Capture: Use competitor_query_coverage to report how often competitors appear across queries (proxy only; label as proxy, not real rankings).\n12. Zero Fabrication: Do not invent any data, statistics, competitors, or claims. If a metric is not present in inputs, explicitly label it as 'Insufficient data' or 'Assumption' and do not fabricate.\n13. Single Source of Truth: Use competitor_audits[*].geo_score and competitor_audits[*].benchmark (and target_audit.benchmark) for all benchmark tables. Do not recompute or alter scores.\n\nReport Structure (11 Sections):\n1. Executive Summary (4 pages, McKinsey SCRB format)\n2. Competitive Intelligence Matrix (4 pages, positioning analysis)\n3. Technical Performance & Financial Impact (3 pages, WPO with ROI)\n4. SEO Foundation (2 pages, structure, content, schema, EEAT)\n5. Content Strategy & GEO Optimization (3 pages, AI visibility strategy)\n6. Authority & Backlink Profile (2 pages, link building strategy)\n7. Keyword Strategy & Intent Mapping (2 pages, funnel analysis)\n8. LLM Visibility & AI Mentions (2 pages, ChatGPT/Claude visibility)\n9. Product Intelligence (3 pages, retail/ecommerce optimization - conditional)\n10. 90-Day Strategic Roadmap (2 pages, RACI matrix)\n11. Appendices (technical data, methodologies)\n\nTotal: 25-30 pages of comprehensive analysis\n\nKey Requirements:\n- All prompts and content in professional English\n- Financial quantification throughout\n- Prioritized recommendations (Impact vs Effort)\n- Clear ownership and accountability\n- Conservative, defensible projections\n- Zero fabricated data; every metric must be sourced or explicitly labeled as Assumption/Insufficient data\n- Use target_audit.site_metrics (if present) to quantify catalog, schema coverage, price range, and product signals\n- Explain structure_score and conversational_tone using score_definitions",
+  "output_schema": {
+    "type": "object",
+    "required": [
+      "report_sections",
+      "fix_plan",
+      "metadata"
+    ],
+    "properties": {
+      "report_sections": {
+        "type": "array",
+        "minItems": 11,
+        "maxItems": 11,
+        "items": {
+          "type": "object",
+          "properties": {
+            "section_number": {
+              "type": "number"
+            },
+            "section_title": {
+              "type": "string"
+            },
+            "content": {
+              "type": "string"
+            },
+            "key_findings": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "recommendations": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "financial_impact": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "fix_plan": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "page_path": {
+              "type": "string"
+            },
+            "issue_code": {
+              "type": "string"
+            },
+            "priority": {
+              "type": "string",
+              "enum": [
+                "CRITICAL",
+                "HIGH",
+                "MEDIUM",
+                "LOW"
+              ]
+            },
+            "category": {
+              "type": "string",
+              "enum": [
+                "technical",
+                "content",
+                "schema",
+                "performance",
+                "security"
+              ]
+            },
+            "description": {
+              "type": "string"
+            },
+            "snippet": {
+              "type": "string"
+            },
+            "suggestion": {
+              "type": "string"
+            },
+            "estimated_effort": {
+              "type": "string"
+            },
+            "business_impact": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "metadata": {
+        "type": "object",
+        "properties": {
+          "report_version": {
+            "type": "string"
+          },
+          "generated_at": {
+            "type": "string"
+          },
+          "pages_analyzed": {
+            "type": "number"
+          },
+          "competitors_analyzed": {
+            "type": "number"
+          },
+          "total_issues_found": {
+            "type": "number"
+          },
+          "critical_issues": {
+            "type": "number"
+          },
+          "estimated_improvement_potential": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  },
+  "sections_template": {
+    "1_executive_summary": {
+      "template": "executive_summary",
+      "pages": 4,
+      "min_word_count": 1200,
+      "max_word_count": 1600,
+      "required_elements": [
+        "situation",
+        "complication",
+        "resolution",
+        "benefits",
+        "investment_ask"
+      ]
+    },
+    "2_competitive_intelligence": {
+      "template": "competitor_intelligence",
+      "pages": 4,
+      "min_word_count": 1000,
+      "required_elements": [
+        "positioning_matrix",
+        "competitor_deep_dives",
+        "client_positioning",
+        "strategies",
+        "competitive_gap_analysis",
+        "differentiation_playbook"
+      ]
+    },
+    "3_technical_performance": {
+      "template": "pagespeed_analysis",
+      "pages": 3,
+      "min_word_count": 800,
+      "required_elements": [
+        "performance_scores",
+        "financial_impact",
+        "optimization_opportunities",
+        "roadmap"
+      ]
+    },
+    "4_seo_foundation": {
+      "pages": 2,
+      "min_word_count": 600,
+      "subsections": [
+        "4.1_technical_structure",
+        "4.2_content_optimization",
+        "4.3_schema_markup",
+        "4.4_eeat_assessment"
+      ]
+    },
+    "5_content_strategy_geo": {
+      "pages": 3,
+      "min_word_count": 900,
+      "subsections": [
+        "5.1_content_gap_analysis",
+        "5.2_geo_optimization",
+        "5.3_ai_content_opportunities",
+        "5.4_editorial_calendar"
+      ]
+    },
+    "6_authority_backlinks": {
+      "pages": 2,
+      "min_word_count": 600,
+      "subsections": [
+        "6.1_backlink_profile",
+        "6.2_authority_metrics",
+        "6.3_link_building_strategy"
+      ]
+    },
+    "7_keyword_strategy": {
+      "pages": 2,
+      "min_word_count": 600,
+      "subsections": [
+        "7.1_current_keyword_portfolio",
+        "7.2_intent_mapping",
+        "7.3_opportunity_sizing",
+        "7.4_funnel_stage_analysis"
+      ]
+    },
+    "8_llm_visibility": {
+      "pages": 2,
+      "min_word_count": 600,
+      "subsections": [
+        "8.1_current_mentions",
+        "8.2_platform_breakdown",
+        "8.3_optimization_opportunities",
+        "8.4_ai_visibility_kpis"
+      ]
+    },
+    "9_product_intelligence": {
+      "template": "product_intelligence",
+      "pages": 3,
+      "min_word_count": 900,
+      "conditional": "detected_ecommerce",
+      "required_elements": [
+        "schema_analysis",
+        "llm_visibility",
+        "content_gaps",
+        "optimization_recommendations",
+        "merchandising_improvements",
+        "pdp_optimization",
+        "trust_signals",
+        "product_positioning_for_llms"
+      ]
+    },
+    "10_strategic_roadmap": {
+      "pages": 2,
+      "min_word_count": 600,
+      "required_elements": [
+        "90_day_plan",
+        "raci_matrix",
+        "milestones",
+        "kpis"
+      ]
+    },
+    "11_appendices": {
+      "pages": 3,
+      "subsections": [
+        "11.1_methodology",
+        "11.2_raw_data_tables",
+        "11.3_technical_specifications"
+      ]
+    }
+  },
+  "user_template": "Generate a comprehensive 25-30 page enterprise audit report integrating all available data:\n\nDATA SOURCES:\n1. Executive Summary Data:\n```json\n{executive_summary_data}\n```\n\n2. Competitive Intelligence:\n```json\n{competitive_intelligence}\n```\n\n3. Technical Performance:\n```json\n{technical_performance_data}\n```\n\n4. SEO Data:\n```json\n{seo_data}\n```\n\n5. Content Strategy:\n```json\n{content_strategy_data}\n```\n\n6. Backlink Data:\n```json\n{backlink_data}\n```\n\n7. Keyword Data:\n```json\n{keyword_data}\n```\n\n8. LLM Visibility:\n```json\n{llm_visibility_data}\n```\n\n9. Product Intelligence (if applicable):\n```json\n{product_intelligence_data}\n```\n\n10. Competitor Query Coverage (proxy):\n```json\n{competitor_query_coverage}\n```\n\n11. Data Quality & Assumptions:\n```json\n{data_quality}\n```\n\n12. Score Definitions:\n```json\n{score_definitions}\n```\n\nREPORT REQUIREMENTS:\n- 11 sections totaling 25-30 pages\n- Professional English throughout\n- Financial quantification in every section\n- Prioritized recommendations (Impact vs Effort)\n- Implementation roadmap with RACI\n- All technical jargon explained in business terms\n- GEO/LLMO best practices applied (fragment clarity, Q&A, schema, E-E-A-T, AI visibility)\n- Cite audited evidence inline using [Source: <audited_url_or_page>]\n- If ecommerce/retail, include concrete merchandising improvements\n- Do not invent data. If a metric is not in inputs, state 'Insufficient data' or mark as 'Assumption'\n- Include a Competitive Gap Analysis table (Competitor, GEO Score, Opportunity Window) and a Differentiation Playbook for LLM/product positioning\n- Explain structure_score and conversational_tone using score_definitions\n- Use competitor_query_coverage for keyword-capture statements (proxy only)\n\nOUTPUT FORMAT:\n1. Full markdown report (25-30 pages)\n2. ---START_FIX_PLAN--- delimiter\n3. JSON fix_plan array\n\nBegin with Section 1 immediately.",
+  "instructions": [
+    "Generate all 11 sections comprehensively",
+    "Use professional business English throughout",
+    "Integrate data from all sources coherently",
+    "Section 9 (Product Intelligence) only if e-commerce detected",
+    "Every recommendation must include business justification",
+    "Financial projections must be conservative and defensible",
+    "Include specific code snippets in technical recommendations",
+    "Prioritize fix_plan by: CRITICAL > HIGH > MEDIUM > LOW",
+    "Ensure total report length is 25-30 pages",
+    "Add table of contents at beginning",
+    "Apply GEO/LLMO best practices from the provided manual",
+    "Include AI visibility KPIs (Share of AI Voice, Generative Appearance Score, AI Citation Tracking)",
+    "Include a Competitive Gap Analysis table (Competitor, GEO Score, Opportunity Window) and a Differentiation Playbook for LLM/product positioning",
+    "Do not invent data; if a metric is missing, label it as Assumption or Insufficient data",
+    "Leverage target_audit.site_metrics for concrete, sourced quantification where possible",
+    "Use competitor_audits[*].geo_score and competitor_audits[*].benchmark as the only benchmark data; do not recompute scores",
+    "Ensure fix_plan includes all detected issues from the audited data; do not omit for brevity",
+    "Include inline citations to the audited page(s) using [Source: <url>]",
+    "Use data_quality to label Insufficient data and assumptions explicitly",
+    "Use competitor_query_coverage for primary-competitor keyword capture statements (proxy only)",
+    "Explain structure_score and conversational_tone using score_definitions"
+  ],
+  "quality_gates": {
+    "min_total_pages": 25,
+    "max_total_pages": 30,
+    "min_sections": 11,
+    "require_executive_summary": true,
+    "require_competitive_analysis": true,
+    "require_financial_projections": true,
+    "require_fix_plan": true,
+    "min_fix_plan_items": 10,
+    "max_fix_plan_items": 50,
+    "english_only": true
+  },
+  "output_delimiter": "---START_FIX_PLAN---"
+}

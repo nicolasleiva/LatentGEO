@@ -1,0 +1,148 @@
+{
+  "app": {
+    "name": "Auditor GEO",
+    "tagline": "Inteligencia SEO & GEO Empresarial",
+    "description": "Auditorías digitales comprehensivas con insights impulsados por IA"
+  },
+  "navigation": {
+    "home": "Inicio",
+    "audits": "Auditorías",
+    "analytics": "Analíticas",
+    "docs": "Documentación",
+    "pricing": "Precios",
+    "login": "Iniciar Sesión",
+    "signup": "Registrarse",
+    "logout": "Cerrar Sesión",
+    "dashboard": "Panel",
+    "settings": "Configuración",
+    "back": "Volver"
+  },
+  "audit": {
+    "new": "Nueva Auditoría",
+    "create": "Crear Auditoría",
+    "run": "Ejecutar Auditoría",
+    "processing": "Procesando Auditoría",
+    "completed": "Completada",
+    "pending": "Pendiente",
+    "failed": "Fallida",
+    "status": {
+      "processing": "Procesando",
+      "pending": "Pendiente de Configuración",
+      "completed": "Completada",
+      "failed": "Fallida"
+    },
+    "details": "Detalles de Auditoría",
+    "overview": "Resumen",
+    "report": "Reporte Completo",
+    "fix_plan": "Plan de Corrección",
+    "download_pdf": "Descargar PDF",
+    "export_report": "Exportar Reporte",
+    "competitors": "Competidores",
+    "pages_analyzed": "Páginas Analizadas",
+    "issues_found": "Problemas Encontrados",
+    "critical_issues": "Problemas Críticos",
+    "high_issues": "Alta Prioridad",
+    "medium_issues": "Prioridad Media",
+    "score": "Puntuación SEO",
+    "progress": "Progreso"
+  },
+  "processing_screen": {
+    "initializing": "Inicializando motor de análisis IA",
+    "scanning": "Escaneando tu sitio web",
+    "analyzing_structure": "Analizando estructura de página",
+    "detecting_issues": "Detectando problemas técnicos",
+    "crawling_competitors": "Rastreando datos de competidores",
+    "processing_content": "Procesando contenido con LLM",
+    "identifying_gaps": "Identificando brechas de optimización",
+    "generating_recommendations": "Generando recomendaciones",
+    "training_models": "Entrenando modelos con tus datos",
+    "synthesizing": "Sintetizando insights",
+    "almost_there": "Casi listo",
+    "subtitle": "Esto puede tomar unos minutos",
+    "title": "Asistente de Auditoría IA"
+  },
+  "chat": {
+    "competitors_question": "¿Te gustaría agregar URLs específicas de competidores para comparación? Puedes escribir URLs separadas por comas, o simplemente decir 'no' para omitir.",
+    "market_question": "¿Qué hay de los mercados objetivo? ¿Te gustaría especificar países o regiones? (ej. 'EEUU', 'Latinoamérica', 'Europa', o 'no')",
+    "initializing": "Inicializando auditoría",
+    "placeholder": "Escribe tu respuesta...",
+    "powered_by": "Impulsado por KIMI",
+    "send": "Enviar"
+  },
+  "progress": {
+    "configuring": "Configurando auditoría",
+    "analyzing_page": "Analizando tu página",
+    "analyzing_competitors": "Analizando competidores",
+    "generating_report": "Generando reporte con IA",
+    "percent": "{{percent}}%"
+  },
+  "errors": {
+    "generic": "Ocurrió un error",
+    "loading": "Error cargando datos",
+    "generating_pdf": "Error generando PDF",
+    "try_again": "Intentar de Nuevo",
+    "not_found": "No Encontrado",
+    "server_error": "Error del Servidor"
+  },
+  "buttons": {
+    "analyze": "Analizar",
+    "generate": "Generar",
+    "download": "Descargar",
+    "export": "Exportar",
+    "save": "Guardar",
+    "cancel": "Cancelar",
+    "confirm": "Confirmar",
+    "close": "Cerrar",
+    "view": "Ver",
+    "edit": "Editar",
+    "delete": "Eliminar",
+    "refresh": "Actualizar",
+    "apply": "Aplicar",
+    "start": "Iniciar",
+    "stop": "Detener",
+    "continue": "Continuar"
+  },
+  "geo_dashboard": {
+    "title": "Panel GEO",
+    "subtitle": "Analíticas de Optimización para Motores Generativos",
+    "citation_rate": "Tasa de Citación",
+    "total_mentions": "Menciones Totales",
+    "opportunities": "Oportunidades",
+    "sentiment": "Sentimiento",
+    "tabs": {
+      "opportunities": "Principales Oportunidades",
+      "citations": "Citas Recientes",
+      "history": "Historial de Citas",
+      "query_discovery": "Descubrimiento de Consultas",
+      "competitors": "Competidores",
+      "schema": "Generador de Schema",
+      "schema_multiple": "Múltiples Schemas",
+      "templates": "Plantillas de Contenido",
+      "content_analyze": "Analizar Contenido"
+    },
+    "start_tracking": "Iniciar Seguimiento",
+    "back_to_audit": "Volver a Auditoría"
+  },
+  "competitor_analysis": {
+    "title": "Análisis de Competidores",
+    "subtitle": "Inicia análisis y visualiza benchmark vs competidores",
+    "add_competitor": "Agregar Competidor",
+    "run_analysis": "Ejecutar Análisis",
+    "results": "Resultados del Análisis"
+  },
+  "schema_generator": {
+    "title": "Generador de Schema.org",
+    "subtitle": "Genera Schema.org optimizado para mejor comprensión LLM",
+    "url_placeholder": "Ingresa URL para analizar...",
+    "generate": "Generar Schema",
+    "copy": "Copiar",
+    "copied": "Copiado"
+  },
+  "common": {
+    "loading": "Cargando...",
+    "no_data": "No hay datos disponibles",
+    "coming_soon": "Próximamente",
+    "last_updated": "Última actualización",
+    "version": "Versión"
+  }
+}

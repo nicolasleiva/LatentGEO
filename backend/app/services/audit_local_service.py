@@ -197,6 +197,22 @@ class AuditLocalService:
             p for p in paragraphs if len(" ".join(p.stripped_strings)) > 400
         ]
 
+        # Metadatos básicos para contexto semántico
+        title_tag = soup.find("title")
+        title_text = title_tag.get_text(strip=True) if title_tag else ""
+        meta_desc_tag = soup.find("meta", attrs={"name": "description"})
+        meta_desc = meta_desc_tag.get("content", "").strip() if meta_desc_tag else ""
+        meta_kw_tag = soup.find("meta", attrs={"name": "keywords"})
+        meta_keywords = meta_kw_tag.get("content", "").strip() if meta_kw_tag else ""
+
+        # Muestra breve de texto visible para contexto (limitado)
+        text_sample_parts = []
+        for p in paragraphs[:8]:
+            snippet = p.get_text(" ", strip=True)
+            if snippet:
+                text_sample_parts.append(snippet)
+        text_sample = " ".join(text_sample_parts)[:600]
+
         # Buscar FAQs
         faqs = []
         for h in soup.find_all(re.compile("^h[2-3]$")):
@@ -216,7 +232,33 @@ class AuditLocalService:
         conv_hits = sum(1 for s in sampled if any(tok in s for tok in conv_tokens))
         conversational_score = round((conv_hits / max(1, len(sampled))) * 10, 1)
 
+        # Media signals
+        images = soup.find_all("img")
+        image_count = len(images)
+        images_missing_alt = len(
+            [img for img in images if not (img.get("alt") or "").strip()]
+        )
+        image_alt_coverage = (
+            round((image_count - images_missing_alt) / image_count * 100, 1)
+            if image_count
+            else None
+        )
+        videos = soup.find_all("video")
+        iframe_videos = [
+            f
+            for f in soup.find_all("iframe")
+            if any(
+                host in (f.get("src") or "")
+                for host in ["youtube", "vimeo", "dailymotion"]
+            )
+        ]
+        video_count = len(videos) + len(iframe_videos)
+
         return {
+            "title": title_text,
+            "meta_description": meta_desc,
+            "meta_keywords": meta_keywords,
+            "text_sample": text_sample,
             "fragment_clarity": {
                 "score": max(1, 10 - len(long_paragraphs)),
                 "details": f"long_paragraphs={len(long_paragraphs)}",
@@ -224,6 +266,12 @@ class AuditLocalService:
             "conversational_tone": {
                 "score": conversational_score,
                 "details": "higher is more conversational",
+            },
+            "media": {
+                "image_count": image_count,
+                "images_missing_alt": images_missing_alt,
+                "image_alt_coverage_percent": image_alt_coverage,
+                "video_count": video_count,
             },
             "question_targeting": {
                 "status": "pass" if len(faqs) > 0 else "warn",

@@ -1,9 +1,17 @@
 import type { AuditSummary, PageAudit, CompetitorData } from './types'
 
 // En el navegador usa localhost, en el servidor usa el nombre del servicio Docker
-export const API_URL = typeof window !== 'undefined'
-  ? (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000')
-  : (process.env.API_URL || 'http://backend:8000');
+const resolveApiUrl = () => {
+  const publicUrl = process.env.NEXT_PUBLIC_API_URL || process.env.NEXT_PUBLIC_BACKEND_URL
+  const serverUrl = process.env.API_URL || publicUrl
+  const url = typeof window !== 'undefined' ? publicUrl : serverUrl
+  if (!url) {
+    throw new Error('API URL is not configured. Set NEXT_PUBLIC_API_URL (browser) and API_URL (server).')
+  }
+  return url.replace(/\/+$/, '')
+}
+
+export const API_URL = resolveApiUrl()
 
 class APIService {
   private baseUrl = API_URL;

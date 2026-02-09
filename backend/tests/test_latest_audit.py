@@ -1,6 +1,6 @@
-import pytest
 import json
-from backend.app.models import Audit
+
+from app.models import Audit
 
 
 def test_latest_audit(db_session):

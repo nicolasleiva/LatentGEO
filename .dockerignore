@@ -1,16 +1,281 @@
+# =============================================================================
+# .dockerignore - EXCLUSIONES GLOBALES PARA DOCKER BUILD
+# Previene copiar archivos innecesarios que invalidan el caché de Docker
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Sistema de Control de Versiones
+# -----------------------------------------------------------------------------
+.git
+.gitignore
+.gitattributes
+.gitmodules
+
+# -----------------------------------------------------------------------------
+# IDE y Editores
+# -----------------------------------------------------------------------------
+.vscode
+.idea
+*.swp
+*.swo
+*~
+.DS_Store
+*.sublime-project
+*.sublime-workspace
+
+# -----------------------------------------------------------------------------
+# FRONTEND - Exclusiones específicas
+# -----------------------------------------------------------------------------
+
+# Dependencias y caché
 frontend/node_modules
+frontend/.pnpm-store
 frontend/.next
-frontend/.git
-frontend/.env*
+frontend/out
+frontend/dist
+frontend/build
+
+# Logs
 frontend/npm-debug.log*
 frontend/yarn-debug.log*
 frontend/yarn-error.log*
 frontend/pnpm-debug.log*
-frontend/.pnpm-store
-backend/__pycache__
-backend/.venv
+frontend/pnpm-error.log*
+frontend/lerna-debug.log*
+
+# Entorno y configuración local
+frontend/.env*
+frontend/.env.local
+frontend/.env.development
+frontend/.env.test
+frontend/.env.production
+!frontend/.env.example
+
+# Testing
+frontend/coverage
+frontend/.nyc_output
+frontend/jest.config.js
+frontend/jest.setup.js
+frontend/**/*.test.ts
+frontend/**/*.test.tsx
+frontend/**/*.spec.ts
+frontend/**/*.spec.tsx
+frontend/__tests__
+frontend/test
+frontend/tests
+
+# TypeScript
+frontend/*.tsbuildinfo
+frontend/next-env.d.ts
+
+# Caché de herramientas
+frontend/.eslintcache
+frontend/.prettiercache
+frontend/.stylelintcache
+
+# Storybook (si aplica)
+frontend/storybook-static
+frontend/.storybook
+
+# Playwright / Cypress
+frontend/playwright-report
+frontend/playwright/.cache
+frontend/cypress/videos
+frontend/cypress/screenshots
+frontend/cypress/downloads
+
+# Documentación y archivos de proyecto
+frontend/README.md
+frontend/CHANGELOG.md
+frontend/LICENSE
+frontend/CONTRIBUTING.md
+frontend/.github
+frontend/docs
+
+# -----------------------------------------------------------------------------
+# BACKEND - Exclusiones específicas
+# -----------------------------------------------------------------------------
+
+# Entornos virtuales Python
 backend/venv
+backend/.venv
+backend/env
+backend/.env
+backend/ENV
+
+# Caché de Python
+backend/__pycache__
+backend/**/__pycache__
+backend/**/*.py[cod]
+backend/**/*$py.class
+backend/**/*.so
+backend/.Python
+backend/*.egg-info
+backend/dist
+backend/build
+backend/develop-eggs
+backend/downloads
+backend/eggs
+backend/.eggs
+backend/lib
+backend/lib64
+backend/parts
+backend/sdist
+backend/var
+backend/wheels
+backend/*.egg
+backend/MANIFEST
+
+# Testing
+backend/.pytest_cache
+backend/.coverage
+backend/htmlcov
+backend/.tox
+backend/nosetests.xml
+coverage.xml
+*.cover
+.hypothesis
+backend/tests
+backend/test
+
+# Logs
+backend/*.log
+backend/logs
+
+# Entorno y configuración local
 backend/.env*
-.git
-.idea
-.vscode
+backend/.env.local
+backend/.env.development
+backend/.env.test
+backend/.env.production
+!backend/.env.example
+
+# Database
+backend/*.db
+backend/*.sqlite
+backend/*.sqlite3
+
+# Alembic (migraciones no necesarias en build)
+backend/alembic/versions/*.py
+!backend/alembic/versions/.gitkeep
+
+# Jupyter Notebook
+backend/.ipynb_checkpoints
+
+# mypy
+backend/.mypy_cache
+backend/.dmypy.json
+dmypy.json
+
+# Documentación
+backend/README.md
+backend/docs
+
+# -----------------------------------------------------------------------------
+# DOCKER Y ORQUESTACIÓN
+# -----------------------------------------------------------------------------
+Dockerfile*
+docker-compose*.yml
+docker-compose*.yaml
+.docker
+.dockerignore
+docker-entrypoint.sh
+
+# -----------------------------------------------------------------------------
+# CI/CD Y AUTOMATIZACIÓN
+# -----------------------------------------------------------------------------
+.github
+.gitlab-ci.yml
+.travis.yml
+.circleci
+.azure-pipelines.yml
+Jenkinsfile
+
+# -----------------------------------------------------------------------------
+# HERRAMIENTAS DE DESARROLLO
+# -----------------------------------------------------------------------------
+Makefile
+makefile
+*.mk
+scripts/
+!scripts/docker-entrypoint.sh
+tools/
+.local/
+
+# -----------------------------------------------------------------------------
+# ARCHIVOS BINARIOS Y MEDIOS
+# -----------------------------------------------------------------------------
+*.tar
+*.tar.gz
+*.zip
+*.rar
+*.7z
+*.pdf
+*.doc
+*.docx
+*.xls
+*.xlsx
+*.ppt
+*.pptx
+
+# Videos y audio (si hay archivos multimedia en el proyecto)
+*.mp4
+*.avi
+*.mov
+*.wmv
+*.mp3
+*.wav
+*.flac
+
+# Imágenes grandes (solo si no son assets del proyecto)
+# Descomenta si necesitas excluir imágenes de desarrollo
+# *.psd
+# *.ai
+# *.sketch
+
+# -----------------------------------------------------------------------------
+# ARCHIVOS TEMPORALES Y DE SISTEMA
+# -----------------------------------------------------------------------------
+*.tmp
+*.temp
+*.bak
+*.backup
+*.old
+*.orig
+*.rej
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+*.cab
+*.msi
+*.msm
+*.msp
+*.lnk
+
+# -----------------------------------------------------------------------------
+# ARCHIVOS DE SEGURIDAD (NUNCA INCLUIR EN IMAGENES)
+# -----------------------------------------------------------------------------
+*.pem
+*.key
+*.crt
+*.csr
+*.p12
+*.pfx
+secrets/
+credentials/
+.aws/
+.gcp/
+.azure/
+.kube/
+.ssh/
+
+# -----------------------------------------------------------------------------
+# OTROS
+# -----------------------------------------------------------------------------
+*.md
+!README.md
+LICENSE
+CHANGELOG
+TODO
+NOTES

@@ -572,7 +572,7 @@ class PDFReport(FPDF):
                     continue
 
                 # Detect headings h1..h4
-                m = re.match(r"^(#{1,4})\s+(.*)", line)
+                m = re.match(r"^\s*(#{1,4})\s+(.*)", line)
                 if m:
                     hashes = len(m.group(1))
                     title = m.group(2).strip()
@@ -582,11 +582,13 @@ class PDFReport(FPDF):
                             self.begin_section(title, level=1, render_title=True)
                         else:
                             if level == 2:
+                                self.ln(2)
                                 self.set_font(fam, "B", 14)
                                 self.set_x(self.l_margin)
                                 self.multi_cell(0, LINE_HEIGHT * 1.4, title, 0, "L")
                                 self.ln(1)
                             elif level == 3:
+                                self.ln(1)
                                 self.set_font(fam, "B", 12)
                                 self.set_x(self.l_margin)
                                 self.multi_cell(0, LINE_HEIGHT * 1.2, title, 0, "L")
@@ -600,9 +602,6 @@ class PDFReport(FPDF):
                                 link_id = self._add_bookmark_compat(
                                     title, level=level, register=True
                                 )
-                            except Exception:
-                                pass
-                            try:
                                 if link_id is not None:
                                     self.set_link(link_id, page=self.page_no())
                             except Exception:
@@ -801,7 +800,17 @@ class PDFReport(FPDF):
             for it in data[:top_n]:
                 if not it:
                     continue
-                val = it.get("description") if isinstance(it, dict) else str(it)
+                # Format based on filename_hint to handle different data types
+                if filename_hint == "keywords.json":
+                    val = f"{it.get('term', it.get('keyword', 'unknown'))}: {it.get('search_volume', it.get('volume', 0))} searches"
+                elif filename_hint == "backlinks.json" or filename_hint == "backlink.json":
+                    val = f"{it.get('source_url', 'unknown')} -> {it.get('target_url', 'unknown')}"
+                elif filename_hint == "rankings.json" or filename_hint == "rank_tracking.json":
+                    val = f"{it.get('keyword', 'unknown')}: position {it.get('position', 'unknown')}"
+                elif filename_hint == "llm_visibility.json":
+                    val = f"{it.get('query', 'unknown')}: {'visible' if it.get('is_visible', it.get('mentioned', False)) else 'not visible'}"
+                else:
+                    val = it.get("description") if isinstance(it, dict) else str(it)
                 snippet += f"\n - {str(val)[:120]}"
         else:
             snippet = str(data)[:800]
@@ -1000,6 +1009,10 @@ def create_comprehensive_pdf(report_folder_path):
             report_folder_path, "aggregated_summary.json"
         )
         json_pagespeed_file = os.path.join(report_folder_path, "pagespeed.json")
+        json_keywords_file = os.path.join(report_folder_path, "keywords.json")
+        json_backlinks_file = os.path.join(report_folder_path, "backlinks.json")
+        json_rankings_file = os.path.join(report_folder_path, "rankings.json")
+        json_llm_visibility_file = os.path.join(report_folder_path, "llm_visibility.json")
         pages_folder = os.path.join(report_folder_path, "pages")
         page_json_files = sorted(glob.glob(os.path.join(pages_folder, "*.json")))
 
@@ -1030,6 +1043,34 @@ def create_comprehensive_pdf(report_folder_path):
         except Exception:
             logger.warning("No se pudo leer pagespeed.json -> se usará diccionario vacío")
             pagespeed_data = {}
+
+        # Leer Keywords
+        try:
+            with open(json_keywords_file, "r", encoding="utf-8") as f:
+                keywords_data = json.load(f)
+        except Exception:
+            keywords_data = []
+
+        # Leer Backlinks
+        try:
+            with open(json_backlinks_file, "r", encoding="utf-8") as f:
+                backlinks_data = json.load(f)
+        except Exception:
+            backlinks_data = []
+
+        # Leer Rankings
+        try:
+            with open(json_rankings_file, "r", encoding="utf-8") as f:
+                rankings_data = json.load(f)
+        except Exception:
+            rankings_data = []
+
+        # Leer LLM Visibility
+        try:
+            with open(json_llm_visibility_file, "r", encoding="utf-8") as f:
+                llm_visibility_data = json.load(f)
+        except Exception:
+            llm_visibility_data = []
 
         if fix_plan_data is None:
             fix_plan_data = []
@@ -1181,31 +1222,31 @@ def create_comprehensive_pdf(report_folder_path):
             pdf.ln(6)
 
         # --- Anexos ---
+        # El reporte LLM ya incluye Anexo A y Anexo B.
+        # Los anexos técnicos manuales empiezan en C.
 
-        # --- FIX: Forzar nueva página para Anexo A ---
+        # --- Anexo C: Plan de Acción ---
         pdf.add_page()
-        pdf.begin_section("Anexo A: Plan de Acción (fix_plan.json)", level=1)
+        pdf.begin_section("Anexo C: Plan de Acción (fix_plan.json)", level=1)
         pdf.write_json_raw(fix_plan_data)
 
-        # --- FIX: Forzar nueva página para Anexo B ---
+        # --- Anexo D: Resumen Agregado de Datos ---
         pdf.add_page()
         pdf.begin_section(
-            "Anexo B: Resumen Agregado de Datos (aggregated_summary.json)", level=1
+            "Anexo D: Resumen Agregado de Datos (aggregated_summary.json)", level=1
         )
         pdf.write_json_summary_box(
             agg_summary_data, top_n=4, filename_hint="aggregated_summary.json"
         )
 
-        # --- FIX: Forzar nueva página para Anexo B.1 (PageSpeed) ---
+        # --- Anexo D.1: PageSpeed Insights ---
         if pagespeed_data:
-            # Extract mobile data if it exists
             mobile_data = pagespeed_data.get("mobile", pagespeed_data)
             if mobile_data:
                 pdf.add_page()
                 pdf.begin_section(
-                    "Anexo B.1: PageSpeed Insights (pagespeed.json)", level=1
+                    "Anexo D.1: PageSpeed Insights (pagespeed.json)", level=1
                 )
-                # Renderizar resumen de PageSpeed
                 ps_summary = {
                     "Performance Score": mobile_data.get("performance_score", "N/A"),
                     "Accessibility Score": mobile_data.get("accessibility_score", "N/A"),
@@ -1224,10 +1265,42 @@ def create_comprehensive_pdf(report_folder_path):
                     ps_summary, top_n=5, filename_hint="pagespeed.json"
                 )
 
-        # --- FIX: Forzar nueva página para Anexo C ---
+        # --- Anexo D.2: Análisis de Palabras Clave ---
+        if keywords_data:
+            pdf.add_page()
+            pdf.begin_section("Anexo D.2: Análisis de Palabras Clave (keywords.json)", level=1)
+            pdf.write_json_summary_box(
+                keywords_data, top_n=10, filename_hint="keywords.json"
+            )
+
+        # --- Anexo D.3: Perfil de Enlaces ---
+        if backlinks_data:
+            pdf.add_page()
+            pdf.begin_section("Anexo D.3: Perfil de Enlaces y Autoridad (backlinks.json)", level=1)
+            pdf.write_json_summary_box(
+                backlinks_data, top_n=10, filename_hint="backlinks.json"
+            )
+
+        # --- Anexo D.4: Monitoreo de Posiciones ---
+        if rankings_data:
+            pdf.add_page()
+            pdf.begin_section("Anexo D.4: Monitoreo de Posiciones (rankings.json)", level=1)
+            pdf.write_json_summary_box(
+                rankings_data, top_n=10, filename_hint="rankings.json"
+            )
+
+        # --- Anexo D.5: Visibilidad en LLMs ---
+        if llm_visibility_data:
+            pdf.add_page()
+            pdf.begin_section("Anexo D.5: Visibilidad en IA y LLMs (llm_visibility.json)", level=1)
+            pdf.write_json_summary_box(
+                llm_visibility_data, top_n=6, filename_hint="llm_visibility.json"
+            )
+
+        # --- Anexo E: Reportes de Páginas Individuales ---
         pdf.add_page()
         pdf.begin_section(
-            "Anexo C: Reportes de Páginas Individuales (resumen)", level=1
+            "Anexo E: Reportes de Páginas Individuales (resumen)", level=1
         )
         for i, page_file in enumerate(page_json_files):
             page_title = f"Archivo: {os.path.basename(page_file)}"

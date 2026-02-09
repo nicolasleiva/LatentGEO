@@ -3,6 +3,7 @@ Servicio para análisis de palabras clave.
 Genera keywords basadas en el contenido del sitio auditado.
 """
 import logging
+from app.core.config import settings
 from typing import List, Dict, Any
 from urllib.parse import urlparse
 
@@ -24,6 +25,8 @@ class KeywordsService:
         Returns:
             Lista de keywords con métricas
         """
+        if settings.ENVIRONMENT == "production" or settings.STRICT_CONFIG:
+            raise RuntimeError("KeywordsService is a stub in production. Use KeywordService.")
         try:
             logger.info(f"Generating keywords for {url}")
             

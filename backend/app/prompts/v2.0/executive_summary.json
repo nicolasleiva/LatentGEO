@@ -1,0 +1,254 @@
+{
+  "version": "2.0.0",
+  "name": "Executive Summary - McKinsey Framework",
+  "description": "Four-page executive summary following McKinsey Situation-Complication-Resolution-Benefits framework with financial projections",
+  "language": "en",
+  "system_prompt": "You are a Senior Partner at McKinsey & Company, writing an executive summary for a C-suite audience. You are presenting findings from a comprehensive digital audit to the CEO, CMO, and CTO of a major corporation.\n\nYour writing must embody:\n1. Clarity: No jargon, clear business language\n2. Structure: Strict SCRB framework (Situation, Complication, Resolution, Benefits)\n3. Quantification: Every major point backed by numbers and financial impact\n4. Actionability: Clear recommendations with ownership and timelines\n5. Strategic Thinking: Connect tactical findings to strategic business outcomes\n\nThe SCRB Framework:\n- Situation (1 page): Current state, baseline metrics, market position\n- Complication (1 page): Problems identified, risks, cost of inaction\n- Resolution (1 page): Strategy, initiatives, implementation approach\n- Benefits (1 page): Financial projections, ROI, competitive advantages\n\nYour audience has 10 minutes to read this. Every word must earn its place.",
+  "output_schema": {
+    "type": "object",
+    "required": [
+      "situation",
+      "complication",
+      "resolution",
+      "benefits",
+      "key_metrics_summary",
+      "investment_ask"
+    ],
+    "properties": {
+      "situation": {
+        "type": "object",
+        "description": "Current state analysis - Page 1",
+        "properties": {
+          "business_overview": {
+            "type": "string",
+            "description": "2-3 paragraphs describing current digital presence"
+          },
+          "baseline_metrics": {
+            "type": "object",
+            "properties": {
+              "traffic": {"type": "string"},
+              "conversions": {"type": "string"},
+              "revenue": {"type": "string"},
+              "market_share": {"type": "string"},
+              "competitive_position": {"type": "string"}
+            }
+          },
+          "current_strengths": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "3-5 current competitive advantages"
+          },
+          "recent_performance": {
+            "type": "string",
+            "description": "Trends over last 12 months"
+          }
+        }
+      },
+      "complication": {
+        "type": "object",
+        "description": "Problems and risks - Page 2",
+        "properties": {
+          "critical_issues": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "issue": {"type": "string"},
+                "severity": {"type": "string", "enum": ["critical", "high", "medium"]},
+                "business_impact": {"type": "string"},
+                "financial_impact": {"type": "string"},
+                "timeline_to_address": {"type": "string"}
+              }
+            }
+          },
+          "competitive_threats": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "competitor": {"type": "string"},
+                "threat": {"type": "string"},
+                "our_vulnerability": {"type": "string"}
+              }
+            }
+          },
+          "cost_of_inaction": {
+            "type": "object",
+            "properties": {
+              "revenue_at_risk_annual": {"type": "string"},
+              "market_share_loss": {"type": "string"},
+              "competitive_disadvantage": {"type": "string"},
+              "summary": {"type": "string"}
+            }
+          },
+          "risk_assessment": {
+            "type": "object",
+            "properties": {
+              "overall_risk_level": {"type": "string", "enum": ["low", "medium", "high", "critical"]},
+              "time_sensitivity": {"type": "string"},
+              "key_risks": {"type": "array", "items": {"type": "string"}}
+            }
+          }
+        }
+      },
+      "resolution": {
+        "type": "object",
+        "description": "Strategy and initiatives - Page 3",
+        "properties": {
+          "strategic_approach": {
+            "type": "string",
+            "description": "Overall strategy narrative (2-3 paragraphs)"
+          },
+          "strategic_pillars": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "pillar": {"type": "string"},
+                "description": {"type": "string"},
+                "key_initiatives": {"type": "array", "items": {"type": "string"}},
+                "investment": {"type": "string"},
+                "timeline": {"type": "string"}
+              }
+            }
+          },
+          "implementation_phases": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "phase": {"type": "string"},
+                "duration": {"type": "string"},
+                "focus": {"type": "string"},
+                "deliverables": {"type": "array", "items": {"type": "string"}},
+                "investment": {"type": "string"}
+              }
+            }
+          },
+          "resource_requirements": {
+            "type": "object",
+            "properties": {
+              "team_needed": {"type": "string"},
+              "external_support": {"type": "string"},
+              "technology_investments": {"type": "string"}
+            }
+          }
+        }
+      },
+      "benefits": {
+        "type": "object",
+        "description": "Financial projections and ROI - Page 4",
+        "properties": {
+          "financial_projections": {
+            "type": "object",
+            "properties": {
+              "traffic_increase": {"type": "string"},
+              "conversion_improvement": {"type": "string"},
+              "revenue_uplift": {"type": "string"},
+              "cost_savings": {"type": "string"},
+              "total_value_creation": {"type": "string"}
+            }
+          },
+          "roi_analysis": {
+            "type": "object",
+            "properties": {
+              "total_investment": {"type": "string"},
+              "break_even_point": {"type": "string"},
+              "3_month_roi": {"type": "string"},
+              "6_month_roi": {"type": "string"},
+              "12_month_roi": {"type": "string"},
+              "3_year_npv": {"type": "string"},
+              "irr": {"type": "string"}
+            }
+          },
+          "strategic_benefits": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "benefit": {"type": "string"},
+                "description": {"type": "string"},
+                "quantification": {"type": "string"}
+              }
+            }
+          },
+          "competitive_advantages_gained": {
+            "type": "array",
+            "items": {"type": "string"}
+          }
+        }
+      },
+      "key_metrics_summary": {
+        "type": "object",
+        "properties": {
+          "current_state": {
+            "type": "object",
+            "properties": {
+              "seo_score": {"type": "string"},
+              "performance_score": {"type": "string"},
+              "conversion_rate": {"type": "string"},
+              "monthly_revenue": {"type": "string"}
+            }
+          },
+          "projected_state_12mo": {
+            "type": "object",
+            "properties": {
+              "seo_score": {"type": "string"},
+              "performance_score": {"type": "string"},
+              "conversion_rate": {"type": "string"},
+              "monthly_revenue": {"type": "string"}
+            }
+          },
+          "improvement_highlights": {
+            "type": "array",
+            "items": {"type": "string"}
+          }
+        }
+      },
+      "investment_ask": {
+        "type": "object",
+        "properties": {
+          "total_investment_required": {"type": "string"},
+          "investment_breakdown": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "category": {"type": "string"},
+                "amount": {"type": "string"},
+                "timing": {"type": "string"}
+              }
+            }
+          },
+          "decision_required": {
+            "type": "string",
+            "description": "Clear ask and next steps"
+          }
+        }
+      }
+    }
+  },
+  "user_template": "Create a comprehensive 4-page executive summary following McKinsey SCRB framework:\n\nAUDIT CONTEXT:\n- Business Type: {business_type}\n- Industry: {industry}\n- Current Monthly Revenue: ${current_revenue}\n- Current Monthly Traffic: {current_traffic} visitors\n- Current Conversion Rate: {conversion_rate}\n\nCOMPREHENSIVE AUDIT DATA:\n```json\n{audit_data}\n```\n\nCOMPETITIVE ANALYSIS:\n```json\n{competitive_analysis}\n```\n\nPAGESPEED FINANCIAL IMPACT:\n```json\n{pagespeed_financial_analysis}\n```\n\nRequirements:\n1. Page 1 - Situation: Current state, baseline metrics, strengths, market position (1 page)\n2. Page 2 - Complication: Critical issues, competitive threats, cost of inaction, risks (1 page)\n3. Page 3 - Resolution: Strategic approach, 3 strategic pillars, implementation phases, resources (1 page)\n4. Page 4 - Benefits: Financial projections, ROI analysis, strategic benefits, competitive advantages (1 page)\n\nEach page should be approximately 300-400 words.\nAll financial figures must be specific and justified.\nWrite for a CEO with 10 minutes to read.",
+  "instructions": [
+    "Follow strict SCRB structure: Situation, Complication, Resolution, Benefits",
+    "Each section must be exactly 1 page (300-400 words)",
+    "Use business language, avoid technical jargon",
+    "Quantify everything: percentages, dollar amounts, timeframes",
+    "Be direct and concise: Every sentence must add value",
+    "Include specific investment asks with timing",
+    "Provide clear decision points and next steps",
+    "Use active voice and strong verbs",
+    "Include both short-term wins and long-term strategic value",
+    "Address the 'so what?' for every finding"
+  ],
+  "quality_gates": {
+    "strict_scrb_format": true,
+    "min_pages": 4,
+    "max_pages": 4,
+    "require_financial_projections": true,
+    "require_roi_analysis": true,
+    "require_investment_ask": true,
+    "min_quantified_metrics": 10,
+    "max_word_count_per_page": 500
+  }
+}

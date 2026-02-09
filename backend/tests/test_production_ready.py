@@ -5,6 +5,7 @@ Tests the full stack for production deployment.
 import pytest
 import os
 import tempfile
+import json
 from unittest.mock import patch, MagicMock, AsyncMock
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
@@ -100,12 +101,25 @@ class TestWebhookEndpoints:
         assert response.json()["status"] == "healthy"
 
     def test_github_webhook(self, client):
-        response = client.post(
-            "/api/webhooks/github/incoming",
-            json={"zen": "Testing is good"},
-            headers={"X-GitHub-Event": "ping"}
-        )
-        assert response.status_code == 200
+        from app.core.config import settings
+        from app.services.webhook_service import WebhookService
+
+        payload = {"zen": "Testing is good"}
+        body = json.dumps(payload)
+
+        secret = "test-webhook-secret"
+        with patch.object(settings, "GITHUB_WEBHOOK_SECRET", secret):
+            signature = "sha256=" + WebhookService.generate_signature(body, secret)
+            response = client.post(
+                "/api/webhooks/github/incoming",
+                data=body,
+                headers={
+                    "X-GitHub-Event": "ping",
+                    "X-Hub-Signature-256": signature,
+                    "Content-Type": "application/json",
+                },
+            )
+            assert response.status_code == 200
 
 class TestSecurityConfiguration:
     def test_settings_existence(self):

@@ -3,6 +3,7 @@ Servicio para análisis de backlinks.
 Genera backlinks de ejemplo basados en el perfil del sitio.
 """
 import logging
+from app.core.config import settings
 from typing import Dict, Any
 from urllib.parse import urlparse
 
@@ -24,6 +25,8 @@ class BacklinksService:
         Returns:
             Diccionario con análisis de backlinks
         """
+        if settings.ENVIRONMENT == "production" or settings.STRICT_CONFIG:
+            raise RuntimeError("BacklinksService is a stub in production. Use BacklinkService.")
         try:
             logger.info(f"Generating backlinks analysis for {url}")
             
