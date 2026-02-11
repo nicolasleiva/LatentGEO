@@ -2,7 +2,7 @@
 Servicio de Auditoría - Lógica principal
 """
 from sqlalchemy.orm import Session
-from sqlalchemy import desc
+from sqlalchemy import desc, or_
 from datetime import datetime, timezone
 from typing import List, Optional, Dict, Any
 import json
@@ -25,15 +25,32 @@ class AuditService:
     """Servicio para gestionar auditorías"""
 
     @staticmethod
+    def _build_owner_filter(user_id: Optional[str], user_email: Optional[str]):
+        owner_clauses = []
+        if user_id:
+            owner_clauses.append(Audit.user_id == user_id)
+        if user_email:
+            owner_clauses.append(Audit.user_email == user_email)
+        if not owner_clauses:
+            return None
+        return or_(*owner_clauses)
+
+    @staticmethod
     def create_audit(db: Session, audit_create: AuditCreate) -> Audit:
         """Crear nueva auditoría con prevención de duplicados (Level 3)"""
         url = str(audit_create.url)
         
         # Level 3: Idempotency - Check for active audits for this URL
-        active_audit = db.query(Audit).filter(
+        query = db.query(Audit).filter(
             Audit.url == url,
             Audit.status.in_([AuditStatus.PENDING, AuditStatus.RUNNING])
-        ).first()
+        )
+        owner_filter = AuditService._build_owner_filter(
+            audit_create.user_id, audit_create.user_email
+        )
+        if owner_filter is not None:
+            query = query.filter(owner_filter)
+        active_audit = query.first()
         
         if active_audit:
             logger.info(f"Audit already active for {url}: {active_audit.id}")
@@ -91,13 +108,20 @@ class AuditService:
         return audit
 
     @staticmethod
-    def get_audits(db: Session, skip: int = 0, limit: int = 20, user_email: str = None) -> List[Audit]:
+    def get_audits(
+        db: Session,
+        skip: int = 0,
+        limit: int = 20,
+        user_email: Optional[str] = None,
+        user_id: Optional[str] = None,
+    ) -> List[Audit]:
         """Obtener lista de auditorías con paginación y filtro opcional por usuario"""
         query = db.query(Audit)
         
         # Filtrar por usuario si se proporciona
-        if user_email:
-            query = query.filter(Audit.user_email == user_email)
+        owner_filter = AuditService._build_owner_filter(user_id, user_email)
+        if owner_filter is not None:
+            query = query.filter(owner_filter)
         
         audits = (
             query
@@ -132,9 +156,18 @@ class AuditService:
         return db.query(Audit).count()
 
     @staticmethod
-    def get_audits_by_status(db: Session, status: AuditStatus) -> List[Audit]:
+    def get_audits_by_status(
+        db: Session,
+        status: AuditStatus,
+        user_email: Optional[str] = None,
+        user_id: Optional[str] = None,
+    ) -> List[Audit]:
         """Obtener auditorías por estado"""
-        return db.query(Audit).filter(Audit.status == status).all()
+        query = db.query(Audit).filter(Audit.status == status)
+        owner_filter = AuditService._build_owner_filter(user_id, user_email)
+        if owner_filter is not None:
+            query = query.filter(owner_filter)
+        return query.all()
 
     @staticmethod
     def update_audit_progress(
@@ -800,13 +833,22 @@ class AuditService:
         return True
 
     @staticmethod
-    def get_stats_summary(db: Session) -> Dict[str, Any]:
+    def get_stats_summary(
+        db: Session,
+        user_email: Optional[str] = None,
+        user_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
         """Obtener resumen de estadísticas de auditorías"""
-        total = db.query(Audit).count()
-        completed = db.query(Audit).filter(Audit.status == AuditStatus.COMPLETED).count()
-        running = db.query(Audit).filter(Audit.status == AuditStatus.RUNNING).count()
-        failed = db.query(Audit).filter(Audit.status == AuditStatus.FAILED).count()
-        pending = db.query(Audit).filter(Audit.status == AuditStatus.PENDING).count()
+        base_query = db.query(Audit)
+        owner_filter = AuditService._build_owner_filter(user_id, user_email)
+        if owner_filter is not None:
+            base_query = base_query.filter(owner_filter)
+
+        total = base_query.count()
+        completed = base_query.filter(Audit.status == AuditStatus.COMPLETED).count()
+        running = base_query.filter(Audit.status == AuditStatus.RUNNING).count()
+        failed = base_query.filter(Audit.status == AuditStatus.FAILED).count()
+        pending = base_query.filter(Audit.status == AuditStatus.PENDING).count()
         
         return {
             "total_audits": total,

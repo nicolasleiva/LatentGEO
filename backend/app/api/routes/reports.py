@@ -17,6 +17,8 @@ from ...models import AuditStatus
 from ...schemas import ReportResponse, PDFRequest, PDFResponse
 from ...services.audit_service import AuditService, ReportService
 from ...core.logger import get_logger
+from ...core.auth import AuthUser, get_current_user
+from ...core.access_control import ensure_audit_access
 
 logger = get_logger(__name__)
 
@@ -26,6 +28,11 @@ router = APIRouter(
     responses={404: {"description": "No encontrado"}},
 )
 
+
+def _get_owned_audit(db: Session, audit_id: int, current_user: AuthUser):
+    audit = AuditService.get_audit(db, audit_id)
+    return ensure_audit_access(audit, current_user)
+
 # Importar la lógica de creación de PDF del script heredado
 try:
     from create_pdf import create_comprehensive_pdf, FPDF_AVAILABLE
@@ -34,14 +41,14 @@ except ImportError:
 
 
 @router.get("/audit/{audit_id}", response_model=dict)
-async def get_audit_reports(audit_id: int, db: Session = Depends(get_db)):
+async def get_audit_reports(
+    audit_id: int,
+    db: Session = Depends(get_db),
+    current_user: AuthUser = Depends(get_current_user),
+):
     """Obtener todos los reportes de una auditoría"""
     try:
-        audit = AuditService.get_audit(db, audit_id)
-        if not audit:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="Auditoría no encontrada"
-            )
+        _get_owned_audit(db, audit_id, current_user)
 
         reports = ReportService.get_reports_by_audit(db, audit_id)
         return {
@@ -104,6 +111,7 @@ async def generate_pdf(
     pdf_request: PDFRequest,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
+    current_user: AuthUser = Depends(get_current_user),
 ):
     """
     Generar PDF de auditoría (asincrónico)
@@ -119,11 +127,7 @@ async def generate_pdf(
         )
 
     try:
-        audit = AuditService.get_audit(db, pdf_request.audit_id)
-        if not audit:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="Auditoría no encontrada"
-            )
+        audit = _get_owned_audit(db, pdf_request.audit_id, current_user)
 
         if audit.status != AuditStatus.COMPLETED or not audit.report_markdown:
             raise HTTPException(
@@ -162,7 +166,11 @@ async def generate_pdf(
 
 
 @router.get("/download/{report_id}")
-async def download_report(report_id: int, db: Session = Depends(get_db)):
+async def download_report(
+    report_id: int,
+    db: Session = Depends(get_db),
+    current_user: AuthUser = Depends(get_current_user),
+):
     """Descargar archivo de reporte"""
     try:
         report = ReportService.get_report(db, report_id)
@@ -170,6 +178,8 @@ async def download_report(report_id: int, db: Session = Depends(get_db)):
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND, detail="Reporte no encontrado"
             )
+
+        _get_owned_audit(db, report.audit_id, current_user)
 
         file_path = Path(report.file_path)
         if not file_path.exists():
@@ -193,14 +203,14 @@ async def download_report(report_id: int, db: Session = Depends(get_db)):
 
 
 @router.get("/markdown/{audit_id}")
-async def get_markdown_report(audit_id: int, db: Session = Depends(get_db)):
+async def get_markdown_report(
+    audit_id: int,
+    db: Session = Depends(get_db),
+    current_user: AuthUser = Depends(get_current_user),
+):
     """Obtener reporte en formato Markdown"""
     try:
-        audit = AuditService.get_audit(db, audit_id)
-        if not audit:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="Auditoría no encontrada"
-            )
+        audit = _get_owned_audit(db, audit_id, current_user)
 
         if audit.status != AuditStatus.COMPLETED:
             raise HTTPException(
@@ -229,14 +239,14 @@ async def get_markdown_report(audit_id: int, db: Session = Depends(get_db)):
 
 
 @router.get("/json/{audit_id}")
-async def get_json_report(audit_id: int, db: Session = Depends(get_db)):
+async def get_json_report(
+    audit_id: int,
+    db: Session = Depends(get_db),
+    current_user: AuthUser = Depends(get_current_user),
+):
     """Obtener reporte en formato JSON"""
     try:
-        audit = AuditService.get_audit(db, audit_id)
-        if not audit:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="Auditoría no encontrada"
-            )
+        audit = _get_owned_audit(db, audit_id, current_user)
 
         return {
             "audit_id": audit_id,

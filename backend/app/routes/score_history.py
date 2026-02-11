@@ -7,30 +7,39 @@ from typing import Optional, List
 from datetime import datetime
 
 from ..core.database import get_db
+from ..core.auth import AuthUser, get_current_user
 from ..services.score_history_service import ScoreHistoryService
 
 router = APIRouter(prefix="/api/score-history", tags=["Score History"])
+
+
+def _owner_ids_from_user(current_user: AuthUser) -> List[str]:
+    owner_ids: List[str] = []
+    if current_user.user_id:
+        owner_ids.append(current_user.user_id)
+    if current_user.email:
+        owner_ids.append(current_user.email.lower())
+    return owner_ids
 
 
 @router.get("/domain/{domain}")
 async def get_domain_history(
     domain: str,
     days: int = Query(default=90, ge=7, le=365),
-    user_email: Optional[str] = None,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: AuthUser = Depends(get_current_user),
 ):
     """
     Obtiene el historial de scores para un dominio específico.
     
     - **domain**: Dominio a consultar (ej: example.com)
     - **days**: Cantidad de días de historial (default: 90)
-    - **user_email**: Filtrar por usuario (opcional)
     """
     history = ScoreHistoryService.get_history(
         db=db,
         domain=domain,
         days=days,
-        user_id=user_email
+        owner_ids=_owner_ids_from_user(current_user),
     )
     
     return {
@@ -62,8 +71,8 @@ async def get_domain_history(
 @router.get("/domain/{domain}/comparison")
 async def get_monthly_comparison(
     domain: str,
-    user_email: Optional[str] = None,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: AuthUser = Depends(get_current_user),
 ):
     """
     Compara los scores del mes actual vs el mes anterior.
@@ -76,7 +85,7 @@ async def get_monthly_comparison(
     comparison = ScoreHistoryService.get_monthly_comparison(
         db=db,
         domain=domain,
-        user_id=user_email
+        owner_ids=_owner_ids_from_user(current_user),
     )
     
     return comparison
@@ -84,9 +93,9 @@ async def get_monthly_comparison(
 
 @router.get("/summary")
 async def get_domains_summary(
-    user_email: Optional[str] = None,
     days: int = Query(default=30, ge=7, le=90),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: AuthUser = Depends(get_current_user),
 ):
     """
     Obtiene un resumen de todos los dominios auditados.
@@ -95,7 +104,7 @@ async def get_domains_summary(
     """
     summary = ScoreHistoryService.get_all_domains_summary(
         db=db,
-        user_id=user_email,
+        owner_ids=_owner_ids_from_user(current_user),
         days=days
     )
     
@@ -113,8 +122,8 @@ async def record_score_manually(
     seo_score: float = 0,
     geo_score: float = 0,
     performance_score: float = 0,
-    user_email: Optional[str] = None,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: AuthUser = Depends(get_current_user),
 ):
     """
     Registra manualmente un score en el historial.
@@ -133,7 +142,7 @@ async def record_score_manually(
         domain=domain,
         audit_id=audit_id,
         scores=scores,
-        user_id=user_email
+        user_id=current_user.user_id or (current_user.email.lower() if current_user.email else None),
     )
     
     return {

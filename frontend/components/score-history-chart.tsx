@@ -3,10 +3,11 @@
 import { useEffect, useState } from 'react'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, AreaChart, Area } from 'recharts'
 import { TrendingUp, TrendingDown, Minus, Calendar, BarChart3, ArrowUpRight, ArrowDownRight } from 'lucide-react'
+import { API_URL } from '@/lib/api'
+import { fetchWithBackendAuth } from '@/lib/backend-auth'
 
 interface ScoreHistoryProps {
     domain: string
-    userEmail?: string
 }
 
 interface ComparisonMetric {
@@ -32,24 +33,23 @@ interface MonthlyComparison {
     }
 }
 
-export function ScoreHistoryChart({ domain, userEmail }: ScoreHistoryProps) {
+export function ScoreHistoryChart({ domain }: ScoreHistoryProps) {
     const [history, setHistory] = useState<any[]>([])
     const [comparison, setComparison] = useState<MonthlyComparison | null>(null)
     const [loading, setLoading] = useState(true)
     const [days, setDays] = useState(90)
 
-    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000'
+    const backendUrl = API_URL
 
     useEffect(() => {
         const fetchData = async () => {
             setLoading(true)
             try {
                 const params = new URLSearchParams({ days: days.toString() })
-                if (userEmail) params.append('user_email', userEmail)
 
                 const [historyRes, comparisonRes] = await Promise.all([
-                    fetch(`${backendUrl}/api/score-history/domain/${encodeURIComponent(domain)}?${params}`),
-                    fetch(`${backendUrl}/api/score-history/domain/${encodeURIComponent(domain)}/comparison${userEmail ? `?user_email=${userEmail}` : ''}`)
+                    fetchWithBackendAuth(`${backendUrl}/api/score-history/domain/${encodeURIComponent(domain)}?${params}`),
+                    fetchWithBackendAuth(`${backendUrl}/api/score-history/domain/${encodeURIComponent(domain)}/comparison`)
                 ])
 
                 if (historyRes.ok) {
@@ -69,7 +69,7 @@ export function ScoreHistoryChart({ domain, userEmail }: ScoreHistoryProps) {
         }
 
         if (domain) fetchData()
-    }, [domain, days, userEmail, backendUrl])
+    }, [domain, days, backendUrl])
 
     const TrendIcon = ({ trend }: { trend: 'up' | 'down' | 'stable' }) => {
         if (trend === 'up') return <TrendingUp className="w-4 h-4 text-green-400" />

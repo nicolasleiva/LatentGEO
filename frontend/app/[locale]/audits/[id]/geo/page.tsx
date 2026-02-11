@@ -9,6 +9,7 @@ import { Header } from '@/components/header';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { API_URL } from '@/lib/api';
+import { fetchWithBackendAuth } from '@/lib/backend-auth';
 import { GEOSkeleton } from './loading';
 import {
   CitationsTableSkeleton,
@@ -138,7 +139,7 @@ export default function GEODashboardPage() {
 
         const fetchData = async () => {
             try {
-                const res = await fetch(`${backendUrl}/api/geo/dashboard/${auditId}`);
+                const res = await fetchWithBackendAuth(`${backendUrl}/api/geo/dashboard/${auditId}`);
                 if (!res.ok) throw new Error('Failed to fetch GEO data');
                 const geoData = await res.json();
                 setData(geoData);
@@ -161,7 +162,7 @@ export default function GEODashboardPage() {
 
     const startCitationTracking = async () => {
         try {
-            const res = await fetch(`${backendUrl}/api/geo/citation-tracking/start`, {
+            const res = await fetchWithBackendAuth(`${backendUrl}/api/geo/citation-tracking/start`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({

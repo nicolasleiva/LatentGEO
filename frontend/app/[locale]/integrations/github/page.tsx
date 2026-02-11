@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { API_URL } from "@/lib/api"
+import { fetchWithBackendAuth } from "@/lib/backend-auth"
 import { Github, Loader2, RefreshCw } from "lucide-react"
 
 export default function GitHubAdminPage() {
@@ -112,7 +113,7 @@ export default function GitHubAdminPage() {
                 variant="outline"
                 disabled={loading}
                 onClick={() => run("GET /github/connections", async () => {
-                  const res = await fetch(`${API_URL}/api/github/connections`)
+                  const res = await fetchWithBackendAuth(`${API_URL}/api/github/connections`)
                   if (!res.ok) throw new Error(`HTTP ${res.status}`)
                   return res.json()
                 })}
@@ -124,7 +125,7 @@ export default function GitHubAdminPage() {
                 variant="outline"
                 disabled={loading || !connectionId}
                 onClick={() => run("POST /github/sync/{connection_id}", async () => {
-                  const res = await fetch(`${API_URL}/api/github/sync/${encodeURIComponent(connectionId)}`, { method: "POST" })
+                  const res = await fetchWithBackendAuth(`${API_URL}/api/github/sync/${encodeURIComponent(connectionId)}`, { method: "POST" })
                   if (!res.ok) throw new Error(`HTTP ${res.status}`)
                   return res.json()
                 })}
@@ -135,7 +136,7 @@ export default function GitHubAdminPage() {
                 variant="outline"
                 disabled={loading || !connectionId}
                 onClick={() => run("GET /github/repos/{connection_id}", async () => {
-                  const res = await fetch(`${API_URL}/api/github/repos/${encodeURIComponent(connectionId)}`)
+                  const res = await fetchWithBackendAuth(`${API_URL}/api/github/repos/${encodeURIComponent(connectionId)}`)
                   if (!res.ok) throw new Error(`HTTP ${res.status}`)
                   return res.json()
                 })}
@@ -146,7 +147,7 @@ export default function GitHubAdminPage() {
                 variant="outline"
                 disabled={loading || !connectionId || !repoId}
                 onClick={() => run("POST /github/analyze/{connection_id}/{repo_id}", async () => {
-                  const res = await fetch(`${API_URL}/api/github/analyze/${encodeURIComponent(connectionId)}/${encodeURIComponent(repoId)}`, { method: "POST" })
+                  const res = await fetchWithBackendAuth(`${API_URL}/api/github/analyze/${encodeURIComponent(connectionId)}/${encodeURIComponent(repoId)}`, { method: "POST" })
                   if (!res.ok) throw new Error(`HTTP ${res.status}`)
                   return res.json()
                 })}
@@ -157,7 +158,7 @@ export default function GitHubAdminPage() {
                 variant="outline"
                 disabled={loading || !repoId}
                 onClick={() => run("GET /github/prs/{repo_id}", async () => {
-                  const res = await fetch(`${API_URL}/api/github/prs/${encodeURIComponent(repoId)}`)
+                  const res = await fetchWithBackendAuth(`${API_URL}/api/github/prs/${encodeURIComponent(repoId)}`)
                   if (!res.ok) throw new Error(`HTTP ${res.status}`)
                   return res.json()
                 })}
@@ -181,7 +182,7 @@ export default function GitHubAdminPage() {
               <Button
                 disabled={loading || !connectionId || !repoId || !parsedAuditId}
                 onClick={() => run("POST /github/create-pr", async () => {
-                  const res = await fetch(`${API_URL}/api/github/create-pr`, {
+                  const res = await fetchWithBackendAuth(`${API_URL}/api/github/create-pr`, {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({
@@ -202,7 +203,7 @@ export default function GitHubAdminPage() {
                 variant="outline"
                 disabled={loading || !parsedAuditId}
                 onClick={() => run("GET /github/audit-to-fixes/{audit_id}", async () => {
-                  const res = await fetch(`${API_URL}/api/github/audit-to-fixes/${parsedAuditId}`)
+                  const res = await fetchWithBackendAuth(`${API_URL}/api/github/audit-to-fixes/${parsedAuditId}`)
                   const data = await res.json().catch(() => ({}))
                   if (!res.ok) throw new Error(data?.detail || `HTTP ${res.status}`)
                   return data
@@ -213,7 +214,7 @@ export default function GitHubAdminPage() {
               <Button
                 disabled={loading || !connectionId || !repoId || !parsedAuditId}
                 onClick={() => run("POST /github/create-auto-fix-pr/{connection}/{repo}", async () => {
-                  const res = await fetch(`${API_URL}/api/github/create-auto-fix-pr/${encodeURIComponent(connectionId)}/${encodeURIComponent(repoId)}`, {
+                  const res = await fetchWithBackendAuth(`${API_URL}/api/github/create-auto-fix-pr/${encodeURIComponent(connectionId)}/${encodeURIComponent(repoId)}`, {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({ audit_id: parsedAuditId }),
@@ -238,7 +239,7 @@ export default function GitHubAdminPage() {
               <Button
                 disabled={loading || !connectionId || !repoId}
                 onClick={() => run("POST /github/audit-blogs/{connection}/{repo}", async () => {
-                  const res = await fetch(`${API_URL}/api/github/audit-blogs/${encodeURIComponent(connectionId)}/${encodeURIComponent(repoId)}`, { method: "POST" })
+                  const res = await fetchWithBackendAuth(`${API_URL}/api/github/audit-blogs/${encodeURIComponent(connectionId)}/${encodeURIComponent(repoId)}`, { method: "POST" })
                   const data = await res.json().catch(() => ({}))
                   if (!res.ok) throw new Error(data?.detail || `HTTP ${res.status}`)
                   return data
@@ -249,7 +250,7 @@ export default function GitHubAdminPage() {
               <Button
                 disabled={loading || !connectionId || !repoId || parseBlogPaths().length === 0}
                 onClick={() => run("POST /github/create-blog-fixes-pr/{connection}/{repo}", async () => {
-                  const res = await fetch(`${API_URL}/api/github/create-blog-fixes-pr/${encodeURIComponent(connectionId)}/${encodeURIComponent(repoId)}`, {
+                  const res = await fetchWithBackendAuth(`${API_URL}/api/github/create-blog-fixes-pr/${encodeURIComponent(connectionId)}/${encodeURIComponent(repoId)}`, {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify(parseBlogPaths()),
@@ -270,7 +271,7 @@ export default function GitHubAdminPage() {
               <Button
                 disabled={loading || !connectionId || !repoId}
                 onClick={() => run("POST /github/audit-blogs-geo/{connection}/{repo}", async () => {
-                  const res = await fetch(`${API_URL}/api/github/audit-blogs-geo/${encodeURIComponent(connectionId)}/${encodeURIComponent(repoId)}`, { method: "POST" })
+                  const res = await fetchWithBackendAuth(`${API_URL}/api/github/audit-blogs-geo/${encodeURIComponent(connectionId)}/${encodeURIComponent(repoId)}`, { method: "POST" })
                   const data = await res.json().catch(() => ({}))
                   if (!res.ok) throw new Error(data?.detail || `HTTP ${res.status}`)
                   return data
@@ -281,7 +282,7 @@ export default function GitHubAdminPage() {
               <Button
                 disabled={loading || !connectionId || !repoId || parseBlogPaths().length === 0}
                 onClick={() => run("POST /github/create-geo-fixes-pr/{connection}/{repo}", async () => {
-                  const res = await fetch(`${API_URL}/api/github/create-geo-fixes-pr/${encodeURIComponent(connectionId)}/${encodeURIComponent(repoId)}`, {
+                  const res = await fetchWithBackendAuth(`${API_URL}/api/github/create-geo-fixes-pr/${encodeURIComponent(connectionId)}/${encodeURIComponent(repoId)}`, {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({ blog_paths: parseBlogPaths(), include_geo: true }),
@@ -307,7 +308,7 @@ export default function GitHubAdminPage() {
                 variant="outline"
                 disabled={loading || !parsedAuditId}
                 onClick={() => run("GET /github/geo-score/{audit_id}", async () => {
-                  const res = await fetch(`${API_URL}/api/github/geo-score/${parsedAuditId}`)
+                  const res = await fetchWithBackendAuth(`${API_URL}/api/github/geo-score/${parsedAuditId}`)
                   const data = await res.json().catch(() => ({}))
                   if (!res.ok) throw new Error(data?.detail || `HTTP ${res.status}`)
                   return data
@@ -322,7 +323,7 @@ export default function GitHubAdminPage() {
                   const comps = parseCompetitors()
                   const qs = comps.map((u) => `competitor_urls=${encodeURIComponent(u)}`).join("&")
                   const url = qs ? `${API_URL}/api/github/geo-compare/${parsedAuditId}?${qs}` : `${API_URL}/api/github/geo-compare/${parsedAuditId}`
-                  const res = await fetch(url)
+                  const res = await fetchWithBackendAuth(url)
                   const data = await res.json().catch(() => ({}))
                   if (!res.ok) throw new Error(data?.detail || `HTTP ${res.status}`)
                   return data

@@ -2,17 +2,17 @@
 Server-Sent Events (SSE) endpoint for real-time audit progress updates.
 Replaces polling to reduce server load and improve responsiveness.
 """
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Query
 from fastapi.responses import StreamingResponse
-from sqlalchemy.orm import Session
 import asyncio
 import json
 from typing import AsyncGenerator
 
-from app.core.database import get_db
 from app.services.audit_service import AuditService
 from app.core.logger import get_logger
 from app.core.config import settings
+from app.core.auth import AuthUser, get_user_from_bearer_token
+from app.core.access_control import ensure_audit_access
 
 logger = get_logger(__name__)
 
@@ -22,7 +22,10 @@ router = APIRouter(
 )
 
 
-async def audit_progress_stream(audit_id: int, db: Session) -> AsyncGenerator[str, None]:
+async def audit_progress_stream(
+    audit_id: int,
+    current_user: AuthUser,
+) -> AsyncGenerator[str, None]:
     """
     Stream audit progress updates using Server-Sent Events.
     Sends updates every 2 seconds until audit is completed or failed.
@@ -48,9 +51,7 @@ async def audit_progress_stream(audit_id: int, db: Session) -> AsyncGenerator[st
             try:
                 audit = AuditService.get_audit(db_session, audit_id)
                 
-                if not audit:
-                    yield f"data: {json.dumps({'error': 'Audit not found'})}\n\n"
-                    break
+                audit = ensure_audit_access(audit, current_user)
                 
                 # Send update if something changed
                 if audit.status != last_status or audit.progress != last_progress:
@@ -90,17 +91,31 @@ async def audit_progress_stream(audit_id: int, db: Session) -> AsyncGenerator[st
         logger.error(f"Error in SSE stream for audit {audit_id}: {e}")
         yield f"data: {json.dumps({'error': str(e)})}\n\n"
 
-
 @router.get("/audits/{audit_id}/progress")
-async def stream_audit_progress(audit_id: int):
+async def stream_audit_progress(
+    audit_id: int,
+    token: str = Query(..., description="Internal bearer token"),
+):
     """
     SSE endpoint for streaming audit progress updates.
-    No DB dependency needed - creates fresh session per query.
+    EventSource cannot send custom Authorization headers, so a short-lived token
+    is provided as query parameter.
     """
+    current_user = get_user_from_bearer_token(token)
+
+    # Ownership check before opening stream
+    from app.core.database import SessionLocal
+    db_session = SessionLocal()
+    try:
+        audit = AuditService.get_audit(db_session, audit_id)
+        ensure_audit_access(audit, current_user)
+    finally:
+        db_session.close()
+
     logger.info(f"SSE connection established for audit {audit_id}")
     
     return StreamingResponse(
-        audit_progress_stream(audit_id, None),
+        audit_progress_stream(audit_id, current_user),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",

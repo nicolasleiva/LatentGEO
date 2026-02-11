@@ -12,12 +12,20 @@ from datetime import datetime
 from ...core.database import get_db
 from ...core.config import settings
 from ...core.logger import get_logger
+from ...core.auth import AuthUser, get_current_user
+from ...core.access_control import ensure_audit_access
 from ...integrations.github.oauth import GitHubOAuth
 from ...integrations.github.service import GitHubService
 from ...models.github import GitHubConnection, GitHubRepository, GitHubPullRequest, PRStatus
+from ...services.audit_service import AuditService
 
 router = APIRouter(prefix="/github", tags=["github"])
 logger = get_logger(__name__)
+
+
+def _get_owned_audit(db: Session, audit_id: int, current_user: AuthUser):
+    audit = AuditService.get_audit(db, audit_id)
+    return ensure_audit_access(audit, current_user)
 
 
 # Request/Response Models
@@ -178,11 +186,16 @@ async def analyze_repository(connection_id: str, repo_id: str, db: Session = Dep
 
 
 @router.post("/create-pr", response_model=PRResponse)
-async def create_pull_request(request: CreatePRRequest, db: Session = Depends(get_db)):
+async def create_pull_request(
+    request: CreatePRRequest,
+    db: Session = Depends(get_db),
+    current_user: AuthUser = Depends(get_current_user),
+):
     """Crea un Pull Request con fixes SEO/GEO"""
     service = GitHubService(db)
     
     try:
+        _get_owned_audit(db, request.audit_id, current_user)
         pr = await service.create_pr_with_fixes(
             connection_id=request.connection_id,
             repo_id=request.repo_id,
@@ -340,7 +353,11 @@ async def create_blog_fixes_pr(
 
 @router.get("/audit-to-fixes/{audit_id}")
 
-def convert_audit_to_fixes(audit_id: int, db: Session = Depends(get_db)):
+def convert_audit_to_fixes(
+    audit_id: int,
+    db: Session = Depends(get_db),
+    current_user: AuthUser = Depends(get_current_user),
+):
     """
     Convierte el fix_plan de una auditoría en fixes aplicables a código
     
@@ -356,10 +373,7 @@ def convert_audit_to_fixes(audit_id: int, db: Session = Depends(get_db)):
     from ...models import Audit
     from ...integrations.github.service import GitHubService
     
-    audit = db.query(Audit).filter(Audit.id == audit_id).first()
-    
-    if not audit:
-        raise HTTPException(status_code=404, detail="Audit not found")
+    audit = _get_owned_audit(db, audit_id, current_user)
     
     service = GitHubService(db)
     fixes = service.prepare_fixes_from_audit(audit)
@@ -379,7 +393,11 @@ def convert_audit_to_fixes(audit_id: int, db: Session = Depends(get_db)):
 # ===== GEO (Generative Engine Optimization) Endpoints =====
 
 @router.get("/geo-score/{audit_id}")
-async def get_geo_score(audit_id: int, db: Session = Depends(get_db)):
+async def get_geo_score(
+    audit_id: int,
+    db: Session = Depends(get_db),
+    current_user: AuthUser = Depends(get_current_user),
+):
     """
     Calcula GEO Score de una auditoría
     
@@ -395,10 +413,7 @@ async def get_geo_score(audit_id: int, db: Session = Depends(get_db)):
     from ...services.geo_score_service import GEOScoreService
     from ...models import Audit
     
-    audit = db.query(Audit).filter(Audit.id == audit_id).first()
-    
-    if not audit:
-        raise HTTPException(status_code=404, detail="Audit not found")
+    audit = _get_owned_audit(db, audit_id, current_user)
     
     try:
         geo_service = GEOScoreService(db)
@@ -572,7 +587,8 @@ async def create_geo_fixes_pr(
 async def compare_geo_with_competitors(
     audit_id: int,
     competitor_urls: Optional[List[str]] = None,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: AuthUser = Depends(get_current_user),
 ):
     """
     Compara GEO score con competidores
@@ -589,10 +605,7 @@ async def compare_geo_with_competitors(
     from ...services.geo_score_service import GEOScoreService
     from ...models import Audit
     
-    audit = db.query(Audit).filter(Audit.id == audit_id).first()
-    
-    if not audit:
-        raise HTTPException(status_code=404, detail="Audit not found")
+    audit = _get_owned_audit(db, audit_id, current_user)
     
     # Si no se proveen competidores, usar los de la auditoría
     if not competitor_urls:
@@ -764,7 +777,8 @@ async def create_auto_fix_pr(
     connection_id: str,
     repo_id: str,
     request: CreateAutoFixRequest,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: AuthUser = Depends(get_current_user),
 ):
     """
     Crea un PR automático basado en auditoría existente.
@@ -779,9 +793,7 @@ async def create_auto_fix_pr(
     
     try:
         # 1. Obtener auditoría
-        audit = db.query(Audit).filter(Audit.id == request.audit_id).first()
-        if not audit:
-            raise HTTPException(status_code=404, detail="Audit not found")
+        audit = _get_owned_audit(db, request.audit_id, current_user)
         
         if audit.status != AuditStatus.COMPLETED:
             raise HTTPException(status_code=400, detail="Audit is not completed yet")

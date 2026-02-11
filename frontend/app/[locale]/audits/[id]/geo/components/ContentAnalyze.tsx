@@ -5,6 +5,7 @@ import { Award, AlertCircle, Sparkles, CheckCircle, XCircle } from 'lucide-react
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
+import { fetchWithBackendAuth } from '@/lib/backend-auth';
 
 interface AnalysisResult {
   score: number;
@@ -31,7 +32,7 @@ export default function ContentAnalyze({ backendUrl }: ContentAnalyzeProps) {
     setError(null);
     
     try {
-      const res = await fetch(`${backendUrl}/api/geo/analyze-content`, {
+      const res = await fetchWithBackendAuth(`${backendUrl}/api/geo/analyze-content`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ content }),

@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { BarChart3, Users, AlertCircle, Play, CheckCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { fetchWithBackendAuth } from '@/lib/backend-auth';
 
 interface CompetitorData {
   name: string;
@@ -57,7 +58,7 @@ export default function CompetitorAnalysis({ auditId, backendUrl }: CompetitorAn
     setError(null);
     
     try {
-      const res = await fetch(`${backendUrl}/api/geo/competitor-analysis`, {
+      const res = await fetchWithBackendAuth(`${backendUrl}/api/geo/competitor-analysis`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

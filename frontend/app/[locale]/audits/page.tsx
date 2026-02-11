@@ -7,6 +7,7 @@ import { Header } from '@/components/header'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { API_URL } from '@/lib/api'
+import { fetchWithBackendAuth } from '@/lib/backend-auth'
 import {
   RefreshCw, Globe, Clock, ArrowRight, Plus,
   Search, Filter, ChevronDown
@@ -35,9 +36,7 @@ export default function AuditsListPage() {
   useEffect(() => {
     const fetchAudits = async () => {
       try {
-        // Filter by user email when signed in
-        const userEmailParam = user?.email ? `?user_email=${encodeURIComponent(user.email)}` : ''
-        const response = await fetch(`${backendUrl}/api/audits${userEmailParam}`)
+        const response = await fetchWithBackendAuth(`${backendUrl}/api/audits`)
         const data = await response.json()
         setAudits(Array.isArray(data) ? data : [])
       } catch (err) {
@@ -53,7 +52,7 @@ export default function AuditsListPage() {
     const confirmed = window.confirm(`Delete audit #${auditId}? This action cannot be undone.`)
     if (!confirmed) return
     try {
-      const res = await fetch(`${backendUrl}/api/audits/${auditId}`, { method: 'DELETE' })
+      const res = await fetchWithBackendAuth(`${backendUrl}/api/audits/${auditId}`, { method: 'DELETE' })
       if (!res.ok) throw new Error(`Failed to delete audit: ${res.status}`)
       setAudits((prev) => prev.filter(a => a.id !== auditId))
     } catch (err) {

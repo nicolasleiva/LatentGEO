@@ -3,6 +3,8 @@
 import { useState, useEffect, useRef } from 'react'
 import { Input } from '@/components/ui/input'
 import { Send, Sparkles, Globe, Flag, CheckCircle } from 'lucide-react'
+import { API_URL } from '@/lib/api'
+import { fetchWithBackendAuth } from '@/lib/backend-auth'
 
 interface AuditChatFlowProps {
   auditId: number | string
@@ -102,7 +104,7 @@ export function AuditChatFlow({ auditId, onComplete }: AuditChatFlowProps) {
       sendAIMessage('Confirmed. Launching your comprehensive audit now. This takes a few minutes.')
 
       try {
-        const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+        const apiUrl = API_URL
 
         const isValidId = (id: number | string): boolean => {
           if (typeof id === 'number') return !isNaN(id) && id > 0
@@ -111,7 +113,7 @@ export function AuditChatFlow({ auditId, onComplete }: AuditChatFlowProps) {
         }
 
         if (auditId && isValidId(auditId)) {
-          await fetch(`${apiUrl}/api/audits/chat/config`, {
+          await fetchWithBackendAuth(`${apiUrl}/api/audits/chat/config`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -123,7 +125,7 @@ export function AuditChatFlow({ auditId, onComplete }: AuditChatFlowProps) {
           })
           onComplete()
         } else {
-          const createResponse = await fetch(`${apiUrl}/api/audits`, {
+          const createResponse = await fetchWithBackendAuth(`${apiUrl}/api/audits`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -146,14 +148,14 @@ export function AuditChatFlow({ auditId, onComplete }: AuditChatFlowProps) {
   const currentStepIndex = steps.findIndex(item => item.id === step)
 
   return (
-    <div className="grid gap-6 lg:grid-cols-[220px_1fr] glass-card p-6">
+    <div className="grid gap-8 lg:grid-cols-[280px_minmax(0,1fr)] glass-card p-5 sm:p-6 lg:p-8 lg:min-h-[72vh]">
       <div className="space-y-6">
         <div>
           <div className="flex items-center gap-2 text-sm uppercase tracking-widest text-muted-foreground">
             <Sparkles className="w-4 h-4 text-brand" />
             AI intake
           </div>
-          <h2 className="text-2xl font-semibold mt-2">Audit configuration</h2>
+          <h2 className="text-2xl lg:text-3xl font-semibold mt-2">Audit configuration</h2>
           <p className="text-sm text-muted-foreground mt-2">
             Two quick questions to personalize your analysis.
           </p>
@@ -190,17 +192,17 @@ export function AuditChatFlow({ auditId, onComplete }: AuditChatFlowProps) {
         </div>
       </div>
 
-      <div className="flex flex-col h-[520px] bg-background/70 border border-border/70 rounded-2xl overflow-hidden">
-        <div className="border-b border-border/70 p-4">
+      <div className="flex flex-col min-h-[560px] h-[68vh] max-h-[860px] bg-background/70 border border-border/70 rounded-2xl overflow-hidden">
+        <div className="border-b border-border/70 p-4 sm:p-5">
           <h3 className="font-medium text-lg">LatentGEO.ai Assistant</h3>
-          <p className="text-sm text-muted-foreground">Personalize your audit in seconds.</p>
+          <p className="text-sm text-muted-foreground mt-1">Personalize your audit in seconds.</p>
         </div>
 
-        <div ref={messagesContainerRef} className="flex-1 overflow-y-auto p-4 space-y-4">
+        <div ref={messagesContainerRef} className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-4">
           {messages.map((msg, idx) => (
             <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
               <div
-                className={`max-w-[80%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${
+                className={`max-w-[86%] sm:max-w-[82%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${
                   msg.role === 'user'
                     ? 'bg-brand text-brand-foreground'
                     : 'bg-muted/60 text-foreground border border-border/60'
@@ -216,7 +218,7 @@ export function AuditChatFlow({ auditId, onComplete }: AuditChatFlowProps) {
         </div>
 
         {step !== 'done' && (
-          <div className="border-t border-border/70 p-4">
+          <div className="border-t border-border/70 p-4 sm:p-5">
             <div className="flex gap-2">
               <Input
                 value={input}
@@ -224,12 +226,12 @@ export function AuditChatFlow({ auditId, onComplete }: AuditChatFlowProps) {
                 onKeyDown={(e) => e.key === 'Enter' && handleSend()}
                 placeholder="Type your response..."
                 disabled={isTyping}
-                className="flex-1 bg-background"
+                className="flex-1 bg-background min-h-[44px]"
               />
               <button
                 onClick={handleSend}
                 disabled={isTyping || !input.trim()}
-                className="px-4 py-2 bg-brand text-brand-foreground rounded-lg hover:bg-brand/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                className="px-4 py-2 min-w-[48px] bg-brand text-brand-foreground rounded-lg hover:bg-brand/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
                 <Send className="h-4 w-4" />
               </button>

@@ -24,6 +24,7 @@ if project_root not in sys.path:
 try:
     from app.main import app
     from app.core.database import get_db, Base
+    from app.core.auth import get_current_user, AuthUser
     from app.core.config import settings
 except ImportError as e:
     print(f"Failed to import from app.main: {e}")
@@ -93,7 +94,14 @@ def client(db_session) -> Generator:
         finally:
             db_session.close()
 
+    def override_get_current_user():
+        return AuthUser(user_id="test-user", email="test@example.com")
+
     app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[get_current_user] = override_get_current_user
 
     with TestClient(app) as c:
         yield c
+
+    app.dependency_overrides.pop(get_db, None)
+    app.dependency_overrides.pop(get_current_user, None)

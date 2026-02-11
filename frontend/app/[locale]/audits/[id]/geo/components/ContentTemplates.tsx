@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
+import { fetchWithBackendAuth } from '@/lib/backend-auth';
 
 interface Template {
   id: string;
@@ -43,7 +44,7 @@ export default function ContentTemplates({ backendUrl }: ContentTemplatesProps) 
     setError(null);
     
     try {
-      const res = await fetch(`${backendUrl}/api/geo/content-templates?category=${category}`);
+      const res = await fetchWithBackendAuth(`${backendUrl}/api/geo/content-templates?category=${category}`);
       if (!res.ok) throw new Error('Failed to fetch templates');
       const data = await res.json();
       setTemplates(data.templates || []);
