@@ -106,13 +106,13 @@ export default function HubSpotApplyRecommendations({ auditId }: { auditId: stri
             setResults(data.details.applied.concat(data.details.failed))
 
             // Show success message
-            alert(`✅ Aplicados ${data.applied} cambios exitosamente!`)
+            alert(`✅ Applied ${data.applied} changes successfully!`)
 
             // Reload recommendations to show updated state
             await fetchRecommendations()
         } catch (error) {
             console.error('Error applying recommendations:', error)
-            alert('❌ Error al aplicar recomendaciones')
+            alert('❌ Error applying recommendations')
         } finally {
             setApplying(false)
         }
@@ -122,7 +122,7 @@ export default function HubSpotApplyRecommendations({ auditId }: { auditId: stri
         switch (priority) {
             case 'high': return 'bg-red-500'
             case 'medium': return 'bg-yellow-500'
-            case 'low': return 'bg-blue-500'
+            case 'low': return 'bg-brand'
             default: return 'bg-gray-500'
         }
     }
@@ -142,7 +142,7 @@ export default function HubSpotApplyRecommendations({ auditId }: { auditId: stri
             <div className="flex items-center justify-center p-12">
                 <div className="text-center">
                     <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
-                    <p className="text-muted-foreground">Cargando recomendaciones...</p>
+                    <p className="text-muted-foreground">Loading recommendations...</p>
                 </div>
             </div>
         )
@@ -160,14 +160,14 @@ export default function HubSpotApplyRecommendations({ auditId }: { auditId: stri
             {/* Header */}
             <div className="flex items-center justify-between">
                 <div>
-                    <h1 className="text-3xl font-bold">Aplicar Cambios a HubSpot</h1>
+                    <h1 className="text-3xl font-bold">Apply Changes to HubSpot</h1>
                     <p className="text-muted-foreground mt-2">
-                        Aplica recomendaciones SEO directamente a tus páginas de HubSpot
+                        Apply SEO recommendations directly to your HubSpot pages
                     </p>
                 </div>
                 <Badge variant="outline" className="text-lg px-4 py-2">
                     <Zap className="w-4 h-4 mr-2" />
-                    {stats.autoFixable} Auto-aplicables
+                    {stats.autoFixable} Auto-fixable
                 </Badge>
             </div>
 
@@ -187,18 +187,18 @@ export default function HubSpotApplyRecommendations({ auditId }: { auditId: stri
                 <Card>
                     <CardHeader className="pb-2">
                         <CardTitle className="text-sm font-medium text-muted-foreground">
-                            Seleccionados
+                            Selected
                         </CardTitle>
                     </CardHeader>
                     <CardContent>
-                        <div className="text-2xl font-bold text-blue-600">{stats.selected}</div>
+                        <div className="text-2xl font-bold text-brand">{stats.selected}</div>
                     </CardContent>
                 </Card>
 
                 <Card>
                     <CardHeader className="pb-2">
                         <CardTitle className="text-sm font-medium text-muted-foreground">
-                            Auto-aplicables
+                            Auto-fixable
                         </CardTitle>
                     </CardHeader>
                     <CardContent>
@@ -209,7 +209,7 @@ export default function HubSpotApplyRecommendations({ auditId }: { auditId: stri
                 <Card>
                     <CardHeader className="pb-2">
                         <CardTitle className="text-sm font-medium text-muted-foreground">
-                            Prioridad Alta
+                            High Priority
                         </CardTitle>
                     </CardHeader>
                     <CardContent>
@@ -224,19 +224,19 @@ export default function HubSpotApplyRecommendations({ auditId }: { auditId: stri
                     onClick={() => selectAll('auto')}
                     variant="outline"
                 >
-                    Seleccionar Auto-aplicables
+                    Select Auto-fixable
                 </Button>
                 <Button
                     onClick={() => selectAll('all')}
                     variant="outline"
                 >
-                    Seleccionar Todos
+                    Select All
                 </Button>
                 <Button
                     onClick={() => selectAll('none')}
                     variant="outline"
                 >
-                    Deseleccionar Todos
+                    Clear Selection
                 </Button>
 
                 <div className="ml-auto">
@@ -249,12 +249,12 @@ export default function HubSpotApplyRecommendations({ auditId }: { auditId: stri
                         {applying ? (
                             <>
                                 <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2" />
-                                Aplicando...
+                                Applying...
                             </>
                         ) : (
                             <>
                                 <CheckCircle className="w-4 h-4 mr-2" />
-                                Aplicar {selectedRecs.size} Cambios
+                                Apply {selectedRecs.size} Changes
                             </>
                         )}
                     </Button>
@@ -341,7 +341,7 @@ export default function HubSpotApplyRecommendations({ auditId }: { auditId: stri
                                         <div className="text-sm bg-red-50 border border-red-200 rounded p-2">
                                             {rec.current_value || (
                                                 <span className="text-muted-foreground italic">
-                                                    (vacío)
+                                                    (empty)
                                                 </span>
                                             )}
                                         </div>
@@ -374,10 +374,10 @@ export default function HubSpotApplyRecommendations({ auditId }: { auditId: stri
                     <CardContent className="text-center py-12">
                         <CheckCircle className="w-12 h-12 text-green-500 mx-auto mb-4" />
                         <h3 className="text-lg font-semibold mb-2">
-                            ¡Todo está optimizado!
+                            Everything is optimized!
                         </h3>
                         <p className="text-muted-foreground">
-                            No hay recomendaciones pendientes para aplicar a HubSpot
+                            No pending recommendations to apply to HubSpot
                         </p>
                     </CardContent>
                 </Card>

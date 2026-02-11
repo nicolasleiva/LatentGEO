@@ -3,14 +3,14 @@
 import { useUser } from "@auth0/nextjs-auth0/client";
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
-import { LogOut, User, Loader2 } from "lucide-react";
+import { LogOut, Loader2 } from "lucide-react";
 
 export function AuthButtons() {
     const { user, isLoading } = useUser();
 
     if (isLoading) {
         return (
-            <div className="flex items-center gap-2 text-white/60">
+            <div className="flex items-center gap-2 text-foreground/60">
                 <Loader2 className="w-4 h-4 animate-spin" />
             </div>
         );
@@ -19,17 +19,17 @@ export function AuthButtons() {
     if (user) {
         return (
             <div className="flex items-center gap-3">
-                <div className="flex items-center gap-2 px-3 py-1.5 bg-white/5 rounded-xl border border-white/10">
+                <div className="flex items-center gap-2 px-3 py-1.5 bg-background/70 rounded-xl border border-border/70">
                     <div className="relative w-7 h-7">
                         <Image
                             src={user.picture || "/default-avatar.png"}
                             alt={user.name || "User"}
                             fill
-                            className="rounded-full border border-white/20 object-cover"
+                            className="rounded-full border border-border/60 object-cover"
                             unoptimized
                         />
                     </div>
-                    <span className="text-sm font-medium text-white/80 max-w-[120px] truncate">
+                    <span className="text-sm font-medium text-foreground/80 max-w-[120px] truncate">
                         {user.name || user.email}
                     </span>
                 </div>
@@ -37,7 +37,7 @@ export function AuthButtons() {
                     <Button
                         variant="ghost"
                         size="sm"
-                        className="text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded-xl gap-2"
+                        className="text-red-500 hover:text-red-600 hover:bg-red-500/10 rounded-xl gap-2"
                     >
                         <LogOut className="w-4 h-4" />
                         Logout
@@ -53,7 +53,7 @@ export function AuthButtons() {
                 <Button
                     variant="ghost"
                     size="sm"
-                    className="text-white/70 hover:text-white hover:bg-white/10 rounded-xl"
+                    className="text-foreground/70 hover:text-foreground hover:bg-foreground/5 rounded-xl"
                 >
                     Sign in
                 </Button>
@@ -61,9 +61,9 @@ export function AuthButtons() {
             <a href="/auth/login">
                 <Button
                     size="sm"
-                    className="bg-white text-black hover:bg-white/90 rounded-xl font-medium px-6 shadow-lg shadow-white/10"
+                    className="bg-brand text-brand-foreground hover:bg-brand/90 rounded-xl font-medium px-6 shadow-[0_12px_30px_rgba(16,185,129,0.25)]"
                 >
-                    Get Started
+                    Start audit
                 </Button>
             </a>
         </div>

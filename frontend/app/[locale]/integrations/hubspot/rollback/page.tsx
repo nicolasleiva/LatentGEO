@@ -19,7 +19,7 @@ export default function HubSpotRollbackPage() {
   const rollback = async () => {
     const id = changeId.trim()
     if (!id) {
-      setError("Ingresá un change_id.")
+      setError("Please enter a change_id.")
       return
     }
     setError("")
@@ -37,7 +37,7 @@ export default function HubSpotRollbackPage() {
       setResult(data)
     } catch (e) {
       console.error(e)
-      setError("Error llamando a HubSpot rollback.")
+      setError("Error calling HubSpot rollback.")
     } finally {
       setLoading(false)
     }
@@ -51,14 +51,14 @@ export default function HubSpotRollbackPage() {
           <div className="mb-8">
             <h1 className="text-3xl font-bold">HubSpot Rollback</h1>
             <p className="text-muted-foreground mt-1">
-              Revertí un cambio aplicado en HubSpot usando su change_id
+              Revert a change applied in HubSpot using its change_id
             </p>
           </div>
 
           <Card className="glass-card p-6">
             <div className="space-y-2">
               <Label>change_id</Label>
-              <Input value={changeId} onChange={(e) => setChangeId(e.target.value)} placeholder="Ej: 123e4567..." />
+              <Input value={changeId} onChange={(e) => setChangeId(e.target.value)} placeholder="e.g. 123e4567..." />
             </div>
 
             <div className="flex gap-2 mt-4">

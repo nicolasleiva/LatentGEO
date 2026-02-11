@@ -1,16 +1,13 @@
 'use client';
 
-import { useEffect, useState, Suspense, lazy, useRef } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import dynamic from 'next/dynamic';
-import { ArrowLeft, TrendingUp, Target, Award, FileText, Sparkles, Copy, Check, BarChart3, Search, Zap } from 'lucide-react';
+import { ArrowLeft, TrendingUp, Target, Award, FileText, Sparkles, BarChart3, Search } from 'lucide-react';
+import { Header } from '@/components/header';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
 import { API_URL } from '@/lib/api';
 import { GEOSkeleton } from './loading';
 import {
@@ -104,8 +101,7 @@ export default function GEODashboardPage() {
         // Wait for main content to render, then preload in background
         const preloadTimer = setTimeout(() => {
             hasPreloaded.current = true;
-            // Preload components in order of likelihood of use
-            requestIdleCallback?.(() => {
+            const preload = () => {
                 import('./components/RecentCitationsTable');
                 import('./components/CitationHistory');
                 import('./components/QueryDiscovery');
@@ -114,16 +110,13 @@ export default function GEODashboardPage() {
                 import('./components/SchemaMultipleGenerator');
                 import('./components/ContentTemplates');
                 import('./components/ContentAnalyze');
-            }) || setTimeout(() => {
-                import('./components/RecentCitationsTable');
-                import('./components/CitationHistory');
-                import('./components/QueryDiscovery');
-                import('./components/CompetitorAnalysis');
-                import('./components/SchemaGenerator');
-                import('./components/SchemaMultipleGenerator');
-                import('./components/ContentTemplates');
-                import('./components/ContentAnalyze');
-            }, 100);
+            };
+
+            if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
+                (window as Window & { requestIdleCallback?: (cb: () => void) => void }).requestIdleCallback?.(preload);
+            } else {
+                setTimeout(preload, 100);
+            }
         }, 1500);
 
         return () => clearTimeout(preloadTimer);
@@ -145,12 +138,7 @@ export default function GEODashboardPage() {
 
         const fetchData = async () => {
             try {
-                const res = await fetch(`${backendUrl}/api/geo/dashboard/${auditId}`, {
-                    // Add cache headers for HTTP caching
-                    headers: {
-                        'Cache-Control': 'max-age=300', // 5 minutes
-                    }
-                });
+                const res = await fetch(`${backendUrl}/api/geo/dashboard/${auditId}`);
                 if (!res.ok) throw new Error('Failed to fetch GEO data');
                 const geoData = await res.json();
                 setData(geoData);
@@ -198,10 +186,10 @@ export default function GEODashboardPage() {
 
     if (error || !data) {
         return (
-            <div className="min-h-screen p-8 flex items-center justify-center">
+            <div className="min-h-screen p-8 flex items-center justify-center bg-background text-foreground">
                 <div className="glass-card p-8 max-w-lg w-full border-red-500/30">
-                    <h2 className="text-2xl font-bold text-red-400 mb-2">Error Loading Data</h2>
-                    <p className="text-white/70 mb-6">{error || 'Unable to load GEO dashboard data'}</p>
+                    <h2 className="text-2xl font-bold text-red-600 mb-2">Error Loading Data</h2>
+                    <p className="text-muted-foreground mb-6">{error || 'Unable to load GEO dashboard data'}</p>
                     <Button onClick={() => window.location.reload()} className="glass-button w-full">
                         Try Again
                     </Button>
@@ -210,17 +198,25 @@ export default function GEODashboardPage() {
         );
     }
 
-    const citationRate = data.citation_tracking.citation_rate;
-    const totalMentions = data.citation_tracking.mentions;
-    const opportunities = data.top_opportunities || [];
+    const citationTracking = data?.citation_tracking ?? {
+        citation_rate: 0,
+        total_queries: 0,
+        mentions: 0,
+        sentiment_breakdown: {},
+    };
+    const sentiment = citationTracking.sentiment_breakdown || {};
+    const citationRate = citationTracking.citation_rate || 0;
+    const totalMentions = citationTracking.mentions || 0;
+    const opportunities = data?.top_opportunities || [];
 
     return (
-        <div className="min-h-screen pb-20">
-            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <div className="min-h-screen bg-background text-foreground pb-20">
+            <Header />
+            <main className="max-w-7xl mx-auto px-6 py-10">
                 {/* Header */}
                 <div className="mb-12">
                     <Link href={`/audits/${auditId}`}>
-                        <Button variant="ghost" className="text-white/50 hover:text-white hover:bg-white/10 mb-6 pl-0">
+                        <Button variant="ghost" className="text-muted-foreground hover:text-foreground hover:bg-muted/40 mb-6 pl-0">
                             <ArrowLeft className="w-4 h-4 mr-2" />
                             Back to Audit
                         </Button>
@@ -228,11 +224,11 @@ export default function GEODashboardPage() {
 
                     <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
                         <div>
-                            <h1 className="text-5xl font-bold mb-2 text-transparent bg-clip-text bg-gradient-to-r from-white via-white to-white/50">
+                            <h1 className="text-4xl md:text-5xl font-semibold mb-2 text-foreground">
                                 GEO Dashboard
                             </h1>
-                            <p className="text-xl text-white/60 font-light tracking-wide">
-                                Generative Engine Optimization Analytics
+                            <p className="text-lg text-muted-foreground">
+                                Generative Engine Optimization analytics for LLM visibility.
                             </p>
                         </div>
 
@@ -247,54 +243,54 @@ export default function GEODashboardPage() {
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-12">
                     <div className="glass-card p-6 relative overflow-hidden group">
                         <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
-                            <Target className="w-24 h-24 text-white" />
+                            <Target className="w-24 h-24 text-brand" />
                         </div>
-                        <h3 className="text-sm font-medium text-white/50 uppercase tracking-wider mb-2">Citation Rate</h3>
-                        <div className="text-4xl font-bold text-white mb-1">{citationRate.toFixed(1)}%</div>
-                        <p className="text-xs text-white/40">of queries mention you</p>
+                        <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wider mb-2">Citation Rate</h3>
+                        <div className="text-4xl font-bold text-foreground mb-1">{citationRate.toFixed(1)}%</div>
+                        <p className="text-xs text-muted-foreground">of queries mention you</p>
                     </div>
 
                     <div className="glass-card p-6 relative overflow-hidden group">
                         <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
-                            <TrendingUp className="w-24 h-24 text-green-400" />
+                            <TrendingUp className="w-24 h-24 text-emerald-600" />
                         </div>
-                        <h3 className="text-sm font-medium text-white/50 uppercase tracking-wider mb-2">Total Mentions</h3>
-                        <div className="text-4xl font-bold text-green-400 mb-1">{totalMentions}</div>
-                        <p className="text-xs text-white/40">in last 30 days</p>
+                        <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wider mb-2">Total Mentions</h3>
+                        <div className="text-4xl font-bold text-emerald-600 mb-1">{totalMentions}</div>
+                        <p className="text-xs text-muted-foreground">in last 30 days</p>
                     </div>
 
                     <div className="glass-card p-6 relative overflow-hidden group">
                         <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
-                            <Search className="w-24 h-24 text-blue-400" />
+                            <Search className="w-24 h-24 text-sky-600" />
                         </div>
-                        <h3 className="text-sm font-medium text-white/50 uppercase tracking-wider mb-2">Opportunities</h3>
-                        <div className="text-4xl font-bold text-blue-400 mb-1">{opportunities.length}</div>
-                        <p className="text-xs text-white/40">high potential queries</p>
+                        <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wider mb-2">Opportunities</h3>
+                        <div className="text-4xl font-bold text-sky-600 mb-1">{opportunities.length}</div>
+                        <p className="text-xs text-muted-foreground">high potential queries</p>
                     </div>
 
                     <div className="glass-card p-6 relative overflow-hidden group">
                         <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
-                            <BarChart3 className="w-24 h-24 text-purple-400" />
+                            <BarChart3 className="w-24 h-24 text-brand" />
                         </div>
-                        <h3 className="text-sm font-medium text-white/50 uppercase tracking-wider mb-2">Sentiment</h3>
+                        <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wider mb-2">Sentiment</h3>
                         <div className="flex gap-4 items-end h-10">
                             <div className="flex flex-col items-center">
                                 <div className="h-1 w-8 bg-green-500/20 rounded-full overflow-hidden mb-1">
                                     <div className="h-full bg-green-500" style={{ width: '100%' }}></div>
                                 </div>
-                                <span className="text-lg font-bold text-green-400">{data.citation_tracking.sentiment_breakdown.positive || 0}</span>
+                                <span className="text-lg font-bold text-emerald-600">{sentiment.positive || 0}</span>
                             </div>
                             <div className="flex flex-col items-center">
-                                <div className="h-1 w-8 bg-white/10 rounded-full overflow-hidden mb-1">
-                                    <div className="h-full bg-white/50" style={{ width: '100%' }}></div>
+                                <div className="h-1 w-8 bg-muted/40 rounded-full overflow-hidden mb-1">
+                                    <div className="h-full bg-muted-foreground/60" style={{ width: '100%' }}></div>
                                 </div>
-                                <span className="text-lg font-bold text-white/60">{data.citation_tracking.sentiment_breakdown.neutral || 0}</span>
+                                <span className="text-lg font-bold text-muted-foreground">{sentiment.neutral || 0}</span>
                             </div>
                             <div className="flex flex-col items-center">
                                 <div className="h-1 w-8 bg-red-500/20 rounded-full overflow-hidden mb-1">
                                     <div className="h-full bg-red-500" style={{ width: '100%' }}></div>
                                 </div>
-                                <span className="text-lg font-bold text-red-400">{data.citation_tracking.sentiment_breakdown.negative || 0}</span>
+                                <span className="text-lg font-bold text-red-600">{sentiment.negative || 0}</span>
                             </div>
                         </div>
                     </div>
@@ -302,16 +298,16 @@ export default function GEODashboardPage() {
 
                 {/* Main Content Tabs */}
                 <Tabs defaultValue="opportunities" className="space-y-8">
-                    <TabsList className="bg-white/5 p-1 rounded-2xl border border-white/10 w-full md:w-auto inline-flex">
-                        <TabsTrigger value="opportunities" className="rounded-xl data-[state=active]:bg-white/10 data-[state=active]:text-white text-white/50 px-6 py-3">Top Opportunities</TabsTrigger>
-                        <TabsTrigger value="citations" className="rounded-xl data-[state=active]:bg-white/10 data-[state=active]:text-white text-white/50 px-6 py-3">Recent Citations</TabsTrigger>
-                        <TabsTrigger value="history" className="rounded-xl data-[state=active]:bg-white/10 data-[state=active]:text-white text-white/50 px-6 py-3">Citation History</TabsTrigger>
-                        <TabsTrigger value="query" className="rounded-xl data-[state=active]:bg-white/10 data-[state=active]:text-white text-white/50 px-6 py-3">Query Discovery</TabsTrigger>
-                        <TabsTrigger value="competitors" className="rounded-xl data-[state=active]:bg-white/10 data-[state=active]:text-white text-white/50 px-6 py-3">Competitors</TabsTrigger>
-                        <TabsTrigger value="schema" className="rounded-xl data-[state=active]:bg-white/10 data-[state=active]:text-white text-white/50 px-6 py-3">Schema Generator</TabsTrigger>
-                        <TabsTrigger value="schema-multiple" className="rounded-xl data-[state=active]:bg-white/10 data-[state=active]:text-white text-white/50 px-6 py-3">Schema Multiple</TabsTrigger>
-                        <TabsTrigger value="templates" className="rounded-xl data-[state=active]:bg-white/10 data-[state=active]:text-white text-white/50 px-6 py-3">Content Templates</TabsTrigger>
-                        <TabsTrigger value="content-analyze" className="rounded-xl data-[state=active]:bg-white/10 data-[state=active]:text-white text-white/50 px-6 py-3">Analyze Content</TabsTrigger>
+                    <TabsList className="bg-muted/40 p-1 rounded-2xl border border-border w-full md:w-auto inline-flex">
+                        <TabsTrigger value="opportunities" className="rounded-xl data-[state=active]:bg-background data-[state=active]:text-foreground text-muted-foreground px-6 py-3">Top Opportunities</TabsTrigger>
+                        <TabsTrigger value="citations" className="rounded-xl data-[state=active]:bg-background data-[state=active]:text-foreground text-muted-foreground px-6 py-3">Recent Citations</TabsTrigger>
+                        <TabsTrigger value="history" className="rounded-xl data-[state=active]:bg-background data-[state=active]:text-foreground text-muted-foreground px-6 py-3">Citation History</TabsTrigger>
+                        <TabsTrigger value="query" className="rounded-xl data-[state=active]:bg-background data-[state=active]:text-foreground text-muted-foreground px-6 py-3">Query Discovery</TabsTrigger>
+                        <TabsTrigger value="competitors" className="rounded-xl data-[state=active]:bg-background data-[state=active]:text-foreground text-muted-foreground px-6 py-3">Competitors</TabsTrigger>
+                        <TabsTrigger value="schema" className="rounded-xl data-[state=active]:bg-background data-[state=active]:text-foreground text-muted-foreground px-6 py-3">Schema Generator</TabsTrigger>
+                        <TabsTrigger value="schema-multiple" className="rounded-xl data-[state=active]:bg-background data-[state=active]:text-foreground text-muted-foreground px-6 py-3">Schema Multiple</TabsTrigger>
+                        <TabsTrigger value="templates" className="rounded-xl data-[state=active]:bg-background data-[state=active]:text-foreground text-muted-foreground px-6 py-3">Content Templates</TabsTrigger>
+                        <TabsTrigger value="content-analyze" className="rounded-xl data-[state=active]:bg-background data-[state=active]:text-foreground text-muted-foreground px-6 py-3">Analyze Content</TabsTrigger>
                     </TabsList>
 
                     <TabsContent value="opportunities" className="transition-all duration-300 ease-out data-[state=inactive]:opacity-0 data-[state=active]:opacity-100">
@@ -321,36 +317,36 @@ export default function GEODashboardPage() {
                                     <Target className="w-6 h-6 text-blue-400" />
                                 </div>
                                 <div>
-                                    <h2 className="text-2xl font-bold text-white">Query Opportunities</h2>
-                                    <p className="text-white/50">Queries that don&apos;t mention you yet but have high potential</p>
+                                    <h2 className="text-2xl font-bold text-foreground">Query Opportunities</h2>
+                                    <p className="text-muted-foreground">Queries that don&apos;t mention you yet but have high potential</p>
                                 </div>
                             </div>
 
                             {opportunities.length === 0 ? (
-                                <div className="text-center py-12 bg-white/5 rounded-2xl border border-dashed border-white/10">
-                                    <p className="text-white/40">No opportunities discovered yet. Run Query Discovery to find them.</p>
+                                <div className="text-center py-12 bg-muted/30 rounded-2xl border border-dashed border-border">
+                                    <p className="text-muted-foreground">No opportunities discovered yet. Run Query Discovery to find them.</p>
                                 </div>
                             ) : (
                                 <div className="grid gap-4">
                                     {opportunities.map((opp, idx) => (
                                         <div
                                             key={idx}
-                                            className="group bg-white/5 hover:bg-white/10 border border-white/5 hover:border-white/20 rounded-2xl p-6 transition-all duration-300"
+                                            className="group bg-muted/30 hover:bg-muted/50 border border-border rounded-2xl p-6 transition-all duration-300"
                                         >
                                             <div className="flex justify-between items-start mb-3">
-                                                <h4 className="font-semibold text-xl text-white group-hover:text-blue-300 transition-colors">{opp.query}</h4>
+                                                <h4 className="font-semibold text-xl text-foreground group-hover:text-brand transition-colors">{opp.query}</h4>
                                                 <div className="flex items-center gap-2">
-                                                    <span className="bg-blue-500/20 text-blue-300 px-3 py-1 rounded-lg text-sm font-bold border border-blue-500/30">
+                                                    <span className="bg-brand/10 text-brand px-3 py-1 rounded-lg text-sm font-bold border border-brand/20">
                                                         Score: {opp.potential_score}
                                                     </span>
-                                                    <span className="bg-white/10 text-white/70 px-3 py-1 rounded-lg text-sm capitalize border border-white/10">
+                                                    <span className="bg-muted/40 text-muted-foreground px-3 py-1 rounded-lg text-sm capitalize border border-border">
                                                         {opp.intent}
                                                     </span>
                                                 </div>
                                             </div>
                                             {opp.sample_response && (
-                                                <div className="bg-black/20 rounded-xl p-4 border border-white/5">
-                                                    <p className="text-sm text-white/60 italic leading-relaxed">
+                                                <div className="bg-muted/30 rounded-xl p-4 border border-border">
+                                                    <p className="text-sm text-muted-foreground italic leading-relaxed">
                                                         &quot;{opp.sample_response}&quot;
                                                     </p>
                                                 </div>
@@ -369,8 +365,8 @@ export default function GEODashboardPage() {
                                     <TrendingUp className="w-6 h-6 text-green-400" />
                                 </div>
                                 <div>
-                                    <h2 className="text-2xl font-bold text-white">Recent Citations</h2>
-                                    <p className="text-white/50">Where your brand was mentioned in LLM responses</p>
+                                    <h2 className="text-2xl font-bold text-foreground">Recent Citations</h2>
+                                    <p className="text-muted-foreground">Where your brand was mentioned in LLM responses</p>
                                 </div>
                             </div>
                             <RecentCitationsTable auditId={Number(auditId)} backendUrl={backendUrl} />
@@ -384,8 +380,8 @@ export default function GEODashboardPage() {
                                     <TrendingUp className="w-6 h-6 text-green-400" />
                                 </div>
                                 <div>
-                                    <h2 className="text-2xl font-bold text-white">Citation History</h2>
-                                    <p className="text-white/50">Histórico agregado para seguimiento mensual</p>
+                                    <h2 className="text-2xl font-bold text-foreground">Citation History</h2>
+                                    <p className="text-muted-foreground">Aggregated history for monthly tracking</p>
                                 </div>
                             </div>
                             <CitationHistory auditId={Number(auditId)} backendUrl={backendUrl} />
@@ -399,8 +395,8 @@ export default function GEODashboardPage() {
                                     <Search className="w-6 h-6 text-blue-400" />
                                 </div>
                                 <div>
-                                    <h2 className="text-2xl font-bold text-white">Query Discovery</h2>
-                                    <p className="text-white/50">Descubrí queries y oportunidades para que te citen los LLMs</p>
+                                    <h2 className="text-2xl font-bold text-foreground">Query Discovery</h2>
+                                    <p className="text-muted-foreground">Discover queries and opportunities for LLM citations</p>
                                 </div>
                             </div>
                             <QueryDiscovery auditId={Number(auditId)} backendUrl={backendUrl} />
@@ -410,12 +406,12 @@ export default function GEODashboardPage() {
                     <TabsContent value="competitors" className="transition-all duration-300 ease-out data-[state=inactive]:opacity-0 data-[state=active]:opacity-100">
                         <div className="glass-card p-8">
                             <div className="flex items-center gap-3 mb-6">
-                                <div className="p-3 bg-purple-500/20 rounded-xl">
-                                    <BarChart3 className="w-6 h-6 text-purple-400" />
+                                <div className="p-3 bg-brand/10 rounded-xl">
+                                    <BarChart3 className="w-6 h-6 text-brand" />
                                 </div>
                                 <div>
-                                    <h2 className="text-2xl font-bold text-white">Competitor Analysis</h2>
-                                    <p className="text-white/50">Arrancar análisis y ver benchmark vs competidores</p>
+                                    <h2 className="text-2xl font-bold text-foreground">Competitor Analysis</h2>
+                                    <p className="text-muted-foreground">Run analysis and benchmark against competitors</p>
                                 </div>
                             </div>
                             <CompetitorAnalysis auditId={Number(auditId)} backendUrl={backendUrl} />
@@ -425,12 +421,12 @@ export default function GEODashboardPage() {
                     <TabsContent value="schema" className="transition-all duration-300 ease-out data-[state=inactive]:opacity-0 data-[state=active]:opacity-100">
                         <div className="glass-card p-8">
                             <div className="flex items-center gap-3 mb-6">
-                                <div className="p-3 bg-purple-500/20 rounded-xl">
-                                    <FileText className="w-6 h-6 text-purple-400" />
+                                <div className="p-3 bg-brand/10 rounded-xl">
+                                    <FileText className="w-6 h-6 text-brand" />
                                 </div>
                                 <div>
-                                    <h2 className="text-2xl font-bold text-white">Schema.org Generator</h2>
-                                    <p className="text-white/50">Generate optimized Schema.org for better LLM understanding</p>
+                                    <h2 className="text-2xl font-bold text-foreground">Schema.org Generator</h2>
+                                    <p className="text-muted-foreground">Generate optimized Schema.org for better LLM understanding</p>
                                 </div>
                             </div>
                             <SchemaGenerator backendUrl={backendUrl} />
@@ -440,12 +436,12 @@ export default function GEODashboardPage() {
                     <TabsContent value="schema-multiple" className="transition-all duration-300 ease-out data-[state=inactive]:opacity-0 data-[state=active]:opacity-100">
                         <div className="glass-card p-8">
                             <div className="flex items-center gap-3 mb-6">
-                                <div className="p-3 bg-purple-500/20 rounded-xl">
-                                    <FileText className="w-6 h-6 text-purple-400" />
+                                <div className="p-3 bg-brand/10 rounded-xl">
+                                    <FileText className="w-6 h-6 text-brand" />
                                 </div>
                                 <div>
-                                    <h2 className="text-2xl font-bold text-white">Multiple Schemas</h2>
-                                    <p className="text-white/50">Generar múltiples schemas sugeridos para una página</p>
+                                    <h2 className="text-2xl font-bold text-foreground">Multiple Schemas</h2>
+                                    <p className="text-muted-foreground">Generate multiple suggested schemas for a page</p>
                                 </div>
                             </div>
                             <SchemaMultipleGenerator backendUrl={backendUrl} />
@@ -459,8 +455,8 @@ export default function GEODashboardPage() {
                                     <Award className="w-6 h-6 text-pink-400" />
                                 </div>
                                 <div>
-                                    <h2 className="text-2xl font-bold text-white">Content Templates</h2>
-                                    <p className="text-white/50">GEO-optimized content templates for maximum visibility</p>
+                                    <h2 className="text-2xl font-bold text-foreground">Content Templates</h2>
+                                    <p className="text-muted-foreground">GEO-optimized content templates for maximum visibility</p>
                                 </div>
                             </div>
                             <ContentTemplates backendUrl={backendUrl} />
@@ -474,16 +470,15 @@ export default function GEODashboardPage() {
                                     <Award className="w-6 h-6 text-pink-400" />
                                 </div>
                                 <div>
-                                    <h2 className="text-2xl font-bold text-white">Analyze Content for GEO</h2>
-                                    <p className="text-white/50">Analizar contenido libre para detectar gaps GEO</p>
+                                    <h2 className="text-2xl font-bold text-foreground">Analyze Content for GEO</h2>
+                                    <p className="text-muted-foreground">Analyze freeform content to identify GEO gaps.</p>
                                 </div>
                             </div>
                             <ContentAnalyze backendUrl={backendUrl} />
                         </div>
                     </TabsContent>
                 </Tabs>
-            </div>
+            </main>
         </div>
     );
 }
-

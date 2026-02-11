@@ -29,14 +29,14 @@ export function CoreWebVitalsChart({ data }: CoreWebVitalsProps) {
 
   const formatDate = (isoString: string) => {
     if (!isoString) return 'N/A'
-    return new Date(isoString).toLocaleString('es-AR', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZoneName: 'short' })
+    return new Date(isoString).toLocaleString('en-US', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZoneName: 'short' })
   }
 
   const MetricCard = ({ label, value, sub }: { label: string, value: string, sub: string }) => (
-    <div className="text-center p-4 bg-white/5 border border-white/5 rounded-xl hover:bg-white/10 transition-colors">
-      <div className="text-xs text-white/40 uppercase tracking-wider mb-1">{label}</div>
-      <div className="text-xl font-bold text-white">{value}</div>
-      <div className="text-xs text-white/30 mt-1">{sub}</div>
+    <div className="text-center p-4 glass-panel border border-border rounded-xl hover:bg-muted/50 transition-colors">
+      <div className="text-xs text-muted-foreground uppercase tracking-wider mb-1">{label}</div>
+      <div className="text-xl font-semibold text-foreground">{value}</div>
+      <div className="text-xs text-muted-foreground/70 mt-1">{sub}</div>
     </div>
   )
 
@@ -44,11 +44,11 @@ export function CoreWebVitalsChart({ data }: CoreWebVitalsProps) {
     <div className="space-y-8">
       {mobile?.metadata && (
         <div className="glass p-6 rounded-2xl">
-          <h3 className="text-lg font-medium mb-6 text-white">Test Information</h3>
+          <h3 className="text-lg font-medium mb-6 text-foreground">Test Information</h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8 text-sm">
             <div>
-              <div className="font-semibold mb-3 text-white/80 border-b border-white/10 pb-2">Mobile</div>
-              <div className="space-y-2 text-white/60">
+              <div className="font-semibold mb-3 text-muted-foreground border-b border-border pb-2">Mobile</div>
+              <div className="space-y-2 text-muted-foreground">
                 <div className="flex justify-between"><span>Captured:</span> <span>{formatDate(mobile.metadata.fetch_time)}</span></div>
                 <div className="flex justify-between"><span>Device:</span> <span>Moto G Power (Emulated)</span></div>
                 <div className="flex justify-between"><span>Lighthouse:</span> <span>{mobile.metadata.lighthouse_version}</span></div>
@@ -57,8 +57,8 @@ export function CoreWebVitalsChart({ data }: CoreWebVitalsProps) {
             </div>
             {desktop?.metadata && (
               <div>
-                <div className="font-semibold mb-3 text-white/80 border-b border-white/10 pb-2">Desktop</div>
-                <div className="space-y-2 text-white/60">
+                <div className="font-semibold mb-3 text-muted-foreground border-b border-border pb-2">Desktop</div>
+                <div className="space-y-2 text-muted-foreground">
                   <div className="flex justify-between"><span>Captured:</span> <span>{formatDate(desktop.metadata.fetch_time)}</span></div>
                   <div className="flex justify-between"><span>Device:</span> <span>Desktop Browser</span></div>
                   <div className="flex justify-between"><span>Lighthouse:</span> <span>{desktop.metadata.lighthouse_version}</span></div>
@@ -72,7 +72,7 @@ export function CoreWebVitalsChart({ data }: CoreWebVitalsProps) {
 
       {mobile?.metrics && (
         <div className="glass p-6 rounded-2xl">
-          <h3 className="text-lg font-medium mb-6 text-white">Detailed Metrics</h3>
+          <h3 className="text-lg font-medium mb-6 text-foreground">Detailed Metrics</h3>
           <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
             <MetricCard label="FCP" value={`${(mobile.metrics.fcp / 1000).toFixed(1)}s`} sub="Mobile" />
             <MetricCard label="LCP" value={`${(mobile.metrics.lcp / 1000).toFixed(1)}s`} sub="Mobile" />
@@ -95,12 +95,12 @@ export function CoreWebVitalsChart({ data }: CoreWebVitalsProps) {
       <div className="grid gap-6 md:grid-cols-2">
         {mobile?.screenshots && mobile.screenshots.length > 0 && (
           <div className="glass p-6 rounded-2xl">
-            <h3 className="text-lg font-medium mb-6 text-white">Loading Screenshots (Mobile)</h3>
+            <h3 className="text-lg font-medium mb-6 text-foreground">Loading Screenshots (Mobile)</h3>
             <div className="grid grid-cols-4 md:grid-cols-6 gap-2">
               {mobile.screenshots.map((s: any, i: number) => (
-                <div key={i} className="border border-white/10 rounded-lg overflow-hidden bg-white/5">
+                <div key={i} className="border border-border rounded-lg overflow-hidden bg-background/70">
                   <Image src={s.data} alt={`Screenshot ${i + 1}`} className="w-full h-auto" width={120} height={90} unoptimized />
-                  <div className="text-[10px] text-center p-1 text-white/50">{(s.timestamp / 1000).toFixed(1)}s</div>
+                  <div className="text-[10px] text-center p-1 text-muted-foreground">{(s.timestamp / 1000).toFixed(1)}s</div>
                 </div>
               ))}
             </div>
@@ -108,13 +108,13 @@ export function CoreWebVitalsChart({ data }: CoreWebVitalsProps) {
         )}
         {desktop?.screenshots && desktop.screenshots.length > 0 && (
           <div className="glass p-6 rounded-2xl">
-            <h3 className="text-lg font-medium mb-6 text-white">Loading Screenshots (Desktop)</h3>
+            <h3 className="text-lg font-medium mb-6 text-foreground">Loading Screenshots (Desktop)</h3>
             {/* Desktop screenshots are wider, so we use more columns and max-height to keep them similar to mobile size */}
             <div className="grid grid-cols-4 md:grid-cols-6 gap-2">
               {desktop.screenshots.map((s: any, i: number) => (
-                <div key={i} className="border border-white/10 rounded-lg overflow-hidden bg-white/5">
+                <div key={i} className="border border-border rounded-lg overflow-hidden bg-background/70">
                   <Image src={s.data} alt={`Screenshot ${i + 1}`} className="w-full h-auto max-h-20 object-cover object-top" width={160} height={80} unoptimized />
-                  <div className="text-[10px] text-center p-1 text-white/50">{(s.timestamp / 1000).toFixed(1)}s</div>
+                  <div className="text-[10px] text-center p-1 text-muted-foreground">{(s.timestamp / 1000).toFixed(1)}s</div>
                 </div>
               ))}
             </div>
@@ -124,35 +124,35 @@ export function CoreWebVitalsChart({ data }: CoreWebVitalsProps) {
 
       <div className="grid gap-6 md:grid-cols-2">
         <div className="glass p-6 rounded-2xl flex flex-col">
-          <h3 className="text-lg font-medium mb-6 text-white">Lighthouse Scores</h3>
+          <h3 className="text-lg font-medium mb-6 text-foreground">Lighthouse Scores</h3>
           <div className="flex-1 min-h-[300px]">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={scoresData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.1)" vertical={false} />
-                <XAxis dataKey="metric" stroke="rgba(255,255,255,0.5)" tick={{ fill: 'rgba(255,255,255,0.5)', fontSize: 12 }} axisLine={false} tickLine={false} />
-                <YAxis domain={[0, 100]} stroke="rgba(255,255,255,0.5)" tick={{ fill: 'rgba(255,255,255,0.5)', fontSize: 12 }} axisLine={false} tickLine={false} />
+                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
+                <XAxis dataKey="metric" stroke="hsl(var(--muted-foreground))" tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12 }} axisLine={false} tickLine={false} />
+                <YAxis domain={[0, 100]} stroke="hsl(var(--muted-foreground))" tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12 }} axisLine={false} tickLine={false} />
                 <Tooltip
-                  contentStyle={{ backgroundColor: 'rgba(0,0,0,0.8)', borderColor: 'rgba(255,255,255,0.1)', color: '#fff', borderRadius: '12px', backdropFilter: 'blur(10px)' }}
-                  itemStyle={{ color: '#fff' }}
-                  cursor={{ fill: 'rgba(255,255,255,0.05)' }}
+                  contentStyle={{ backgroundColor: 'hsl(var(--background))', borderColor: 'hsl(var(--border))', color: 'hsl(var(--foreground))', borderRadius: '12px', backdropFilter: 'blur(10px)' }}
+                  itemStyle={{ color: 'hsl(var(--foreground))' }}
+                  cursor={{ fill: 'hsl(var(--accent))' }}
                 />
-                <Legend wrapperStyle={{ color: 'rgba(255,255,255,0.7)' }} />
-                <Bar dataKey="Mobile" fill="#3b82f6" radius={[4, 4, 0, 0]} />
-                <Bar dataKey="Desktop" fill="#a855f7" radius={[4, 4, 0, 0]} />
+                <Legend wrapperStyle={{ color: 'hsl(var(--muted-foreground))' }} />
+                <Bar dataKey="Mobile" fill="#0f766e" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="Desktop" fill="#14b8a6" radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </div>
         </div>
 
         <div className="glass p-6 rounded-2xl">
-          <h3 className="text-lg font-medium mb-6 text-white">Core Web Vitals</h3>
+          <h3 className="text-lg font-medium mb-6 text-foreground">Core Web Vitals</h3>
           <div className="space-y-4">
             {vitalsData.map((item, idx) => (
-              <div key={idx} className="border-b border-white/10 pb-4 last:border-0">
-                <div className="flex justify-between items-center mb-2"><span className="font-semibold text-sm text-white/80">{item.metric}</span></div>
+              <div key={idx} className="border-b border-border/70 pb-4 last:border-0">
+                <div className="flex justify-between items-center mb-2"><span className="font-semibold text-sm text-foreground">{item.metric}</span></div>
                 <div className="grid grid-cols-2 gap-4">
-                  <div><div className="text-xs text-white/40 mb-1">Mobile</div><div className="text-2xl font-bold text-white">{item.Mobile}</div></div>
-                  <div><div className="text-xs text-white/40 mb-1">Desktop</div><div className="text-2xl font-bold text-white">{item.Desktop}</div></div>
+                  <div><div className="text-xs text-muted-foreground mb-1">Mobile</div><div className="text-2xl font-semibold text-foreground">{item.Mobile}</div></div>
+                  <div><div className="text-xs text-muted-foreground mb-1">Desktop</div><div className="text-2xl font-semibold text-foreground">{item.Desktop}</div></div>
                 </div>
               </div>
             ))}
@@ -164,13 +164,13 @@ export function CoreWebVitalsChart({ data }: CoreWebVitalsProps) {
         <div className="grid gap-6 md:grid-cols-2">
           {mobile?.opportunities && (
             <div className="glass p-6 rounded-2xl">
-              <h3 className="text-lg font-medium mb-6 text-white">Opportunities (Mobile)</h3>
+              <h3 className="text-lg font-medium mb-6 text-foreground">Opportunities (Mobile)</h3>
               <div className="space-y-3 text-sm">
                 {Object.entries(mobile.opportunities).map(([key, audit]: [string, any]) =>
                   audit?.title && (
-                    <div key={key} className="flex justify-between border-b border-white/5 pb-2 last:border-0">
-                      <span className="text-white/70">{audit.title}</span>
-                      <span className="font-semibold text-white">{audit.displayValue || (audit.score === 1 ? 'OK' : 'Improve')}</span>
+                    <div key={key} className="flex justify-between border-b border-border/70 pb-2 last:border-0">
+                      <span className="text-muted-foreground">{audit.title}</span>
+                      <span className="font-semibold text-foreground">{audit.displayValue || (audit.score === 1 ? 'OK' : 'Improve')}</span>
                     </div>
                   )
                 )}
@@ -179,13 +179,13 @@ export function CoreWebVitalsChart({ data }: CoreWebVitalsProps) {
           )}
           {desktop?.opportunities && (
             <div className="glass p-6 rounded-2xl">
-              <h3 className="text-lg font-medium mb-6 text-white">Opportunities (Desktop)</h3>
+              <h3 className="text-lg font-medium mb-6 text-foreground">Opportunities (Desktop)</h3>
               <div className="space-y-3 text-sm">
                 {Object.entries(desktop.opportunities).map(([key, audit]: [string, any]) =>
                   audit?.title && (
-                    <div key={key} className="flex justify-between border-b border-white/5 pb-2 last:border-0">
-                      <span className="text-white/70">{audit.title}</span>
-                      <span className="font-semibold text-white">{audit.displayValue || (audit.score === 1 ? 'OK' : 'Improve')}</span>
+                    <div key={key} className="flex justify-between border-b border-border/70 pb-2 last:border-0">
+                      <span className="text-muted-foreground">{audit.title}</span>
+                      <span className="font-semibold text-foreground">{audit.displayValue || (audit.score === 1 ? 'OK' : 'Improve')}</span>
                     </div>
                   )
                 )}

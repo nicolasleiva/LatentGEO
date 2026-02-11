@@ -47,7 +47,8 @@ export default function ReportsExportsPage() {
         setGeneratingPDF(true)
         try {
             const result = await api.generatePDF(auditId)
-            alert(`PDF generation started! Task ID: ${result.task_id}`)
+            const message = result?.message || 'PDF generated successfully.'
+            alert(message)
         } catch (error) {
             console.error('Error generating PDF:', error)
             alert('Error generating PDF. Please try again.')
@@ -91,6 +92,7 @@ export default function ReportsExportsPage() {
             case 'completed':
                 return <CheckCircle className="h-4 w-4 text-green-400" />
             case 'processing':
+            case 'running':
                 return <Clock className="h-4 w-4 text-yellow-400 animate-pulse" />
             default:
                 return <AlertCircle className="h-4 w-4 text-red-400" />
@@ -100,7 +102,7 @@ export default function ReportsExportsPage() {
     if (loading) {
         return (
             <div className="min-h-screen flex items-center justify-center">
-                <Loader2 className="h-12 w-12 animate-spin text-white/60" />
+                <Loader2 className="h-12 w-12 animate-spin text-muted-foreground" />
             </div>
         )
     }
@@ -116,7 +118,7 @@ export default function ReportsExportsPage() {
                                 setMarkdownContent('')
                                 setSelectedAudit(null)
                             }}
-                            className="text-white/60 hover:text-white hover:bg-white/10"
+                            className="text-muted-foreground hover:text-foreground hover:bg-muted/50"
                         >
                             <ArrowLeft className="h-4 w-4 mr-2" /> Back to Reports
                         </Button>
@@ -136,7 +138,7 @@ export default function ReportsExportsPage() {
                         </Button>
                     </div>
                     <Card className="glass-card p-8">
-                        <pre className="whitespace-pre-wrap text-sm text-white/80 font-mono leading-relaxed">
+                        <pre className="whitespace-pre-wrap text-sm text-foreground font-mono leading-relaxed">
                             {markdownContent}
                         </pre>
                     </Card>
@@ -146,24 +148,24 @@ export default function ReportsExportsPage() {
     }
 
     return (
-        <div className="min-h-screen bg-black text-white">
+        <div className="min-h-screen bg-background text-foreground">
             <Header />
 
             <main className="max-w-7xl mx-auto px-6 py-12">
-                <div className="mb-8">
-                    <h1 className="text-3xl font-bold">Reports & Exports</h1>
-                    <p className="text-white/60 mt-1">
-                        Generate and download comprehensive audit reports in multiple formats
+                <div className="mb-8 animate-fade-up">
+                    <h1 className="text-3xl md:text-4xl font-semibold tracking-tight">Reports & Exports</h1>
+                    <p className="text-muted-foreground mt-2 max-w-2xl">
+                        Generate and download comprehensive audit reports in multiple formats.
                     </p>
                 </div>
 
                 {/* Reports Grid */}
                 <div>
                     {audits.length === 0 ? (
-                        <Card className="glass-card p-12 text-center">
-                            <FileText className="h-16 w-16 text-white/20 mx-auto mb-4" />
-                            <h3 className="text-xl font-semibold text-white/80 mb-2">No Completed Audits</h3>
-                            <p className="text-white/50 mb-6">Complete an audit first to generate reports</p>
+                        <Card className="glass-card p-12 text-center animate-fade-up">
+                            <FileText className="h-16 w-16 text-muted-foreground/50 mx-auto mb-4" />
+                            <h3 className="text-xl font-semibold text-foreground mb-2">No Completed Audits</h3>
+                            <p className="text-muted-foreground mb-6">Complete an audit to generate reports.</p>
                             <Button onClick={() => router.push('/')} className="glass-button-primary">
                                 Start New Audit
                             </Button>
@@ -171,18 +173,18 @@ export default function ReportsExportsPage() {
                     ) : (
                         <div className="grid gap-6">
                             {audits.map((audit) => (
-                                <Card key={audit.id} className="glass-card p-6 hover:bg-white/5 transition-all">
+                                <Card key={audit.id} className="glass-card p-6 hover:bg-muted/50 transition-all">
                                     <div className="flex items-start justify-between">
                                         <div className="flex-1">
                                             <div className="flex items-center gap-3 mb-2">
                                                 {getStatusIcon(audit.status)}
-                                                <h3 className="text-lg font-semibold text-white">{audit.domain}</h3>
-                                                <Badge variant="outline" className="text-xs border-white/10 bg-white/5 text-white/60">
+                                                <h3 className="text-lg font-semibold text-foreground">{audit.domain}</h3>
+                                                <Badge variant="outline" className="text-xs border-border/70 bg-muted/40 text-muted-foreground">
                                                     #{audit.id}
                                                 </Badge>
                                             </div>
-                                            <p className="text-sm text-white/50 mb-1">{audit.url}</p>
-                                            <p className="text-xs text-white/40">
+                                            <p className="text-sm text-muted-foreground mb-1">{audit.url}</p>
+                                            <p className="text-xs text-muted-foreground/80">
                                                 Completed: {audit.completed_at ? new Date(audit.completed_at).toLocaleString() : 'N/A'}
                                             </p>
                                         </div>
@@ -206,7 +208,7 @@ export default function ReportsExportsPage() {
                                                 onClick={() => handleViewMarkdown(audit.id)}
                                                 disabled={viewingMarkdown}
                                                 variant="outline"
-                                                className="border-white/10 bg-white/5 hover:bg-white/10 text-white"
+                                                className="border-border/70 bg-muted/40 hover:bg-muted/60 text-foreground"
                                                 size="sm"
                                             >
                                                 <Eye className="h-4 w-4 mr-2" />
@@ -216,7 +218,7 @@ export default function ReportsExportsPage() {
                                             <Button
                                                 onClick={() => handleDownloadJSON(audit.id)}
                                                 variant="outline"
-                                                className="border-white/10 bg-white/5 hover:bg-white/10 text-white"
+                                                className="border-border/70 bg-muted/40 hover:bg-muted/60 text-foreground"
                                                 size="sm"
                                             >
                                                 <FileJson className="h-4 w-4 mr-2" />
@@ -226,7 +228,7 @@ export default function ReportsExportsPage() {
                                             <Button
                                                 onClick={() => router.push(`/audits/${audit.id}`)}
                                                 variant="ghost"
-                                                className="text-white/60 hover:text-white hover:bg-white/10"
+                                                className="text-muted-foreground hover:text-foreground hover:bg-muted/50"
                                                 size="sm"
                                             >
                                                 View Details →

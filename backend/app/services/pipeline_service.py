@@ -17,6 +17,8 @@ Proporciona:
 
 import asyncio
 import ast
+import difflib
+import inspect
 import json
 import logging
 import re
@@ -64,31 +66,26 @@ class PipelineService:
         if not url:
             return ""
 
-        url = url.strip().lower()
+        url = url.strip()
 
-        # Remover protocolo existente si hay
-        if url.startswith("http://"):
-            url = url[7:]
-        elif url.startswith("https://"):
-            url = url[8:]
-
-        # Agregar www si no lo tiene
-        if not url.startswith("www."):
-            # Verificar si tiene un subdomain diferente
-            parts = url.split(".")
-            if len(parts) == 2:  # ejemplo: dominio.com
-                url = f"www.{url}"
-
-        # Agregar https://
-        url = f"https://{url}"
-
-        # Asegurar que termine en / para dominios base
         parsed = urlparse(url)
-        if not parsed.path or parsed.path == "":
-            url = f"{url}/"
+        if not parsed.scheme:
+            parsed = urlparse(f"https://{url}")
 
-        logger.info(f"URL normalized: {url}")
-        return url
+        scheme = (parsed.scheme or "https").lower()
+        if scheme not in ("http", "https"):
+            scheme = "https"
+
+        netloc = (parsed.netloc or "").lower()
+        path = parsed.path or ""
+
+        normalized = parsed._replace(scheme=scheme, netloc=netloc).geturl()
+
+        if not path:
+            normalized = normalized.rstrip("/") + "/"
+
+        logger.info(f"URL normalized: {normalized}")
+        return normalized
 
     @staticmethod
     def now_iso() -> str:
@@ -342,9 +339,24 @@ class PipelineService:
             context, system_prompt
         )
 
-        response = await llm_function(
-            system_prompt=system_prompt, user_prompt=user_prompt
-        )
+        report_max_tokens = None
+        try:
+            from app.core.config import settings
+
+            report_max_tokens = getattr(settings, "NV_MAX_TOKENS_REPORT", None)
+        except Exception:
+            report_max_tokens = None
+
+        try:
+            response = await llm_function(
+                system_prompt=system_prompt,
+                user_prompt=user_prompt,
+                max_tokens=report_max_tokens,
+            )
+        except TypeError:
+            response = await llm_function(
+                system_prompt=system_prompt, user_prompt=user_prompt
+            )
 
         delimiter = self.prompt_loader.get_delimiter()
         parts = response.split(delimiter)
@@ -1116,7 +1128,10 @@ class PipelineService:
 
     @staticmethod
     def filter_competitor_urls(
-        search_items: List[Dict], target_domain: str, limit: int = 5
+        search_items: List[Dict],
+        target_domain: str,
+        limit: int = 5,
+        core_terms: Optional[List[str]] = None,
     ) -> List[str]:
         """
         Filtra una lista de resultados de Google Search y devuelve URLs limpias (Home Pages) de competidores reales.
@@ -1127,15 +1142,31 @@ class PipelineService:
         3. Excluye subdominios irrelevantes (blog, help, forums).
         4. Normaliza a la URL raíz (Home Page).
         5. Devuelve solo un dominio único por competidor.
+        6. Requiere match con core_terms derivados del contenido del sitio (sin hardcode de industria).
 
         Args:
             search_items: Lista de items de Google Search API
             target_domain: Dominio objetivo (para excluir)
+            core_terms: Lista de términos clave del negocio (sin marca)
 
         Returns:
             Lista de URLs filtradas y únicas (Home Pages)
         """
         if not search_items:
+            return []
+
+        core_terms = [
+            t.strip().lower()
+            for t in (core_terms or [])
+            if isinstance(t, str) and t.strip()
+        ]
+        if core_terms:
+            generic_terms = PipelineService._generic_business_terms()
+            core_terms = [t for t in core_terms if t not in generic_terms]
+        if not core_terms:
+            logger.info(
+                "PIPELINE: Sin core terms; no se intentará detectar competidores para evitar falsos."
+            )
             return []
 
         bad_patterns = [
@@ -1149,7 +1180,6 @@ class PipelineService:
             "tiktok.com",
             ".gov",
             ".edu",
-            ".org",
             "wikipedia.org",
             "medium.com",
             "reddit.com",
@@ -1163,6 +1193,13 @@ class PipelineService:
             "gob.",
             "gouv.",
             "gov.",
+            "ac.uk",
+            ".ac.",
+            ".edu.",
+            ".gov.",
+            ".mil",
+            ".int",
+            "europa.eu",
             "zoom.info",
             "crunchbase.com",
             "zoominfo.com",
@@ -1366,6 +1403,101 @@ class PipelineService:
             f"PIPELINE: Filtrando {len(search_items)} resultados de búsqueda para encontrar competidores."
         )
 
+        def _count_core_term_matches(text: str) -> int:
+            if not core_terms:
+                return 0
+            hay = (text or "").lower()
+            matches = 0
+            for term in core_terms:
+                if len(term) >= 4:
+                    if re.search(rf"\\b{re.escape(term)}\\b", hay):
+                        matches += 1
+                        continue
+                if term in hay:
+                    matches += 1
+                    continue
+                if term.endswith("s") and term[:-1] and term[:-1] in hay:
+                    matches += 1
+                    continue
+                if f"{term}s" in hay:
+                    matches += 1
+                    continue
+            return matches
+
+        def matches_core_terms(text: str, minimum: int) -> bool:
+            return _count_core_term_matches(text) >= minimum
+
+        def evaluate_item(item: Dict[str, Any], relaxed: bool) -> Optional[str]:
+            url = item.get("link") if isinstance(item, dict) else None
+            title = item.get("title", "").lower() if isinstance(item, dict) else ""
+            snippet = item.get("snippet", "").lower() if isinstance(item, dict) else ""
+
+            if not url:
+                return None
+
+            parsed_url = urlparse(url)
+            netloc = parsed_url.netloc.lower()
+            path = parsed_url.path.lower()
+
+            domain_clean = netloc[4:] if netloc.startswith("www.") else netloc
+
+            if domain_clean in unique_domains:
+                return None
+
+            domain_parts = netloc.split(".")
+            subdomain = ""
+            if len(domain_parts) >= 3 and domain_parts[0] != "www":
+                subdomain = domain_parts[0]
+
+            if subdomain in bad_subdomains:
+                logger.info(
+                    f"PIPELINE: Excluyendo {url} (subdominio irrelevante: {subdomain})"
+                )
+                return None
+
+            if any(keyword in path for keyword in bad_url_keywords):
+                logger.info(
+                    f"PIPELINE: Excluyendo {url} (ruta no competitiva: {path})"
+                )
+                return None
+
+            for pattern in bad_patterns:
+                if pattern in domain_clean:
+                    logger.info(
+                        f"PIPELINE: Excluyendo {url} (patrón prohibido: {pattern})"
+                    )
+                    return None
+
+            bad_word = next(
+                (word for word in bad_title_words if word in title), None
+            )
+            if bad_word:
+                logger.info(
+                    f"PIPELINE: Excluyendo {url} (palabra prohibida en título: {bad_word})"
+                )
+                return None
+
+            bad_snippet = next(
+                (word for word in bad_snippet_words if word in snippet), None
+            )
+            if bad_snippet:
+                logger.info(
+                    f"PIPELINE: Excluyendo {url} (palabra prohibida en snippet: {bad_snippet})"
+                )
+                return None
+
+            title_snippet = f"{title} {snippet}"
+            min_matches = 2 if len(core_terms) >= 2 else 1
+            required_matches = 1 if relaxed else min_matches
+            if not matches_core_terms(title_snippet, required_matches):
+                logger.info(
+                    f"PIPELINE: Excluyendo {url} (sin match de core terms)"
+                )
+                return None
+
+            home_url = f"{parsed_url.scheme}://{netloc}/"
+            return home_url
+
         for item in search_items:
             if country_hint:
                 if len(local_urls) >= max(1, int(limit)):
@@ -1373,90 +1505,42 @@ class PipelineService:
             else:
                 if (len(local_urls) + len(global_urls)) >= max(1, int(limit)):
                     break
-
-            url = item.get("link") if isinstance(item, dict) else None
-            title = item.get("title", "").lower() if isinstance(item, dict) else ""
-            snippet = item.get("snippet", "").lower() if isinstance(item, dict) else ""
-
-            if not url:
-                continue
-
             try:
-                parsed_url = urlparse(url)
-                netloc = parsed_url.netloc.lower()
-                path = parsed_url.path.lower()
-
-                domain_clean = netloc[4:] if netloc.startswith("www.") else netloc
-
-                if domain_clean in unique_domains:
+                home_url = evaluate_item(item, relaxed=False)
+                if not home_url:
                     continue
-
-                domain_parts = netloc.split(".")
-                subdomain = ""
-                if len(domain_parts) >= 3 and domain_parts[0] != "www":
-                    subdomain = domain_parts[0]
-
-                if subdomain in bad_subdomains:
-                    logger.info(
-                        f"PIPELINE: Excluyendo {url} (subdominio irrelevante: {subdomain})"
-                    )
-                    continue
-
-                if any(keyword in path for keyword in bad_url_keywords):
-                    logger.info(
-                        f"PIPELINE: Excluyendo {url} (ruta no competitiva: {path})"
-                    )
-                    continue
-
-                is_bad = False
-                for pattern in bad_patterns:
-                    if pattern in domain_clean:
-                        logger.info(
-                            f"PIPELINE: Excluyendo {url} (patrón prohibido: {pattern})"
-                        )
-                        is_bad = True
-                        break
-                if is_bad:
-                    continue
-
-                bad_word = next(
-                    (word for word in bad_title_words if word in title), None
-                )
-                if bad_word:
-                    logger.info(
-                        f"PIPELINE: Excluyendo {url} (palabra prohibida en título: {bad_word})"
-                    )
-                    continue
-
-                bad_snippet = next(
-                    (word for word in bad_snippet_words if word in snippet), None
-                )
-                if bad_snippet:
-                    logger.info(
-                        f"PIPELINE: Excluyendo {url} (palabra prohibida en snippet: {bad_snippet})"
-                    )
-                    continue
-
-                if not PipelineService._looks_like_ecommerce(
-                    domain_clean, title, snippet
-                ):
-                    logger.info(
-                        f"PIPELINE: Excluyendo {url} (no parece ecommerce relevante)"
-                    )
-                    continue
-
-                home_url = f"{parsed_url.scheme}://{netloc}/"
-
+                domain_clean = urlparse(home_url).netloc.lower().replace("www.", "")
                 logger.info(f"PIPELINE: Competidor detectado: {home_url}")
                 unique_domains.add(domain_clean)
                 if country_hint and domain_clean.endswith(country_hint):
                     local_urls.append(home_url)
                 else:
                     global_urls.append(home_url)
-
             except Exception as e:
-                logger.error(f"PIPELINE: Error procesando URL {url}: {e}")
+                logger.error(f"PIPELINE: Error procesando URL {item}: {e}")
                 continue
+
+        # Second pass (relaxed) if we still need more competitors
+        if (len(local_urls) + len(global_urls)) < max(1, int(limit)):
+            for item in search_items:
+                if (len(local_urls) + len(global_urls)) >= max(1, int(limit)):
+                    break
+                try:
+                    home_url = evaluate_item(item, relaxed=True)
+                    if not home_url:
+                        continue
+                    domain_clean = urlparse(home_url).netloc.lower().replace("www.", "")
+                    if domain_clean in unique_domains:
+                        continue
+                    logger.info(f"PIPELINE: Competidor detectado (relaxed): {home_url}")
+                    unique_domains.add(domain_clean)
+                    if country_hint and domain_clean.endswith(country_hint):
+                        local_urls.append(home_url)
+                    else:
+                        global_urls.append(home_url)
+                except Exception as e:
+                    logger.error(f"PIPELINE: Error procesando URL {item}: {e}")
+                    continue
 
         ordered_urls = local_urls + global_urls
         filtered_urls = ordered_urls[: max(1, int(limit))]
@@ -1617,57 +1701,37 @@ class PipelineService:
 
     @staticmethod
     @staticmethod
-    def _looks_like_ecommerce(domain: str, title: str, snippet: str) -> bool:
+    def _looks_like_ecommerce(domain: str, title: str, snippet: str, relaxed: bool = False) -> bool:
         """
-        Heurística simple para filtrar competidores que no son ecommerce/retail.
+        Heurística genérica (sin hardcode de industria) para señales comerciales básicas.
         """
         combined = f"{domain} {title} {snippet}".lower()
         commerce_signals = [
-            "tienda",
+            "pricing",
+            "plans",
+            "plan",
+            "subscribe",
+            "signup",
+            "sign up",
+            "apply",
+            "enroll",
+            "book",
+            "booking",
+            "checkout",
+            "cart",
+            "buy",
             "shop",
             "store",
-            "comprar",
-            "compra",
-            "carrito",
-            "checkout",
-            "envio",
-            "envío",
-            "envios",
-            "envíos",
-            "delivery",
-            "cuotas",
-            "ofertas",
-            "promociones",
-            "productos",
-            "producto",
-            "catalogo",
-            "catálogo",
-            "precio",
-            "online",
-            "ecommerce",
+            "services",
+            "solutions",
+            "platform",
+            "product",
+            "products",
+            "software",
+            "saas",
         ]
-        category_signals = [
-            "farmacia",
-            "perfumeria",
-            "perfumería",
-            "cosmetica",
-            "cosmética",
-            "belleza",
-            "dermo",
-            "dermocosmetica",
-            "dermocosmética",
-            "skincare",
-            "maquillaje",
-            "pharmacy",
-            "drugstore",
-            "cosmetics",
-            "beauty",
-            "supplement",
-            "vitamin",
-        ]
-        has_commerce = any(sig in combined for sig in commerce_signals)
-        has_category = any(sig in combined for sig in category_signals)
-        return has_commerce and has_category
+        has_signal = any(sig in combined for sig in commerce_signals)
+        return has_signal
 
     @staticmethod
     def _infer_country_tld(domain: str) -> str:
@@ -1845,7 +1909,7 @@ class PipelineService:
             "Required keys: is_ymyl, ymyl_confidence_score, business_type, business_model, "
             "category, subcategory, market, market_maturity, queries_to_run, strategic_insights.\n"
             "Ensure queries_to_run has 2-5 items with query + purpose, includes the market, "
-            "and uses category + market phrasing (e.g., 'farmacia online Argentina').\n"
+            "and uses category + market phrasing (e.g., 'online {core_business} {market}').\n"
             "Avoid policy/support terms and avoid 'alternatives'.\n\n"
             f"Signals:\n```json\n{json.dumps(retry_input, ensure_ascii=True)}\n```"
         )
@@ -2066,20 +2130,14 @@ class PipelineService:
             "mejores",
             "top",
             "best",
-            "farmacia",
-            "perfumeria",
-            "perfumería",
-            "cosmetica",
-            "cosmética",
-            "dermocosmetica",
-            "dermocosmética",
-            "beauty",
-            "pharmacy",
-            "drugstore",
-            "health",
-            "salud",
-            "personal care",
-            "cuidado personal",
+            "pricing",
+            "plans",
+            "plan",
+            "services",
+            "solutions",
+            "platform",
+            "product",
+            "products",
         ]
         non_competitor_terms = [
             "politicas",
@@ -2111,6 +2169,9 @@ class PipelineService:
             "differences",
         ]
 
+        # Strict mode: ensure queries are category + market based and avoid brand/competitor phrasing.
+        relaxed_mode = False
+
         filtered: List[Dict[str, str]] = []
         rejected_reasons = []
 
@@ -2120,6 +2181,23 @@ class PipelineService:
                 rejected_reasons.append(f"Query {idx}: vacía")
                 continue
             ql = qtext.lower()
+
+            if relaxed_mode:
+                filtered.append(q)
+                logger.debug("Query aceptada: modo sin filtros (pass-through)")
+                continue
+
+            if brand_hint and brand_hint.lower() in ql:
+                rejected_reasons.append(
+                    f"Query {idx}: contiene marca - '{qtext[:50]}'"
+                )
+                continue
+
+            if any(marker in ql for marker in competitor_markers):
+                rejected_reasons.append(
+                    f"Query {idx}: contiene marcador de competidor - '{qtext[:50]}'"
+                )
+                continue
 
             # Rechazar queries con palabras bloqueadas
             if any(bad in ql for bad in blocked_words):
@@ -2324,6 +2402,43 @@ class PipelineService:
         return canonical.get(raw, value)
 
     @staticmethod
+    def _generic_business_terms() -> set:
+        return {
+            "digital",
+            "online",
+            "platform",
+            "service",
+            "services",
+            "solutions",
+            "company",
+            "companies",
+            "empresa",
+            "empresas",
+            "official",
+            "site",
+            "website",
+            "store",
+            "shop",
+            "product",
+            "products",
+            "business",
+            "producto",
+            "productos",
+            "mas",
+            "más",
+            "gratis",
+            "free",
+            "ars",
+            "usd",
+            "mxn",
+            "clp",
+            "brl",
+            "superando",
+            "supera",
+            "superar",
+        }
+
+    @staticmethod
     def _infer_market_from_url(url: str) -> Optional[str]:
         if not url:
             return None
@@ -2461,6 +2576,332 @@ class PipelineService:
         return " ".join(terms)
 
     @staticmethod
+    def _extract_core_terms_from_target(
+        target_audit: Dict[str, Any], max_terms: int = 3, include_generic: bool = False
+    ) -> List[str]:
+        """Extrae términos core desde señales reales del sitio (sin brand)."""
+        if not isinstance(target_audit, dict):
+            return []
+
+        url = (target_audit or {}).get("url", "")
+        content_block = (
+            target_audit.get("content", {})
+            if isinstance(target_audit.get("content"), dict)
+            else {}
+        )
+        content_block = (
+            target_audit.get("content", {})
+            if isinstance(target_audit.get("content"), dict)
+            else {}
+        )
+        domain = urlparse(url).netloc.replace("www.", "") if url else ""
+        root = domain.split(".")[0] if domain else ""
+        brand_tokens = set()
+        if root:
+            brand_tokens.add(root.lower())
+            for token in re.findall(r"[a-z0-9]+", root.lower()):
+                if token:
+                    brand_tokens.add(token)
+        brand_hint = PipelineService._extract_brand_from_domain(domain) if domain else ""
+        if brand_hint:
+            for token in re.findall(r"[a-z0-9]+", brand_hint.lower()):
+                if token:
+                    brand_tokens.add(token)
+
+        content_block = (
+            target_audit.get("content", {})
+            if isinstance(target_audit.get("content"), dict)
+            else {}
+        )
+        structure_block = (
+            target_audit.get("structure", {})
+            if isinstance(target_audit.get("structure"), dict)
+            else {}
+        )
+        h1_block = (
+            structure_block.get("h1_check", {})
+            if isinstance(structure_block.get("h1_check"), dict)
+            else {}
+        )
+        h1_details = (
+            h1_block.get("details", {})
+            if isinstance(h1_block.get("details"), dict)
+            else {}
+        )
+
+        title = content_block.get("title", "")
+        meta_description = content_block.get("meta_description") or content_block.get(
+            "description", ""
+        )
+        nav_text = content_block.get("nav_text", "")
+        h1_example = h1_details.get("example", "")
+        text_sample = content_block.get("text_sample", "")
+        page_paths = target_audit.get("audited_page_paths", [])
+        if not isinstance(page_paths, list):
+            page_paths = []
+
+        # Heurística: tratar el primer segmento del title como brand si coincide con el dominio.
+        if title:
+            first_segment = re.split(r"[|–—:-]", str(title))[0].strip()
+            if first_segment:
+                root_alpha = re.sub(r"[^a-z]+", "", root.lower())
+                seg_alpha = re.sub(r"[^a-z]+", "", first_segment.lower())
+                if root_alpha and seg_alpha:
+                    overlap = root_alpha in seg_alpha or seg_alpha in root_alpha
+                    prefix_len = min(len(root_alpha), len(seg_alpha), 6)
+                    prefix_match = (
+                        prefix_len >= 4
+                        and root_alpha[:prefix_len] == seg_alpha[:prefix_len]
+                    )
+                    similarity = difflib.SequenceMatcher(
+                        None, root_alpha, seg_alpha
+                    ).ratio()
+                    if overlap or prefix_match or similarity >= 0.75:
+                        for token in re.findall(r"[a-z0-9]+", first_segment.lower()):
+                            if token:
+                                brand_tokens.add(token)
+
+        def _path_segments(paths: List[str]) -> str:
+            segments: List[str] = []
+            for raw_path in paths[:50]:
+                if not raw_path:
+                    continue
+                try:
+                    parsed_path = urlparse(str(raw_path)).path or str(raw_path)
+                except Exception:
+                    parsed_path = str(raw_path)
+                parts = [p for p in parsed_path.strip("/").split("/") if p]
+                if not parts:
+                    continue
+                # Consider top-level and second-level segments only, skip product-like slugs.
+                for idx, seg in enumerate(parts[:2]):
+                    if not seg:
+                        continue
+                    next_seg = parts[idx + 1] if idx + 1 < len(parts) else ""
+                    slug_hyphens = seg.count("-")
+                    if next_seg.lower() in {"p", "product", "sku", "item"}:
+                        continue
+                    if slug_hyphens >= 3:
+                        continue
+                    if any(ch.isdigit() for ch in seg):
+                        continue
+                    if len(seg) > 32:
+                        continue
+                    if seg.lower() in brand_tokens:
+                        continue
+                    segments.append(seg)
+            return " ".join(segments)
+
+        sources = [
+            ("title", title, 4.0),
+            ("meta", meta_description, 3.0),
+            ("h1", h1_example, 3.0),
+            ("nav", nav_text, 3.5),
+            ("paths", _path_segments(page_paths), 1.5),
+            ("text", text_sample, 0.2),
+        ]
+
+        market_hint = PipelineService._normalize_market_value(
+            target_audit.get("market")
+        ) or PipelineService._infer_market_from_url(url)
+        market_tokens = set(
+            re.findall(r"[a-z0-9]+", (market_hint or "").lower())
+        )
+
+        stopwords = {
+            "de",
+            "la",
+            "el",
+            "los",
+            "las",
+            "y",
+            "o",
+            "a",
+            "en",
+            "para",
+            "por",
+            "con",
+            "sin",
+            "del",
+            "un",
+            "una",
+            "unos",
+            "unas",
+            "the",
+            "and",
+            "or",
+            "for",
+            "with",
+            "to",
+            "in",
+            "of",
+            "on",
+            "at",
+            "from",
+            "by",
+            "your",
+            "our",
+            "home",
+            "inicio",
+            "sitio",
+            "web",
+            "oficial",
+            "official",
+            "page",
+            "pagina",
+            "site",
+            "www",
+            "online",
+            "website",
+            "blog",
+            "news",
+            "press",
+            "about",
+            "contact",
+            "privacy",
+            "terms",
+            "help",
+            "support",
+            "competitor",
+            "competitors",
+            "hasta",
+            "todos",
+            "todas",
+            "todo",
+            "toda",
+            "dia",
+            "día",
+            "dias",
+            "días",
+            "cada",
+            "ayuda",
+            "preguntas",
+            "frecuentes",
+            "terminos",
+            "términos",
+            "condiciones",
+            "politicas",
+            "políticas",
+            "privacidad",
+            "promociones",
+            "ofertas",
+            "sucursales",
+            "institucional",
+            "nosotros",
+            "contacto",
+            "sobre",
+            "faq",
+            "blog",
+            "news",
+            "press",
+            "login",
+            "signup",
+            "register",
+            "carrito",
+            "checkout",
+            "delivery",
+            "envio",
+            "envíos",
+            "envío",
+            "shipping",
+            "cuota",
+            "cuotas",
+            "interes",
+            "interés",
+            "descuento",
+            "descuentos",
+            "marca",
+            "marcas",
+            "promocion",
+            "promoción",
+            "promo",
+            "promos",
+            "comprar",
+            "compra",
+            "comprá",
+            "original",
+            "originales",
+            "producto",
+            "productos",
+            "mas",
+            "más",
+            "gratis",
+            "free",
+            "ars",
+            "usd",
+            "mxn",
+            "clp",
+            "brl",
+            "superando",
+            "supera",
+            "superar",
+        }
+        stopwords.update(market_tokens)
+
+        generic_terms = PipelineService._generic_business_terms()
+
+        scores: Dict[str, float] = {}
+        source_hits: Dict[str, set] = {}
+        first_pos: Dict[str, int] = {}
+        position = 0
+
+        def tokenize(text: str) -> List[str]:
+            if not text:
+                return []
+            collected = []
+            for raw in re.split(r"[\s/\-_.]+", str(text).lower()):
+                token = re.sub(r"[^\w]+", "", raw, flags=re.UNICODE)
+                if not token:
+                    continue
+                if token.isdigit():
+                    continue
+                if len(token) < 2:
+                    continue
+                if token in stopwords:
+                    continue
+                if token in brand_tokens:
+                    continue
+                collected.append(token)
+            return collected
+
+        for source_name, text, weight in sources:
+            if not text:
+                continue
+            for token in tokenize(text):
+                multiplier = 0.35 if token in generic_terms else 1.0
+                scores[token] = scores.get(token, 0.0) + (weight * multiplier)
+                if token not in source_hits:
+                    source_hits[token] = set()
+                source_hits[token].add(source_name)
+                if token not in first_pos:
+                    first_pos[token] = position
+                position += 1
+
+        if not scores:
+            return []
+
+        final_scores = {
+            term: scores[term] + (0.35 * max(0, len(source_hits.get(term, [])) - 1))
+            for term in scores
+        }
+        max_score = max(final_scores.values()) if final_scores else 0
+        if max_score < 1.0:
+            return []
+
+        ordered = sorted(
+            final_scores.keys(),
+            key=lambda t: (-final_scores[t], first_pos.get(t, 0)),
+        )
+        if include_generic:
+            candidate = ordered
+        else:
+            filtered = [t for t in ordered if t not in generic_terms]
+            candidate = filtered if filtered else ordered
+        top_terms = candidate[: max_terms]
+        top_terms = sorted(top_terms, key=lambda t: first_pos.get(t, 0))
+        return top_terms
+
+    @staticmethod
     def _detect_industry_terms(text: str, is_spanish: bool) -> List[str]:
         """Detecta términos de industria usando heurísticas simples."""
         if not text:
@@ -2544,10 +2985,10 @@ class PipelineService:
         industry_terms_lower = [t.lower() for t in industry_terms]
         category_lower = category_hint.lower()
 
-        core_terms = PipelineService._extract_core_terms(
-            text_for_industry, brand_hint=brand_hint
+        core_terms_list = PipelineService._extract_core_terms_from_target(
+            target_audit, include_generic=True
         )
-        base = core_terms.strip() if core_terms else ""
+        base = " ".join(core_terms_list).strip() if core_terms_list else ""
         if not base:
             return None
 
@@ -2785,93 +3226,109 @@ class PipelineService:
     def _generate_fallback_queries(
         target_audit: Dict[str, Any],
     ) -> List[Dict[str, str]]:
-        """Fallback determinístico cuando el LLM no entrega queries."""
+        """Deterministic fallback queries from core terms + market (no brand)."""
         if not isinstance(target_audit, dict):
             return []
+
         url = (target_audit or {}).get("url", "")
-        domain = urlparse(url).netloc.replace("www.", "") if url else ""
-        content_block = (
-            target_audit.get("content", {})
-            if isinstance(target_audit, dict)
-            and isinstance(target_audit.get("content"), dict)
-            else {}
+        core_terms = PipelineService._extract_core_terms_from_target(
+            target_audit, max_terms=3, include_generic=True
         )
-        structure_block = (
-            target_audit.get("structure", {})
-            if isinstance(target_audit, dict)
-            and isinstance(target_audit.get("structure"), dict)
-            else {}
-        )
-        h1_block = (
-            structure_block.get("h1_check", {})
-            if isinstance(structure_block.get("h1_check"), dict)
-            else {}
-        )
-        h1_details = (
-            h1_block.get("details", {})
-            if isinstance(h1_block.get("details"), dict)
-            else {}
-        )
-        h1_example = h1_details.get("example", "")
-        title = content_block.get("title", "")
-        meta_description = content_block.get("meta_description") or content_block.get(
-            "description", ""
-        )
-        text_sample = content_block.get("text_sample", "")
-        category_hint = (
-            target_audit.get("subcategory")
-            or target_audit.get("category")
-            or content_block.get("category", "")
-        )
+        if not core_terms:
+            return []
 
-        brand_hint = PipelineService._extract_brand_from_domain(domain)
-        core_terms = ""
-        for candidate in [
-            meta_description,
-            title,
-            h1_example,
-            text_sample,
-            category_hint,
-        ]:
-            core_terms = PipelineService._extract_core_terms(
-                candidate, brand_hint=brand_hint
-            )
-            if core_terms:
-                break
-        if not core_terms and category_hint:
-            core_terms = str(category_hint).strip()
-
-        language = (target_audit or {}).get("language", "")
         market_hint = PipelineService._normalize_market_value(
             (target_audit or {}).get("market")
         ) or PipelineService._infer_market_from_url(url)
 
-        is_spanish = str(language).lower().startswith("es")
-        if not is_spanish and market_hint:
-            if str(market_hint).lower() in [
-                "argentina",
-                "uruguay",
-                "chile",
-                "colombia",
-                "mexico",
-                "peru",
-                "ecuador",
-                "bolivia",
-                "paraguay",
-                "venezuela",
-                "costa rica",
-                "guatemala",
-                "honduras",
-                "nicaragua",
-                "panama",
-                "el salvador",
-                "dominican republic",
-                "latin america",
-            ]:
-                is_spanish = True
+        market_suffix = f" {market_hint}" if market_hint else ""
+        generic_terms = PipelineService._generic_business_terms()
+        strong_terms = [t for t in core_terms if t not in generic_terms]
+        if not strong_terms:
+            return []
+        phrase_terms = strong_terms[:3]
+        if len(phrase_terms) < 2:
+            for term in core_terms:
+                if term not in phrase_terms:
+                    phrase_terms.append(term)
+                    break
+        if not phrase_terms:
+            return []
 
-        competitor_word = "competidores" if is_spanish else "competitors"
-        similar_word = "sitios similares" if is_spanish else "similar sites"
+        brand_tokens = set()
+        domain = urlparse(url).netloc.replace("www.", "") if url else ""
+        brand_hint = PipelineService._extract_brand_from_domain(domain) if domain else ""
+        if brand_hint:
+            for token in re.findall(r"[a-z0-9]+", brand_hint.lower()):
+                if token:
+                    brand_tokens.add(token)
+        content_block = (
+            target_audit.get("content", {})
+            if isinstance(target_audit.get("content"), dict)
+            else {}
+        )
+        phrases: List[str] = []
+        # Prefer multi-word nav phrases when available (core business cues).
+        nav_items = content_block.get("nav_items", [])
+        if isinstance(nav_items, list) and nav_items:
+            nav_stopwords = {
+                "y",
+                "and",
+                "or",
+                "the",
+                "of",
+                "de",
+                "la",
+                "el",
+                "los",
+                "las",
+                "del",
+                "un",
+                "una",
+                "para",
+                "con",
+                "sobre",
+                "contacto",
+                "contact",
+                "servicio",
+                "servicios",
+                "service",
+                "services",
+                "insights",
+                "blog",
+                "news",
+                "careers",
+                "jobs",
+                "login",
+                "signup",
+            }
+            nav_phrases = []
+            for item in nav_items:
+                if not item:
+                    continue
+                tokens = [
+                    t
+                    for t in re.findall(r"[a-z0-9áéíóúñ]+", str(item).lower())
+                    if t and t not in nav_stopwords and t not in brand_tokens
+                ]
+                tokens = [t for t in tokens if t not in generic_terms]
+                if len(tokens) >= 2:
+                    nav_phrases.append(" ".join(tokens[:3]))
+                elif len(tokens) == 1:
+                    nav_phrases.append(tokens[0])
+            for phrase in nav_phrases:
+                if phrase and phrase not in phrases:
+                    phrases.append(phrase)
+        if len(phrase_terms) >= 3:
+            phrases.append(" ".join(phrase_terms[:3]))
+        if len(phrase_terms) >= 2:
+            phrases.append(" ".join(phrase_terms[:2]))
+        else:
+            phrases.append(phrase_terms[0])
+
+        phrases = [p for p in phrases if p]
+        # Keep a small diverse set of phrases.
+        phrases = phrases[:3]
 
         queries: List[Dict[str, str]] = []
         seen = set()
@@ -2880,7 +3337,10 @@ class PipelineService:
             qt = (query_text or "").strip()
             if not qt:
                 return
-            key = qt.lower()
+            qt_lower = qt.lower()
+            if brand_tokens and any(token in qt_lower for token in brand_tokens):
+                return
+            key = qt_lower
             if key in seen:
                 return
             seen.add(key)
@@ -2888,75 +3348,25 @@ class PipelineService:
                 {"id": f"q{len(queries) + 1}", "query": qt, "purpose": purpose}
             )
 
-        page_paths = target_audit.get("audited_page_paths", [])
-        if not isinstance(page_paths, list):
-            page_paths = []
-
-        text_for_industry = " ".join(
-            str(v)
-            for v in [
-                title,
-                meta_description,
-                h1_example,
-                text_sample,
-                category_hint,
-                " ".join(page_paths[:15]),
-            ]
-            if v
-        )
-        industry_terms = PipelineService._detect_industry_terms(
-            text_for_industry, is_spanish=is_spanish
-        )
-
-        # Evitar queries demasiado genéricas si hay términos más específicos
-        if len(industry_terms) > 1:
-            industry_terms = [
-                t
-                for t in industry_terms
-                if t != "tienda online" and t != "online store"
-            ]
-
-        base_terms = max(industry_terms, key=len) if industry_terms else core_terms
-
-        if base_terms:
-            add_query(
-                f"{base_terms} {competitor_word}",
-                "Identify direct competitors",
-            )
-
-        if len(industry_terms) > 1:
-            secondary_term = next((t for t in industry_terms if t != base_terms), None)
-            if secondary_term:
+        templates = [
+            ("{phrase}{market}", "Core market competitors"),
+            ("best {phrase}{market}", "Top competitors"),
+            ("top {phrase}{market}", "Top competitors"),
+            ("{phrase} companies{market}", "Core market companies"),
+            ("{phrase} providers{market}", "Core market providers"),
+        ]
+        for template, purpose in templates:
+            for phrase in phrases:
+                if len(queries) >= 5:
+                    break
                 add_query(
-                    f"{secondary_term} {competitor_word}",
-                    "Find adjacent competitors",
+                    template.format(phrase=phrase, market=market_suffix),
+                    purpose,
                 )
+            if len(queries) >= 5:
+                break
 
-        if brand_hint and (
-            not core_terms or brand_hint.lower() not in core_terms.lower()
-        ):
-            add_query(
-                f"{brand_hint} {competitor_word}",
-                "Brand-level competitors",
-            )
-
-        if domain and not queries:
-            add_query(
-                f"{domain} {similar_word}",
-                "Discover similar companies in the same space",
-            )
-
-        if category_hint and str(category_hint).strip():
-            add_query(
-                f"{str(category_hint).strip()} {competitor_word}",
-                "Category-level competitors",
-            )
-
-        if market_hint:
-            for q in queries:
-                if market_hint.lower() not in q["query"].lower():
-                    q["query"] = f"{q['query']} {market_hint}".strip()
-        return queries[:3]
+        return queries[:5]
 
     @staticmethod
     async def run_google_search(
@@ -3056,7 +3466,7 @@ class PipelineService:
             market_hint = self._normalize_market_value(
                 target_audit.get("market")
             ) or self._infer_market_from_url(url_value)
-            language_hint = target_audit.get("language")
+            language_hint = "en"
 
             if llm_function is None:
                 logger.error("LLM function is None in analyze_external_intelligence")
@@ -3174,10 +3584,30 @@ class PipelineService:
                 market_hint,
             )
 
-            # Verificar si necesitamos reintento
-            if self._needs_agent_retry(
-                category_value, raw_queries_norm, search_queries
+            # Preparar fallback determinístico (puede evitar un retry costoso)
+            fallback_context = (
+                dict(target_audit)
+                if isinstance(target_audit, dict)
+                else {}
+            )
+            if market_hint and fallback_context is not None and not fallback_context.get(
+                "market"
             ):
+                fallback_context["market"] = market_hint
+            fallback_queries = self._generate_fallback_queries(fallback_context)
+
+            # Verificar si necesitamos reintento
+            needs_retry = self._needs_agent_retry(
+                category_value, raw_queries_norm, search_queries
+            )
+            if needs_retry and fallback_queries:
+                logger.warning(
+                    "[AGENTE 1] Salida incompleta; usando fallback determinístico y omitiendo retry para acelerar."
+                )
+                search_queries = fallback_queries
+                needs_retry = False
+
+            if needs_retry:
                 logger.warning(
                     "[AGENTE 1] Se detectó salida incompleta. Detalles:\n"
                     f"  - Categoría: '{category_value}' (is_unknown: {self._is_unknown_category(category_value)})\n"
@@ -3300,6 +3730,32 @@ class PipelineService:
                         q["query"] = f"{query_text} {market_hint}".strip()
 
             if not search_queries:
+                fallback_queries = self._generate_fallback_queries(target_audit)
+                if fallback_queries:
+                    search_queries = fallback_queries
+                    logger.warning(
+                        "[AGENTE 1] Usando fallback determinístico para búsqueda de competidores."
+                    )
+
+            if not search_queries:
+                core_query = self._infer_core_competitor_query(
+                    target_audit, market_hint
+                )
+                if core_query:
+                    search_queries = [
+                        {
+                            "id": "core_query",
+                            "query": core_query,
+                            "purpose": "Direct competitors by category + market",
+                        }
+                    ]
+                    if market_hint and market_hint.lower() not in core_query.lower():
+                        search_queries[0]["query"] = f"{core_query} {market_hint}".strip()
+                    logger.warning(
+                        "[AGENTE 1] Usando fallback core_query para búsqueda de competidores."
+                    )
+
+            if not search_queries:
                 logger.error(
                     f"[AGENTE 1 FALLÓ CRÍTICAMENTE] No se generaron queries válidas para la búsqueda de competidores.\n"
                     f"  - Dominio: {domain_value}\n"
@@ -3336,76 +3792,94 @@ class PipelineService:
         Returns:
             Lista de resúmenes de auditoría
         """
-        competitor_audits = []
+        competitor_audits: List[Dict[str, Any]] = []
         total_competitors = len(competitor_urls[:5])
         logger.info(
             f"PIPELINE: Iniciando auditoría de {total_competitors} competidores."
         )
 
-        for i, comp_url in enumerate(competitor_urls[:5]):
-            logger.info(
-                f"PIPELINE: Auditando competidor {i + 1}/{total_competitors}: {comp_url}"
-            )
-            try:
-                res = await audit_local_function(comp_url)
-                if isinstance(res, (tuple, list)) and len(res) > 0:
-                    summary = res[0]
-                else:
-                    summary = res
+        if not audit_local_function:
+            logger.warning("PIPELINE: audit_local_function no definido; omitiendo competidores.")
+            return competitor_audits
 
-                if not isinstance(summary, dict):
-                    logger.warning(
-                        f"PIPELINE: Resultado de auditoría para {comp_url} no es un diccionario: {type(summary)}"
-                    )
-                    continue
+        semaphore = asyncio.Semaphore(3)
 
-                status = summary.get("status") if isinstance(summary, dict) else 500
+        async def audit_one(comp_url: str, idx: int) -> Optional[Dict[str, Any]]:
+            async with semaphore:
+                logger.info(
+                    f"PIPELINE: Auditando competidor {idx + 1}/{total_competitors}: {comp_url}"
+                )
                 try:
-                    from app.services.audit_service import CompetitorService
-                except Exception:
-                    CompetitorService = None
+                    if inspect.iscoroutinefunction(audit_local_function):
+                        res = await audit_local_function(comp_url)
+                    else:
+                        res = await asyncio.to_thread(audit_local_function, comp_url)
 
-                if status == 200:
-                    domain = urlparse(comp_url).netloc.replace("www.", "")
-                    summary.setdefault("url", comp_url)
-                    summary.setdefault("domain", domain)
-                    if CompetitorService is not None:
-                        summary["geo_score"] = CompetitorService._calculate_geo_score(
-                            summary
+                    if isinstance(res, (tuple, list)) and len(res) > 0:
+                        summary = res[0]
+                    else:
+                        summary = res
+
+                    if not isinstance(summary, dict):
+                        logger.warning(
+                            f"PIPELINE: Resultado de auditoría para {comp_url} no es un diccionario: {type(summary)}"
                         )
-                        summary["benchmark"] = (
-                            CompetitorService._format_competitor_data(
-                                summary, summary["geo_score"], comp_url
+                        return None
+
+                    status = summary.get("status") if isinstance(summary, dict) else 500
+                    try:
+                        from app.services.audit_service import CompetitorService
+                    except Exception:
+                        CompetitorService = None
+
+                    if status == 200:
+                        domain = urlparse(comp_url).netloc.replace("www.", "")
+                        summary.setdefault("url", comp_url)
+                        summary.setdefault("domain", domain)
+                        if CompetitorService is not None:
+                            summary["geo_score"] = CompetitorService._calculate_geo_score(
+                                summary
                             )
+                            summary["benchmark"] = (
+                                CompetitorService._format_competitor_data(
+                                    summary, summary["geo_score"], comp_url
+                                )
+                            )
+                        logger.info(
+                            f"PIPELINE: Auditoría de competidor {comp_url} exitosa."
                         )
-                    competitor_audits.append(summary)
-                    logger.info(
-                        f"PIPELINE: Auditoría de competidor {comp_url} exitosa."
-                    )
-                else:
+                        return summary
+
                     logger.warning(
                         f"PIPELINE: Auditoría de {comp_url} retornó status {status}. Se omitirá este competidor."
                     )
-                    competitor_audits.append(
-                        {
-                            "url": comp_url,
-                            "status": status,
-                            "error": f"No se pudo acceder al sitio (HTTP {status})",
-                            "domain": urlparse(comp_url).netloc.replace("www.", ""),
-                            "geo_score": 0.0,
-                        }
+                    return {
+                        "url": comp_url,
+                        "status": status,
+                        "error": f"No se pudo acceder al sitio (HTTP {status})",
+                        "domain": urlparse(comp_url).netloc.replace("www.", ""),
+                        "geo_score": 0.0,
+                    }
+                except Exception as e:
+                    logger.error(
+                        f"PIPELINE: Falló auditoría de competidor {comp_url}: {e}"
                     )
-            except Exception as e:
-                logger.error(f"PIPELINE: Falló auditoría de competidor {comp_url}: {e}")
-                competitor_audits.append(
-                    {
+                    return {
                         "url": comp_url,
                         "status": 500,
                         "error": str(e),
                         "domain": urlparse(comp_url).netloc.replace("www.", ""),
                         "geo_score": 0.0,
                     }
-                )
+
+        tasks = [
+            asyncio.create_task(audit_one(url, idx))
+            for idx, url in enumerate(competitor_urls[:5])
+        ]
+        results = await asyncio.gather(*tasks, return_exceptions=False)
+        for res in results:
+            if isinstance(res, dict):
+                competitor_audits.append(res)
 
         logger.info(
             f"PIPELINE: Auditados {len(competitor_audits)} competidores (incluyendo fallidos)."
@@ -4700,6 +5174,9 @@ async def run_initial_audit(
     google_cx_id: Optional[str] = None,
     crawler_service: Optional[callable] = None,
     audit_local_service: Optional[callable] = None,
+    progress_callback: Optional[callable] = None,
+    generate_report: bool = True,
+    enable_llm_external_intel: bool = True,
 ) -> Dict[str, Any]:
     """
     Ejecuta el pipeline inicial de auditoría:
@@ -4709,6 +5186,18 @@ async def run_initial_audit(
     - Genera reporte y fix_plan
     """
     service = get_pipeline_service()
+
+    async def emit_progress(value: float):
+        if not progress_callback:
+            return
+        try:
+            result = progress_callback(value)
+            if asyncio.iscoroutine(result):
+                await result
+        except Exception as progress_err:
+            logger.warning(
+                f"run_initial_audit: progress update failed ({value}%): {progress_err}"
+            )
 
     normalized_target = service._ensure_dict(target_audit)
     base_url = (normalized_target.get("url") or url or "").strip()
@@ -4878,6 +5367,7 @@ async def run_initial_audit(
                     continue
                 if isinstance(result, dict):
                     audited_summaries.append(result)
+            await emit_progress(30)
 
     valid_summaries = [s for s in audited_summaries if is_valid_summary(s)]
     if valid_summaries:
@@ -4928,8 +5418,15 @@ async def run_initial_audit(
             continue
         seen_summary_urls.add(key)
         ordered_summaries.append(summary)
+    def _snapshot_summary(summary: Dict[str, Any]) -> Dict[str, Any]:
+        """Create a shallow copy without recursive audit references."""
+        if not isinstance(summary, dict):
+            return summary
+        cleaned = {k: v for k, v in summary.items() if k != "_individual_page_audits"}
+        return cleaned
+
     normalized_target["_individual_page_audits"] = [
-        {"index": idx, "url": s.get("url"), "data": s}
+        {"index": idx, "url": s.get("url"), "data": _snapshot_summary(s)}
         for idx, s in enumerate(ordered_summaries)
     ]
     if ordered_summaries:
@@ -4970,37 +5467,48 @@ async def run_initial_audit(
         normalized_target["crawled_page_paths"] = crawled_urls
         normalized_target["crawl_summary"] = service._summarize_crawl_urls(crawled_urls)
 
-    # 1) External intelligence (Agent 1)
+    # 1) External intelligence (Agent 1) - optional for fast dashboard mode
     external_intelligence = {}
-    search_queries = []
-    try:
-        (
-            external_intelligence,
-            search_queries,
-        ) = await service.analyze_external_intelligence(
-            normalized_target, llm_function=llm_function
-        )
-    except Exception as e:
-        logger.error(
-            f"run_initial_audit: external intelligence failed: {e}", exc_info=True
-        )
+    search_queries: List[Dict[str, str]] = []
+    if enable_llm_external_intel:
+        try:
+            (
+                external_intelligence,
+                search_queries,
+            ) = await service.analyze_external_intelligence(
+                normalized_target, llm_function=llm_function
+            )
+        except Exception as e:
+            logger.error(
+                f"run_initial_audit: external intelligence failed: {e}", exc_info=True
+            )
+    else:
+        search_queries = service._generate_fallback_queries(normalized_target)
 
     # 2) Google Search results
     search_results: Dict[str, Any] = {}
     if google_api_key and google_cx_id and search_queries:
+        search_num_results = 20 if not enable_llm_external_intel else 10
+        tasks: Dict[str, asyncio.Task] = {}
         for q in search_queries:
             query_text = q.get("query") if isinstance(q, dict) else str(q)
             if not query_text:
                 continue
-            try:
-                search_results[query_text] = await service.run_google_search(
-                    query_text, google_api_key, google_cx_id
+            tasks[query_text] = asyncio.create_task(
+                service.run_google_search(
+                    query_text, google_api_key, google_cx_id, num_results=search_num_results
                 )
+            )
+
+        for query_text, task in tasks.items():
+            try:
+                search_results[query_text] = await task
             except Exception as e:
                 logger.error(
                     f"run_initial_audit: search failed for '{query_text}': {e}"
                 )
                 search_results[query_text] = {"error": str(e), "items": []}
+    await emit_progress(45)
 
     # 3) Identify competitors
     competitor_urls: List[str] = []
@@ -5021,9 +5529,29 @@ async def run_initial_audit(
                     items = res.get("items", [])
                     if isinstance(items, list):
                         all_items.extend(items)
-            competitor_urls = service.filter_competitor_urls(
-                all_items, target_domain, limit=5
+            core_terms_all = service._extract_core_terms_from_target(
+                normalized_target, max_terms=3, include_generic=True
             )
+            generic_terms = service._generic_business_terms()
+            core_terms_strong = [
+                term for term in core_terms_all if term not in generic_terms
+            ]
+            if not core_terms_strong:
+                core_terms_strong = service._extract_core_terms_from_target(
+                    normalized_target, max_terms=3, include_generic=False
+                )
+            if not core_terms_strong:
+                logger.info(
+                    "PIPELINE: Sin core terms fuertes; no se intentará detectar competidores para evitar falsos."
+                )
+                competitor_urls = []
+            else:
+                logger.info(
+                    f"PIPELINE: Core terms para competidores: {core_terms_strong}"
+                )
+                competitor_urls = service.filter_competitor_urls(
+                    all_items, target_domain, limit=5, core_terms=core_terms_strong
+                )
     except Exception as e:
         logger.error(f"run_initial_audit: competitor extraction failed: {e}")
 
@@ -5038,15 +5566,21 @@ async def run_initial_audit(
             logger.error(
                 f"run_initial_audit: competitor audits failed: {e}", exc_info=True
             )
+    await emit_progress(60)
 
-    # 5) Generate report + fix plan
-    report_markdown, fix_plan = await service.generate_report(
-        target_audit=normalized_target,
-        external_intelligence=external_intelligence,
-        search_results=search_results,
-        competitor_audits=competitor_audits,
-        llm_function=llm_function,
-    )
+    # 5) Generate report + fix plan (optional)
+    report_markdown = ""
+    fix_plan: List[Dict[str, Any]] = []
+    if generate_report:
+        await emit_progress(80)
+        report_markdown, fix_plan = await service.generate_report(
+            target_audit=normalized_target,
+            external_intelligence=external_intelligence,
+            search_results=search_results,
+            competitor_audits=competitor_audits,
+            llm_function=llm_function,
+        )
+        await emit_progress(95)
 
     return {
         "audit_id": audit_id,

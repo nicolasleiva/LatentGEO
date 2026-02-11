@@ -67,7 +67,7 @@ export default function RealtimeOpsPage() {
             Realtime (WebSocket)
           </h1>
           <p className="text-muted-foreground mt-1">
-            Conexión directa al endpoint WS de progreso
+            Direct connection to the progress WS endpoint
           </p>
         </div>
 

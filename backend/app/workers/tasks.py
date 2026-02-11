@@ -2,6 +2,7 @@
 Celery Tasks for background processing.
 """
 import asyncio
+import json
 import os
 import sys
 from contextlib import contextmanager
@@ -122,14 +123,33 @@ def run_audit_task(self, audit_id: int):
         
         # Enriquecer con mercado/idioma/domino desde la auditoría si no viene en el resumen
         if isinstance(target_audit_result, dict):
+            target_audit_result["language"] = "en"
             if audit_market and not target_audit_result.get("market"):
                 target_audit_result["market"] = audit_market
-            if audit_language and not target_audit_result.get("language"):
-                target_audit_result["language"] = audit_language
             if audit_domain and not target_audit_result.get("domain"):
                 target_audit_result["domain"] = audit_domain
             if audit_competitors and not target_audit_result.get("competitors"):
                 target_audit_result["competitors"] = audit_competitors
+
+        def update_progress(value: float):
+            try:
+                with get_db_session() as db:
+                    audit = AuditService.get_audit(db, audit_id)
+                    if not audit:
+                        return
+                    current = audit.progress or 0
+                    if value <= current:
+                        return
+                    AuditService.update_audit_progress(
+                        db=db,
+                        audit_id=audit_id,
+                        progress=value,
+                        status=AuditStatus.RUNNING,
+                    )
+            except Exception as progress_err:
+                logger.warning(
+                    f"Could not update progress for audit {audit_id}: {progress_err}"
+                )
 
         # Ejecutar pipeline principal de auditoría INICIAL (sin GEO tools, sin reporte pesado)
         # Este nuevo flujo es exclusivamente para errores (fix plan) y competidores.
@@ -142,7 +162,10 @@ def run_audit_task(self, audit_id: int):
             google_api_key=settings.GOOGLE_API_KEY,
             google_cx_id=settings.CSE_ID,
             crawler_service=CrawlerService.crawl_site,
-            audit_local_service=audit_local_service_func
+            audit_local_service=audit_local_service_func,
+            progress_callback=update_progress,
+            generate_report=False,
+            enable_llm_external_intel=False,
         ))
         
 
@@ -691,6 +714,27 @@ def generate_full_report_task(audit_id: int):
             # Prepare data for report generation
             target_audit = audit.target_audit or {}
             external_intelligence = audit.external_intelligence or {}
+            if not external_intelligence:
+                try:
+                    external_intelligence, _ = asyncio.run(
+                        PipelineService.analyze_external_intelligence(
+                            target_audit, llm_function=llm_function
+                        )
+                    )
+                    audit.external_intelligence = external_intelligence or {}
+                    category_value = (external_intelligence or {}).get("category")
+                    if isinstance(category_value, dict):
+                        try:
+                            category_value = json.dumps(category_value, ensure_ascii=False)
+                        except Exception:
+                            category_value = str(category_value)
+                    if category_value:
+                        audit.category = category_value
+                    db.commit()
+                except Exception as e:
+                    logger.warning(
+                        f"External intelligence skipped during PDF generation: {e}"
+                    )
             search_results = audit.search_results or {}
             competitor_audits = audit.competitor_audits or []
             pagespeed_data = audit.pagespeed_data or {}

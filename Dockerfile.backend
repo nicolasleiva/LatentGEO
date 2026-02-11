@@ -5,21 +5,50 @@ WORKDIR /app
 # Crear directorios necesarios para la aplicación (garantiza que existan en el contenedor)
 RUN mkdir -p /app/reports /app/logs /app/db /app/fonts
 
-# Instalar dependencias del sistema
-RUN apt-get update && apt-get install -y \
+# Instalar dependencias del sistema (opcional; evita fallos de red en builds)
+ARG INSTALL_SYSTEM_DEPS=false
+ARG DEBIAN_MIRROR=https://deb.debian.org/debian
+ARG DEBIAN_SECURITY_MIRROR=https://security.debian.org/debian-security
+RUN if [ "$INSTALL_SYSTEM_DEPS" = "true" ]; then \
+    set -eux; \
+    if [ -f /etc/apt/sources.list ]; then \
+      sed -i "s|http://deb.debian.org/debian|${DEBIAN_MIRROR}|g" /etc/apt/sources.list; \
+      sed -i "s|https://deb.debian.org/debian|${DEBIAN_MIRROR}|g" /etc/apt/sources.list; \
+      sed -i "s|http://security.debian.org/debian-security|${DEBIAN_SECURITY_MIRROR}|g" /etc/apt/sources.list; \
+      sed -i "s|https://security.debian.org/debian-security|${DEBIAN_SECURITY_MIRROR}|g" /etc/apt/sources.list; \
+    fi; \
+    if ls /etc/apt/sources.list.d/*.sources >/dev/null 2>&1; then \
+      sed -i "s|http://deb.debian.org/debian|${DEBIAN_MIRROR}|g" /etc/apt/sources.list.d/*.sources; \
+      sed -i "s|https://deb.debian.org/debian|${DEBIAN_MIRROR}|g" /etc/apt/sources.list.d/*.sources; \
+      sed -i "s|http://deb.debian.org/debian-security|${DEBIAN_SECURITY_MIRROR}|g" /etc/apt/sources.list.d/*.sources; \
+      sed -i "s|https://deb.debian.org/debian-security|${DEBIAN_SECURITY_MIRROR}|g" /etc/apt/sources.list.d/*.sources; \
+      sed -i "s|http://security.debian.org/debian-security|${DEBIAN_SECURITY_MIRROR}|g" /etc/apt/sources.list.d/*.sources; \
+      sed -i "s|https://security.debian.org/debian-security|${DEBIAN_SECURITY_MIRROR}|g" /etc/apt/sources.list.d/*.sources; \
+    fi; \
+    apt-get -o Acquire::Retries=8 -o Acquire::https::Timeout=60 -o Acquire::http::Timeout=60 update; \
+    apt-get install -y --no-install-recommends \
     gcc \
     postgresql-client \
     wget \
     ca-certificates \
     libssl-dev \
-    && rm -rf /var/lib/apt/lists/* \
-    && update-ca-certificates
+    ; \
+    rm -rf /var/lib/apt/lists/*; \
+    update-ca-certificates; \
+  fi
 
 # Copiar requirements
 COPY backend/requirements.txt .
 
+# Configuración pip para redes inestables
+ENV PIP_DISABLE_PIP_VERSION_CHECK=1
+ENV PIP_NO_CACHE_DIR=1
+ENV PIP_DEFAULT_TIMEOUT=120
+ENV PIP_CONFIG_FILE=/dev/null
+
 # Instalar dependencias Python
-RUN pip install --no-cache-dir --default-timeout=100 -r requirements.txt
+RUN rm -f /etc/pip.conf /root/.config/pip/pip.conf /root/.pip/pip.conf || true \
+    && pip install --no-cache-dir --default-timeout=120 --retries 10 -r requirements.txt
 
 # Copiar código
 COPY backend/ .
@@ -35,7 +64,7 @@ EXPOSE 8000
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-    CMD wget --no-verbose --tries=1 -q -O /dev/null http://localhost:8000/health || exit 1
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=3).read()"
 
 # Comando de inicio
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

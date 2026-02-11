@@ -62,25 +62,25 @@ export default function SchemaGenerator({ backendUrl }: SchemaGeneratorProps) {
 
   return (
     <div className="space-y-6">
-      <div className="bg-white/5 border border-white/10 rounded-xl p-6">
+      <div className="bg-muted/30 border border-border rounded-xl p-6">
         <div className="space-y-4">
           <div>
-            <Label className="text-white/70">Page URL</Label>
+            <Label className="text-muted-foreground">Page URL</Label>
             <Input
               placeholder="https://example.com/page"
               value={url}
               onChange={(e) => setUrl(e.target.value)}
-              className="mt-2 bg-white/5 border-white/20 text-white placeholder:text-white/40"
+              className="mt-2 bg-muted/30 border-border/70 text-foreground placeholder:text-muted-foreground"
             />
           </div>
           
           <div>
-            <Label className="text-white/70">Schema Type (Optional)</Label>
+            <Label className="text-muted-foreground">Schema Type (Optional)</Label>
             <Select value={schemaType} onValueChange={setSchemaType}>
-              <SelectTrigger className="mt-2 bg-white/5 border-white/20 text-white">
+              <SelectTrigger className="mt-2 bg-muted/30 border-border/70 text-foreground">
                 <SelectValue placeholder="Auto-detect" />
               </SelectTrigger>
-              <SelectContent className="bg-gray-900 border-white/20">
+              <SelectContent className="bg-popover border-border/70">
                 <SelectItem value="auto">Auto-detect</SelectItem>
                 <SelectItem value="Organization">Organization</SelectItem>
                 <SelectItem value="LocalBusiness">LocalBusiness</SelectItem>
@@ -103,7 +103,7 @@ export default function SchemaGenerator({ backendUrl }: SchemaGeneratorProps) {
             className="glass-button-primary w-full"
           >
             {loading ? (
-              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-foreground"></div>
             ) : (
               <>
                 <Sparkles className="w-4 h-4 mr-2" />
@@ -122,18 +122,18 @@ export default function SchemaGenerator({ backendUrl }: SchemaGeneratorProps) {
       )}
 
       {result && (
-        <div className="bg-white/5 border border-white/10 rounded-xl p-6">
+        <div className="bg-muted/30 border border-border rounded-xl p-6">
           <div className="flex justify-between items-center mb-4">
             <div>
-              <h3 className="font-semibold text-white text-lg">
+              <h3 className="font-semibold text-foreground text-lg">
                 Generated Schema: {result.schema_type}
               </h3>
-              <p className="text-white/50 text-sm">Copy this JSON-LD to your page&apos;s &lt;head&gt;</p>
+              <p className="text-muted-foreground text-sm">Copy this JSON-LD to your page&apos;s &lt;head&gt;</p>
             </div>
             <Button 
               variant="outline" 
               onClick={copyToClipboard}
-              className="border-white/20 text-white"
+              className="border-border/70 text-foreground"
             >
               {copied ? (
                 <><Check className="w-4 h-4 mr-2" /> Copied!</>
@@ -146,15 +146,15 @@ export default function SchemaGenerator({ backendUrl }: SchemaGeneratorProps) {
           <Textarea
             value={result.schema_json}
             readOnly
-            className="bg-black/30 border-white/10 text-green-400 font-mono text-sm min-h-[200px]"
+            className="bg-muted/50 border-border text-green-400 font-mono text-sm min-h-[200px]"
           />
           
           {result.recommendations.length > 0 && (
             <div className="mt-6">
-              <h4 className="font-semibold text-white mb-3">Recommendations</h4>
+              <h4 className="font-semibold text-foreground mb-3">Recommendations</h4>
               <ul className="space-y-2">
                 {result.recommendations.map((rec, idx) => (
-                  <li key={idx} className="text-white/70 text-sm flex items-start gap-2">
+                  <li key={idx} className="text-muted-foreground text-sm flex items-start gap-2">
                     <span className="text-blue-400">•</span> {rec}
                   </li>
                 ))}

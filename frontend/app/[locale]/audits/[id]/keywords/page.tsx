@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useParams } from 'next/navigation'
 import { api } from '@/lib/api'
 import { Keyword } from '@/lib/types'
+import { Header } from '@/components/header'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -59,99 +60,104 @@ export default function KeywordsPage() {
     }
 
     return (
-        <div className="container mx-auto p-6 space-y-8">
-            <div className="flex justify-between items-center">
-                <div>
-                    <h1 className="text-3xl font-bold tracking-tight">Semantic Keyword Research</h1>
-                    <p className="text-muted-foreground">Discover high-intent keywords using AI analysis of your niche.</p>
-                </div>
-            </div>
-
-            <Card>
-                <CardHeader>
-                    <CardTitle>Research Parameters</CardTitle>
-                    <CardDescription>Enter seeds to guide the AI, or leave empty for broad discovery.</CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div className="space-y-2">
-                            <label className="text-sm font-medium">Domain</label>
-                            <Input
-                                placeholder="example.com"
-                                value={domain}
-                                onChange={e => setDomain(e.target.value)}
-                            />
-                        </div>
-                        <div className="space-y-2">
-                            <label className="text-sm font-medium">Seed Keywords (Optional)</label>
-                            <Input
-                                placeholder="e.g. software, saas"
-                                value={seeds}
-                                onChange={e => setSeeds(e.target.value)}
-                            />
-                        </div>
+        <div className="min-h-screen bg-background text-foreground">
+            <Header />
+            <main className="max-w-6xl mx-auto px-6 py-12 space-y-8">
+                <div className="flex justify-between items-center animate-fade-up">
+                    <div>
+                        <h1 className="text-3xl md:text-4xl font-semibold tracking-tight">Semantic Keyword Research</h1>
+                        <p className="text-muted-foreground mt-2">Discover high-intent keywords using AI analysis of your niche.</p>
                     </div>
-                    <Button onClick={handleResearch} disabled={loading} className="w-full md:w-auto">
-                        {loading ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Researching...</> : <><Search className="mr-2 h-4 w-4" /> Find Keywords</>}
-                    </Button>
-                    {error && <p className="text-red-500 text-sm">{error}</p>}
-                </CardContent>
-            </Card>
+                </div>
 
-            <Card>
-                <CardHeader>
-                    <CardTitle>Keyword Opportunities ({keywords.length})</CardTitle>
-                </CardHeader>
-                <CardContent>
-                    <Table>
-                        <TableHeader>
-                            <TableRow>
-                                <TableHead>Keyword</TableHead>
-                                <TableHead>Intent</TableHead>
-                                <TableHead>Volume (Est)</TableHead>
-                                <TableHead>Difficulty</TableHead>
-                                <TableHead>CPC</TableHead>
-                            </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                            {keywords.map((kw) => (
-                                <TableRow key={kw.id}>
-                                    <TableCell className="font-medium">{kw.term}</TableCell>
-                                    <TableCell>
-                                        <Badge variant="outline" className={
-                                            kw.intent.toLowerCase().includes('commercial') ? 'bg-blue-50 text-blue-700' :
-                                                kw.intent.toLowerCase().includes('transactional') ? 'bg-green-50 text-green-700' :
-                                                    'bg-gray-50'
-                                        }>
-                                            {kw.intent}
-                                        </Badge>
-                                    </TableCell>
-                                    <TableCell>{kw.volume.toLocaleString()}</TableCell>
-                                    <TableCell>
-                                        <div className="flex items-center gap-2">
-                                            <div className="w-16 h-2 bg-gray-100 rounded-full overflow-hidden">
-                                                <div
-                                                    className={`h-full ${kw.difficulty > 70 ? 'bg-red-500' : kw.difficulty > 40 ? 'bg-yellow-500' : 'bg-green-500'}`}
-                                                    style={{ width: `${kw.difficulty}%` }}
-                                                />
-                                            </div>
-                                            <span className="text-xs text-muted-foreground">{kw.difficulty}/100</span>
-                                        </div>
-                                    </TableCell>
-                                    <TableCell>${kw.cpc.toFixed(2)}</TableCell>
-                                </TableRow>
-                            ))}
-                            {keywords.length === 0 && !loading && (
+                <Card className="glass-card">
+                    <CardHeader>
+                        <CardTitle>Research Parameters</CardTitle>
+                        <CardDescription>Enter seeds to guide the AI, or leave empty for broad discovery.</CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div className="space-y-2">
+                                <label className="text-sm font-medium">Domain</label>
+                                <Input
+                                    className="glass-input"
+                                    placeholder="example.com"
+                                    value={domain}
+                                    onChange={e => setDomain(e.target.value)}
+                                />
+                            </div>
+                            <div className="space-y-2">
+                                <label className="text-sm font-medium">Seed Keywords (Optional)</label>
+                                <Input
+                                    className="glass-input"
+                                    placeholder="e.g. software, saas"
+                                    value={seeds}
+                                    onChange={e => setSeeds(e.target.value)}
+                                />
+                            </div>
+                        </div>
+                        <Button onClick={handleResearch} disabled={loading} className="w-full md:w-auto glass-button-primary">
+                            {loading ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Researching...</> : <><Search className="mr-2 h-4 w-4" /> Find Keywords</>}
+                        </Button>
+                        {error && <p className="text-red-500 text-sm">{error}</p>}
+                    </CardContent>
+                </Card>
+
+                <Card className="glass-card">
+                    <CardHeader>
+                        <CardTitle>Keyword Opportunities ({keywords.length})</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                        <Table>
+                            <TableHeader>
                                 <TableRow>
-                                    <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
-                                        No keywords found. Start a research session.
-                                    </TableCell>
+                                    <TableHead>Keyword</TableHead>
+                                    <TableHead>Intent</TableHead>
+                                    <TableHead>Volume (Est)</TableHead>
+                                    <TableHead>Difficulty</TableHead>
+                                    <TableHead>CPC</TableHead>
                                 </TableRow>
-                            )}
-                        </TableBody>
-                    </Table>
-                </CardContent>
-            </Card>
+                            </TableHeader>
+                            <TableBody>
+                                {keywords.map((kw) => (
+                                    <TableRow key={kw.id}>
+                                        <TableCell className="font-medium">{kw.term}</TableCell>
+                                        <TableCell>
+                                            <Badge variant="outline" className={
+                                                kw.intent.toLowerCase().includes('commercial') ? 'bg-brand/10 text-brand border-brand/20' :
+                                                    kw.intent.toLowerCase().includes('transactional') ? 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20' :
+                                                        'bg-muted/50 text-muted-foreground border-border/70'
+                                            }>
+                                                {kw.intent}
+                                            </Badge>
+                                        </TableCell>
+                                        <TableCell>{kw.volume.toLocaleString()}</TableCell>
+                                        <TableCell>
+                                            <div className="flex items-center gap-2">
+                                                <div className="w-16 h-2 bg-muted rounded-full overflow-hidden">
+                                                    <div
+                                                        className={`h-full ${kw.difficulty > 70 ? 'bg-red-500' : kw.difficulty > 40 ? 'bg-amber-500' : 'bg-emerald-500'}`}
+                                                        style={{ width: `${kw.difficulty}%` }}
+                                                    />
+                                                </div>
+                                                <span className="text-xs text-muted-foreground">{kw.difficulty}/100</span>
+                                            </div>
+                                        </TableCell>
+                                        <TableCell>${kw.cpc.toFixed(2)}</TableCell>
+                                    </TableRow>
+                                ))}
+                                {keywords.length === 0 && !loading && (
+                                    <TableRow>
+                                        <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
+                                            No keywords found. Start a research session.
+                                        </TableCell>
+                                    </TableRow>
+                                )}
+                            </TableBody>
+                        </Table>
+                    </CardContent>
+                </Card>
+            </main>
         </div>
     )
 }

@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { Input } from '@/components/ui/input'
-import { Send, AlertCircle } from 'lucide-react'
+import { Send, Sparkles, Globe, Flag, CheckCircle } from 'lucide-react'
 
 interface AuditChatFlowProps {
   auditId: number | string
@@ -15,35 +15,45 @@ interface Message {
   typing?: boolean
 }
 
+const steps = [
+  { id: 'competitors', label: 'Competitors', icon: Globe },
+  { id: 'market', label: 'Markets', icon: Flag },
+  { id: 'done', label: 'Launch', icon: CheckCircle },
+] as const
+
 export function AuditChatFlow({ auditId, onComplete }: AuditChatFlowProps) {
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [isTyping, setIsTyping] = useState(false)
   const [config, setConfig] = useState({ competitors: [] as string[], market: '' })
   const [step, setStep] = useState<'competitors' | 'market' | 'done'>('competitors')
-  const [error, setError] = useState<string | null>(null)
-  const messagesEndRef = useRef<HTMLDivElement>(null)
+  const messagesContainerRef = useRef<HTMLDivElement>(null)
   const hasInitialized = useRef(false)
 
   useEffect(() => {
-    // Prevenir doble ejecución en React Strict Mode
     if (hasInitialized.current) return
     hasInitialized.current = true
-    
-    sendAIMessage("Hello. I'm your AI audit assistant. Would you like to add specific competitor URLs for comparison? You can type URLs separated by commas, or just say 'no' to skip.")
+
+    sendAIMessage(
+      "Welcome to LatentGEO.ai. Would you like to add competitor URLs for comparison? Paste URLs separated by commas, or type 'no' to skip."
+    )
     setStep('competitors')
   }, [])
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+    const container = messagesContainerRef.current
+    if (!container) return
+    const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight
+    const isNearBottom = distanceFromBottom < 120
+    if (isNearBottom) {
+      container.scrollTo({ top: container.scrollHeight, behavior: 'smooth' })
+    }
   }, [messages])
 
   const sendAIMessage = (content: string) => {
     setIsTyping(true)
-    // Mostrar mensaje inmediatamente con typing indicator
     setMessages(prev => [...prev, { role: 'assistant', content, typing: true }])
-    
-    // Remover typing indicator después de 300ms (mucho más rápido que antes)
+
     setTimeout(() => {
       setMessages(prev => {
         const newMessages = [...prev]
@@ -67,27 +77,31 @@ export function AuditChatFlow({ auditId, onComplete }: AuditChatFlowProps) {
     if (step === 'competitors') {
       if (userMessage.toLowerCase().includes('no') || userMessage.toLowerCase().includes('skip')) {
         setStep('market')
-        sendAIMessage("Understood. What about target markets? Would you like to specify countries or regions? (e.g., 'US', 'Latin America', 'Europe', or 'no')")
+        sendAIMessage("Got it. Which target markets should we prioritize? (e.g., US, LATAM, Europe) or type 'no'.")
       } else {
-        const urls = userMessage.split(',').map(u => {
-          let url = u.trim()
-          if (url && !url.startsWith('http')) {
-            url = 'https://' + url
-          }
-          return url
-        }).filter(u => u && (u.includes('.') || u.includes('localhost') || u.includes('127.0.0.1')))
+        const urls = userMessage
+          .split(',')
+          .map(u => {
+            let url = u.trim()
+            if (url && !url.startsWith('http')) {
+              url = 'https://' + url
+            }
+            return url
+          })
+          .filter(u => u && (u.includes('.') || u.includes('localhost') || u.includes('127.0.0.1')))
         setConfig(prev => ({ ...prev, competitors: urls }))
         setStep('market')
-        sendAIMessage(`Acknowledged. I've added ${urls.length} competitor(s). Now, what about target markets? Would you like to specify countries or regions? (e.g., 'US', 'Latin America', 'Europe', or 'no')`)
+        sendAIMessage(
+          `Noted. I've added ${urls.length} competitor${urls.length === 1 ? '' : 's'}. Now choose target markets (e.g., US, LATAM, Europe) or type 'no'.`
+        )
       }
     } else if (step === 'market') {
       const market = userMessage.toLowerCase().includes('no') ? '' : userMessage
       setConfig(prev => ({ ...prev, market }))
       setStep('done')
-      sendAIMessage("Confirmed. I am initializing your comprehensive audit now. This process will take a few minutes.")
+      sendAIMessage('Confirmed. Launching your comprehensive audit now. This takes a few minutes.')
 
       try {
-        // Configurar la auditoría existente
         const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 
         const isValidId = (id: number | string): boolean => {
@@ -100,26 +114,24 @@ export function AuditChatFlow({ auditId, onComplete }: AuditChatFlowProps) {
           await fetch(`${apiUrl}/api/audits/chat/config`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-             body: JSON.stringify({
-               audit_id: Number(auditId),
-               language: 'en',
-               competitors: config.competitors.length > 0 ? config.competitors : null,
-               market: market || null
-             })
+            body: JSON.stringify({
+              audit_id: Number(auditId),
+              language: 'en',
+              competitors: config.competitors.length > 0 ? config.competitors : null,
+              market: market || null,
+            }),
           })
-          // El backend inicia el pipeline automáticamente
           onComplete()
         } else {
-          // Fallback: Crear nueva auditoría si no tenemos ID válido (comportamiento legacy)
           const createResponse = await fetch(`${apiUrl}/api/audits`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-             body: JSON.stringify({
-               url: typeof auditId === 'string' ? auditId : '',
-               language: 'en',
-               competitors: config.competitors.length > 0 ? config.competitors : null,
-               market: market || null
-             })
+            body: JSON.stringify({
+              url: typeof auditId === 'string' ? auditId : '',
+              language: 'en',
+              competitors: config.competitors.length > 0 ? config.competitors : null,
+              market: market || null,
+            }),
           })
           const audit = await createResponse.json()
           window.location.href = `/audits/${audit.id}`
@@ -131,54 +143,100 @@ export function AuditChatFlow({ auditId, onComplete }: AuditChatFlowProps) {
     }
   }
 
+  const currentStepIndex = steps.findIndex(item => item.id === step)
+
   return (
-    <div className="flex flex-col h-[600px] max-w-3xl mx-auto bg-card border border-border rounded-xl shadow-sm">
-      {/* Chat header */}
-      <div className="border-b border-border p-4">
-        <h2 className="font-medium text-lg">AI Audit Assistant</h2>
-        <p className="text-sm text-muted-foreground">Powered by KIMI</p>
+    <div className="grid gap-6 lg:grid-cols-[220px_1fr] glass-card p-6">
+      <div className="space-y-6">
+        <div>
+          <div className="flex items-center gap-2 text-sm uppercase tracking-widest text-muted-foreground">
+            <Sparkles className="w-4 h-4 text-brand" />
+            AI intake
+          </div>
+          <h2 className="text-2xl font-semibold mt-2">Audit configuration</h2>
+          <p className="text-sm text-muted-foreground mt-2">
+            Two quick questions to personalize your analysis.
+          </p>
+        </div>
+
+        <div className="space-y-3">
+          {steps.map((item, index) => {
+            const Icon = item.icon
+            const isActive = index === currentStepIndex
+            const isComplete = index < currentStepIndex
+            return (
+              <div
+                key={item.id}
+                className={`flex items-center gap-3 rounded-lg border px-3 py-2 text-sm ${
+                  isActive
+                    ? 'border-brand/40 bg-brand/10 text-foreground'
+                    : isComplete
+                      ? 'border-border bg-background/60 text-muted-foreground'
+                      : 'border-border/70 text-muted-foreground'
+                }`}
+              >
+                <div className={`h-8 w-8 rounded-full flex items-center justify-center ${
+                  isActive ? 'bg-brand text-brand-foreground' : 'bg-foreground/5 text-muted-foreground'
+                }`}>
+                  <Icon className="h-4 w-4" />
+                </div>
+                <div className="flex-1">
+                  <p className="font-medium">{item.label}</p>
+                </div>
+                {isComplete && <CheckCircle className="h-4 w-4 text-brand" />}
+              </div>
+            )
+          })}
+        </div>
       </div>
 
-      {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
-        {messages.map((msg, idx) => (
-          <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-            <div className={`max-w-[80%] rounded-lg p-3 ${msg.role === 'user'
-              ? 'bg-primary text-primary-foreground'
-              : 'bg-secondary text-secondary-foreground border border-border'
-              }`}>
-              <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
-              {msg.typing && (
-                <span className="inline-block w-1 h-4 bg-current ml-1 animate-pulse" />
-              )}
+      <div className="flex flex-col h-[520px] bg-background/70 border border-border/70 rounded-2xl overflow-hidden">
+        <div className="border-b border-border/70 p-4">
+          <h3 className="font-medium text-lg">LatentGEO.ai Assistant</h3>
+          <p className="text-sm text-muted-foreground">Personalize your audit in seconds.</p>
+        </div>
+
+        <div ref={messagesContainerRef} className="flex-1 overflow-y-auto p-4 space-y-4">
+          {messages.map((msg, idx) => (
+            <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+              <div
+                className={`max-w-[80%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${
+                  msg.role === 'user'
+                    ? 'bg-brand text-brand-foreground'
+                    : 'bg-muted/60 text-foreground border border-border/60'
+                }`}
+              >
+                <p className="whitespace-pre-wrap">{msg.content}</p>
+                {msg.typing && (
+                  <span className="inline-block w-1 h-4 bg-current ml-1 animate-pulse" />
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {step !== 'done' && (
+          <div className="border-t border-border/70 p-4">
+            <div className="flex gap-2">
+              <Input
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleSend()}
+                placeholder="Type your response..."
+                disabled={isTyping}
+                className="flex-1 bg-background"
+              />
+              <button
+                onClick={handleSend}
+                disabled={isTyping || !input.trim()}
+                className="px-4 py-2 bg-brand text-brand-foreground rounded-lg hover:bg-brand/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                <Send className="h-4 w-4" />
+              </button>
             </div>
           </div>
-        ))}
-        <div ref={messagesEndRef} />
+        )}
       </div>
-
-      {/* Input */}
-      {step !== 'done' && (
-        <div className="border-t border-border p-4">
-          <div className="flex gap-2">
-             <Input
-               value={input}
-              onChange={(e) => setInput(e.target.value)}
-               onKeyDown={(e) => e.key === 'Enter' && handleSend()}
-              placeholder="Type your response..."
-              disabled={isTyping}
-              className="flex-1"
-            />
-            <button
-              onClick={handleSend}
-              disabled={isTyping || !input.trim()}
-              className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-            >
-              <Send className="h-4 w-4" />
-            </button>
-          </div>
-        </div>
-      )}
     </div>
   )
 }

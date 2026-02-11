@@ -64,15 +64,15 @@ export default function ContentTemplates({ backendUrl }: ContentTemplatesProps) 
 
   return (
     <div className="space-y-6">
-      <div className="bg-white/5 border border-white/10 rounded-xl p-6">
+      <div className="bg-muted/30 border border-border rounded-xl p-6">
         <div className="space-y-4">
           <div>
-            <Label className="text-white/70">Category</Label>
+            <Label className="text-muted-foreground">Category</Label>
             <Select value={category} onValueChange={setCategory}>
-              <SelectTrigger className="mt-2 bg-white/5 border-white/20 text-white">
+              <SelectTrigger className="mt-2 bg-muted/30 border-border/70 text-foreground">
                 <SelectValue placeholder="Select category" />
               </SelectTrigger>
-              <SelectContent className="bg-gray-900 border-white/20">
+              <SelectContent className="bg-popover border-border/70">
                 {categories.map((cat) => (
                   <SelectItem key={cat.value} value={cat.value}>
                     {cat.label}
@@ -88,7 +88,7 @@ export default function ContentTemplates({ backendUrl }: ContentTemplatesProps) 
             className="glass-button-primary w-full"
           >
             {loading ? (
-              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-foreground"></div>
             ) : (
               <>
                 <FileText className="w-4 h-4 mr-2" />
@@ -108,19 +108,19 @@ export default function ContentTemplates({ backendUrl }: ContentTemplatesProps) 
 
       {templates.length > 0 && !selectedTemplate && (
         <div className="space-y-3">
-          <p className="text-white/60 mb-4">Select a template to view:</p>
+          <p className="text-muted-foreground mb-4">Select a template to view:</p>
           {templates.map((template) => (
             <button
               key={template.id}
               onClick={() => setSelectedTemplate(template)}
-              className="w-full text-left bg-white/5 border border-white/10 rounded-xl p-4 hover:bg-white/10 transition-colors"
+              className="w-full text-left bg-muted/30 border border-border rounded-xl p-4 hover:bg-muted/40 transition-colors"
             >
               <div className="flex justify-between items-start">
                 <div>
-                  <h4 className="font-semibold text-white">{template.name}</h4>
-                  <p className="text-white/50 text-sm mt-1">{template.description}</p>
+                  <h4 className="font-semibold text-foreground">{template.name}</h4>
+                  <p className="text-muted-foreground text-sm mt-1">{template.description}</p>
                 </div>
-                <span className="bg-white/10 text-white/70 px-2 py-1 rounded text-xs capitalize">
+                <span className="bg-muted/40 text-muted-foreground px-2 py-1 rounded text-xs capitalize">
                   {template.category}
                 </span>
               </div>
@@ -130,24 +130,24 @@ export default function ContentTemplates({ backendUrl }: ContentTemplatesProps) 
       )}
 
       {selectedTemplate && (
-        <div className="bg-white/5 border border-white/10 rounded-xl p-6">
+        <div className="bg-muted/30 border border-border rounded-xl p-6">
           <div className="flex justify-between items-start mb-4">
             <div>
-              <h3 className="font-semibold text-white text-xl">{selectedTemplate.name}</h3>
-              <p className="text-white/50">{selectedTemplate.description}</p>
+              <h3 className="font-semibold text-foreground text-xl">{selectedTemplate.name}</h3>
+              <p className="text-muted-foreground">{selectedTemplate.description}</p>
             </div>
             <div className="flex gap-2">
               <Button 
                 variant="outline" 
                 onClick={() => setSelectedTemplate(null)}
-                className="border-white/20 text-white"
+                className="border-border/70 text-foreground"
               >
                 Back
               </Button>
               <Button 
                 variant="outline" 
                 onClick={copyTemplate}
-                className="border-white/20 text-white"
+                className="border-border/70 text-foreground"
               >
                 {copied ? (
                   <><Check className="w-4 h-4 mr-2" /> Copied!</>
@@ -161,18 +161,18 @@ export default function ContentTemplates({ backendUrl }: ContentTemplatesProps) 
           <Textarea
             value={selectedTemplate.structure}
             readOnly
-            className="bg-black/30 border-white/10 text-white font-mono text-sm min-h-[300px] mb-6"
+            className="bg-muted/50 border-border text-foreground font-mono text-sm min-h-[300px] mb-6"
           />
           
           {selectedTemplate.tips.length > 0 && (
             <div>
-              <h4 className="font-semibold text-white mb-3 flex items-center gap-2">
+              <h4 className="font-semibold text-foreground mb-3 flex items-center gap-2">
                 <Sparkles className="w-4 h-4 text-yellow-400" />
                 GEO Optimization Tips
               </h4>
               <ul className="space-y-2">
                 {selectedTemplate.tips.map((tip, idx) => (
-                  <li key={idx} className="text-white/70 text-sm flex items-start gap-2">
+                  <li key={idx} className="text-muted-foreground text-sm flex items-start gap-2">
                     <span className="text-yellow-400">•</span> {tip}
                   </li>
                 ))}

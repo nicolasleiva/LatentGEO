@@ -13,7 +13,7 @@ import {
 
 export default function SettingsPage() {
     const { user, isLoading } = useUser()
-    const [theme, setTheme] = useState<'dark' | 'light' | 'system'>('dark')
+    const [theme, setTheme] = useState<'dark' | 'light' | 'system'>('light')
     const [notifications, setNotifications] = useState({
         email: true,
         auditComplete: true,
@@ -72,7 +72,7 @@ export default function SettingsPage() {
                     {/* Profile Section */}
                     <section className="p-6 glass-card border border-border rounded-2xl">
                         <div className="flex items-center gap-3 mb-6">
-                            <User className="w-5 h-5 text-blue-500" />
+                            <User className="w-5 h-5 text-brand" />
                             <h2 className="text-lg font-semibold">Profile</h2>
                         </div>
 
@@ -88,14 +88,14 @@ export default function SettingsPage() {
                                     />
                                 </div>
                             ) : (
-                                <div className="w-20 h-20 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-2xl font-bold text-white">
+                                <div className="w-20 h-20 rounded-full bg-gradient-to-br from-emerald-500 to-emerald-700 flex items-center justify-center text-2xl font-bold text-white">
                                     {user.name?.charAt(0) || user.email?.charAt(0) || 'U'}
                                 </div>
                             )}
                             <div>
                                 <h3 className="text-xl font-medium">{user.name || 'User'}</h3>
                                 <p className="text-muted-foreground">{user.email}</p>
-                                <Badge className="mt-2 bg-green-500/10 text-green-500 border-green-500/20">
+                                <Badge className="mt-2 bg-emerald-500/10 text-emerald-600 border-emerald-500/20">
                                     Free Plan
                                 </Badge>
                             </div>
@@ -126,7 +126,7 @@ export default function SettingsPage() {
                     {/* Appearance Section */}
                     <section className="p-6 glass-card border border-border rounded-2xl">
                         <div className="flex items-center gap-3 mb-6">
-                            <Palette className="w-5 h-5 text-purple-500" />
+                            <Palette className="w-5 h-5 text-brand" />
                             <h2 className="text-lg font-semibold">Appearance</h2>
                         </div>
 
@@ -167,7 +167,7 @@ export default function SettingsPage() {
                     {/* Notifications Section */}
                     <section className="p-6 glass-card border border-border rounded-2xl">
                         <div className="flex items-center gap-3 mb-6">
-                            <Bell className="w-5 h-5 text-yellow-500" />
+                            <Bell className="w-5 h-5 text-amber-500" />
                             <h2 className="text-lg font-semibold">Notifications</h2>
                         </div>
 
@@ -181,7 +181,7 @@ export default function SettingsPage() {
                                     type="checkbox"
                                     checked={notifications.email}
                                     onChange={(e) => setNotifications({ ...notifications, email: e.target.checked })}
-                                    className="w-5 h-5 accent-blue-500"
+                                    className="w-5 h-5 accent-brand"
                                 />
                             </label>
 
@@ -194,7 +194,7 @@ export default function SettingsPage() {
                                     type="checkbox"
                                     checked={notifications.auditComplete}
                                     onChange={(e) => setNotifications({ ...notifications, auditComplete: e.target.checked })}
-                                    className="w-5 h-5 accent-blue-500"
+                                    className="w-5 h-5 accent-brand"
                                 />
                             </label>
 
@@ -207,7 +207,7 @@ export default function SettingsPage() {
                                     type="checkbox"
                                     checked={notifications.weeklyReport}
                                     onChange={(e) => setNotifications({ ...notifications, weeklyReport: e.target.checked })}
-                                    className="w-5 h-5 accent-blue-500"
+                                    className="w-5 h-5 accent-brand"
                                 />
                             </label>
                         </div>
@@ -218,13 +218,13 @@ export default function SettingsPage() {
                         <div className="flex items-center gap-3 mb-6">
                             <Key className="w-5 h-5 text-green-500" />
                             <h2 className="text-lg font-semibold">API Keys</h2>
-                            <Badge className="bg-blue-500/10 text-blue-400 border-blue-500/20">
+                            <Badge className="bg-brand/10 text-brand border-brand/20">
                                 Coming Soon
                             </Badge>
                         </div>
 
                         <p className="text-muted-foreground mb-4">
-                            Generate API keys to integrate Auditor GEO with your applications.
+                            Generate API keys to integrate LatentGEO.ai with your applications.
                         </p>
 
                         <Button
@@ -243,7 +243,7 @@ export default function SettingsPage() {
                         </Button>
                         <Button
                             onClick={handleSave}
-                            className={`${saved ? 'bg-green-500' : ''} hover:opacity-90 transition-all`}
+                            className={`${saved ? 'bg-emerald-500' : 'bg-brand'} text-brand-foreground hover:opacity-90 transition-all`}
                         >
                             {saved ? (
                                 <>

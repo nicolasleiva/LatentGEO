@@ -74,7 +74,7 @@ export function ScoreHistoryChart({ domain, userEmail }: ScoreHistoryProps) {
     const TrendIcon = ({ trend }: { trend: 'up' | 'down' | 'stable' }) => {
         if (trend === 'up') return <TrendingUp className="w-4 h-4 text-green-400" />
         if (trend === 'down') return <TrendingDown className="w-4 h-4 text-red-400" />
-        return <Minus className="w-4 h-4 text-white/40" />
+        return <Minus className="w-4 h-4 text-muted-foreground" />
     }
 
     const ComparisonCard = ({ label, metric, isLowerBetter = false }: { label: string, metric: ComparisonMetric, isLowerBetter?: boolean }) => {
@@ -97,7 +97,7 @@ export function ScoreHistoryChart({ domain, userEmail }: ScoreHistoryProps) {
                     </span>
                 </div>
                 <div className="text-xs text-muted-foreground mt-1">
-                    vs {metric.previous} mes anterior
+                    vs {metric.previous} previous month
                 </div>
             </div>
         )
@@ -107,54 +107,54 @@ export function ScoreHistoryChart({ domain, userEmail }: ScoreHistoryProps) {
         return (
             <div className="p-8 text-center">
                 <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-foreground mx-auto"></div>
-                <p className="text-muted-foreground mt-4">Cargando historial...</p>
+                <p className="text-muted-foreground mt-4">Loading history...</p>
             </div>
         )
     }
 
     const formattedHistory = history.map(h => ({
         ...h,
-        date: new Date(h.recorded_at).toLocaleDateString('es-AR', { month: 'short', day: 'numeric' })
+        date: new Date(h.recorded_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
     }))
 
     return (
         <div className="space-y-8">
-            {/* Comparativa Mensual */}
+            {/* Monthly Comparison */}
             {comparison && (
                 <div className="glass-card p-6 rounded-2xl">
                     <div className="flex items-center justify-between mb-6">
                         <div className="flex items-center gap-3">
-                            <div className="p-2 bg-blue-500/20 rounded-lg">
-                                <Calendar className="w-5 h-5 text-blue-500" />
+                            <div className="p-2 bg-brand/10 rounded-lg">
+                                <Calendar className="w-5 h-5 text-brand" />
                             </div>
                             <div>
-                                <h3 className="text-lg font-medium text-foreground">Comparativa Mensual</h3>
+                                <h3 className="text-lg font-medium text-foreground">Monthly Comparison</h3>
                                 <p className="text-sm text-muted-foreground">{comparison.current_month} vs {comparison.previous_month}</p>
                             </div>
                         </div>
                     </div>
 
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                        <ComparisonCard label="Score General" metric={comparison.comparison.overall_score} />
+                        <ComparisonCard label="Overall Score" metric={comparison.comparison.overall_score} />
                         <ComparisonCard label="SEO Score" metric={comparison.comparison.seo_score} />
                         <ComparisonCard label="GEO Score" metric={comparison.comparison.geo_score} />
                         <ComparisonCard label="Performance" metric={comparison.comparison.performance_score} />
                         <ComparisonCard label="LCP (ms)" metric={comparison.comparison.lcp} isLowerBetter />
-                        <ComparisonCard label="Issues Críticos" metric={comparison.comparison.critical_issues} isLowerBetter />
-                        <ComparisonCard label="Auditorías" metric={comparison.comparison.audit_count} />
+                        <ComparisonCard label="Critical issues" metric={comparison.comparison.critical_issues} isLowerBetter />
+                        <ComparisonCard label="Audits" metric={comparison.comparison.audit_count} />
                     </div>
                 </div>
             )}
 
-            {/* Gráfico de Historial */}
+            {/* History chart */}
             <div className="glass-card p-6 rounded-2xl">
                 <div className="flex items-center justify-between mb-6">
                     <div className="flex items-center gap-3">
-                        <div className="p-2 bg-purple-500/20 rounded-lg">
-                            <BarChart3 className="w-5 h-5 text-purple-500" />
+                        <div className="p-2 bg-brand/10 rounded-lg">
+                            <BarChart3 className="w-5 h-5 text-brand" />
                         </div>
                         <div>
-                            <h3 className="text-lg font-medium text-foreground">Historial de Scores</h3>
+                            <h3 className="text-lg font-medium text-foreground">Score history</h3>
                             <p className="text-sm text-muted-foreground">{domain}</p>
                         </div>
                     </div>
@@ -181,43 +181,44 @@ export function ScoreHistoryChart({ domain, userEmail }: ScoreHistoryProps) {
                             <AreaChart data={formattedHistory}>
                                 <defs>
                                     <linearGradient id="colorOverall" x1="0" y1="0" x2="0" y2="1">
-                                        <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3} />
-                                        <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
+                                        <stop offset="5%" stopColor="hsl(var(--brand))" stopOpacity={0.3} />
+                                        <stop offset="95%" stopColor="hsl(var(--brand))" stopOpacity={0} />
                                     </linearGradient>
                                     <linearGradient id="colorSeo" x1="0" y1="0" x2="0" y2="1">
-                                        <stop offset="5%" stopColor="#10b981" stopOpacity={0.3} />
-                                        <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
+                                        <stop offset="5%" stopColor="#14b8a6" stopOpacity={0.3} />
+                                        <stop offset="95%" stopColor="#14b8a6" stopOpacity={0} />
                                     </linearGradient>
                                     <linearGradient id="colorGeo" x1="0" y1="0" x2="0" y2="1">
-                                        <stop offset="5%" stopColor="#a855f7" stopOpacity={0.3} />
-                                        <stop offset="95%" stopColor="#a855f7" stopOpacity={0} />
+                                        <stop offset="5%" stopColor="#334155" stopOpacity={0.25} />
+                                        <stop offset="95%" stopColor="#334155" stopOpacity={0} />
                                     </linearGradient>
                                 </defs>
-                                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.1)" />
+                                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
                                 <XAxis
                                     dataKey="date"
-                                    stroke="rgba(255,255,255,0.5)"
-                                    tick={{ fill: 'rgba(255,255,255,0.5)', fontSize: 12 }}
+                                    stroke="hsl(var(--muted-foreground))"
+                                    tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12 }}
                                 />
                                 <YAxis
                                     domain={[0, 100]}
-                                    stroke="rgba(255,255,255,0.5)"
-                                    tick={{ fill: 'rgba(255,255,255,0.5)', fontSize: 12 }}
+                                    stroke="hsl(var(--muted-foreground))"
+                                    tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12 }}
                                 />
                                 <Tooltip
                                     contentStyle={{
-                                        backgroundColor: 'rgba(0,0,0,0.9)',
-                                        borderColor: 'rgba(255,255,255,0.1)',
+                                        backgroundColor: 'hsl(var(--background))',
+                                        borderColor: 'hsl(var(--border))',
                                         borderRadius: '12px',
-                                        color: '#fff'
+                                        color: 'hsl(var(--foreground))',
+                                        backdropFilter: 'blur(10px)'
                                     }}
                                 />
-                                <Legend wrapperStyle={{ color: 'rgba(255,255,255,0.7)' }} />
+                                <Legend wrapperStyle={{ color: 'hsl(var(--muted-foreground))' }} />
                                 <Area
                                     type="monotone"
                                     dataKey="overall_score"
                                     name="Overall"
-                                    stroke="#3b82f6"
+                                    stroke="hsl(var(--brand))"
                                     fillOpacity={1}
                                     fill="url(#colorOverall)"
                                 />
@@ -225,7 +226,7 @@ export function ScoreHistoryChart({ domain, userEmail }: ScoreHistoryProps) {
                                     type="monotone"
                                     dataKey="seo_score"
                                     name="SEO"
-                                    stroke="#10b981"
+                                    stroke="#14b8a6"
                                     fillOpacity={1}
                                     fill="url(#colorSeo)"
                                 />
@@ -233,7 +234,7 @@ export function ScoreHistoryChart({ domain, userEmail }: ScoreHistoryProps) {
                                     type="monotone"
                                     dataKey="geo_score"
                                     name="GEO"
-                                    stroke="#a855f7"
+                                    stroke="#334155"
                                     fillOpacity={1}
                                     fill="url(#colorGeo)"
                                 />
@@ -244,22 +245,22 @@ export function ScoreHistoryChart({ domain, userEmail }: ScoreHistoryProps) {
                     <div className="h-[300px] flex items-center justify-center border border-dashed border-border rounded-xl">
                         <div className="text-center">
                             <BarChart3 className="w-12 h-12 text-muted-foreground/50 mx-auto mb-4" />
-                            <p className="text-muted-foreground">No hay datos históricos disponibles</p>
-                            <p className="text-muted-foreground/70 text-sm mt-2">Los datos se registrarán automáticamente con cada auditoría</p>
+                            <p className="text-muted-foreground">No historical data available</p>
+                            <p className="text-muted-foreground/70 text-sm mt-2">Data is automatically recorded with each audit</p>
                         </div>
                     </div>
                 )}
             </div>
 
-            {/* Tabla de Historial Detallado */}
+            {/* Detailed history table */}
             {formattedHistory.length > 0 && (
                 <div className="glass-card p-6 rounded-2xl">
-                    <h3 className="text-lg font-medium text-foreground mb-4">Detalle por Auditoría</h3>
+                    <h3 className="text-lg font-medium text-foreground mb-4">Audit details</h3>
                     <div className="overflow-x-auto">
                         <table className="w-full text-sm">
                             <thead>
                                 <tr className="border-b border-border">
-                                    <th className="text-left py-3 px-4 text-muted-foreground font-medium">Fecha</th>
+                                    <th className="text-left py-3 px-4 text-muted-foreground font-medium">Date</th>
                                     <th className="text-center py-3 px-4 text-muted-foreground font-medium">Overall</th>
                                     <th className="text-center py-3 px-4 text-muted-foreground font-medium">SEO</th>
                                     <th className="text-center py-3 px-4 text-muted-foreground font-medium">GEO</th>

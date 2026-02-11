@@ -18,7 +18,8 @@ import {
     Activity,
     Radio,
     RotateCcw,
-    Wand2
+    Wand2,
+    Sparkles
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -41,8 +42,8 @@ export function Sidebar() {
         <div className="fixed inset-y-0 left-0 z-50 w-64 bg-sidebar border-r border-sidebar-border flex flex-col">
             <div className="h-16 flex items-center px-6 border-b border-sidebar-border">
                 <div className="flex items-center gap-2 font-semibold text-lg tracking-tight">
-                    <Zap className="h-5 w-5 text-primary" />
-                    <span>Audit Studio</span>
+                    <Sparkles className="h-5 w-5 text-primary" />
+                    <span>LatentGEO.ai</span>
                 </div>
             </div>
 

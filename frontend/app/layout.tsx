@@ -1,19 +1,32 @@
 import type { Metadata } from 'next'
-import { Inter } from 'next/font/google'
+import { Manrope, Sora, JetBrains_Mono } from 'next/font/google'
 import { Analytics } from '@vercel/analytics/next'
 import { Auth0Provider } from '@auth0/nextjs-auth0/client'
 import { ThemeProvider } from '@/components/theme-provider'
 import './globals.css'
 
-const inter = Inter({
+const sora = Sora({
   subsets: ['latin'],
-  variable: '--font-inter',
+  variable: '--font-display',
+  display: 'swap',
+})
+
+const manrope = Manrope({
+  subsets: ['latin'],
+  variable: '--font-sans',
+  display: 'swap',
+})
+
+const jetbrainsMono = JetBrains_Mono({
+  subsets: ['latin'],
+  variable: '--font-mono',
   display: 'swap',
 })
 
 export const metadata: Metadata = {
-  title: 'AI Audit Studio - GEO & SEO Intelligence',
-  description: 'Enterprise-grade AI auditing platform.',
+  title: 'LatentGEO.ai — AI & Generative Search Readiness',
+  description:
+    'Autonomous code remediation and AI-native content creation for growth and visibility.',
 }
 
 // Supported locales (used for runtime validation)
@@ -30,12 +43,17 @@ export default function RootLayout({
   const validLocale = locale && locales.includes(locale) ? locale : 'en'
 
   return (
-    <html lang={validLocale} className={inter.variable} suppressHydrationWarning>
-      <body className="font-sans antialiased min-h-screen">
+    <html
+      lang={validLocale}
+      className={`${sora.variable} ${manrope.variable} ${jetbrainsMono.variable}`}
+      suppressHydrationWarning
+    >
+      <body className="font-sans antialiased min-h-screen bg-background text-foreground">
         <ThemeProvider
           attribute="class"
-          defaultTheme="dark"
+          defaultTheme="light"
           enableSystem={false}
+          storageKey="latentgeo-theme-v2"
           disableTransitionOnChange={false}
         >
           <Auth0Provider>{children}</Auth0Provider>

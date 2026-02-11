@@ -79,10 +79,9 @@ async def run_audit_sync(audit_id: int):
 
         # Enriquecer con mercado/idioma/dominio si no vienen en el resumen
         if isinstance(target_audit_result, dict):
+            target_audit_result["language"] = "en"
             if audit.market and not target_audit_result.get("market"):
                 target_audit_result["market"] = audit.market
-            if audit.language and not target_audit_result.get("language"):
-                target_audit_result["language"] = audit.language
             if audit.domain and not target_audit_result.get("domain"):
                 target_audit_result["domain"] = audit.domain
 
@@ -97,6 +96,8 @@ async def run_audit_sync(audit_id: int):
             google_cx_id=settings.CSE_ID,
             crawler_service=CrawlerService.crawl_site,
             audit_local_service=AuditLocalService.run_local_audit,
+            generate_report=False,
+            enable_llm_external_intel=False,
         )
 
         # Guardar resultados
@@ -239,6 +240,22 @@ def get_audit(audit_id: int, db: Session = Depends(get_db)):
     pages = AuditService.get_audited_pages(db, audit_id)
     audit.pages = pages
 
+    # Recalcular GEO score si hay datos suficientes (evita valores falsos)
+    if isinstance(audit.target_audit, dict):
+        try:
+            from app.services.audit_service import CompetitorService
+            recalculated = CompetitorService._calculate_geo_score(audit.target_audit)
+            if recalculated is not None:
+                if (audit.geo_score is None or audit.geo_score <= 0) and recalculated >= 0:
+                    audit.geo_score = recalculated
+                    db.commit()
+                elif recalculated > 0 and audit.geo_score != recalculated:
+                    # Actualiza si la nueva métrica es más precisa
+                    audit.geo_score = recalculated
+                    db.commit()
+        except Exception as e:
+            logger.warning(f"No se pudo recalcular GEO score para audit {audit_id}: {e}")
+
     return audit
 
 
@@ -255,6 +272,12 @@ def get_audit_report(audit_id: int, db: Session = Depends(get_db)):
         raise HTTPException(
             status_code=400,
             detail=f"El reporte aún no está listo. Estado actual: {audit.status.value}",
+        )
+
+    if not audit.report_markdown:
+        raise HTTPException(
+            status_code=404,
+            detail="Report not generated. Generate PDF first.",
         )
 
     return {"report_markdown": audit.report_markdown}
@@ -274,6 +297,12 @@ def get_audit_fix_plan(audit_id: int, db: Session = Depends(get_db)):
             status_code=400,
             detail=f"El plan de correcciones aún no está listo. Estado actual: {audit.status.value}",
         )
+
+    if not audit.fix_plan:
+        return {
+            "fix_plan": [],
+            "message": "Fix plan is generated when you create the PDF report.",
+        }
 
     return {"fix_plan": audit.fix_plan}
 
@@ -386,10 +415,8 @@ def get_competitors(audit_id: int, limit: int = 10, db: Session = Depends(get_db
         raise HTTPException(status_code=404, detail="Auditoría no encontrada")
 
     if audit.status != AuditStatus.COMPLETED:
-        raise HTTPException(
-            status_code=400,
-            detail="La auditoría aún no está completada. Los datos de competidores estarán disponibles al finalizar.",
-        )
+        # Avoid 400s during long-running audits; return empty list until completed.
+        return []
 
     # Obtener competidores de la base de datos (con límite)
     competitors_db = (
@@ -401,9 +428,9 @@ def get_competitors(audit_id: int, limit: int = 10, db: Session = Depends(get_db
         result = []
         for comp in competitors_db:
             audit_data = comp.audit_data or {}
-            geo_score = comp.geo_score or 0
-            if geo_score == 0:
-                geo_score = CompetitorService._calculate_geo_score(audit_data)
+            geo_score = CompetitorService._calculate_geo_score(audit_data) if audit_data else (comp.geo_score or 0)
+            if geo_score == 0 and comp.geo_score:
+                geo_score = comp.geo_score
             formatted = CompetitorService._format_competitor_data(
                 audit_data, geo_score, comp.url
             )
@@ -415,9 +442,9 @@ def get_competitors(audit_id: int, limit: int = 10, db: Session = Depends(get_db
     result = []
     for comp in competitors:
         if isinstance(comp, dict):
-            geo_score = comp.get("geo_score", 0)
-            if geo_score == 0 or geo_score is None:
-                geo_score = CompetitorService._calculate_geo_score(comp)
+            geo_score = CompetitorService._calculate_geo_score(comp)
+            if geo_score == 0:
+                geo_score = comp.get("geo_score", 0) or 0
             formatted = CompetitorService._format_competitor_data(comp, geo_score)
             result.append(formatted)
 
@@ -702,8 +729,7 @@ async def configure_audit_chat(
             role="assistant", content="This audit is already in progress or completed."
         )
 
-    if config.language:
-        audit.language = config.language
+    audit.language = "en"
     if config.competitors:
         audit.competitors = config.competitors
     if config.market:

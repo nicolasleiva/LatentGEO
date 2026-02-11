@@ -14,7 +14,7 @@ export function ThemeToggle() {
 
     if (!mounted) {
         return (
-            <button className="p-2 rounded-lg glass-panel border border-border">
+            <button className="p-2 rounded-lg border border-border/70 bg-background/60">
                 <div className="w-5 h-5" />
             </button>
         )
@@ -23,13 +23,13 @@ export function ThemeToggle() {
     return (
         <button
             onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-            className="p-2 rounded-lg glass-panel border border-border hover:bg-muted transition-colors"
+            className="p-2 rounded-lg border border-border/70 bg-background/60 hover:bg-foreground/5 transition-colors"
             title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
         >
             {theme === 'dark' ? (
-                <Sun className="w-5 h-5 text-yellow-500" />
+                <Sun className="w-5 h-5 text-amber-400" />
             ) : (
-                <Moon className="w-5 h-5 text-slate-700 dark:text-slate-300" />
+                <Moon className="w-5 h-5 text-slate-700" />
             )}
         </button>
     )
