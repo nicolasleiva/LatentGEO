@@ -67,7 +67,7 @@ class Audit(Base):
     # Metadata
     is_ymyl = Column(Boolean, default=False)
     category = Column(String(255), nullable=True)
-    language = Column(String(10), default="es")  # "en" o "es"
+    language = Column(String(10), default="en")  # forced to "en"
     competitors = Column(JSON, nullable=True)  # Lista de URLs de competidores
     market = Column(String(50), nullable=True)  # "us", "latam", "emea", etc.
 
@@ -387,5 +387,4 @@ from .hubspot import HubSpotConnection, HubSpotPage, HubSpotChange
 
 # Importar modelos de GitHub
 from .github import GitHubConnection, GitHubRepository, GitHubPullRequest, GitHubWebhookEvent
-
 

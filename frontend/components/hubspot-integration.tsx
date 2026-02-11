@@ -190,7 +190,7 @@ export function HubSpotIntegration({ auditId, auditUrl }: HubSpotIntegrationProp
                         <p className="text-muted-foreground mb-4">
                             Connect your HubSpot account to automatically apply SEO/GEO recommendations to your CMS pages.
                         </p>
-                        <Button onClick={connectHubSpot} className="bg-orange-600 hover:bg-orange-700 text-white">
+                        <Button onClick={connectHubSpot} className="bg-brand text-brand-foreground hover:bg-brand/90">
                             <Sparkles className="h-4 w-4 mr-2" />
                             Connect HubSpot
                         </Button>
@@ -291,7 +291,7 @@ export function HubSpotIntegration({ auditId, auditUrl }: HubSpotIntegrationProp
                         <Button
                             onClick={applyRecommendations}
                             disabled={!selectedPage || recommendations.length === 0 || applying}
-                            className="w-full bg-orange-600 hover:bg-orange-700 text-white"
+                            className="w-full bg-brand text-brand-foreground hover:bg-brand/90"
                         >
                             {applying ? (
                                 <>

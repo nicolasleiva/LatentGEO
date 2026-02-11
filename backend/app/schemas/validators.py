@@ -202,7 +202,7 @@ class AuditRequestInput(BaseModel):
     """Validate audit request input with security checks"""
     url: str = Field(..., min_length=10, max_length=2048)
     max_pages: int = Field(default=100, ge=1, le=500)
-    language: str = Field(default="es", pattern=r'^(es|en|pt|fr|de)$')
+    language: str = Field(default="en", pattern=r'^(es|en|pt|fr|de)$')
     competitors: Optional[List[str]] = Field(default=None, max_length=10)
     market: Optional[str] = Field(default=None, max_length=50)
     
@@ -255,4 +255,3 @@ class SearchQueryInput(BaseModel):
         v = re.sub(r'[\x00-\x1F\x7F]', '', v)
         
         return v.strip()
-

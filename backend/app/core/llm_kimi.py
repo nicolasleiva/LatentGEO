@@ -8,7 +8,7 @@ from ..core.logger import get_logger
 
 logger = get_logger(__name__)
 
-async def kimi_function(system_prompt: str, user_prompt: str) -> str:
+async def kimi_function(system_prompt: str, user_prompt: str, max_tokens: int | None = None) -> str:
     """
     Ejecuta prompts con KIMI K2 Thinking (NVIDIA NIM)
     Usa el modelo configurado en settings para análisis y reportes
@@ -35,13 +35,16 @@ async def kimi_function(system_prompt: str, user_prompt: str) -> str:
         ]
         
         # Usar KIMI K2 Standard para análisis
-        logger.info(f"Llamando a KIMI (Modelo: {settings.NV_MODEL_ANALYSIS}). Max tokens: {settings.NV_MAX_TOKENS}")
+        max_tokens_value = max_tokens or settings.NV_MAX_TOKENS
+        logger.info(
+            f"Llamando a KIMI (Modelo: {settings.NV_MODEL_ANALYSIS}). Max tokens: {max_tokens_value}"
+        )
         completion = await client.chat.completions.create(
             model=settings.NV_MODEL_ANALYSIS,  # moonshotai/kimi-k2.5
             messages=messages,
             temperature=0.0,
             top_p=1.0,
-            max_tokens=settings.NV_MAX_TOKENS,
+            max_tokens=max_tokens_value,
             stream=False
         )
         

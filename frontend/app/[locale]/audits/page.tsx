@@ -27,7 +27,7 @@ export default function AuditsListPage() {
   const { user } = useUser()
   const [audits, setAudits] = useState<Audit[]>([])
   const [loading, setLoading] = useState(true)
-  const [filter, setFilter] = useState<'all' | 'completed' | 'processing' | 'pending' | 'failed'>('all')
+  const [filter, setFilter] = useState<'all' | 'completed' | 'running' | 'pending' | 'failed'>('all')
   const [searchQuery, setSearchQuery] = useState('')
 
   const backendUrl = API_URL
@@ -35,7 +35,7 @@ export default function AuditsListPage() {
   useEffect(() => {
     const fetchAudits = async () => {
       try {
-        // Filtrar por email del usuario si está logueado
+        // Filter by user email when signed in
         const userEmailParam = user?.email ? `?user_email=${encodeURIComponent(user.email)}` : ''
         const response = await fetch(`${backendUrl}/api/audits${userEmailParam}`)
         const data = await response.json()
@@ -50,7 +50,7 @@ export default function AuditsListPage() {
   }, [backendUrl, user])
 
   const deleteAudit = async (auditId: number) => {
-    const confirmed = window.confirm(`¿Borrar auditoría #${auditId}? Esta acción no se puede deshacer.`)
+    const confirmed = window.confirm(`Delete audit #${auditId}? This action cannot be undone.`)
     if (!confirmed) return
     try {
       const res = await fetch(`${backendUrl}/api/audits/${auditId}`, { method: 'DELETE' })
@@ -58,7 +58,7 @@ export default function AuditsListPage() {
       setAudits((prev) => prev.filter(a => a.id !== auditId))
     } catch (err) {
       console.error(err)
-      alert('No se pudo borrar la auditoría.')
+      alert('Failed to delete the audit.')
     }
   }
 
@@ -72,10 +72,10 @@ export default function AuditsListPage() {
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case 'completed': return 'bg-green-500/10 text-green-400 border-green-500/20'
-      case 'running': return 'bg-blue-500/10 text-blue-400 border-blue-500/20'
-      case 'failed': return 'bg-red-500/10 text-red-400 border-red-500/20'
-      default: return 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20'
+      case 'completed': return 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20'
+      case 'running': return 'bg-amber-500/10 text-amber-600 border-amber-500/20'
+      case 'failed': return 'bg-red-500/10 text-red-600 border-red-500/20'
+      default: return 'bg-muted/60 text-muted-foreground border-border/60'
     }
   }
 
@@ -121,7 +121,7 @@ export default function AuditsListPage() {
             />
           </div>
           <div className="flex gap-2">
-            {(['all', 'completed', 'processing', 'pending', 'failed'] as const).map((status) => (
+            {(['all', 'completed', 'running', 'pending', 'failed'] as const).map((status) => (
               <button
                 key={status}
                 onClick={() => setFilter(status)}
@@ -130,7 +130,7 @@ export default function AuditsListPage() {
                     : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
                   }`}
               >
-                {status}
+                {status === 'running' ? 'processing' : status}
               </button>
             ))}
           </div>
@@ -155,10 +155,10 @@ export default function AuditsListPage() {
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-4">
                     <div className="p-3 bg-muted/50 rounded-xl">
-                      <Globe className="w-6 h-6 text-blue-500" />
+                      <Globe className="w-6 h-6 text-brand" />
                     </div>
                     <div>
-                      <h3 className="text-lg font-medium group-hover:text-blue-500 transition-colors">
+                      <h3 className="text-lg font-medium group-hover:text-brand transition-colors">
                         {audit.domain || (() => {
                           try {
                             return new URL(audit.url).hostname.replace('www.', '')
@@ -175,14 +175,14 @@ export default function AuditsListPage() {
                     {audit.status === 'completed' && audit.geo_score && (
                       <div className="text-right hidden md:block">
                         <p className="text-sm text-muted-foreground">GEO Score</p>
-                        <p className="text-lg font-semibold text-green-500">
+                        <p className="text-lg font-semibold text-emerald-600">
                           {Math.round(audit.geo_score)}%
                         </p>
                       </div>
                     )}
 
                     <Badge variant="outline" className={getStatusColor(audit.status)}>
-                      {audit.status}
+                      {audit.status === 'running' ? 'processing' : audit.status}
                     </Badge>
 
                     <Button

@@ -78,8 +78,8 @@ export default function CompetitorAnalysis({ auditId, backendUrl }: CompetitorAn
 
   return (
     <div className="space-y-6">
-      <div className="bg-white/5 border border-white/10 rounded-xl p-6">
-        <h3 className="font-semibold text-white mb-4 flex items-center gap-2">
+      <div className="bg-muted/30 border border-border rounded-xl p-6">
+        <h3 className="font-semibold text-foreground mb-4 flex items-center gap-2">
           <Users className="w-5 h-5" />
           Competitor URLs or Names
         </h3>
@@ -91,7 +91,7 @@ export default function CompetitorAnalysis({ auditId, backendUrl }: CompetitorAn
                 placeholder={`Competitor ${idx + 1} (URL or name)`}
                 value={comp}
                 onChange={(e) => updateCompetitor(idx, e.target.value)}
-                className="flex-1 bg-white/5 border-white/20 text-white placeholder:text-white/40"
+                className="flex-1 bg-muted/30 border-border/70 text-foreground placeholder:text-muted-foreground"
               />
               {competitors.length > 1 && (
                 <Button 
@@ -107,7 +107,7 @@ export default function CompetitorAnalysis({ auditId, backendUrl }: CompetitorAn
         </div>
         
         <div className="flex gap-4">
-          <Button variant="outline" onClick={addCompetitor} className="border-white/20 text-white">
+          <Button variant="outline" onClick={addCompetitor} className="border-border/70 text-foreground">
             Add Competitor
           </Button>
           <Button 
@@ -116,7 +116,7 @@ export default function CompetitorAnalysis({ auditId, backendUrl }: CompetitorAn
             className="glass-button-primary"
           >
             {loading ? (
-              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-foreground"></div>
             ) : (
               <>
                 <Play className="w-4 h-4 mr-2" />
@@ -137,16 +137,16 @@ export default function CompetitorAnalysis({ auditId, backendUrl }: CompetitorAn
       {results && (
         <div className="space-y-6">
           {/* Your Performance */}
-          <div className="bg-white/5 border border-white/10 rounded-xl p-6">
-            <h3 className="font-semibold text-white mb-4">Your Performance</h3>
+          <div className="bg-muted/30 border border-border rounded-xl p-6">
+            <h3 className="font-semibold text-foreground mb-4">Your Performance</h3>
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <p className="text-white/50 text-sm">Total Citations</p>
-                <p className="text-2xl font-bold text-white">{results.your_citations}</p>
+                <p className="text-muted-foreground text-sm">Total Citations</p>
+                <p className="text-2xl font-bold text-foreground">{results.your_citations}</p>
               </div>
               <div>
-                <p className="text-white/50 text-sm">Citation Rate</p>
-                <p className="text-2xl font-bold text-white">{results.your_citation_rate.toFixed(1)}%</p>
+                <p className="text-muted-foreground text-sm">Citation Rate</p>
+                <p className="text-2xl font-bold text-foreground">{results.your_citation_rate.toFixed(1)}%</p>
               </div>
             </div>
           </div>
@@ -154,20 +154,20 @@ export default function CompetitorAnalysis({ auditId, backendUrl }: CompetitorAn
           {/* Competitors */}
           {results.competitors.length > 0 && (
             <div className="space-y-4">
-              <h3 className="font-semibold text-white">Competitor Analysis</h3>
+              <h3 className="font-semibold text-foreground">Competitor Analysis</h3>
               {results.competitors.map((comp, idx) => (
-                <div key={idx} className="bg-white/5 border border-white/10 rounded-xl p-6">
+                <div key={idx} className="bg-muted/30 border border-border rounded-xl p-6">
                   <div className="flex justify-between items-start mb-4">
-                    <h4 className="font-semibold text-white text-lg">{comp.name}</h4>
+                    <h4 className="font-semibold text-foreground text-lg">{comp.name}</h4>
                     <div className="text-right">
-                      <p className="text-2xl font-bold text-white">{comp.citations}</p>
-                      <p className="text-white/50 text-sm">citations</p>
+                      <p className="text-2xl font-bold text-foreground">{comp.citations}</p>
+                      <p className="text-muted-foreground text-sm">citations</p>
                     </div>
                   </div>
                   
                   <div className="mb-4">
-                    <p className="text-white/50 text-sm mb-2">Citation Rate: {comp.citation_rate.toFixed(1)}%</p>
-                    <div className="w-full bg-white/10 rounded-full h-2">
+                    <p className="text-muted-foreground text-sm mb-2">Citation Rate: {comp.citation_rate.toFixed(1)}%</p>
+                    <div className="w-full bg-muted/40 rounded-full h-2">
                       <div 
                         className="bg-blue-500 h-2 rounded-full" 
                         style={{ width: `${Math.min(comp.citation_rate, 100)}%` }}
@@ -177,10 +177,10 @@ export default function CompetitorAnalysis({ auditId, backendUrl }: CompetitorAn
                   
                   {comp.top_queries.length > 0 && (
                     <div className="mb-4">
-                      <p className="text-white/50 text-sm mb-2">Top Queries:</p>
+                      <p className="text-muted-foreground text-sm mb-2">Top Queries:</p>
                       <div className="flex flex-wrap gap-2">
                         {comp.top_queries.map((q, qidx) => (
-                          <span key={qidx} className="bg-white/10 text-white/70 px-2 py-1 rounded text-sm">
+                          <span key={qidx} className="bg-muted/40 text-muted-foreground px-2 py-1 rounded text-sm">
                             {q}
                           </span>
                         ))}
@@ -193,7 +193,7 @@ export default function CompetitorAnalysis({ auditId, backendUrl }: CompetitorAn
                       <p className="text-green-400 text-sm mb-2">Strengths</p>
                       <ul className="space-y-1">
                         {comp.strengths.map((s, sidx) => (
-                          <li key={sidx} className="text-white/60 text-sm">• {s}</li>
+                          <li key={sidx} className="text-muted-foreground text-sm">• {s}</li>
                         ))}
                       </ul>
                     </div>
@@ -201,7 +201,7 @@ export default function CompetitorAnalysis({ auditId, backendUrl }: CompetitorAn
                       <p className="text-red-400 text-sm mb-2">Weaknesses</p>
                       <ul className="space-y-1">
                         {comp.weaknesses.map((w, widx) => (
-                          <li key={widx} className="text-white/60 text-sm">• {w}</li>
+                          <li key={widx} className="text-muted-foreground text-sm">• {w}</li>
                         ))}
                       </ul>
                     </div>
@@ -219,7 +219,7 @@ export default function CompetitorAnalysis({ auditId, backendUrl }: CompetitorAn
                   <h3 className="font-semibold text-red-400 mb-4">Gaps to Address</h3>
                   <ul className="space-y-2">
                     {results.gaps.map((gap, idx) => (
-                      <li key={idx} className="text-white/70 text-sm flex items-start gap-2">
+                      <li key={idx} className="text-muted-foreground text-sm flex items-start gap-2">
                         <span className="text-red-400">•</span> {gap}
                       </li>
                     ))}
@@ -232,7 +232,7 @@ export default function CompetitorAnalysis({ auditId, backendUrl }: CompetitorAn
                   <h3 className="font-semibold text-green-400 mb-4">Opportunities</h3>
                   <ul className="space-y-2">
                     {results.opportunities.map((opp, idx) => (
-                      <li key={idx} className="text-white/70 text-sm flex items-start gap-2">
+                      <li key={idx} className="text-muted-foreground text-sm flex items-start gap-2">
                         <CheckCircle className="w-4 h-4 text-green-400 mt-0.5" />
                         {opp}
                       </li>

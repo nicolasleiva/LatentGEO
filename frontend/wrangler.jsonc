@@ -1,0 +1,26 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "main": ".open-next/worker.js",
+  "name": "auditor-geo-frontend",
+  "compatibility_date": "2026-02-10",
+  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+  "assets": {
+    "directory": ".open-next/assets",
+    "binding": "ASSETS"
+  },
+  "services": [
+    {
+      "binding": "WORKER_SELF_REFERENCE",
+      "service": "auditor-geo-frontend"
+    }
+  ],
+  "vars": {
+    "ENVIRONMENT": "production",
+    "NEXT_PUBLIC_API_URL": "https://api.example.com",
+    "NEXT_PUBLIC_BACKEND_URL": "https://api.example.com",
+    "API_URL": "https://api.example.com",
+    "AUTH0_DOMAIN": "dev-1tje44xertslyavv.us.auth0.com",
+    "AUTH0_CLIENT_ID": "PDaM0CxCRvFfdJa1LvRdn5o551QDWY10",
+    "APP_BASE_URL": "https://auditor-geo-frontend.nicolas-leivaok.workers.dev"
+  }
+}

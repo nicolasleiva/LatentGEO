@@ -17,11 +17,11 @@ export function AuditProgressIndicator({
 
   const getProgressMessage = () => {
     if (status === 'pending' && progress === 0) {
-      return '⏳ Configurando auditoría...';
+      return '⏳ Configuring audit...';
     }
-    if (progress < 33) return '1/3: Analizando tu página';
-    if (progress < 66) return '2/3: Analizando competidores';
-    if (progress < 100) return '3/3: Generando reporte con IA (esto puede tardar 1-2 minutos)';
+    if (progress < 33) return '1/3: Analyzing your site';
+    if (progress < 66) return '2/3: Analyzing competitors';
+    if (progress < 100) return '3/3: Generating the AI report (this may take 1–2 minutes)';
     return null;
   };
 
@@ -37,7 +37,7 @@ export function AuditProgressIndicator({
         </div>
         <div className="w-full bg-muted rounded-full h-2 overflow-hidden">
           <div
-            className="bg-gradient-to-r from-blue-500 to-purple-500 h-full rounded-full transition-all duration-500"
+            className="bg-brand h-full rounded-full transition-all duration-500"
             style={{ width: `${progress}%` }}
           />
         </div>
@@ -45,10 +45,10 @@ export function AuditProgressIndicator({
 
       {hasTimedOut && (
         <div className="mt-4 p-4 bg-yellow-500/10 border border-yellow-500/30 rounded-xl flex items-start gap-3">
-          <AlertTriangle className="w-5 h-5 text-yellow-400 flex-shrink-0 mt-0.5" />
-          <div className="text-sm text-yellow-200">
-            <p className="font-medium mb-1">El análisis está tardando más de lo normal</p>
-            <p className="text-xs text-yellow-300/80">Te avisaremos por email cuando esté listo.</p>
+          <AlertTriangle className="w-5 h-5 text-yellow-500 flex-shrink-0 mt-0.5" />
+          <div className="text-sm text-amber-700 dark:text-amber-200">
+            <p className="font-medium mb-1">This analysis is taking longer than usual</p>
+            <p className="text-xs text-amber-700/80 dark:text-amber-200/80">We will notify you by email once it&apos;s ready.</p>
           </div>
         </div>
       )}

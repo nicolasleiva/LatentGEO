@@ -11,7 +11,7 @@ from app.services.pagespeed_service import PageSpeedService
 from app.services.keyword_service import KeywordService
 from app.services.backlink_service import BacklinkService
 from app.services.rank_tracker_service import RankTrackerService
-from app.db.session import SessionLocal
+from app.core.database import SessionLocal
 
 
 class TestPageSpeedServiceReal:

@@ -58,7 +58,7 @@ export default function QueryDiscovery({ auditId, backendUrl }: QueryDiscoveryPr
           placeholder="Enter a seed query (e.g., 'best software for...')"
           value={seedQuery}
           onChange={(e) => setSeedQuery(e.target.value)}
-          className="flex-1 bg-white/5 border-white/20 text-white placeholder:text-white/40"
+          className="flex-1 bg-muted/30 border-border/70 text-foreground placeholder:text-muted-foreground"
         />
         <Button 
           onClick={discoverQueries} 
@@ -66,7 +66,7 @@ export default function QueryDiscovery({ auditId, backendUrl }: QueryDiscoveryPr
           className="glass-button-primary"
         >
           {loading ? (
-            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-foreground"></div>
           ) : (
             <>
               <Sparkles className="w-4 h-4 mr-2" />
@@ -84,24 +84,24 @@ export default function QueryDiscovery({ auditId, backendUrl }: QueryDiscoveryPr
       )}
 
       {results && results.length === 0 && (
-        <div className="text-center py-12 bg-white/5 rounded-2xl border border-dashed border-white/10">
-          <Search className="w-12 h-12 text-white/20 mx-auto mb-4" />
-          <p className="text-white/40">No opportunities found. Try a different seed query.</p>
+        <div className="text-center py-12 bg-muted/30 rounded-2xl border border-dashed border-border">
+          <Search className="w-12 h-12 text-muted-foreground/60 mx-auto mb-4" />
+          <p className="text-muted-foreground">No opportunities found. Try a different seed query.</p>
         </div>
       )}
 
       {results && results.length > 0 && (
         <div className="space-y-4">
-          <p className="text-white/60 mb-4">Found {results.length} opportunities:</p>
+          <p className="text-muted-foreground mb-4">Found {results.length} opportunities:</p>
           {results.map((opp, idx) => (
-            <div key={idx} className="bg-white/5 border border-white/10 rounded-xl p-6">
+            <div key={idx} className="bg-muted/30 border border-border rounded-xl p-6">
               <div className="flex justify-between items-start mb-3">
-                <h4 className="font-semibold text-white text-lg">{opp.query}</h4>
+                <h4 className="font-semibold text-foreground text-lg">{opp.query}</h4>
                 <div className="flex items-center gap-2">
                   <span className="bg-blue-500/20 text-blue-300 px-3 py-1 rounded-lg text-sm font-bold">
                     Score: {opp.potential_score}
                   </span>
-                  <span className="bg-white/10 text-white/70 px-3 py-1 rounded-lg text-sm capitalize">
+                  <span className="bg-muted/40 text-muted-foreground px-3 py-1 rounded-lg text-sm capitalize">
                     {opp.intent}
                   </span>
                 </div>
@@ -109,12 +109,12 @@ export default function QueryDiscovery({ auditId, backendUrl }: QueryDiscoveryPr
               
               <div className="grid grid-cols-2 gap-4 mb-4 text-sm">
                 <div>
-                  <span className="text-white/50">Volume:</span>
-                  <span className="text-white ml-2">{opp.volume_estimate}</span>
+                  <span className="text-muted-foreground">Volume:</span>
+                  <span className="text-foreground ml-2">{opp.volume_estimate}</span>
                 </div>
                 <div>
-                  <span className="text-white/50">Competition:</span>
-                  <span className="text-white ml-2 capitalize">{opp.competition_level}</span>
+                  <span className="text-muted-foreground">Competition:</span>
+                  <span className="text-foreground ml-2 capitalize">{opp.competition_level}</span>
                 </div>
               </div>
               

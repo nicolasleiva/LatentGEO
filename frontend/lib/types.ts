@@ -1,4 +1,4 @@
-// Type definitions for AI Audit Studio
+// Type definitions for LatentGEO.ai
 
 export interface AuditSummary {
   id: string

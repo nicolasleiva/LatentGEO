@@ -43,7 +43,7 @@ export default function RecentCitationsTable({ auditId, backendUrl }: RecentCita
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white"></div>
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-foreground"></div>
       </div>
     );
   }
@@ -59,9 +59,9 @@ export default function RecentCitationsTable({ auditId, backendUrl }: RecentCita
 
   if (citations.length === 0) {
     return (
-      <div className="text-center py-12 bg-white/5 rounded-2xl border border-dashed border-white/10">
-        <TrendingUp className="w-12 h-12 text-white/20 mx-auto mb-4" />
-        <p className="text-white/40">No citations found yet. Start tracking to see results.</p>
+      <div className="text-center py-12 bg-muted/30 rounded-2xl border border-dashed border-border">
+        <TrendingUp className="w-12 h-12 text-muted-foreground/60 mx-auto mb-4" />
+        <p className="text-muted-foreground">No citations found yet. Start tracking to see results.</p>
       </div>
     );
   }
@@ -69,15 +69,15 @@ export default function RecentCitationsTable({ auditId, backendUrl }: RecentCita
   return (
     <div className="space-y-4">
       {citations.map((citation) => (
-        <div key={citation.id} className="bg-white/5 border border-white/10 rounded-xl p-4">
+        <div key={citation.id} className="bg-muted/30 border border-border rounded-xl p-4">
           <div className="flex justify-between items-start mb-2">
-            <h4 className="font-semibold text-white">{citation.query}</h4>
-            <span className="text-xs text-white/50 bg-white/10 px-2 py-1 rounded">
+            <h4 className="font-semibold text-foreground">{citation.query}</h4>
+            <span className="text-xs text-muted-foreground bg-muted/40 px-2 py-1 rounded">
               {citation.llm_name}
             </span>
           </div>
-          <p className="text-white/60 text-sm mb-3 line-clamp-2">{citation.response_preview}</p>
-          <div className="flex items-center gap-4 text-xs text-white/40">
+          <p className="text-muted-foreground text-sm mb-3 line-clamp-2">{citation.response_preview}</p>
+          <div className="flex items-center gap-4 text-xs text-muted-foreground">
             <span className={`px-2 py-1 rounded ${
               citation.citation_type === 'direct' ? 'bg-green-500/20 text-green-400' :
               citation.citation_type === 'indirect' ? 'bg-blue-500/20 text-blue-400' :

@@ -197,11 +197,10 @@ class APIService {
     return res.json()
   }
 
-  async generatePDF(auditId: number, includeCompetitorAnalysis = false, includeRawData = false): Promise<{ task_id: string; audit_id: number; status: string }> {
-    const res = await fetch(`${this.baseUrl}/api/reports/generate-pdf`, {
+  async generatePDF(auditId: number): Promise<any> {
+    const res = await fetch(`${this.baseUrl}/api/audits/${auditId}/generate-pdf`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ audit_id: auditId, include_competitor_analysis: includeCompetitorAnalysis, include_raw_data: includeRawData })
+      headers: { 'Content-Type': 'application/json' }
     })
     if (!res.ok) throw new Error(`API error: ${res.status}`)
     return res.json()

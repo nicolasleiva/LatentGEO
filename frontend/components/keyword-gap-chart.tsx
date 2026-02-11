@@ -21,9 +21,9 @@ export function KeywordGapChart({ data }: KeywordGapProps) {
   const { gap_analysis } = data
 
   const chartData = [
-    { name: 'Missing', value: gap_analysis.missing_keywords.length, fill: '#ef4444' }, // Red
-    { name: 'Common', value: gap_analysis.common_keywords.length, fill: '#3b82f6' },  // Blue
-    { name: 'Unique', value: gap_analysis.unique_keywords.length, fill: '#10b981' },  // Green
+    { name: 'Missing', value: gap_analysis.missing_keywords.length, fill: '#ef4444' },
+    { name: 'Common', value: gap_analysis.common_keywords.length, fill: '#0f766e' },
+    { name: 'Unique', value: gap_analysis.unique_keywords.length, fill: '#14b8a6' },
   ]
 
   return (
@@ -33,24 +33,24 @@ export function KeywordGapChart({ data }: KeywordGapProps) {
         <div className="h-[300px] w-full">
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.1)" vertical={false} />
+              <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
               <XAxis
                 dataKey="name"
-                stroke="rgba(255,255,255,0.5)"
-                tick={{ fill: 'rgba(255,255,255,0.5)', fontSize: 12 }}
+                stroke="hsl(var(--muted-foreground))"
+                tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12 }}
                 axisLine={false}
                 tickLine={false}
               />
               <YAxis
-                stroke="rgba(255,255,255,0.5)"
-                tick={{ fill: 'rgba(255,255,255,0.5)', fontSize: 12 }}
+                stroke="hsl(var(--muted-foreground))"
+                tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12 }}
                 axisLine={false}
                 tickLine={false}
               />
               <Tooltip
-                contentStyle={{ backgroundColor: 'rgba(0,0,0,0.8)', borderColor: 'rgba(255,255,255,0.1)', color: '#fff', borderRadius: '12px', backdropFilter: 'blur(10px)' }}
-                itemStyle={{ color: '#fff' }}
-                cursor={{ fill: 'rgba(255,255,255,0.05)' }}
+                contentStyle={{ backgroundColor: 'hsl(var(--background))', borderColor: 'hsl(var(--border))', color: 'hsl(var(--foreground))', borderRadius: '12px', backdropFilter: 'blur(10px)' }}
+                itemStyle={{ color: 'hsl(var(--foreground))' }}
+                cursor={{ fill: 'hsl(var(--accent))' }}
               />
               <Bar dataKey="value" radius={[6, 6, 0, 0]} />
             </BarChart>

@@ -59,21 +59,21 @@ export default function SchemaMultipleGenerator({ backendUrl }: SchemaMultipleGe
       case 'high': return 'bg-red-500/20 text-red-400 border-red-500/30';
       case 'medium': return 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30';
       case 'low': return 'bg-blue-500/20 text-blue-400 border-blue-500/30';
-      default: return 'bg-white/10 text-white/70';
+      default: return 'bg-muted/40 text-muted-foreground';
     }
   };
 
   return (
     <div className="space-y-6">
-      <div className="bg-white/5 border border-white/10 rounded-xl p-6">
+      <div className="bg-muted/30 border border-border rounded-xl p-6">
         <div className="space-y-4">
           <div>
-            <Label className="text-white/70">Page URL</Label>
+            <Label className="text-muted-foreground">Page URL</Label>
             <Input
               placeholder="https://example.com/page"
               value={url}
               onChange={(e) => setUrl(e.target.value)}
-              className="mt-2 bg-white/5 border-white/20 text-white placeholder:text-white/40"
+              className="mt-2 bg-muted/30 border-border/70 text-foreground placeholder:text-muted-foreground"
             />
           </div>
           
@@ -83,7 +83,7 @@ export default function SchemaMultipleGenerator({ backendUrl }: SchemaMultipleGe
             className="glass-button-primary w-full"
           >
             {loading ? (
-              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-foreground"></div>
             ) : (
               <>
                 <List className="w-4 h-4 mr-2" />
@@ -102,32 +102,32 @@ export default function SchemaMultipleGenerator({ backendUrl }: SchemaMultipleGe
       )}
 
       {results && results.length === 0 && (
-        <div className="text-center py-12 bg-white/5 rounded-2xl border border-dashed border-white/10">
-          <FileText className="w-12 h-12 text-white/20 mx-auto mb-4" />
-          <p className="text-white/40">No schema suggestions found for this page.</p>
+        <div className="text-center py-12 bg-muted/30 rounded-2xl border border-dashed border-border">
+          <FileText className="w-12 h-12 text-muted-foreground/60 mx-auto mb-4" />
+          <p className="text-muted-foreground">No schema suggestions found for this page.</p>
         </div>
       )}
 
       {results && results.length > 0 && (
         <div className="space-y-4">
-          <p className="text-white/60">Found {results.length} schema recommendations:</p>
+          <p className="text-muted-foreground">Found {results.length} schema recommendations:</p>
           
           {results.map((schema, idx) => (
-            <div key={idx} className="bg-white/5 border border-white/10 rounded-xl p-6">
+            <div key={idx} className="bg-muted/30 border border-border rounded-xl p-6">
               <div className="flex justify-between items-start mb-4">
                 <div>
                   <div className="flex items-center gap-3 mb-2">
-                    <h4 className="font-semibold text-white text-lg">{schema.schema_type}</h4>
+                    <h4 className="font-semibold text-foreground text-lg">{schema.schema_type}</h4>
                     <span className={`px-3 py-1 rounded-lg text-sm font-bold border ${getPriorityColor(schema.priority)}`}>
                       {schema.priority.toUpperCase()}
                     </span>
                   </div>
-                  <p className="text-white/60 text-sm">{schema.reason}</p>
+                  <p className="text-muted-foreground text-sm">{schema.reason}</p>
                 </div>
                 <Button 
                   variant="outline" 
                   onClick={() => copyToClipboard(idx, schema.schema_json)}
-                  className="border-white/20 text-white"
+                  className="border-border/70 text-foreground"
                 >
                   {copiedIdx === idx ? (
                     <><Check className="w-4 h-4 mr-2" /> Copied!</>
@@ -140,7 +140,7 @@ export default function SchemaMultipleGenerator({ backendUrl }: SchemaMultipleGe
               <Textarea
                 value={schema.schema_json}
                 readOnly
-                className="bg-black/30 border-white/10 text-green-400 font-mono text-sm min-h-[150px]"
+                className="bg-muted/50 border-border text-green-400 font-mono text-sm min-h-[150px]"
               />
             </div>
           ))}

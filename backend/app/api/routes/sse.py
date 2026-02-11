@@ -12,6 +12,7 @@ from typing import AsyncGenerator
 from app.core.database import get_db
 from app.services.audit_service import AuditService
 from app.core.logger import get_logger
+from app.core.config import settings
 
 logger = get_logger(__name__)
 
@@ -27,7 +28,7 @@ async def audit_progress_stream(audit_id: int, db: Session) -> AsyncGenerator[st
     Sends updates every 2 seconds until audit is completed or failed.
     Includes heartbeat to keep connection alive.
     """
-    max_duration = 600  # 10 minutes max
+    max_duration = getattr(settings, "SSE_MAX_DURATION", 3600)  # seconds
     start_time = asyncio.get_event_loop().time()
     last_status = None
     last_progress = None

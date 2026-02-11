@@ -23,6 +23,30 @@ const HubSpotIntegration = dynamic(() => import('@/components/hubspot-integratio
 const AuditChatFlow = dynamic(() => import('@/components/audit-chat-flow').then(mod => mod.AuditChatFlow), { ssr: false });
 const AIProcessingScreen = dynamic(() => import('@/components/ai-processing-screen').then(mod => mod.AIProcessingScreen), { ssr: false });
 
+const safeHostname = (value?: string): string => {
+  if (!value) return '';
+  try {
+    return new URL(value).hostname.replace('www.', '');
+  } catch {
+    const cleaned = value.replace(/^https?:\/\//, '').replace(/^www\./, '');
+    return cleaned.split('/')[0] || cleaned;
+  }
+};
+
+const formatDate = (value?: string) => {
+  if (!value) return '—';
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? '—' : date.toLocaleDateString();
+};
+
+const normalizeCategory = (value?: string) => {
+  if (!value) return 'Unclassified';
+  const lowered = value.toLowerCase();
+  if (lowered.includes('unknown category') || lowered.includes('unknown') || lowered.includes('desconocida')) {
+    return 'Unclassified';
+  }
+  return value;
+};
 
 export default function AuditDetailPage() {
   const params = useParams();
@@ -43,31 +67,53 @@ export default function AuditDetailPage() {
   const [activeTab, setActiveTab] = useState<'overview' | 'report' | 'fix-plan'>('overview');
   const [reportMarkdown, setReportMarkdown] = useState<string | null>(null);
   const [reportLoading, setReportLoading] = useState(false);
+  const [reportMessage, setReportMessage] = useState<string | null>(null);
   const [fixPlan, setFixPlan] = useState<any[] | null>(null);
   const [fixPlanLoading, setFixPlanLoading] = useState(false);
+  const [fixPlanMessage, setFixPlanMessage] = useState<string | null>(null);
+  const categoryDisplay = useMemo(
+    () => normalizeCategory(audit?.external_intelligence?.category || audit?.category),
+    [audit]
+  );
+  const languageDisplay = audit?.language || 'en';
 
   const loadReport = useCallback(async () => {
     if (reportLoading || reportMarkdown) return;
     setReportLoading(true);
+    setReportMessage(null);
     try {
       const res = await fetch(`${backendUrl}/api/reports/markdown/${auditId}`);
       if (res.ok) {
         const data = await res.json();
         setReportMarkdown(data?.markdown || '');
+        setReportMessage(null);
+        return;
+      }
+      if (res.status === 404) {
+        setReportMarkdown('');
+        setReportMessage('Report not generated. Click Generate PDF to build it.');
         return;
       }
 
       const fallbackRes = await fetch(`${backendUrl}/api/audits/${auditId}/report`);
       if (fallbackRes.ok) {
         const data = await fallbackRes.json();
-        setReportMarkdown(data?.report || data?.markdown || '');
+        setReportMarkdown(data?.report || data?.markdown || data?.report_markdown || '');
+        setReportMessage(null);
+        return;
+      }
+      if (fallbackRes.status === 404) {
+        setReportMarkdown('');
+        setReportMessage('Report not generated. Click Generate PDF to build it.');
         return;
       }
 
       setReportMarkdown('');
+      setReportMessage('Report not generated. Click Generate PDF to build it.');
     } catch (err) {
       console.error(err);
       setReportMarkdown('');
+      setReportMessage('Report not generated. Click Generate PDF to build it.');
     } finally {
       setReportLoading(false);
     }
@@ -76,17 +122,27 @@ export default function AuditDetailPage() {
   const loadFixPlan = useCallback(async () => {
     if (fixPlanLoading || fixPlan) return;
     setFixPlanLoading(true);
+    setFixPlanMessage(null);
     try {
       const res = await fetch(`${backendUrl}/api/audits/${auditId}/fix_plan`);
       if (!res.ok) {
         setFixPlan([]);
+        setFixPlanMessage('Fix plan will be created when you generate the PDF report.');
         return;
       }
       const data = await res.json();
       setFixPlan(Array.isArray(data?.fix_plan) ? data.fix_plan : Array.isArray(data) ? data : []);
+      if (data?.message) {
+        setFixPlanMessage(data.message);
+      } else if (!Array.isArray(data?.fix_plan) || data.fix_plan.length === 0) {
+        setFixPlanMessage('Fix plan will be created when you generate the PDF report.');
+      } else {
+        setFixPlanMessage(null);
+      }
     } catch (err) {
       console.error(err);
       setFixPlan([]);
+      setFixPlanMessage('Fix plan will be created when you generate the PDF report.');
     } finally {
       setFixPlanLoading(false);
     }
@@ -106,6 +162,9 @@ export default function AuditDetailPage() {
       }
       const auditData = await auditRes.json();
       setAudit(auditData);
+      if (Array.isArray(auditData?.competitor_audits) && auditData.competitor_audits.length > 0) {
+        setCompetitors(auditData.competitor_audits);
+      }
 
       // Stop loading immediately so Chat appears ASAP
       setLoading(false);
@@ -125,7 +184,13 @@ export default function AuditDetailPage() {
 
       if (compRes?.ok) {
         const compData = await compRes.json();
-        setCompetitors(compData);
+        if (Array.isArray(compData) && compData.length > 0) {
+          setCompetitors(compData);
+        } else if (Array.isArray(auditData?.competitor_audits)) {
+          setCompetitors(auditData.competitor_audits);
+        }
+      } else if (Array.isArray(auditData?.competitor_audits)) {
+        setCompetitors(auditData.competitor_audits);
       }
 
       // Initialize PageSpeed data if available in audit
@@ -145,7 +210,7 @@ export default function AuditDetailPage() {
 
   // Limpiar PageSpeed cuando status cambia a 'running'
   useEffect(() => {
-    if (audit?.status === 'processing') {
+    if (audit?.status === 'running') {
       setPageSpeedData(null);
     }
   }, [audit?.status]);
@@ -170,19 +235,50 @@ export default function AuditDetailPage() {
   const getStatusColor = useMemo(() => (status: string) => {
     switch (status) {
       case 'completed':
-        return 'bg-green-500/20 text-green-300 border-green-500/30';
+        return 'bg-emerald-500/10 text-emerald-600 border-emerald-500/30';
       case 'failed':
-        return 'bg-red-500/20 text-red-300 border-red-500/30';
+        return 'bg-red-500/10 text-red-600 border-red-500/30';
       default:
-        return 'bg-blue-500/20 text-blue-300 border-blue-500/30';
+        return 'bg-amber-500/10 text-amber-600 border-amber-500/30';
     }
   }, []);
 
   const getScoreColor = useMemo(() => (score: number) => {
-    if (score >= 90) return 'text-green-400';
-    if (score >= 50) return 'text-yellow-400';
-    return 'text-red-400';
+    if (score >= 90) return 'text-emerald-600';
+    if (score >= 50) return 'text-amber-500';
+    return 'text-red-500';
   }, []);
+
+  const comparisonSites = useMemo(() => {
+    if (!audit) return [];
+    const baseScore =
+      typeof audit.geo_score === 'number'
+        ? audit.geo_score
+        : 0;
+    const sites = [
+      {
+        name: 'Your Site',
+        score: baseScore,
+        color: 'hsl(var(--brand))',
+      },
+      ...competitors.slice(0, 5).map((comp: any) => ({
+        name: comp.domain || safeHostname(comp.url) || 'Competitor',
+        score: typeof comp.geo_score === 'number' ? comp.geo_score : 0,
+        color: 'hsl(var(--muted-foreground))',
+      })),
+    ];
+    return sites;
+  }, [audit, competitors]);
+
+  const statusLabel = audit?.status === 'running' ? 'processing' : (audit?.status ?? 'unknown');
+  const progressValue = Math.round(audit?.progress ?? 0);
+  const pagesCount = (audit?.total_pages && audit.total_pages > 0) ? audit.total_pages : pages.length;
+  const coverageBadges = [
+    { label: 'PageSpeed', ok: Boolean(pageSpeedData || audit?.pagespeed_data) },
+    { label: 'Competitors', ok: competitors.length > 0 },
+    { label: 'Fix Plan', ok: (audit?.fix_plan?.length ?? 0) > 0 },
+    { label: 'Report', ok: Boolean(audit?.report_markdown) },
+  ];
 
   if (loading) {
     return (
@@ -245,9 +341,41 @@ export default function AuditDetailPage() {
     }
   };
 
-  // Show AI Processing Screen when audit is processing
-  if (audit?.status === 'processing') {
+  const shouldShowProcessing =
+    audit?.status === 'running' ||
+    audit?.status === 'processing' ||
+    (audit?.status === 'pending' && (hasChatCompleted || (audit?.progress ?? 0) > 0));
+
+  const shouldShowChatOnly =
+    audit?.status === 'pending' && (audit?.progress ?? 0) === 0 && !hasChatCompleted;
+
+  // Show AI Processing Screen when audit is running
+  if (shouldShowProcessing) {
     return <AIProcessingScreen isProcessing={true} />;
+  }
+
+  if (shouldShowChatOnly) {
+    return (
+      <div className="flex min-h-screen flex-col">
+        <Header />
+        <main className="flex-1 container mx-auto px-6 py-12">
+          <div className="max-w-3xl mx-auto">
+            <AuditChatFlow
+              auditId={parseInt(auditId)}
+              onComplete={() => {
+                setHasChatCompleted(true);
+                setAudit((prev: any) => ({
+                  ...prev,
+                  status: 'running',
+                  progress: 1
+                }));
+                fetchData();
+              }}
+            />
+          </div>
+        </main>
+      </div>
+    );
   }
 
   return (
@@ -263,35 +391,69 @@ export default function AuditDetailPage() {
 
         {/* Header card */}
         <div className="glass-card p-8 mb-8 relative overflow-hidden">
-          <div className="absolute top-0 right-0 p-8 opacity-5">
-            <Globe className="w-64 h-64 text-foreground" />
+          <div className="absolute -top-24 -right-24 w-72 h-72 rounded-full bg-brand/10 blur-3xl" />
+          <div className="absolute bottom-0 right-0 p-8 opacity-10">
+            <Globe className="w-40 h-40 text-foreground" />
           </div>
 
-          <div className="flex flex-col md:flex-row justify-between items-start relative z-10 gap-6">
-            <div>
-              <div className="flex items-center gap-4 mb-2">
-                <h1 className="text-4xl font-bold text-foreground">
-                  {audit?.domain
-                    ? audit.domain
-                    : audit?.url
-                      ? new URL(audit.url).hostname.replace('www.', '')
-                      : '---'}
-                </h1>
-                <span
-                  className={`px-3 py-1 rounded-full text-xs font-medium border ${audit ? getStatusColor(audit.status) : ''
-                    }`}
-                >
-                  {audit?.status ?? ''}
+          <div className="flex flex-col lg:flex-row justify-between items-start relative z-10 gap-8">
+            <div className="min-w-0 flex-1 space-y-4">
+              <div className="flex flex-wrap items-center gap-3 text-xs uppercase tracking-wide text-muted-foreground">
+                <span className={`px-3 py-1 rounded-full border ${getStatusColor(audit?.status ?? 'pending')}`}>
+                  {statusLabel}
                 </span>
+                <span className="px-3 py-1 rounded-full border border-border bg-muted/40">
+                  Progress {progressValue}%
+                </span>
+                <span className="px-3 py-1 rounded-full border border-border bg-muted/40">
+                  Created {formatDate(audit?.created_at)}
+                </span>
+                {audit?.started_at && (
+                  <span className="px-3 py-1 rounded-full border border-border bg-muted/40">
+                    Started {formatDate(audit?.started_at)}
+                  </span>
+                )}
+                {audit?.completed_at && (
+                  <span className="px-3 py-1 rounded-full border border-border bg-muted/40">
+                    Completed {formatDate(audit?.completed_at)}
+                  </span>
+                )}
               </div>
-              <p className="text-lg text-muted-foreground mb-6 flex items-center gap-2">
-                <Globe className="w-4 h-4" />
-                {audit?.url ?? ''}
-              </p>
+
+              <div>
+                <h1 className="text-3xl md:text-4xl font-semibold text-foreground break-all">
+                  {audit?.domain || safeHostname(audit?.url) || '—'}
+                </h1>
+                <p className="text-base text-muted-foreground mt-2 flex items-center gap-2 break-all">
+                  <Globe className="w-4 h-4" />
+                  {audit?.url ?? '—'}
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <div className="h-2 w-full bg-muted/50 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-brand rounded-full transition-all"
+                    style={{ width: `${progressValue}%` }}
+                  />
+                </div>
+                <div className="text-xs text-muted-foreground">Pipeline progress</div>
+              </div>
+
+              {audit?.error_message && (
+                <div className="rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-600">
+                  {audit.error_message}
+                </div>
+              )}
+              {audit?.status === 'failed' && !audit?.error_message && (
+                <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-700">
+                  This audit failed before completion. Check backend logs for the detailed error.
+                </div>
+              )}
             </div>
 
             {audit?.status === 'completed' && (
-              <div className="flex gap-3">
+              <div className="flex flex-wrap gap-3">
                 {audit.source === 'hubspot' && (
                   <Button
                     onClick={() => router.push(`/audits/${auditId}/hubspot-apply`)}
@@ -335,26 +497,64 @@ export default function AuditDetailPage() {
               </div>
             )}
           </div>
-
         </div>
 
-        {/* Chat Flow for Configuration (if audit is pending) */}
-        {audit?.status === 'pending' && audit?.progress === 0 && !hasChatCompleted && (
-          <div className="mb-8">
-            <AuditChatFlow
-              auditId={parseInt(auditId)}
-              onComplete={() => {
-                setHasChatCompleted(true); // Prevent chat from reappearing
-                // Optimistically update status to hide chat and show progress immediately
-                setAudit((prev: any) => ({
-                  ...prev,
-                  status: 'processing',
-                  progress: 1
-                }));
-                // Refresh audit data after configuration
-                fetchData();
-              }}
-            />
+        {/* Audit signals */}
+        {audit && (
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+            <div className="glass-panel p-5 rounded-2xl">
+              <div className="text-xs uppercase tracking-wide text-muted-foreground mb-2">Market Context</div>
+              <div className="text-lg font-semibold text-foreground">
+                {categoryDisplay}
+              </div>
+              <div className="text-sm text-muted-foreground mt-1">
+                Market: {audit?.external_intelligence?.market || audit?.market || '—'} · Language: {languageDisplay}
+              </div>
+            </div>
+            <div className="glass-panel p-5 rounded-2xl">
+              <div className="text-xs uppercase tracking-wide text-muted-foreground mb-2">Data Coverage</div>
+              <div className="flex flex-wrap gap-2">
+                {coverageBadges.map((badge) => (
+                  <span
+                    key={badge.label}
+                    className={`px-3 py-1 rounded-full border text-xs ${badge.ok
+                      ? 'bg-emerald-500/10 text-emerald-600 border-emerald-500/30'
+                      : 'bg-muted/50 text-muted-foreground border-border'}`}
+                  >
+                    {badge.label}
+                  </span>
+                ))}
+              </div>
+            </div>
+            <div className="glass-panel p-5 rounded-2xl">
+              <div className="text-xs uppercase tracking-wide text-muted-foreground mb-2">Signals</div>
+              <div className="space-y-2 text-sm">
+                <div className="flex items-center justify-between">
+                  <span className="text-muted-foreground">Pages audited</span>
+                  <span className="text-foreground font-semibold">{pagesCount}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-muted-foreground">Competitors found</span>
+                  <span className="text-foreground font-semibold">{competitors.length}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-muted-foreground">Fix plan items</span>
+                  <span className="text-foreground font-semibold">{audit?.fix_plan?.length ?? 0}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-muted-foreground">Critical issues</span>
+                  <span className="text-foreground font-semibold">{audit?.critical_issues ?? 0}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-muted-foreground">High issues</span>
+                  <span className="text-foreground font-semibold">{audit?.high_issues ?? 0}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-muted-foreground">Medium issues</span>
+                  <span className="text-foreground font-semibold">{audit?.medium_issues ?? 0}</span>
+                </div>
+              </div>
+            </div>
           </div>
         )}
 
@@ -376,35 +576,35 @@ export default function AuditDetailPage() {
 
           <TabsContent value="overview">
             {/* Stats cards */}
-            {audit?.status === 'completed' && (
+            {audit && (
               <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
                 <div className="glass-card p-6">
                   <div className="flex items-center gap-3 mb-2 text-muted-foreground">
                     <FileText className="w-4 h-4" />
                     <span className="text-sm font-medium uppercase tracking-wider">Pages</span>
                   </div>
-                  <div className="text-3xl font-bold text-foreground">{audit.total_pages}</div>
+                  <div className="text-3xl font-bold text-foreground">{pagesCount}</div>
                 </div>
                 <div className="glass-card p-6">
-                  <div className="flex items-center gap-3 mb-2 text-red-400/70">
+                  <div className="flex items-center gap-3 mb-2 text-red-600/70">
                     <AlertTriangle className="w-4 h-4" />
                     <span className="text-sm font-medium uppercase tracking-wider">Critical</span>
                   </div>
-                  <div className="text-3xl font-bold text-red-400">{audit.critical_issues}</div>
+                  <div className="text-3xl font-bold text-red-600">{audit.critical_issues ?? 0}</div>
                 </div>
                 <div className="glass-card p-6">
-                  <div className="flex items-center gap-3 mb-2 text-orange-400/70">
+                  <div className="flex items-center gap-3 mb-2 text-amber-600/70">
                     <AlertTriangle className="w-4 h-4" />
                     <span className="text-sm font-medium uppercase tracking-wider">High</span>
                   </div>
-                  <div className="text-3xl font-bold text-orange-400">{audit.high_issues}</div>
+                  <div className="text-3xl font-bold text-amber-600">{audit.high_issues ?? 0}</div>
                 </div>
                 <div className="glass-card p-6">
-                  <div className="flex items-center gap-3 mb-2 text-yellow-400/70">
+                  <div className="flex items-center gap-3 mb-2 text-amber-500/70">
                     <AlertTriangle className="w-4 h-4" />
                     <span className="text-sm font-medium uppercase tracking-wider">Medium</span>
                   </div>
-                  <div className="text-3xl font-bold text-yellow-400">{audit.medium_issues}</div>
+                  <div className="text-3xl font-bold text-amber-500">{audit.medium_issues ?? 0}</div>
                 </div>
               </div>
             )}
@@ -418,7 +618,7 @@ export default function AuditDetailPage() {
               return (
                 <div className="glass-card p-8 mb-8">
                   <h2 className="text-2xl font-bold text-foreground mb-6 flex items-center gap-3">
-                    <Clock className="w-6 h-6 text-blue-400" />
+                    <Clock className="w-6 h-6 text-brand" />
                     PageSpeed Insights
                   </h2>
 
@@ -502,7 +702,7 @@ export default function AuditDetailPage() {
                         {Object.entries(psData.opportunities).map(([key, data]: [string, any]) => (
                           data && data.score !== null && data.score < 0.9 && (
                             <div key={key} className="bg-muted/50 p-3 rounded-xl border border-border flex items-start gap-3">
-                              <AlertTriangle className={`w-4 h-4 mt-1 flex-shrink-0 ${data.score < 0.5 ? 'text-red-400' : 'text-yellow-400'}`} />
+                              <AlertTriangle className={`w-4 h-4 mt-1 flex-shrink-0 ${data.score < 0.5 ? 'text-red-500' : 'text-amber-500'}`} />
                               <div className="flex-1 min-w-0">
                                 <div className="text-sm font-medium text-foreground">{data.title || key.replace(/-/g, ' ')}</div>
                                 {data.displayValue && (
@@ -704,8 +904,8 @@ export default function AuditDetailPage() {
                     className="group glass-panel p-6 rounded-2xl transition-all text-left hover:-translate-y-1"
                   >
                     <div className="flex items-start justify-between mb-3">
-                      <div className="p-3 bg-purple-500/20 rounded-xl">
-                        <Target className="w-6 h-6 text-purple-400" />
+                      <div className="p-3 bg-brand/10 rounded-xl">
+                        <Target className="w-6 h-6 text-brand" />
                       </div>
                       <ExternalLink className="w-5 h-5 text-muted-foreground group-hover:text-foreground transition-colors" />
                     </div>
@@ -721,8 +921,8 @@ export default function AuditDetailPage() {
                     className="group glass-panel p-6 rounded-2xl transition-all text-left hover:-translate-y-1"
                   >
                     <div className="flex items-start justify-between mb-3">
-                      <div className="p-3 bg-blue-500/20 rounded-xl">
-                        <Search className="w-6 h-6 text-blue-400" />
+                      <div className="p-3 bg-brand/10 rounded-xl">
+                        <Search className="w-6 h-6 text-brand" />
                       </div>
                       <ExternalLink className="w-5 h-5 text-muted-foreground group-hover:text-foreground transition-colors" />
                     </div>
@@ -739,7 +939,7 @@ export default function AuditDetailPage() {
                   >
                     <div className="flex items-start justify-between mb-3">
                       <div className="p-3 bg-green-500/20 rounded-xl">
-                        <LinkIcon className="w-6 h-6 text-green-400" />
+                        <LinkIcon className="w-6 h-6 text-emerald-600" />
                       </div>
                       <ExternalLink className="w-5 h-5 text-muted-foreground group-hover:text-foreground transition-colors" />
                     </div>
@@ -756,7 +956,7 @@ export default function AuditDetailPage() {
                   >
                     <div className="flex items-start justify-between mb-3">
                       <div className="p-3 bg-orange-500/20 rounded-xl">
-                        <TrendingUp className="w-6 h-6 text-orange-400" />
+                        <TrendingUp className="w-6 h-6 text-amber-600" />
                       </div>
                       <ExternalLink className="w-5 h-5 text-muted-foreground group-hover:text-foreground transition-colors" />
                     </div>
@@ -773,7 +973,7 @@ export default function AuditDetailPage() {
                   >
                     <div className="flex items-start justify-between mb-3">
                       <div className="p-3 bg-pink-500/20 rounded-xl">
-                        <Edit className="w-6 h-6 text-pink-400" />
+                        <Edit className="w-6 h-6 text-rose-600" />
                       </div>
                       <ExternalLink className="w-5 h-5 text-muted-foreground group-hover:text-foreground transition-colors" />
                     </div>
@@ -790,7 +990,7 @@ export default function AuditDetailPage() {
                   >
                     <div className="flex items-start justify-between mb-3">
                       <div className="p-3 bg-cyan-500/20 rounded-xl">
-                        <Sparkles className="w-6 h-6 text-cyan-400" />
+                        <Sparkles className="w-6 h-6 text-sky-600" />
                       </div>
                       <ExternalLink className="w-5 h-5 text-muted-foreground group-hover:text-foreground transition-colors" />
                     </div>
@@ -805,8 +1005,8 @@ export default function AuditDetailPage() {
                     <DialogTrigger asChild>
                       <button className="group glass-panel p-6 rounded-2xl transition-all text-left hover:-translate-y-1">
                         <div className="flex items-start justify-between mb-3">
-                          <div className="p-3 bg-purple-500/20 rounded-xl">
-                            <GitPullRequest className="w-6 h-6 text-purple-400" />
+                          <div className="p-3 bg-brand/10 rounded-xl">
+                            <GitPullRequest className="w-6 h-6 text-brand" />
                           </div>
                           <ExternalLink className="w-5 h-5 text-muted-foreground group-hover:text-foreground transition-colors" />
                         </div>
@@ -828,7 +1028,7 @@ export default function AuditDetailPage() {
                       <button className="group glass-panel p-6 rounded-2xl transition-all text-left hover:-translate-y-1">
                         <div className="flex items-start justify-between mb-3">
                           <div className="p-3 bg-orange-500/20 rounded-xl">
-                            <Sparkles className="w-6 h-6 text-orange-400" />
+                            <Sparkles className="w-6 h-6 text-amber-600" />
                           </div>
                           <ExternalLink className="w-5 h-5 text-muted-foreground group-hover:text-foreground transition-colors" />
                         </div>
@@ -851,243 +1051,209 @@ export default function AuditDetailPage() {
             <div className="glass-card p-8 mb-8">
               <h2 className="text-2xl font-bold text-foreground mb-6">Analyzed Pages</h2>
               <div className="space-y-4">
-                {pages.map((page: any) => {
-                  const issues = [] as any[];
-                  if (page.audit_data?.structure?.h1_check?.status !== 'pass') {
-                    issues.push({ severity: 'critical', msg: 'Missing or multiple H1' });
-                  }
-                  if (!page.audit_data?.schema?.schema_presence?.status || page.audit_data?.schema?.schema_presence?.status !== 'present') {
-                    issues.push({ severity: 'high', msg: 'Missing Schema markup' });
-                  }
-                  if (page.audit_data?.eeat?.author_presence?.status !== 'pass') {
-                    issues.push({ severity: 'high', msg: 'Author not identified' });
-                  }
-                  if (page.audit_data?.structure?.semantic_html?.score_percent < 50) {
-                    issues.push({ severity: 'medium', msg: 'Low semantic HTML score' });
-                  }
+                {pages.length === 0 ? (
+                  <div className="rounded-2xl border border-dashed border-border bg-muted/30 p-6 text-sm text-muted-foreground">
+                    No pages analyzed yet. Once the crawl completes, page-level insights will appear here.
+                  </div>
+                ) : (
+                  pages.map((page: any) => {
+                    const issues = [] as any[];
+                    if (page.audit_data?.structure?.h1_check?.status !== 'pass') {
+                      issues.push({ severity: 'critical', msg: 'Missing or multiple H1' });
+                    }
+                    if (!page.audit_data?.schema?.schema_presence?.status || page.audit_data?.schema?.schema_presence?.status !== 'present') {
+                      issues.push({ severity: 'high', msg: 'Missing Schema markup' });
+                    }
+                    if (page.audit_data?.eeat?.author_presence?.status !== 'pass') {
+                      issues.push({ severity: 'high', msg: 'Author not identified' });
+                    }
+                    if (page.audit_data?.structure?.semantic_html?.score_percent < 50) {
+                      issues.push({ severity: 'medium', msg: 'Low semantic HTML score' });
+                    }
 
-                  return (
-                    <div key={page.id} className="glass-panel p-6 rounded-2xl transition-colors">
-                      <div className="flex flex-col md:flex-row justify-between items-start gap-4 mb-4">
-                        <div className="flex-1 min-w-0">
-                          <h3 className="font-semibold text-lg text-foreground truncate">{page.url}</h3>
-                          <p className="text-sm text-muted-foreground truncate">{page.path}</p>
+                    return (
+                      <div key={page.id} className="glass-panel p-6 rounded-2xl transition-colors">
+                        <div className="flex flex-col md:flex-row justify-between items-start gap-4 mb-4">
+                          <div className="flex-1 min-w-0">
+                            <h3 className="font-semibold text-lg text-foreground truncate">{page.url}</h3>
+                            <p className="text-sm text-muted-foreground truncate">{page.path}</p>
+                          </div>
+                          <div className="text-right flex-shrink-0">
+                            <div className="text-3xl font-bold text-foreground">{page.overall_score?.toFixed(1) || 0}</div>
+                            <div className="text-xs text-muted-foreground uppercase tracking-wider">Score</div>
+                          </div>
                         </div>
-                        <div className="text-right flex-shrink-0">
-                          <div className="text-3xl font-bold text-foreground">{page.overall_score?.toFixed(1) || 0}</div>
-                          <div className="text-xs text-muted-foreground uppercase tracking-wider">Score</div>
+
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+                          <div className="bg-muted/50 p-3 rounded-xl border border-border">
+                            <div className="text-xs text-muted-foreground mb-1">H1</div>
+                            <div className="font-semibold text-foreground">{page.h1_score?.toFixed(0) || 0}</div>
+                          </div>
+                          <div className="bg-muted/50 p-3 rounded-xl border border-border">
+                            <div className="text-xs text-muted-foreground mb-1">Structure</div>
+                            <div className="font-semibold text-foreground">{page.structure_score?.toFixed(0) || 0}</div>
+                          </div>
+                          <div className="bg-muted/50 p-3 rounded-xl border border-border">
+                            <div className="text-xs text-muted-foreground mb-1">Content</div>
+                            <div className="font-semibold text-foreground">{page.content_score?.toFixed(0) || 0}</div>
+                          </div>
+                          <div className="bg-muted/50 p-3 rounded-xl border border-border">
+                            <div className="text-xs text-muted-foreground mb-1">E-E-A-T</div>
+                            <div className="font-semibold text-foreground">{page.eeat_score?.toFixed(0) || 0}</div>
+                          </div>
                         </div>
+
+                        {issues.length > 0 && (
+                          <div className="space-y-2">
+                            {issues.map((issue, idx) => (
+                              <div
+                                key={idx}
+                                className={`text-sm p-3 rounded-xl border flex items-center gap-2 ${issue.severity === 'critical'
+                                  ? 'bg-red-500/10 text-red-600 border-red-500/20'
+                                  : issue.severity === 'high'
+                                    ? 'bg-orange-500/10 text-orange-600 border-orange-500/20'
+                                    : 'bg-amber-500/10 text-amber-600 border-amber-500/20'
+                                  }`}
+                              >
+                                <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+                                {issue.msg}
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </div>
-
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
-                        <div className="bg-muted/50 p-3 rounded-xl border border-border">
-                          <div className="text-xs text-muted-foreground mb-1">H1</div>
-                          <div className="font-semibold text-foreground">{page.h1_score?.toFixed(0) || 0}</div>
-                        </div>
-                        <div className="bg-muted/50 p-3 rounded-xl border border-border">
-                          <div className="text-xs text-muted-foreground mb-1">Structure</div>
-                          <div className="font-semibold text-foreground">{page.structure_score?.toFixed(0) || 0}</div>
-                        </div>
-                        <div className="bg-muted/50 p-3 rounded-xl border border-border">
-                          <div className="text-xs text-muted-foreground mb-1">Content</div>
-                          <div className="font-semibold text-foreground">{page.content_score?.toFixed(0) || 0}</div>
-                        </div>
-                        <div className="bg-muted/50 p-3 rounded-xl border border-border">
-                          <div className="text-xs text-muted-foreground mb-1">E-E-A-T</div>
-                          <div className="font-semibold text-foreground">{page.eeat_score?.toFixed(0) || 0}</div>
-                        </div>
-                      </div>
-
-                      {issues.length > 0 && (
-                        <div className="space-y-2">
-                          {issues.map((issue, idx) => (
-                            <div
-                              key={idx}
-                              className={`text-sm p-3 rounded-xl border flex items-center gap-2 ${issue.severity === 'critical'
-                                ? 'bg-red-500/10 text-red-200 border-red-500/20'
-                                : issue.severity === 'high'
-                                  ? 'bg-orange-500/10 text-orange-200 border-orange-500/20'
-                                  : 'bg-yellow-500/10 text-yellow-200 border-yellow-500/20'
-                                }`}
-                            >
-                              <AlertTriangle className="w-4 h-4 flex-shrink-0" />
-                              {issue.msg}
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
+                    );
+                  })
+                )}
               </div>
             </div>
 
             {/* Competitive analysis */}
-            {competitors.length > 0 && (
-              <div className="glass-card p-8 mb-8">
-                <h2 className="text-2xl font-bold text-foreground mb-6">Competitive Analysis</h2>
-                {/* Comparison chart (same SVG as before but styled for dark mode) */}
-                <div className="mb-8 overflow-x-auto">
-                  <h3 className="text-lg font-semibold text-foreground/80 mb-4">GEO/SEO Score Comparison</h3>
-                  <div className="relative h-80 bg-muted/50 border border-border rounded-2xl p-6 min-w-[600px]">
-                    <svg className="w-full h-full" viewBox="0 0 800 300">
-                      {[0, 20, 40, 60, 80, 100].map((val) => (
-                        <g key={val}>
-                          <line x1="60" y1={280 - val * 2.5} x2="780" y2={280 - val * 2.5} stroke="rgba(255,255,255,0.1)" strokeWidth="1" />
-                          <text x="40" y={285 - val * 2.5} fontSize="12" fill="rgba(255,255,255,0.4)">
-                            {val}
-                          </text>
-                        </g>
-                      ))}
-                      {(() => {
-                        const allSites = [
-                          {
-                            name: 'Your Site',
-                            score:
-                              audit.geo_score !== undefined && audit.geo_score !== null
-                                ? audit.geo_score
-                                : (audit.total_pages > 0
-                                  ? 100 - (audit.critical_issues * 2 + audit.high_issues) * 10 / Math.max(1, audit.total_pages)
-                                  : 50),
-                            color: '#a855f7', // Purple
-                          },
-                          ...competitors.slice(0, 5).map((comp: any) => {
-                            const domain = comp.domain || new URL(comp.url).hostname.replace('www.', '');
-                            const geoScore = comp.geo_score || 50;
-                            return { name: domain, score: geoScore, color: '#94a3b8' }; // Slate 400
-                          }),
-                        ];
-                        const spacing = 720 / (allSites.length - 1);
-                        return (
-                          <>
-                            {allSites.map((site, idx) => {
-                              if (idx === allSites.length - 1) return null;
-                              const x1 = 60 + idx * spacing;
-                              const y1 = 280 - site.score * 2.5;
-                              const x2 = 60 + (idx + 1) * spacing;
-                              const y2 = 280 - allSites[idx + 1].score * 2.5;
-                              return (
-                                <line
-                                  key={`line-${idx}`}
-                                  x1={x1}
-                                  y1={y1}
-                                  x2={x2}
-                                  y2={y2}
-                                  stroke={site.color}
-                                  strokeWidth="2"
-                                  strokeOpacity="0.5"
-                                />
-                              );
-                            })}
-                            {allSites.map((site, idx) => {
-                              const x = 60 + idx * spacing;
-                              const y = 280 - site.score * 2.5;
-                              return (
-                                <g key={`point-${idx}`}>
-                                  <circle cx={x} cy={y} r="6" fill={site.color} />
-                                  <circle cx={x} cy={y} r="3" fill="#000" />
-                                  <text
-                                    x={x}
-                                    y="295"
-                                    fontSize="11"
-                                    fill="rgba(255,255,255,0.7)"
-                                    textAnchor="middle"
-                                    transform={`rotate(-45, ${x}, 295)`}
-                                  >
-                                    {site.name.length > 15 ? site.name.substring(0, 15) + '...' : site.name}
-                                  </text>
-                                  <text x={x} y={y - 12} fontSize="12" fontWeight="bold" fill={site.color} textAnchor="middle">
-                                    {site.score.toFixed(1)}
-                                  </text>
-                                </g>
-                              );
-                            })}
-                          </>
-                        );
-                      })()}
-                    </svg>
+            <div className="glass-card p-8 mb-8">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+                <div>
+                  <h2 className="text-2xl font-bold text-foreground">Competitive Analysis</h2>
+                  <p className="text-sm text-muted-foreground">Benchmark GEO performance against peer domains.</p>
+                </div>
+                <span className="text-xs uppercase tracking-wide text-muted-foreground border border-border px-3 py-1 rounded-full">
+                  {competitors.length} competitors
+                </span>
+              </div>
+
+              {competitors.length === 0 ? (
+                <div className="rounded-2xl border border-dashed border-border bg-muted/30 p-6 text-sm text-muted-foreground space-y-2">
+                  <div>No competitors identified yet.</div>
+                  <div>We’ll surface competitors as soon as discovery queries return results.</div>
+                  <div className="text-xs">
+                    Category: {audit?.external_intelligence?.category || audit?.category || 'Unclassified'}
                   </div>
                 </div>
-                {/* Detailed comparison table */}
-                <div className="overflow-x-auto">
-                  <h3 className="text-lg font-semibold text-foreground/80 mb-4">Detailed Benchmark</h3>
-                  <table className="w-full text-sm text-left">
-                    <thead>
-                      <tr className="border-b border-border text-muted-foreground">
-                        <th className="p-4 font-medium">Website</th>
-                        <th className="text-center p-4 font-medium">GEO Score (%)</th>
-                        <th className="text-center p-4 font-medium">Schema</th>
-                        <th className="text-center p-4 font-medium">Semantic HTML</th>
-                        <th className="text-center p-4 font-medium">E-E-A-T</th>
-                        <th className="text-center p-4 font-medium">H1</th>
-                        <th className="text-center p-4 font-medium">Tone</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-border">
-                      {/* Your site row */}
-                      <tr className="bg-muted/30">
-                        <td className="p-4 font-semibold text-foreground">
-                          <div className="flex items-center gap-2">
-                            <span className="w-2 h-2 bg-purple-500 rounded-full shadow-[0_0_10px_rgba(168,85,247,0.5)]" />
-                            Your Site
+              ) : (
+                <>
+                  <div className="mb-8">
+                    <h3 className="text-lg font-semibold text-foreground/80 mb-4">Score Comparison</h3>
+                    <div className="space-y-3">
+                      {comparisonSites.map((site) => (
+                        <div key={site.name} className="flex items-center gap-4">
+                          <div className="w-40 text-sm text-muted-foreground truncate">{site.name}</div>
+                          <div className="flex-1 h-2 bg-muted/40 rounded-full overflow-hidden">
+                            <div className="h-2 rounded-full" style={{ width: `${Math.min(site.score, 100)}%`, backgroundColor: site.color }} />
                           </div>
-                        </td>
-                        <td className="text-center p-4 font-bold text-purple-400">
-                          {(() => {
-                              if (audit.geo_score !== undefined && audit.geo_score !== null) {
-                                return `${audit.geo_score.toFixed(1)}%`;
-                              }
-                              const comp = audit.comparative_analysis;
-                              if (comp?.scores?.[0]) {
-                                return `${comp.scores[0].scores.total.toFixed(1)}%`;
-                              }
-                              return `${(100 - (audit.critical_issues * 2 + audit.high_issues) * 10 / Math.max(1, audit.total_pages)).toFixed(1)}%`;
-                            })()}
+                          <div className="w-14 text-sm font-semibold text-foreground text-right">{site.score.toFixed(1)}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="overflow-x-auto">
+                    <h3 className="text-lg font-semibold text-foreground/80 mb-4">Detailed Benchmark</h3>
+                    <table className="w-full text-sm text-left">
+                      <thead>
+                        <tr className="border-b border-border text-muted-foreground">
+                          <th className="p-4 font-medium">Website</th>
+                          <th className="text-center p-4 font-medium">GEO Score (%)</th>
+                          <th className="text-center p-4 font-medium">Schema</th>
+                          <th className="text-center p-4 font-medium">Semantic HTML</th>
+                          <th className="text-center p-4 font-medium">E-E-A-T</th>
+                          <th className="text-center p-4 font-medium">H1</th>
+                          <th className="text-center p-4 font-medium">Tone</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-border">
+                        <tr className="bg-muted/30">
+                          <td className="p-4 font-semibold text-foreground">
+                            <div className="flex items-center gap-2">
+                              <span className="w-2 h-2 bg-brand rounded-full" />
+                              Your Site
+                            </div>
                           </td>
-                        <td className="text-center p-4 text-foreground/70">{audit.target_audit?.schema?.schema_presence?.status === 'present' ? '✓' : '✗'}</td>
-                        <td className="text-center p-4 text-foreground/70">{audit.target_audit?.structure?.semantic_html?.score_percent?.toFixed(0) || 'N/A'}%</td>
-                        <td className="text-center p-4 text-foreground/70">{audit.target_audit?.eeat?.author_presence?.status === 'pass' ? '✓' : '✗'}</td>
-                        <td className="text-center p-4 text-foreground/70">{audit.target_audit?.structure?.h1_check?.status === 'pass' ? '✓' : '✗'}</td>
-                        <td className="text-center p-4 text-foreground/70">{audit.target_audit?.content?.conversational_tone?.score || 0}/10</td>
-                      </tr>
-                      {/* Competitor rows */}
-                      {competitors.map((comp: any, idx: number) => {
-                        const domain = new URL(comp.url).hostname.replace('www.', '');
-                        return (
-                          <tr key={idx} className="hover:bg-muted/20 transition-colors">
-                            <td className="p-4 text-muted-foreground">
-                              <div className="flex items-center gap-2">
-                                <span className="w-2 h-2 bg-slate-500 rounded-full" />
-                                <a href={comp.url} target="_blank" rel="noopener noreferrer" className="hover:text-foreground hover:underline">
-                                  {domain}
-                                </a>
-                              </div>
-                            </td>
-                            <td className="text-center p-4 font-bold text-foreground/90">
-                              {comp.geo_score !== undefined && comp.geo_score !== null
-                                ? `${comp.geo_score.toFixed(1)}%`
-                                : '0.0%'}
-                            </td>
-                            <td className="text-center p-4 text-muted-foreground">{comp.schema_present ? '✓' : '✗'}</td>
-                            <td className="text-center p-4 text-muted-foreground">{comp.structure_score?.toFixed(0) || 'N/A'}%</td>
-                            <td className="text-center p-4 text-muted-foreground">{comp.eeat_score?.toFixed(0) || 'N/A'}</td>
-                            <td className="text-center p-4 text-muted-foreground">{comp.h1_present ? '✓' : '✗'}</td>
-                            <td className="text-center p-4 text-muted-foreground">{comp.tone_score?.toFixed(0) || '0'}</td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )}
+                          <td className="text-center p-4 font-bold text-brand">
+                            {audit.geo_score !== undefined && audit.geo_score !== null
+                              ? `${audit.geo_score.toFixed(1)}%`
+                              : `${comparisonSites[0]?.score?.toFixed(1) ?? '0.0'}%`}
+                          </td>
+                          <td className="text-center p-4 text-foreground/70">{audit.target_audit?.schema?.schema_presence?.status === 'present' ? '✓' : '✗'}</td>
+                          <td className="text-center p-4 text-foreground/70">
+                            {typeof audit.target_audit?.structure?.semantic_html?.score_percent === 'number'
+                              ? `${audit.target_audit?.structure?.semantic_html?.score_percent.toFixed(0)}%`
+                              : 'N/A'}
+                          </td>
+                          <td className="text-center p-4 text-foreground/70">{audit.target_audit?.eeat?.author_presence?.status === 'pass' ? '✓' : '✗'}</td>
+                          <td className="text-center p-4 text-foreground/70">{audit.target_audit?.structure?.h1_check?.status === 'pass' ? '✓' : '✗'}</td>
+                          <td className="text-center p-4 text-foreground/70">
+                            {typeof audit.target_audit?.content?.conversational_tone?.score === 'number'
+                              ? audit.target_audit?.content?.conversational_tone?.score.toFixed(1)
+                              : '0.0'}
+                            /10
+                          </td>
+                        </tr>
+                        {competitors.map((comp: any, idx: number) => {
+                          const domain = safeHostname(comp.url) || comp.domain || 'Competitor';
+                          const toneScore = typeof comp.tone_score === 'number' ? comp.tone_score : 0;
+                          return (
+                            <tr key={idx} className="hover:bg-muted/20 transition-colors">
+                              <td className="p-4 text-muted-foreground">
+                                <div className="flex items-center gap-2">
+                                  <span className="w-2 h-2 bg-slate-400 rounded-full" />
+                                  <a href={comp.url} target="_blank" rel="noopener noreferrer" className="hover:text-foreground hover:underline">
+                                    {domain}
+                                  </a>
+                                </div>
+                              </td>
+                              <td className="text-center p-4 font-bold text-foreground/90">
+                                {comp.geo_score !== undefined && comp.geo_score !== null
+                                  ? `${comp.geo_score.toFixed(1)}%`
+                                  : '0.0%'}
+                              </td>
+                              <td className="text-center p-4 text-muted-foreground">{comp.schema_present ? '✓' : '✗'}</td>
+                              <td className="text-center p-4 text-muted-foreground">
+                                {typeof comp.structure_score === 'number'
+                                  ? `${comp.structure_score.toFixed(0)}%`
+                                  : 'N/A'}
+                              </td>
+                              <td className="text-center p-4 text-muted-foreground">
+                                {typeof comp.eeat_score === 'number'
+                                  ? comp.eeat_score.toFixed(0)
+                                  : 'N/A'}
+                              </td>
+                              <td className="text-center p-4 text-muted-foreground">{comp.h1_present ? '✓' : '✗'}</td>
+                              <td className="text-center p-4 text-muted-foreground">{toneScore.toFixed(1)}/10</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              )}
+            </div>
           </TabsContent>
 
           <TabsContent value="report">
             <div className="glass-card p-8">
               <div className="flex items-center justify-between gap-4 mb-6">
                 <h2 className="text-2xl font-bold text-foreground flex items-center gap-3">
-                  <FileText className="w-6 h-6 text-blue-400" />
+                  <FileText className="w-6 h-6 text-brand" />
                   Report (Markdown)
                 </h2>
                 <Button variant="outline" onClick={() => { setReportMarkdown(null); loadReport(); }}>
@@ -1101,10 +1267,14 @@ export default function AuditDetailPage() {
                   <RefreshCw className="h-4 w-4 animate-spin" />
                   Loading report...
                 </div>
-              ) : (
+              ) : reportMarkdown ? (
                 <pre className="whitespace-pre-wrap break-words text-sm bg-muted/40 border border-border rounded-xl p-4 overflow-auto max-h-[70vh]">
-                  {reportMarkdown || 'No report available.'}
+                  {reportMarkdown}
                 </pre>
+              ) : (
+                <div className="text-muted-foreground">
+                  {reportMessage || 'Report not generated. Click Generate PDF to build it.'}
+                </div>
               )}
             </div>
           </TabsContent>
@@ -1113,7 +1283,7 @@ export default function AuditDetailPage() {
             <div className="glass-card p-8">
               <div className="flex items-center justify-between gap-4 mb-6">
                 <h2 className="text-2xl font-bold text-foreground flex items-center gap-3">
-                  <Target className="w-6 h-6 text-purple-400" />
+                  <Target className="w-6 h-6 text-brand" />
                   Fix Plan
                 </h2>
                 <Button variant="outline" onClick={() => { setFixPlan(null); loadFixPlan(); }}>
@@ -1157,7 +1327,9 @@ export default function AuditDetailPage() {
                   ))}
                 </div>
               ) : (
-                <div className="text-muted-foreground">No fix plan available.</div>
+                <div className="text-muted-foreground">
+                  {fixPlanMessage || 'Fix plan will be created when you generate the PDF report.'}
+                </div>
               )}
             </div>
           </TabsContent>

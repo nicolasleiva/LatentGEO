@@ -50,7 +50,7 @@ class AuditService:
             url=url,
             domain=domain,
             status=AuditStatus.PENDING,
-            language=audit_create.language or "es",
+            language="en",
             competitors=audit_create.competitors,
             market=audit_create.market,
             source=audit_create.source,
@@ -192,6 +192,49 @@ class AuditService:
         return audit
 
     @staticmethod
+    def _sanitize_json_value(value: Any, _stack: Optional[set] = None) -> Any:
+        """Sanitize JSON payloads to avoid circular references and non-serializable objects."""
+        if _stack is None:
+            _stack = set()
+
+        if value is None or isinstance(value, (str, int, float, bool)):
+            return value
+
+        if isinstance(value, datetime):
+            return value.isoformat()
+
+        obj_id = id(value)
+        if obj_id in _stack:
+            return "[Circular]"
+
+        if isinstance(value, dict):
+            _stack.add(obj_id)
+            try:
+                sanitized = {}
+                for key, val in value.items():
+                    safe_key = key if isinstance(key, (str, int, float, bool)) else str(key)
+                    sanitized[str(safe_key)] = AuditService._sanitize_json_value(val, _stack)
+                return sanitized
+            finally:
+                _stack.discard(obj_id)
+
+        if isinstance(value, (list, tuple, set)):
+            _stack.add(obj_id)
+            try:
+                return [AuditService._sanitize_json_value(item, _stack) for item in value]
+            finally:
+                _stack.discard(obj_id)
+
+        for attr in ("model_dump", "dict"):
+            if hasattr(value, attr) and callable(getattr(value, attr)):
+                try:
+                    return AuditService._sanitize_json_value(getattr(value, attr)(), _stack)
+                except Exception:
+                    pass
+
+        return str(value)
+
+    @staticmethod
     async def set_audit_results(
         db: Session,
         audit_id: int,
@@ -218,13 +261,37 @@ class AuditService:
         if not isinstance(target_audit, dict):
             target_audit = {}
 
-        audit.target_audit = target_audit
-        audit.external_intelligence = external_intelligence
-        audit.search_results = search_results
-        audit.competitor_audits = competitor_audits
+        external_intelligence = external_intelligence or {}
+        search_results = search_results or {}
+        competitor_audits = competitor_audits or []
+        fix_plan = fix_plan or []
+        pagespeed_data = pagespeed_data or {}
+
+        safe_target_audit = AuditService._sanitize_json_value(target_audit)
+        safe_external_intelligence = AuditService._sanitize_json_value(external_intelligence)
+        safe_search_results = AuditService._sanitize_json_value(search_results)
+        safe_competitor_audits = AuditService._sanitize_json_value(competitor_audits)
+        safe_fix_plan = AuditService._sanitize_json_value(fix_plan)
+        safe_pagespeed_data = AuditService._sanitize_json_value(pagespeed_data)
+
+        if not isinstance(safe_competitor_audits, list):
+            safe_competitor_audits = []
+        if not isinstance(safe_fix_plan, list):
+            safe_fix_plan = []
+        if not isinstance(safe_external_intelligence, dict):
+            safe_external_intelligence = {}
+        if not isinstance(safe_search_results, dict):
+            safe_search_results = {}
+        if not isinstance(safe_pagespeed_data, dict):
+            safe_pagespeed_data = {}
+
+        audit.target_audit = safe_target_audit
+        audit.external_intelligence = safe_external_intelligence
+        audit.search_results = safe_search_results
+        audit.competitor_audits = safe_competitor_audits
         audit.report_markdown = report_markdown
-        audit.fix_plan = fix_plan
-        audit.pagespeed_data = pagespeed_data
+        audit.fix_plan = safe_fix_plan
+        audit.pagespeed_data = safe_pagespeed_data
 
         # Calcular y guardar GEO Score para el target audit
         try:
@@ -237,7 +304,25 @@ class AuditService:
 
         # Actualizar metadata
         audit.is_ymyl = external_intelligence.get("is_ymyl", False)
-        category_value = external_intelligence.get("category", "Desconocida")
+        category_value = external_intelligence.get("category")
+        if not category_value or str(category_value).strip().lower() in {
+            "",
+            "unclassified",
+            "unknown category",
+            "none",
+        }:
+            try:
+                from app.services.pipeline_service import PipelineService
+
+                core_terms = PipelineService._extract_core_terms_from_target(
+                    target_audit, max_terms=3, include_generic=False
+                )
+                if core_terms:
+                    category_value = " ".join(core_terms).title()
+            except Exception as e:
+                logger.warning(f"No se pudo inferir categoría desde core terms: {e}")
+        if not category_value:
+            category_value = "Unclassified"
         if isinstance(category_value, dict):
             # Persist structured category as JSON string for String column compatibility
             try:
@@ -247,6 +332,16 @@ class AuditService:
         audit.category = category_value
         # target_audit ya es dict o {}
         audit.total_pages = target_audit.get("audited_pages_count", 0)
+
+        # Persist inferred market when missing (avoid empty Market Context)
+        try:
+            market_value = external_intelligence.get("market") or target_audit.get("market")
+            if not market_value:
+                market_value = PipelineService._infer_market_from_url(audit.url)
+            if market_value and not audit.market:
+                audit.market = market_value
+        except Exception as e:
+            logger.warning(f"No se pudo inferir mercado para audit {audit_id}: {e}")
 
         # Contar issues reales desde las páginas auditadas (Más preciso para el dashboard)
         saved_pages = db.query(AuditedPage).filter(AuditedPage.audit_id == audit_id).all()
@@ -273,7 +368,7 @@ class AuditService:
             audit.low_issues = len([f for f in fix_plan_list if f.get("priority") == "LOW"])
         
         # Guardar competidores con GEO scores calculados
-        for comp_data in competitor_audits:
+        for comp_data in safe_competitor_audits:
             if isinstance(comp_data, dict) and comp_data.get("url"):
                 try:
                     # CompetitorService ya está definido en este archivo (línea 914)
@@ -289,9 +384,17 @@ class AuditService:
 
         # Guardar JSONs como en ag2_pipeline.py
         await AuditService._save_audit_files(
-            audit_id, target_audit, external_intelligence, 
-            search_results, competitor_audits, fix_plan, 
-            pagespeed_data, keywords, backlinks, rankings, llm_visibility
+            audit_id,
+            safe_target_audit,
+            safe_external_intelligence,
+            safe_search_results,
+            safe_competitor_audits,
+            safe_fix_plan,
+            safe_pagespeed_data,
+            keywords,
+            backlinks,
+            rankings,
+            llm_visibility
         )
 
         db.commit()
@@ -315,6 +418,22 @@ class AuditService:
     ):
         """Guardar archivos JSON de auditoría como en ag2_pipeline.py"""
         try:
+            safe_target_audit = AuditService._sanitize_json_value(target_audit)
+            safe_external_intelligence = AuditService._sanitize_json_value(external_intelligence or {})
+            safe_search_results = AuditService._sanitize_json_value(search_results or {})
+            safe_competitor_audits = AuditService._sanitize_json_value(competitor_audits or [])
+            safe_fix_plan = AuditService._sanitize_json_value(fix_plan or [])
+            safe_pagespeed_data = AuditService._sanitize_json_value(pagespeed_data or {})
+            safe_keywords = AuditService._sanitize_json_value(keywords or [])
+            safe_backlinks = AuditService._sanitize_json_value(backlinks or [])
+            safe_rankings = AuditService._sanitize_json_value(rankings or [])
+            safe_llm_visibility = AuditService._sanitize_json_value(llm_visibility or [])
+
+            if not isinstance(safe_competitor_audits, list):
+                safe_competitor_audits = []
+            if not isinstance(safe_fix_plan, list):
+                safe_fix_plan = []
+
             # Crear directorio de reportes
             reports_dir = os.path.join(settings.REPORTS_DIR or "reports", f"audit_{audit_id}")
             pages_dir = os.path.join(reports_dir, "pages")
@@ -327,45 +446,45 @@ class AuditService:
             # Guardar resumen agregado
             aggregated_path = os.path.join(reports_dir, "aggregated_summary.json")
             with open(aggregated_path, 'w', encoding='utf-8') as f:
-                json.dump(target_audit, f, ensure_ascii=False, indent=2)
+                json.dump(safe_target_audit, f, ensure_ascii=False, indent=2)
 
             # Guardar fix_plan
             fix_plan_path = os.path.join(reports_dir, "fix_plan.json")
             with open(fix_plan_path, 'w', encoding='utf-8') as f:
-                json.dump(fix_plan, f, ensure_ascii=False, indent=2)
+                json.dump(safe_fix_plan, f, ensure_ascii=False, indent=2)
 
             # Guardar PageSpeed
             if pagespeed_data:
                 pagespeed_path = os.path.join(reports_dir, "pagespeed.json")
                 with open(pagespeed_path, 'w', encoding='utf-8') as f:
-                    json.dump(pagespeed_data, f, ensure_ascii=False, indent=2)
+                    json.dump(safe_pagespeed_data, f, ensure_ascii=False, indent=2)
 
             # Guardar Keywords
             if keywords:
                 keywords_path = os.path.join(reports_dir, "keywords.json")
                 with open(keywords_path, 'w', encoding='utf-8') as f:
-                    json.dump(keywords, f, ensure_ascii=False, indent=2)
+                    json.dump(safe_keywords, f, ensure_ascii=False, indent=2)
 
             # Guardar Backlinks
             if backlinks:
                 backlinks_path = os.path.join(reports_dir, "backlinks.json")
                 with open(backlinks_path, 'w', encoding='utf-8') as f:
-                    json.dump(backlinks, f, ensure_ascii=False, indent=2)
+                    json.dump(safe_backlinks, f, ensure_ascii=False, indent=2)
 
             # Guardar Rankings
             if rankings:
                 rankings_path = os.path.join(reports_dir, "rankings.json")
                 with open(rankings_path, 'w', encoding='utf-8') as f:
-                    json.dump(rankings, f, ensure_ascii=False, indent=2)
+                    json.dump(safe_rankings, f, ensure_ascii=False, indent=2)
 
             # Guardar LLM Visibility
             if llm_visibility:
                 visibility_path = os.path.join(reports_dir, "llm_visibility.json")
                 with open(visibility_path, 'w', encoding='utf-8') as f:
-                    json.dump(llm_visibility, f, ensure_ascii=False, indent=2)
+                    json.dump(safe_llm_visibility, f, ensure_ascii=False, indent=2)
 
             # Guardar competidores individuales
-            for i, comp in enumerate(competitor_audits):
+            for i, comp in enumerate(safe_competitor_audits):
                 try:
                     domain = comp.get('domain') or f"competitor_{i}"
                     safe_domain = re.sub(r'[^\w\-_.]', '_', domain)
@@ -383,15 +502,15 @@ class AuditService:
             
             # Guardar contexto final del LLM
             final_context = {
-                "target_audit": target_audit,
-                "external_intelligence": external_intelligence,
-                "search_results": search_results,
-                "competitor_audits": competitor_audits,
-                "pagespeed": pagespeed_data,
-                "keywords": keywords,
-                "backlinks": backlinks,
-                "rank_tracking": rankings,
-                "llm_visibility": llm_visibility
+                "target_audit": safe_target_audit,
+                "external_intelligence": safe_external_intelligence,
+                "search_results": safe_search_results,
+                "competitor_audits": safe_competitor_audits,
+                "pagespeed": safe_pagespeed_data,
+                "keywords": safe_keywords,
+                "backlinks": safe_backlinks,
+                "rank_tracking": safe_rankings,
+                "llm_visibility": safe_llm_visibility
             }
             context_path = os.path.join(reports_dir, "final_llm_context.json")
             with open(context_path, 'w', encoding='utf-8') as f:
@@ -416,6 +535,8 @@ class AuditService:
     ) -> AuditedPage:
         """Guardar auditoría de página individual como en ag2_pipeline.py"""
         try:
+            safe_audit_data = AuditService._sanitize_json_value(audit_data or {})
+
             # Crear directorio de páginas
             reports_dir = os.path.join(settings.REPORTS_DIR or "reports", f"audit_{audit_id}")
             pages_dir = os.path.join(reports_dir, "pages")
@@ -428,7 +549,7 @@ class AuditService:
 
             # Guardar JSON de la página
             with open(page_json_path, 'w', encoding='utf-8') as f:
-                json.dump(audit_data, f, ensure_ascii=False, indent=2)
+                json.dump(safe_audit_data, f, ensure_ascii=False, indent=2)
 
             # Extraer path de la URL
             from urllib.parse import urlparse
@@ -436,7 +557,7 @@ class AuditService:
             path = parsed_url.path or "/"
 
             # Calcular score general
-            overall_score = AuditService._calculate_overall_score(audit_data)
+            overall_score = AuditService._calculate_overall_score(safe_audit_data)
 
             # Guardar en base de datos
             audited_page = AuditService.add_audited_page(
@@ -444,7 +565,7 @@ class AuditService:
                 audit_id=audit_id,
                 url=page_url,
                 path=path,
-                audit_data=audit_data,
+                audit_data=safe_audit_data,
                 overall_score=overall_score
             )
 
@@ -498,6 +619,7 @@ class AuditService:
         overall_score: float,
     ):
         """Añadir página auditada"""
+        audit_data = AuditService._sanitize_json_value(audit_data or {})
         # Extraer scores individuales
         h1_score = AuditService._extract_h1_score(audit_data)
         structure_score = AuditService._extract_structure_score(audit_data)
@@ -870,53 +992,86 @@ class CompetitorService:
 
     @staticmethod
     def _calculate_geo_score(audit_data: Dict[str, Any]) -> float:
-        """Calcular GEO score basado en datos de auditoría (0-100)"""
-        try:
-            score = 100.0
-            penalties = []
-            
-            # 1. Schema (-30.0) - CRITICAL
-            schema_data = audit_data.get("schema", {})
-            schema_status = schema_data.get("schema_presence", {}).get("status")
-            if schema_status != "present":
-                score -= 30.0
-                penalties.append("no_schema")
-            
-            # 2. Semantic HTML (-20.0 / -10.0)
-            semantic = audit_data.get("structure", {}).get("semantic_html", {})
-            semantic_score = semantic.get("score_percent", 0) if semantic else 0
-            if semantic_score < 50:
-                score -= 20.0
-                penalties.append("bad_semantic")
-            elif semantic_score < 75:
-                score -= 10.0
-                penalties.append("poor_semantic")
-            
-            # 3. Author / EEAT (-20.0)
-            eeat = audit_data.get("eeat", {})
-            author_status = eeat.get("author_presence", {}).get("status") if eeat else "missing"
-            if author_status != "pass":
-                score -= 20.0
-                penalties.append("no_author")
-            
-            # 4. Conversational Tone (-15.0) - Important for AI
-            content = audit_data.get("content", {})
-            conversational = content.get("conversational_tone", {}).get("score", 0) if content else 0
-            if conversational < 4:
-                score -= 15.0
-                penalties.append("robotic_tone")
-            
-            # 5. H1 (-15.0)
-            h1_status = audit_data.get("structure", {}).get("h1_check", {}).get("status")
-            if h1_status != "pass":
-                score -= 15.0
-                penalties.append("bad_h1")
+        """Calcular GEO score basado en datos de auditoría (0-100).
 
-            final_score = max(0.0, min(100.0, score))
+        - Usa solo señales disponibles (no penaliza por ausencia de datos).
+        - Normaliza métricas a 0-100 y aplica pesos.
+        """
+        try:
+            weights = []
+
+            def _coerce_number(value: Any) -> Optional[float]:
+                if isinstance(value, (int, float)):
+                    return float(value)
+                try:
+                    return float(value)
+                except Exception:
+                    return None
+
+            def _add_metric(score_value: Optional[float], weight: float) -> None:
+                if score_value is None:
+                    return
+                clamped = max(0.0, min(100.0, score_value))
+                weights.append((clamped, weight))
+
+            # 1) Schema presence (weight 30)
+            schema_status = (
+                audit_data.get("schema", {})
+                .get("schema_presence", {})
+                .get("status")
+            )
+            if schema_status is not None:
+                _add_metric(100.0 if schema_status == "present" else 0.0, 30.0)
+
+            # 2) Semantic HTML / Structure (weight 20)
+            structure = audit_data.get("structure", {}) or {}
+            semantic_score = _coerce_number(
+                (structure.get("semantic_html") or {}).get("score_percent")
+            )
+            used_site_metrics_structure = False
+            if semantic_score is None:
+                site_metrics = audit_data.get("site_metrics", {}) or {}
+                structure_score_percent = _coerce_number(
+                    site_metrics.get("structure_score_percent")
+                )
+                if structure_score_percent is not None:
+                    semantic_score = structure_score_percent
+                    used_site_metrics_structure = True
+            _add_metric(semantic_score, 20.0)
+
+            # 3) E-E-A-T Author presence (weight 20)
+            author_status = (
+                audit_data.get("eeat", {})
+                .get("author_presence", {})
+                .get("status")
+            )
+            if author_status is not None:
+                _add_metric(100.0 if author_status == "pass" else 0.0, 20.0)
+
+            # 4) Conversational Tone (weight 15)
+            tone_score = _coerce_number(
+                (audit_data.get("content", {}) or {})
+                .get("conversational_tone", {})
+                .get("score")
+            )
+            if tone_score is not None:
+                _add_metric((tone_score / 10.0) * 100.0, 15.0)
+
+            # 5) H1 presence (weight 15)
+            h1_status = structure.get("h1_check", {}).get("status")
+            if h1_status is not None and not used_site_metrics_structure:
+                _add_metric(100.0 if h1_status == "pass" else 0.0, 15.0)
+
+            if not weights:
+                return 0.0
+
+            total_weight = sum(weight for _, weight in weights)
+            total_score = sum(score * weight for score, weight in weights) / total_weight
+            final_score = max(0.0, min(100.0, total_score))
             return round(final_score, 1)
         except Exception as e:
             logger.error(f"Error calculando GEO score: {e}")
-            return 50.0  # Score por defecto
+            return 0.0  # Sin datos suficientes para calcular
 
     @staticmethod
     def _format_competitor_data(audit_data: Dict[str, Any], geo_score: float, url: str = None) -> Dict[str, Any]:
@@ -962,6 +1117,9 @@ class CompetitorService:
             content_data = audit_data.get("content", {})
             conversational_tone = content_data.get("conversational_tone", {})
             tone_score = conversational_tone.get("score", 0)
+            if not isinstance(tone_score, (int, float)):
+                tone_score = 0
+            tone_score = max(0.0, min(10.0, float(tone_score)))
             
             return {
                 "url": comp_url,
@@ -997,10 +1155,13 @@ class CompetitorService:
     ) -> Competitor:
         """Añadir competidor analizado"""
         domain = url.replace("https://", "").replace("http://", "").split("/")[0]
-        
+
         # Si no se proporciona geo_score, calcularlo
+        raw_audit_data = audit_data if isinstance(audit_data, dict) else {}
         if geo_score == 0 or geo_score is None:
-            geo_score = CompetitorService._calculate_geo_score(audit_data)
+            geo_score = CompetitorService._calculate_geo_score(raw_audit_data)
+
+        safe_audit_data = AuditService._sanitize_json_value(raw_audit_data)
 
         # NUEVO: Guardar archivo JSON del competidor
         try:
@@ -1019,7 +1180,7 @@ class CompetitorService:
                 "url": url,
                 "domain": domain,
                 "geo_score": geo_score,
-                "audit_data": audit_data,
+                "audit_data": safe_audit_data,
                 "analyzed_at": datetime.now().isoformat()
             }
             
@@ -1036,7 +1197,7 @@ class CompetitorService:
             url=url,
             domain=domain,
             geo_score=geo_score,
-            audit_data=audit_data,
+            audit_data=safe_audit_data,
         )
         db.add(competitor)
         db.commit()

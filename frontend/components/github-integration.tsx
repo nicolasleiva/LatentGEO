@@ -110,15 +110,15 @@ export function GitHubIntegration({ auditId, auditUrl }: GitHubIntegrationProps)
         return (
             <Card className="glass-card p-6">
                 <div className="flex items-start gap-4">
-                    <div className="p-3 rounded-lg bg-purple-500/20">
-                        <Github className="h-6 w-6 text-purple-400" />
+                    <div className="p-3 rounded-lg bg-brand/10">
+                        <Github className="h-6 w-6 text-brand" />
                     </div>
                     <div className="flex-1">
                         <h3 className="text-lg font-semibold text-foreground mb-2">GitHub Auto-Fix</h3>
                         <p className="text-muted-foreground mb-4">
                             Connect your GitHub account to automatically create Pull Requests with AI-powered SEO/GEO fixes.
                         </p>
-                        <Button onClick={connectGitHub} className="bg-purple-600 hover:bg-purple-700 text-white">
+                        <Button onClick={connectGitHub} className="bg-brand text-brand-foreground hover:bg-brand/90">
                             <Github className="h-4 w-4 mr-2" />
                             Connect GitHub
                         </Button>
@@ -131,8 +131,8 @@ export function GitHubIntegration({ auditId, auditUrl }: GitHubIntegrationProps)
     return (
         <Card className="glass-card p-6">
             <div className="flex items-start gap-4">
-                <div className="p-3 rounded-lg bg-purple-500/20">
-                    <GitPullRequest className="h-6 w-6 text-purple-400" />
+                <div className="p-3 rounded-lg bg-brand/10">
+                    <GitPullRequest className="h-6 w-6 text-brand" />
                 </div>
                 <div className="flex-1">
                     <div className="flex items-center justify-between mb-2">
@@ -200,7 +200,7 @@ export function GitHubIntegration({ auditId, auditUrl }: GitHubIntegrationProps)
                         <Button
                             onClick={createAutoFixPR}
                             disabled={!selectedRepo || creating}
-                            className="w-full bg-purple-600 hover:bg-purple-700 text-white"
+                            className="w-full bg-brand text-brand-foreground hover:bg-brand/90"
                         >
                             {creating ? (
                                 <>
