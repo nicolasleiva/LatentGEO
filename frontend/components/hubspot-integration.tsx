@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { CheckCircle2, XCircle, Clock, ExternalLink, LogOut, Sparkles } from 'lucide-react';
+import { fetchWithBackendAuth } from '@/lib/backend-auth';
 
 interface HubSpotIntegrationProps {
     auditId: string;
@@ -67,7 +68,7 @@ export function HubSpotIntegration({ auditId, auditUrl }: HubSpotIntegrationProp
 
     const fetchConnections = async () => {
         try {
-            const res = await fetch(`${backendUrl}/api/hubspot/connections`);
+            const res = await fetchWithBackendAuth(`${backendUrl}/api/hubspot/connections`);
             if (res.ok) {
                 const data = await res.json();
                 setConnections(data);
@@ -84,7 +85,7 @@ export function HubSpotIntegration({ auditId, auditUrl }: HubSpotIntegrationProp
     const fetchPages = async (connectionId: string) => {
         setLoading(true);
         try {
-            const res = await fetch(`${backendUrl}/api/hubspot/pages/${connectionId}`);
+            const res = await fetchWithBackendAuth(`${backendUrl}/api/hubspot/pages/${connectionId}`);
             if (res.ok) {
                 const data = await res.json();
                 setPages(data);
@@ -101,7 +102,7 @@ export function HubSpotIntegration({ auditId, auditUrl }: HubSpotIntegrationProp
         
         setLoading(true);
         try {
-            const res = await fetch(`${backendUrl}/api/hubspot/recommendations/${auditId}`);
+            const res = await fetchWithBackendAuth(`${backendUrl}/api/hubspot/recommendations/${auditId}`);
             if (res.ok) {
                 const data = await res.json();
                 // Filter recommendations for selected page
@@ -138,7 +139,7 @@ export function HubSpotIntegration({ auditId, auditUrl }: HubSpotIntegrationProp
         setApplyResults([]);
 
         try {
-            const res = await fetch(`${backendUrl}/api/hubspot/apply-recommendations`, {
+            const res = await fetchWithBackendAuth(`${backendUrl}/api/hubspot/apply-recommendations`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({

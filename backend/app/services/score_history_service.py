@@ -10,6 +10,15 @@ from ..models import ScoreHistory, Audit
 
 class ScoreHistoryService:
     """Servicio para gestionar el historial de scores"""
+
+    @staticmethod
+    def _apply_owner_filter(query, owner_ids: Optional[List[str]]):
+        """Aplica filtro de ownership para evitar mezcla de datos entre usuarios."""
+        if owner_ids:
+            normalized = [owner for owner in owner_ids if owner]
+            if normalized:
+                return query.filter(ScoreHistory.user_id.in_(normalized))
+        return query
     
     @staticmethod
     def record_score(
@@ -54,7 +63,7 @@ class ScoreHistoryService:
         db: Session,
         domain: str,
         days: int = 90,
-        user_id: Optional[str] = None
+        owner_ids: Optional[List[str]] = None,
     ) -> List[ScoreHistory]:
         """Obtiene el historial de scores para un dominio"""
         
@@ -65,8 +74,7 @@ class ScoreHistoryService:
             ScoreHistory.recorded_at >= start_date
         )
         
-        if user_id:
-            query = query.filter(ScoreHistory.user_id == user_id)
+        query = ScoreHistoryService._apply_owner_filter(query, owner_ids)
         
         return query.order_by(ScoreHistory.recorded_at.asc()).all()
     
@@ -74,7 +82,7 @@ class ScoreHistoryService:
     def get_monthly_comparison(
         db: Session,
         domain: str,
-        user_id: Optional[str] = None
+        owner_ids: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
         """Compara scores del mes actual vs el mes anterior"""
         
@@ -100,8 +108,7 @@ class ScoreHistoryService:
                 ScoreHistory.recorded_at < end
             )
             
-            if user_id:
-                query = query.filter(ScoreHistory.user_id == user_id)
+            query = ScoreHistoryService._apply_owner_filter(query, owner_ids)
             
             result = query.first()
             
@@ -154,7 +161,7 @@ class ScoreHistoryService:
     @staticmethod
     def get_all_domains_summary(
         db: Session,
-        user_id: Optional[str] = None,
+        owner_ids: Optional[List[str]] = None,
         days: int = 30
     ) -> List[Dict[str, Any]]:
         """Obtiene un resumen de todos los dominios del usuario"""
@@ -170,8 +177,7 @@ class ScoreHistoryService:
             ScoreHistory.recorded_at >= start_date
         )
         
-        if user_id:
-            query = query.filter(ScoreHistory.user_id == user_id)
+        query = ScoreHistoryService._apply_owner_filter(query, owner_ids)
         
         results = query.group_by(ScoreHistory.domain).order_by(
             func.avg(ScoreHistory.overall_score).desc()

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { History, AlertCircle, TrendingUp, TrendingDown, Minus } from 'lucide-react';
+import { fetchWithBackendAuth } from '@/lib/backend-auth';
 
 interface HistoryData {
   month: string;
@@ -25,7 +26,7 @@ export default function CitationHistory({ auditId, backendUrl }: CitationHistory
   useEffect(() => {
     const fetchHistory = async () => {
       try {
-        const res = await fetch(`${backendUrl}/api/geo/citation-history/${auditId}`);
+        const res = await fetchWithBackendAuth(`${backendUrl}/api/geo/citation-history/${auditId}`);
         if (!res.ok) throw new Error('Failed to fetch history');
         const data = await res.json();
         setHistory(data.history || []);

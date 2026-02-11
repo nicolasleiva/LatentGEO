@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { TrendingUp, AlertCircle } from 'lucide-react';
+import { fetchWithBackendAuth } from '@/lib/backend-auth';
 
 interface Citation {
   id: number;
@@ -26,7 +27,7 @@ export default function RecentCitationsTable({ auditId, backendUrl }: RecentCita
   useEffect(() => {
     const fetchCitations = async () => {
       try {
-        const res = await fetch(`${backendUrl}/api/geo/citations/${auditId}?limit=10`);
+        const res = await fetchWithBackendAuth(`${backendUrl}/api/geo/citations/${auditId}?limit=10`);
         if (!res.ok) throw new Error('Failed to fetch citations');
         const data = await res.json();
         setCitations(data.citations || []);

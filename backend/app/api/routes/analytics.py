@@ -9,6 +9,8 @@ from ...core.database import get_db
 from ...schemas import AuditAnalytics, CompetitorAnalysis
 from ...services.audit_service import AuditService, CompetitorService
 from ...core.logger import get_logger
+from ...core.auth import AuthUser, get_current_user
+from ...core.access_control import ensure_audit_access
 
 logger = get_logger(__name__)
 
@@ -19,15 +21,20 @@ router = APIRouter(
 )
 
 
+def _get_owned_audit(db: Session, audit_id: int, current_user: AuthUser):
+    audit = AuditService.get_audit(db, audit_id)
+    return ensure_audit_access(audit, current_user)
+
+
 @router.get("/audit/{audit_id}", response_model=dict)
-async def get_audit_analytics(audit_id: int, db: Session = Depends(get_db)):
+async def get_audit_analytics(
+    audit_id: int,
+    db: Session = Depends(get_db),
+    current_user: AuthUser = Depends(get_current_user),
+):
     """Obtener análisis y estadísticas de auditoría"""
     try:
-        audit = AuditService.get_audit(db, audit_id)
-        if not audit:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="Auditoría no encontrada"
-            )
+        audit = _get_owned_audit(db, audit_id, current_user)
 
         pages = AuditService.get_audited_pages(db, audit_id)
 
@@ -94,14 +101,14 @@ async def get_audit_analytics(audit_id: int, db: Session = Depends(get_db)):
 
 
 @router.get("/competitors/{audit_id}", response_model=dict)
-async def get_competitor_analysis(audit_id: int, db: Session = Depends(get_db)):
+async def get_competitor_analysis(
+    audit_id: int,
+    db: Session = Depends(get_db),
+    current_user: AuthUser = Depends(get_current_user),
+):
     """Obtener análisis competitivo"""
     try:
-        audit = AuditService.get_audit(db, audit_id)
-        if not audit:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="Auditoría no encontrada"
-            )
+        audit = _get_owned_audit(db, audit_id, current_user)
 
         competitors = CompetitorService.get_competitors(db, audit_id)
 
@@ -164,19 +171,35 @@ async def get_competitor_analysis(audit_id: int, db: Session = Depends(get_db)):
 
 
 @router.get("/dashboard", response_model=dict)
-async def get_dashboard_data(db: Session = Depends(get_db)):
+async def get_dashboard_data(
+    db: Session = Depends(get_db),
+    current_user: AuthUser = Depends(get_current_user),
+):
     """Obtener datos para dashboard principal"""
     try:
         from ...models import AuditStatus
 
         # Estadísticas generales
-        total_audits = AuditService.get_audits_count(db)
-        completed = len(AuditService.get_audits_by_status(db, AuditStatus.COMPLETED))
-        running = len(AuditService.get_audits_by_status(db, AuditStatus.RUNNING))
-        failed = len(AuditService.get_audits_by_status(db, AuditStatus.FAILED))
+        user_filters = {
+            "user_email": current_user.email,
+            "user_id": current_user.user_id,
+        }
+        completed = len(
+            AuditService.get_audits_by_status(db, AuditStatus.COMPLETED, **user_filters)
+        )
+        running = len(
+            AuditService.get_audits_by_status(db, AuditStatus.RUNNING, **user_filters)
+        )
+        failed = len(
+            AuditService.get_audits_by_status(db, AuditStatus.FAILED, **user_filters)
+        )
+        pending = len(
+            AuditService.get_audits_by_status(db, AuditStatus.PENDING, **user_filters)
+        )
+        total_audits = completed + running + failed + pending
 
         # Auditorías recientes
-        recent_audits = AuditService.get_audits(db, skip=0, limit=10)
+        recent_audits = AuditService.get_audits(db, skip=0, limit=10, **user_filters)
 
         # Dominios únicos
         unique_domains = len(set(audit.domain for audit in recent_audits))
@@ -194,7 +217,7 @@ async def get_dashboard_data(db: Session = Depends(get_db)):
             "summary": {
                 "total_audits": total_audits,
                 "completed_audits": completed,
-                "running_audits": running,
+                "running_audits": running + pending,
                 "failed_audits": failed,
                 "success_rate": round((completed / max(1, total_audits)) * 100, 2),
             },
@@ -233,10 +256,14 @@ async def get_dashboard_data(db: Session = Depends(get_db)):
 
 
 @router.get("/issues/{audit_id}", response_model=dict)
-async def get_issues_by_priority(audit_id: int, db: Session = Depends(get_db)):
+async def get_issues_by_priority(
+    audit_id: int,
+    db: Session = Depends(get_db),
+    current_user: AuthUser = Depends(get_current_user),
+):
     """Obtener issues agrupados por prioridad"""
     try:
-        audit = AuditService.get_audit(db, audit_id)
+        audit = _get_owned_audit(db, audit_id, current_user)
         if not audit or not audit.fix_plan:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,

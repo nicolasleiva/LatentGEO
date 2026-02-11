@@ -5,6 +5,8 @@ from pydantic import BaseModel
 import uuid
 
 from ...core.database import get_db
+from ...core.auth import AuthUser, get_current_user
+from ...core.access_control import ensure_audit_access
 from ...integrations.hubspot.auth import HubSpotAuth
 from ...integrations.hubspot.service import HubSpotService
 from ...models.hubspot import HubSpotConnection, HubSpotPage, HubSpotChange
@@ -99,14 +101,21 @@ class BatchApplyRequest(BaseModel):
     audit_id: int
     recommendations: List[Dict]
 
+
+def _get_owned_audit(db: Session, audit_id: int, current_user: AuthUser):
+    audit = db.query(Audit).filter(Audit.id == audit_id).first()
+    return ensure_audit_access(audit, current_user)
+
 @router.get("/recommendations/{audit_id}")
-def get_recommendations(audit_id: int, db: Session = Depends(get_db)):
+def get_recommendations(
+    audit_id: int,
+    db: Session = Depends(get_db),
+    current_user: AuthUser = Depends(get_current_user),
+):
     """Obtiene recomendaciones de HubSpot basadas en una auditoría"""
     
     # 1. Obtener auditoría y páginas
-    audit = db.query(Audit).filter(Audit.id == audit_id).first()
-    if not audit:
-        raise HTTPException(status_code=404, detail="Audit not found")
+    _get_owned_audit(db, audit_id, current_user)
         
     pages = db.query(AuditedPage).filter(AuditedPage.audit_id == audit_id).all()
     
@@ -170,8 +179,13 @@ def get_recommendations(audit_id: int, db: Session = Depends(get_db)):
     return {"recommendations": recommendations}
 
 @router.post("/apply-recommendations")
-async def batch_apply_recommendations(request: BatchApplyRequest, db: Session = Depends(get_db)):
+async def batch_apply_recommendations(
+    request: BatchApplyRequest,
+    db: Session = Depends(get_db),
+    current_user: AuthUser = Depends(get_current_user),
+):
     """Aplica un lote de recomendaciones"""
+    _get_owned_audit(db, request.audit_id, current_user)
     service = HubSpotService(db)
     
     # Necesitamos encontrar la conexión ID asociada a estas páginas.
@@ -251,4 +265,3 @@ async def rollback_change(change_id: str, db: Session = Depends(get_db)):
             
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-

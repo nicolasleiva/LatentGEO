@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { fetchWithBackendAuth } from '@/lib/backend-auth';
 
 interface SchemaResult {
   schema_type: string;
@@ -33,7 +34,7 @@ export default function SchemaGenerator({ backendUrl }: SchemaGeneratorProps) {
     setError(null);
     
     try {
-      const res = await fetch(`${backendUrl}/api/geo/schema-generator`, {
+      const res = await fetchWithBackendAuth(`${backendUrl}/api/geo/schema-generator`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

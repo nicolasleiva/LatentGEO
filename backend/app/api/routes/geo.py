@@ -15,6 +15,8 @@ from app.services.content_template_service import ContentTemplateService
 from app.services.audit_service import AuditService
 from app.core.llm_kimi import get_llm_function
 from app.core.logger import get_logger
+from app.core.auth import AuthUser, get_current_user
+from app.core.access_control import ensure_audit_access
 
 logger = get_logger(__name__)
 
@@ -23,6 +25,11 @@ router = APIRouter(
     tags=["GEO Features"],
     responses={404: {"description": "Not found"}},
 )
+
+
+def _get_owned_audit(db: Session, audit_id: int, current_user: AuthUser):
+    audit = AuditService.get_audit(db, audit_id)
+    return ensure_audit_access(audit, current_user)
 
 
 # ============= Pydantic Models =============
@@ -65,14 +72,13 @@ class ContentTemplateRequest(BaseModel):
 async def start_citation_tracking(
     request: CitationTrackingRequest,
     background_tasks: BackgroundTasks,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: AuthUser = Depends(get_current_user),
 ):
     """Inicia citation tracking para un audit."""
     try:
         # Obtener audit
-        audit = AuditService.get_audit(db, request.audit_id)
-        if not audit:
-            raise HTTPException(status_code=404, detail="Audit not found")
+        audit = _get_owned_audit(db, request.audit_id, current_user)
         
         # Obtener datos del audit
         from urllib.parse import urlparse
@@ -109,10 +115,12 @@ async def start_citation_tracking(
 def get_citation_history(
     audit_id: int,
     days: int = 30,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: AuthUser = Depends(get_current_user),
 ):
     """Obtiene historial de citaciones."""
     try:
+        _get_owned_audit(db, audit_id, current_user)
         history = CitationTrackerService.get_citation_history(db, audit_id, days)
         return history
     except Exception as e:
@@ -124,10 +132,12 @@ def get_citation_history(
 def get_recent_citations(
     audit_id: int,
     limit: int = 10,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: AuthUser = Depends(get_current_user),
 ):
     """Obtiene citaciones recientes."""
     try:
+        _get_owned_audit(db, audit_id, current_user)
         from app.models import CitationTracking
         from sqlalchemy import desc
         
@@ -184,10 +194,12 @@ async def discover_queries(
 def get_query_opportunities(
     audit_id: int,
     limit: int = 10,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: AuthUser = Depends(get_current_user),
 ):
     """Obtiene las mejores oportunidades de queries."""
     try:
+        _get_owned_audit(db, audit_id, current_user)
         opportunities = QueryDiscoveryService.get_top_opportunities(db, audit_id, limit)
         return {
             "total_opportunities": len(opportunities),
@@ -204,14 +216,13 @@ def get_query_opportunities(
 async def analyze_competitor_citations(
     request: CompetitorAnalysisRequest,
     background_tasks: BackgroundTasks,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: AuthUser = Depends(get_current_user),
 ):
     """Analiza citaciones de competidores."""
     try:
         # Obtener audit
-        audit = AuditService.get_audit(db, request.audit_id)
-        if not audit:
-            raise HTTPException(status_code=404, detail="Audit not found")
+        audit = _get_owned_audit(db, request.audit_id, current_user)
         
         from urllib.parse import urlparse
         domain = urlparse(audit.url).netloc.replace('www.', '')
@@ -246,10 +257,12 @@ async def analyze_competitor_citations(
 @router.get("/competitor-analysis/benchmark/{audit_id}")
 def get_citation_benchmark(
     audit_id: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: AuthUser = Depends(get_current_user),
 ):
     """Obtiene benchmark de citaciones vs competidores."""
     try:
+        _get_owned_audit(db, audit_id, current_user)
         benchmark = CompetitorCitationService.get_citation_benchmark(db, audit_id)
         return benchmark
     except Exception as e:
@@ -352,10 +365,12 @@ def analyze_content(content: str):
 @router.get("/dashboard/{audit_id}")
 async def get_geo_dashboard(
     audit_id: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: AuthUser = Depends(get_current_user),
 ):
     """Obtiene resumen completo de GEO para el dashboard."""
     try:
+        _get_owned_audit(db, audit_id, current_user)
         # Citation tracking summary
         citation_history = CitationTrackerService.get_citation_history(db, audit_id, 30)
         

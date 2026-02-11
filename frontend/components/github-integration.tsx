@@ -13,6 +13,7 @@ import {
     DialogTitle,
     DialogTrigger,
 } from '@/components/ui/dialog';
+import { fetchWithBackendAuth } from '@/lib/backend-auth';
 
 interface GitHubIntegrationProps {
     auditId: string;
@@ -37,7 +38,7 @@ export function GitHubIntegration({ auditId, auditUrl }: GitHubIntegrationProps)
 
     const fetchConnections = async () => {
         try {
-            const res = await fetch(`${backendUrl}/api/github/connections`);
+            const res = await fetchWithBackendAuth(`${backendUrl}/api/github/connections`);
             if (res.ok) {
                 const data = await res.json();
                 setConnections(data);
@@ -54,7 +55,7 @@ export function GitHubIntegration({ auditId, auditUrl }: GitHubIntegrationProps)
     const fetchRepositories = async (connectionId: string) => {
         setLoading(true);
         try {
-            const res = await fetch(`${backendUrl}/api/github/repos/${connectionId}`);
+            const res = await fetchWithBackendAuth(`${backendUrl}/api/github/repos/${connectionId}`);
             if (res.ok) {
                 const data = await res.json();
                 setRepositories(data);
@@ -79,7 +80,7 @@ export function GitHubIntegration({ auditId, auditUrl }: GitHubIntegrationProps)
         setPrResult(null);
 
         try {
-            const res = await fetch(
+            const res = await fetchWithBackendAuth(
                 `${backendUrl}/api/github/create-auto-fix-pr/${selectedConnection}/${selectedRepo}`,
                 {
                     method: 'POST',
