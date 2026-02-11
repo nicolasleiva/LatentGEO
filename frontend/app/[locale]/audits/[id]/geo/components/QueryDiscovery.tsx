@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { Search, Sparkles, AlertCircle, CheckCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { fetchWithBackendAuth } from '@/lib/backend-auth';
 
 interface QueryOpportunity {
   query: string;
@@ -32,7 +33,7 @@ export default function QueryDiscovery({ auditId, backendUrl }: QueryDiscoveryPr
     setError(null);
     
     try {
-      const res = await fetch(`${backendUrl}/api/geo/query-discovery`, {
+      const res = await fetchWithBackendAuth(`${backendUrl}/api/geo/query-discovery`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

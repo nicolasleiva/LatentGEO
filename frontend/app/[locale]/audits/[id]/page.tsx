@@ -13,6 +13,7 @@ import { ArrowLeft, Download, RefreshCw, ExternalLink, Globe, AlertTriangle, Che
 import { Dialog, DialogContent, DialogTrigger, DialogTitle } from '@/components/ui/dialog';
 import { useAuditSSE } from '@/hooks/useAuditSSE';
 import { API_URL } from '@/lib/api';
+import { fetchWithBackendAuth } from '@/lib/backend-auth';
 
 // Dynamic imports for heavy components
 const CoreWebVitalsChart = dynamic(() => import('@/components/core-web-vitals-chart').then(mod => mod.CoreWebVitalsChart), { ssr: false });
@@ -82,7 +83,7 @@ export default function AuditDetailPage() {
     setReportLoading(true);
     setReportMessage(null);
     try {
-      const res = await fetch(`${backendUrl}/api/reports/markdown/${auditId}`);
+      const res = await fetchWithBackendAuth(`${backendUrl}/api/reports/markdown/${auditId}`);
       if (res.ok) {
         const data = await res.json();
         setReportMarkdown(data?.markdown || '');
@@ -95,7 +96,7 @@ export default function AuditDetailPage() {
         return;
       }
 
-      const fallbackRes = await fetch(`${backendUrl}/api/audits/${auditId}/report`);
+      const fallbackRes = await fetchWithBackendAuth(`${backendUrl}/api/audits/${auditId}/report`);
       if (fallbackRes.ok) {
         const data = await fallbackRes.json();
         setReportMarkdown(data?.report || data?.markdown || data?.report_markdown || '');
@@ -124,7 +125,7 @@ export default function AuditDetailPage() {
     setFixPlanLoading(true);
     setFixPlanMessage(null);
     try {
-      const res = await fetch(`${backendUrl}/api/audits/${auditId}/fix_plan`);
+      const res = await fetchWithBackendAuth(`${backendUrl}/api/audits/${auditId}/fix_plan`);
       if (!res.ok) {
         setFixPlan([]);
         setFixPlanMessage('Fix plan will be created when you generate the PDF report.');
@@ -151,7 +152,7 @@ export default function AuditDetailPage() {
   const fetchData = useCallback(async () => {
     try {
       // Fetch audit first
-      const auditRes = await fetch(`${backendUrl}/api/audits/${auditId}`);
+      const auditRes = await fetchWithBackendAuth(`${backendUrl}/api/audits/${auditId}`);
       if (!auditRes.ok) {
         if (auditRes.status === 429) {
           logger.log('Rate limited, retrying in 2s...');
@@ -171,9 +172,9 @@ export default function AuditDetailPage() {
 
       // Fetch pages and competitors in parallel (non-blocking for initial render)
       const [pagesRes, compRes] = await Promise.all([
-        fetch(`${backendUrl}/api/audits/${auditId}/pages`),
+        fetchWithBackendAuth(`${backendUrl}/api/audits/${auditId}/pages`),
         auditData.status === 'completed'
-          ? fetch(`${backendUrl}/api/audits/${auditId}/competitors`).catch(() => null)
+          ? fetchWithBackendAuth(`${backendUrl}/api/audits/${auditId}/competitors`).catch(() => null)
           : Promise.resolve(null)
       ]);
 
@@ -297,7 +298,7 @@ export default function AuditDetailPage() {
     setPageSpeedLoading(true);
     try {
       logger.log('Analyzing PageSpeed...');
-      const res = await fetch(`${backendUrl}/api/audits/${auditId}/pagespeed`, {
+      const res = await fetchWithBackendAuth(`${backendUrl}/api/audits/${auditId}/pagespeed`, {
         method: 'POST',
       });
       logger.log('PageSpeed response:', res.status);
@@ -323,12 +324,25 @@ export default function AuditDetailPage() {
   const generatePDF = async () => {
     setPdfGenerating(true);
     try {
-      const generateRes = await fetch(`${backendUrl}/api/audits/${auditId}/generate-pdf`, {
+      const generateRes = await fetchWithBackendAuth(`${backendUrl}/api/audits/${auditId}/generate-pdf`, {
         method: 'POST',
       });
       if (generateRes.ok) {
         await new Promise(resolve => setTimeout(resolve, 500));
-        window.open(`${backendUrl}/api/audits/${auditId}/download-pdf`, '_blank');
+        const downloadRes = await fetchWithBackendAuth(`${backendUrl}/api/audits/${auditId}/download-pdf`);
+        if (!downloadRes.ok) {
+          const errorPayload = await downloadRes.json().catch(() => ({ detail: 'Download failed' }));
+          throw new Error(errorPayload.detail || 'Download failed');
+        }
+        const pdfBlob = await downloadRes.blob();
+        const objectUrl = URL.createObjectURL(pdfBlob);
+        const link = document.createElement('a');
+        link.href = objectUrl;
+        link.download = `audit_${auditId}_report.pdf`;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        URL.revokeObjectURL(objectUrl);
       } else {
         const error = await generateRes.json();
         alert(`Error: ${error.detail || 'Unknown error'}`);
@@ -358,8 +372,8 @@ export default function AuditDetailPage() {
     return (
       <div className="flex min-h-screen flex-col">
         <Header />
-        <main className="flex-1 container mx-auto px-6 py-12">
-          <div className="max-w-3xl mx-auto">
+        <main className="flex-1 container mx-auto px-4 sm:px-6 py-8 sm:py-10">
+          <div className="max-w-6xl mx-auto">
             <AuditChatFlow
               auditId={parseInt(auditId)}
               onComplete={() => {

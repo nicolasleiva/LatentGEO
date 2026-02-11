@@ -28,6 +28,8 @@ from app.services.audit_service import AuditService
 from app.services.pipeline_service import PipelineService
 from app.services.audit_local_service import AuditLocalService
 from app.core.logger import get_logger
+from app.core.auth import AuthUser, get_current_user
+from app.core.access_control import ensure_audit_access
 
 from app.core.llm_client import call_kimi_api
 
@@ -41,6 +43,11 @@ router = APIRouter(
     tags=["audits"],
     responses={404: {"description": "No encontrado"}},
 )
+
+
+def _get_owned_audit(db: Session, audit_id: int, current_user: AuthUser) -> Audit:
+    audit = AuditService.get_audit(db, audit_id)
+    return ensure_audit_access(audit, current_user)
 
 
 async def run_audit_sync(audit_id: int):
@@ -160,7 +167,13 @@ async def _create_audit_internal(
             logger.info(f"Audit {audit.id} queued with config")
         except Exception as e:
             logger.warning(f"Celery unavailable: {e}")
-            background_tasks.add_task(run_audit_sync, audit.id)
+            if settings.DEBUG:
+                background_tasks.add_task(run_audit_sync, audit.id)
+            else:
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail="Background worker unavailable. Try again shortly.",
+                )
     else:
         logger.info(f"Audit {audit.id} created, waiting for chat config")
 
@@ -180,6 +193,7 @@ async def create_audit(
     response: Response,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
+    current_user: AuthUser = Depends(get_current_user),
 ):
     """
     Crea auditoría. Si tiene competitors/market, inicia pipeline.
@@ -192,6 +206,9 @@ async def create_audit(
 
     Acepta tanto /api/audits como /api/audits/ para evitar redirecciones 307.
     """
+    # Do not trust ownership from request body.
+    audit_create.user_id = current_user.user_id
+    audit_create.user_email = current_user.email
     return await _create_audit_internal(audit_create, response, background_tasks, db)
 
 
@@ -201,40 +218,50 @@ def list_audits(
     db: Session = Depends(get_db),
     skip: int = 0,
     limit: int = 100,
-    user_email: str = None,  # Optional filter by user email
+    current_user: AuthUser = Depends(get_current_user),
 ) -> List[Audit]:
     """
     Lista auditorías con paginación.
     Si se proporciona user_email, filtra solo las auditorías de ese usuario.
     """
-    audits = AuditService.get_audits(db, skip=skip, limit=limit, user_email=user_email)
+    audits = AuditService.get_audits(
+        db,
+        skip=skip,
+        limit=limit,
+        user_email=current_user.email,
+        user_id=current_user.user_id,
+    )
     return audits
 
 
 @router.get("/{audit_id}/status", response_model=AuditSummary)
 @router.get("/{audit_id}/progress", response_model=AuditSummary)
-def get_audit_status(audit_id: int, db: Session = Depends(get_db)):
+def get_audit_status(
+    audit_id: int,
+    db: Session = Depends(get_db),
+    current_user: AuthUser = Depends(get_current_user),
+):
     """
     Get lightweight audit status for polling.
     Only returns id, url, status, progress, geo_score, and total_pages.
     """
-    audit = AuditService.get_audit(db, audit_id)
-    if not audit:
-        raise HTTPException(status_code=404, detail="Auditoría no encontrada")
+    audit = _get_owned_audit(db, audit_id, current_user)
     return audit
 
 
 @router.get("/{audit_id}", response_model=AuditResponse)
-def get_audit(audit_id: int, db: Session = Depends(get_db)):
+def get_audit(
+    audit_id: int,
+    db: Session = Depends(get_db),
+    current_user: AuthUser = Depends(get_current_user),
+):
     """
     Get audit details WITHOUT triggering PageSpeed or GEO tools.
 
     This endpoint loads quickly and returns basic audit information and fix plan.
     Frontend should display "Generate PDF" for full analysis.
     """
-    audit = AuditService.get_audit(db, audit_id)
-    if not audit:
-        raise HTTPException(status_code=404, detail="Auditoría no encontrada")
+    audit = _get_owned_audit(db, audit_id, current_user)
 
     # Load audited pages (fast operation)
     pages = AuditService.get_audited_pages(db, audit_id)
@@ -260,13 +287,15 @@ def get_audit(audit_id: int, db: Session = Depends(get_db)):
 
 
 @router.get("/{audit_id}/report", response_model=dict)
-def get_audit_report(audit_id: int, db: Session = Depends(get_db)):
+def get_audit_report(
+    audit_id: int,
+    db: Session = Depends(get_db),
+    current_user: AuthUser = Depends(get_current_user),
+):
     """
     Devuelve el reporte en Markdown de una auditoría completada.
     """
-    audit = AuditService.get_audit(db, audit_id)
-    if not audit:
-        raise HTTPException(status_code=404, detail="Auditoría no encontrada")
+    audit = _get_owned_audit(db, audit_id, current_user)
 
     if audit.status != AuditStatus.COMPLETED:
         raise HTTPException(
@@ -284,13 +313,15 @@ def get_audit_report(audit_id: int, db: Session = Depends(get_db)):
 
 
 @router.get("/{audit_id}/fix_plan", response_model=dict)
-def get_audit_fix_plan(audit_id: int, db: Session = Depends(get_db)):
+def get_audit_fix_plan(
+    audit_id: int,
+    db: Session = Depends(get_db),
+    current_user: AuthUser = Depends(get_current_user),
+):
     """
     Devuelve el plan de correcciones (fix plan) en JSON.
     """
-    audit = AuditService.get_audit(db, audit_id)
-    if not audit:
-        raise HTTPException(status_code=404, detail="Auditoría no encontrada")
+    audit = _get_owned_audit(db, audit_id, current_user)
 
     if audit.status != AuditStatus.COMPLETED:
         raise HTTPException(
@@ -308,10 +339,15 @@ def get_audit_fix_plan(audit_id: int, db: Session = Depends(get_db)):
 
 
 @router.delete("/{audit_id}", status_code=204)
-def delete_audit(audit_id: int, db: Session = Depends(get_db)):
+def delete_audit(
+    audit_id: int,
+    db: Session = Depends(get_db),
+    current_user: AuthUser = Depends(get_current_user),
+):
     """
     Elimina una auditoría de la base de datos.
     """
+    _get_owned_audit(db, audit_id, current_user)
     success = AuditService.delete_audit(db, audit_id)
     if not success:
         raise HTTPException(status_code=404, detail="Auditoría no encontrada")
@@ -320,32 +356,48 @@ def delete_audit(audit_id: int, db: Session = Depends(get_db)):
 
 @router.get("/status/{status}", response_model=List[AuditSummary])
 def get_audits_by_status(
-    status: AuditStatus, db: Session = Depends(get_db)
+    status: AuditStatus,
+    db: Session = Depends(get_db),
+    current_user: AuthUser = Depends(get_current_user),
 ) -> List[Audit]:
     """
     Filtra auditorías por su estado (pending, processing, completed, failed).
     """
-    audits = AuditService.get_audits_by_status(db, status)
+    audits = AuditService.get_audits_by_status(
+        db,
+        status,
+        user_email=current_user.email,
+        user_id=current_user.user_id,
+    )
     return audits
 
 
 @router.get("/stats/summary", response_model=dict)
-def get_audits_summary(db: Session = Depends(get_db)):
+def get_audits_summary(
+    db: Session = Depends(get_db),
+    current_user: AuthUser = Depends(get_current_user),
+):
     """
     Obtiene estadísticas generales sobre las auditorías.
     """
-    stats = AuditService.get_stats_summary(db)
+    stats = AuditService.get_stats_summary(
+        db,
+        user_email=current_user.email,
+        user_id=current_user.user_id,
+    )
     return stats
 
 
 @router.get("/{audit_id}/pages", response_model=list)
-def get_audit_pages(audit_id: int, db: Session = Depends(get_db)):
+def get_audit_pages(
+    audit_id: int,
+    db: Session = Depends(get_db),
+    current_user: AuthUser = Depends(get_current_user),
+):
     """
     Obtiene todas las páginas auditadas de una auditoría.
     """
-    audit = AuditService.get_audit(db, audit_id)
-    if not audit:
-        raise HTTPException(status_code=404, detail="Auditoría no encontrada")
+    _get_owned_audit(db, audit_id, current_user)
 
     pages = AuditService.get_audited_pages(db, audit_id)
     return [
@@ -370,13 +422,16 @@ def get_audit_pages(audit_id: int, db: Session = Depends(get_db)):
 
 
 @router.get("/{audit_id}/pages/{page_id}", response_model=dict)
-def get_page_details(audit_id: int, page_id: int, db: Session = Depends(get_db)):
+def get_page_details(
+    audit_id: int,
+    page_id: int,
+    db: Session = Depends(get_db),
+    current_user: AuthUser = Depends(get_current_user),
+):
     """
     Obtiene detalles de una página específica.
     """
-    audit = AuditService.get_audit(db, audit_id)
-    if not audit:
-        raise HTTPException(status_code=404, detail="Auditoría no encontrada")
+    _get_owned_audit(db, audit_id, current_user)
 
     pages = AuditService.get_audited_pages(db, audit_id)
     page = next((p for p in pages if p.id == page_id), None)
@@ -403,16 +458,19 @@ def get_page_details(audit_id: int, page_id: int, db: Session = Depends(get_db))
 
 
 @router.get("/{audit_id}/competitors", response_model=list)
-def get_competitors(audit_id: int, limit: int = 10, db: Session = Depends(get_db)):
+def get_competitors(
+    audit_id: int,
+    limit: int = 10,
+    db: Session = Depends(get_db),
+    current_user: AuthUser = Depends(get_current_user),
+):
     """
     Obtiene datos de competidores de una auditoría con GEO scores calculados.
     Limitado a 10 por defecto para evitar memory issues.
     """
     from app.services.audit_service import CompetitorService
 
-    audit = AuditService.get_audit(db, audit_id)
-    if not audit:
-        raise HTTPException(status_code=404, detail="Auditoría no encontrada")
+    audit = _get_owned_audit(db, audit_id, current_user)
 
     if audit.status != AuditStatus.COMPLETED:
         # Avoid 400s during long-running audits; return empty list until completed.
@@ -454,7 +512,10 @@ def get_competitors(audit_id: int, limit: int = 10, db: Session = Depends(get_db
 @router.post("/{audit_id}/run-pagespeed")
 @router.post("/{audit_id}/pagespeed")
 async def run_pagespeed_analysis(
-    audit_id: int, strategy: str = "both", db: Session = Depends(get_db)
+    audit_id: int,
+    strategy: str = "both",
+    db: Session = Depends(get_db),
+    current_user: AuthUser = Depends(get_current_user),
 ):
     """
     Manually trigger PageSpeed analysis and return COMPLETE data.
@@ -473,9 +534,7 @@ async def run_pagespeed_analysis(
     from app.services.pagespeed_service import PageSpeedService
     import asyncio
 
-    audit = AuditService.get_audit(db, audit_id)
-    if not audit:
-        raise HTTPException(status_code=404, detail="Auditoría no encontrada")
+    audit = _get_owned_audit(db, audit_id, current_user)
 
     try:
         logger.info(
@@ -551,6 +610,7 @@ async def generate_audit_pdf(
     force_pagespeed_refresh: bool = False,
     background_tasks: BackgroundTasks = None,
     db: Session = Depends(get_db),
+    current_user: AuthUser = Depends(get_current_user),
 ):
     """
     Generate PDF report with automatic PageSpeed analysis.
@@ -571,9 +631,7 @@ async def generate_audit_pdf(
     from app.services.pdf_service import PDFService
     from app.models import Report
 
-    audit = AuditService.get_audit(db, audit_id)
-    if not audit:
-        raise HTTPException(status_code=404, detail="Auditoría no encontrada")
+    audit = _get_owned_audit(db, audit_id, current_user)
 
     if audit.status != AuditStatus.COMPLETED:
         raise HTTPException(
@@ -645,7 +703,11 @@ async def generate_audit_pdf(
 
 
 @router.get("/{audit_id}/download-pdf")
-def download_audit_pdf(audit_id: int, db: Session = Depends(get_db)):
+def download_audit_pdf(
+    audit_id: int,
+    db: Session = Depends(get_db),
+    current_user: AuthUser = Depends(get_current_user),
+):
     """
     Descarga el PDF de una auditoría completada.
     Si el PDF no existe, sugiere generarlo primero.
@@ -653,9 +715,7 @@ def download_audit_pdf(audit_id: int, db: Session = Depends(get_db)):
     from fastapi.responses import FileResponse
     from app.models import Report
 
-    audit = AuditService.get_audit(db, audit_id)
-    if not audit:
-        raise HTTPException(status_code=404, detail="Auditoría no encontrada")
+    audit = _get_owned_audit(db, audit_id, current_user)
 
     if audit.status != AuditStatus.COMPLETED:
         raise HTTPException(
@@ -712,13 +772,12 @@ async def configure_audit_chat(
     config: AuditConfigRequest,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
+    current_user: AuthUser = Depends(get_current_user),
 ):
     """
     Configura auditoría y lanza pipeline.
     """
-    audit = AuditService.get_audit(db, config.audit_id)
-    if not audit:
-        raise HTTPException(status_code=404, detail="Audit not found")
+    audit = _get_owned_audit(db, config.audit_id, current_user)
 
     # Prevenir doble ejecución si ya está en curso
     if audit.status in [AuditStatus.RUNNING, AuditStatus.COMPLETED]:
@@ -746,7 +805,13 @@ async def configure_audit_chat(
             logger.info(f"Audit {audit.id} pipeline started after chat config")
         except Exception as e:
             logger.warning(f"Celery unavailable: {e}")
-            background_tasks.add_task(run_audit_sync, audit.id)
+            if settings.DEBUG:
+                background_tasks.add_task(run_audit_sync, audit.id)
+            else:
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail="Background worker unavailable. Try again shortly.",
+                )
 
         return ChatMessage(
             role="assistant", content="Configuration saved. Starting audit..."

@@ -8,6 +8,7 @@ import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Github, GitPullRequest, CheckCircle2, XCircle, Clock, ExternalLink, ArrowLeft, AlertCircle } from 'lucide-react';
 import { API_URL } from '@/lib/api';
+import { fetchWithBackendAuth } from '@/lib/backend-auth';
 
 export default function GitHubAutoFixPage() {
     const params = useParams();
@@ -34,7 +35,7 @@ export default function GitHubAutoFixPage() {
 
     const fetchAudit = async () => {
         try {
-            const res = await fetch(`${backendUrl}/api/audits/${auditId}`);
+            const res = await fetchWithBackendAuth(`${backendUrl}/api/audits/${auditId}`);
             if (res.ok) {
                 const data = await res.json();
                 setAudit(data);
@@ -48,7 +49,7 @@ export default function GitHubAutoFixPage() {
 
     const fetchConnections = async () => {
         try {
-            const res = await fetch(`${backendUrl}/api/github/connections`);
+            const res = await fetchWithBackendAuth(`${backendUrl}/api/github/connections`);
             if (res.ok) {
                 const data = await res.json();
                 setConnections(data);
@@ -65,7 +66,7 @@ export default function GitHubAutoFixPage() {
     const fetchRepositories = async (connectionId: string) => {
         setReposLoading(true);
         try {
-            const res = await fetch(`${backendUrl}/api/github/repos/${connectionId}`);
+            const res = await fetchWithBackendAuth(`${backendUrl}/api/github/repos/${connectionId}`);
             if (res.ok) {
                 const data = await res.json();
                 setRepositories(data);
@@ -90,7 +91,7 @@ export default function GitHubAutoFixPage() {
         setPrResult(null);
 
         try {
-            const res = await fetch(
+            const res = await fetchWithBackendAuth(
                 `${backendUrl}/api/github/create-auto-fix-pr/${selectedConnection}/${selectedRepo}`,
                 {
                     method: 'POST',

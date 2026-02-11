@@ -36,6 +36,7 @@ def test_app(test_db):
     from app.core import database
     from app.core.config import settings
     from app.core.database import get_db
+    from app.core.auth import get_current_user, AuthUser
     
     # Session factory for this engine
     TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
@@ -55,8 +56,12 @@ def test_app(test_db):
                 yield db
             finally:
                 db.close()
+
+        def override_get_current_user():
+            return AuthUser(user_id="test-user", email="test@example.com")
         
         app.dependency_overrides[get_db] = override_get_db
+        app.dependency_overrides[get_current_user] = override_get_current_user
         return app
 
 @pytest.fixture

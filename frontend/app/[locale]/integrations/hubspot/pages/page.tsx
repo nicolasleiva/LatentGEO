@@ -8,6 +8,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Badge } from '@/components/ui/badge'
 import { RefreshCw, Play, ExternalLink } from 'lucide-react'
 import { API_URL } from '@/lib/api'
+import { fetchWithBackendAuth } from '@/lib/backend-auth'
 
 interface HubSpotPage {
     id: string
@@ -38,7 +39,7 @@ export default function HubSpotPages() {
 
     const fetchConnection = async () => {
         try {
-            const res = await fetch(`${API_URL}/api/hubspot/connections`)
+            const res = await fetchWithBackendAuth(`${API_URL}/api/hubspot/connections`)
             const data = await res.json()
             if (data && data.length > 0) {
                 setConnection(data[0])
@@ -54,7 +55,7 @@ export default function HubSpotPages() {
 
     const fetchPages = async (connId: string) => {
         try {
-            const res = await fetch(`${API_URL}/api/hubspot/pages/${connId}`)
+            const res = await fetchWithBackendAuth(`${API_URL}/api/hubspot/pages/${connId}`)
             const data = await res.json()
             setPages(data)
         } catch (error) {
@@ -68,7 +69,7 @@ export default function HubSpotPages() {
         if (!connection) return
         setSyncing(true)
         try {
-            await fetch(`${API_URL}/api/hubspot/sync/${connection.id}`, { method: 'POST' })
+            await fetchWithBackendAuth(`${API_URL}/api/hubspot/sync/${connection.id}`, { method: 'POST' })
             await fetchPages(connection.id)
         } catch (error) {
             console.error(error)
@@ -105,7 +106,7 @@ export default function HubSpotPages() {
 
             // Process all selected pages in parallel
             await Promise.all(selectedPages.map(page => 
-                fetch(`${API_URL}/api/v1/audits/`, {
+                fetchWithBackendAuth(`${API_URL}/api/v1/audits/`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ url: page.url, source: 'hubspot' })

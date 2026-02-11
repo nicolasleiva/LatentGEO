@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Loader2, CheckCircle2, XCircle } from "lucide-react"
 import { API_URL } from '@/lib/api'
+import { fetchWithBackendAuth } from '@/lib/backend-auth'
 
 function CallbackContent() {
     const router = useRouter()
@@ -30,7 +31,7 @@ function CallbackContent() {
 
         const exchangeCode = async () => {
             try {
-                const response = await fetch(`${API_URL}/api/github/callback`, {
+                const response = await fetchWithBackendAuth(`${API_URL}/api/github/callback`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',

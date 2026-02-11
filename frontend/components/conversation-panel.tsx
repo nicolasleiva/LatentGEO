@@ -28,9 +28,9 @@ export function ConversationPanel({ messages, isLoading, onSearch }: Conversatio
   }, [messages])
 
   return (
-    <div className="flex flex-col h-[calc(100vh-4rem)]">
+    <div className="flex flex-col h-[calc(100vh-5rem)] min-h-[620px]">
       <div ref={containerRef} className="flex-1 overflow-y-auto px-4 py-6">
-        <div className="max-w-3xl mx-auto space-y-6">
+        <div className="max-w-5xl mx-auto space-y-6">
           {messages.map((message) => (
             <div
               key={message.id}
@@ -47,7 +47,7 @@ export function ConversationPanel({ messages, isLoading, onSearch }: Conversatio
 
               <div
                 className={cn(
-                  'rounded-lg px-4 py-3 max-w-[80%]',
+                  'rounded-lg px-4 py-3 max-w-[86%]',
                   message.role === 'user'
                     ? 'bg-primary text-primary-foreground'
                     : 'bg-secondary text-secondary-foreground border border-border'
@@ -96,7 +96,7 @@ export function ConversationPanel({ messages, isLoading, onSearch }: Conversatio
       </div>
 
       <div className="border-t border-border bg-background">
-        <div className="max-w-3xl mx-auto px-4 py-4">
+        <div className="max-w-5xl mx-auto px-4 py-4">
           <AISearchBar onSearch={onSearch} placeholder="Continue the conversation..." />
         </div>
       </div>

@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import logger from '@/lib/logger';
+import { buildAuthenticatedSseUrl, fetchWithBackendAuth } from '@/lib/backend-auth';
 
 interface AuditProgress {
   audit_id: number;
@@ -73,7 +74,7 @@ export function useAuditSSE(
 
     const poll = async () => {
       try {
-        const res = await fetch(`${backendUrl}/api/audits/${auditId}/status`);
+        const res = await fetchWithBackendAuth(`${backendUrl}/api/audits/${auditId}/status`);
         if (res.ok) {
           const data: AuditProgress = await res.json();
           setLastMessage(data);
@@ -99,12 +100,15 @@ export function useAuditSSE(
     pollingIntervalRef.current = setInterval(poll, 3000);
   }, [auditId, backendUrl, cleanup]);
 
-  const connect = useCallback(() => {
+  const connect = useCallback(async () => {
     if (!auditId) return;
 
     cleanup();
 
-    const sseUrl = `${backendUrl}/api/sse/audits/${auditId}/progress`;
+    const sseUrl = await buildAuthenticatedSseUrl(
+      backendUrl,
+      `/api/sse/audits/${auditId}/progress`
+    );
 
     logger.log(`[SSE] Connecting to: ${sseUrl}`);
 
@@ -161,7 +165,7 @@ export function useAuditSSE(
 
           reconnectTimeoutRef.current = setTimeout(() => {
             reconnectAttemptsRef.current++;
-            connect();
+            void connect();
           }, delay);
         } else {
           console.warn('[SSE] Max reconnection attempts reached, falling back to polling');
@@ -176,7 +180,7 @@ export function useAuditSSE(
   }, [auditId, backendUrl, cleanup, startPolling]);
 
   useEffect(() => {
-    connect();
+    void connect();
     return cleanup;
   }, [connect, cleanup]);
 

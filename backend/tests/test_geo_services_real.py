@@ -5,6 +5,7 @@ NO usa mocks ni datos falsos - solo APIs reales.
 
 import pytest
 import asyncio
+import os
 from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.services.pagespeed_service import PageSpeedService
@@ -12,6 +13,11 @@ from app.services.keyword_service import KeywordService
 from app.services.backlink_service import BacklinkService
 from app.services.rank_tracker_service import RankTrackerService
 from app.core.database import SessionLocal
+
+pytestmark = pytest.mark.skipif(
+    os.getenv("RUN_INTEGRATION_TESTS") != "1",
+    reason="Set RUN_INTEGRATION_TESTS=1 to run real GEO service integration tests.",
+)
 
 
 class TestPageSpeedServiceReal:

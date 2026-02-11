@@ -2,6 +2,9 @@ from fastapi import APIRouter, Depends, HTTPException, Body, Query
 from sqlalchemy.orm import Session
 from typing import List
 from ...core.database import get_db
+from ...core.auth import AuthUser, get_current_user
+from ...core.access_control import ensure_audit_access
+from ...services.audit_service import AuditService
 from ...services.ai_content_service import AIContentService
 from ...schemas import AIContentSuggestionResponse
 
@@ -12,12 +15,19 @@ async def generate_suggestions(
     audit_id: int, 
     domain: str = Query(..., description="Domain to generate content for"),
     topics: List[str] = Body(...),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: AuthUser = Depends(get_current_user),
 ):
+    ensure_audit_access(AuditService.get_audit(db, audit_id), current_user)
     service = AIContentService(db)
     return await service.generate_suggestions(audit_id, domain, topics)
 
 @router.get("/{audit_id}", response_model=List[AIContentSuggestionResponse])
-def get_suggestions(audit_id: int, db: Session = Depends(get_db)):
+def get_suggestions(
+    audit_id: int,
+    db: Session = Depends(get_db),
+    current_user: AuthUser = Depends(get_current_user),
+):
+    ensure_audit_access(AuditService.get_audit(db, audit_id), current_user)
     service = AIContentService(db)
     return service.get_suggestions(audit_id)
