@@ -35,7 +35,7 @@ export default function AnalyticsPage() {
     if (loading) {
         return (
             <div className="min-h-screen flex items-center justify-center">
-                <Loader2 className="h-12 w-12 animate-spin text-white/60" />
+                <Loader2 className="h-12 w-12 animate-spin text-muted-foreground" />
             </div>
         )
     }
@@ -44,9 +44,9 @@ export default function AnalyticsPage() {
         return (
             <div className="min-h-screen flex items-center justify-center p-6">
                 <Card className="glass-card p-12 text-center max-w-md">
-                    <AlertTriangle className="h-16 w-16 text-yellow-400 mx-auto mb-4" />
-                    <h3 className="text-xl font-semibold text-white mb-2">No Data Available</h3>
-                    <p className="text-white/60 mb-6">Unable to load analytics data</p>
+                    <AlertTriangle className="h-16 w-16 text-amber-500 mx-auto mb-4" />
+                    <h3 className="text-xl font-semibold text-foreground mb-2">No Data Available</h3>
+                    <p className="text-muted-foreground mb-6">Unable to load analytics data</p>
                     <Button onClick={loadDashboard} className="glass-button-primary">
                         Retry
                     </Button>
@@ -58,140 +58,140 @@ export default function AnalyticsPage() {
     const { summary, recent_audits, metrics } = dashboardData
 
     return (
-        <div className="min-h-screen bg-black text-white">
+        <div className="min-h-screen bg-background text-foreground">
             <Header />
 
             <main className="max-w-7xl mx-auto px-6 py-12">
-                <div className="mb-8">
-                    <h1 className="text-3xl font-bold">Analytics Dashboard</h1>
-                    <p className="text-white/60 mt-1">
-                        Comprehensive overview of your SEO/GEO audits and performance
+                <div className="mb-8 animate-fade-up">
+                    <h1 className="text-3xl md:text-4xl font-semibold tracking-tight">Analytics Dashboard</h1>
+                    <p className="text-muted-foreground mt-2 max-w-2xl">
+                        A unified view of SEO, GEO, and AI-readiness performance across every audit.
                     </p>
                 </div>
 
                 <div className="max-w-7xl mx-auto space-y-6">
                     {/* Summary Cards */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 animate-fade-up">
                         <Card className="glass-card p-6">
                             <div className="flex items-center justify-between mb-2">
-                                <BarChart3 className="h-5 w-5 text-blue-400" />
-                                <Badge className="bg-blue-500/20 text-blue-300 border-blue-500/30">
+                                <BarChart3 className="h-5 w-5 text-brand" />
+                                <Badge variant="outline" className="bg-brand/10 text-brand border-brand/30">
                                     Total
                                 </Badge>
                             </div>
-                            <div className="text-3xl font-bold text-white mb-1">
+                            <div className="text-3xl font-semibold text-foreground mb-1">
                                 {summary.total_audits}
                             </div>
-                            <div className="text-sm text-white/50">Total Audits</div>
+                            <div className="text-sm text-muted-foreground">Total Audits</div>
                         </Card>
 
                         <Card className="glass-card p-6">
                             <div className="flex items-center justify-between mb-2">
-                                <CheckCircle className="h-5 w-5 text-green-400" />
-                                <Badge className="bg-green-500/20 text-green-300 border-green-500/30">
+                                <CheckCircle className="h-5 w-5 text-emerald-500" />
+                                <Badge variant="outline" className="bg-emerald-500/10 text-emerald-600 border-emerald-500/30">
                                     {summary.success_rate.toFixed(0)}%
                                 </Badge>
                             </div>
-                            <div className="text-3xl font-bold text-white mb-1">
+                            <div className="text-3xl font-semibold text-foreground mb-1">
                                 {summary.completed_audits}
                             </div>
-                            <div className="text-sm text-white/50">Completed</div>
+                            <div className="text-sm text-muted-foreground">Completed</div>
                         </Card>
 
                         <Card className="glass-card p-6">
                             <div className="flex items-center justify-between mb-2">
-                                <Loader2 className="h-5 w-5 text-yellow-400 animate-pulse" />
-                                <Badge className="bg-yellow-500/20 text-yellow-300 border-yellow-500/30">
+                                <Loader2 className="h-5 w-5 text-amber-500 animate-soft-pulse" />
+                                <Badge variant="outline" className="bg-amber-500/10 text-amber-600 border-amber-500/30">
                                     Active
                                 </Badge>
                             </div>
-                            <div className="text-3xl font-bold text-white mb-1">
+                            <div className="text-3xl font-semibold text-foreground mb-1">
                                 {summary.running_audits}
                             </div>
-                            <div className="text-sm text-white/50">Running</div>
+                            <div className="text-sm text-muted-foreground">Running</div>
                         </Card>
 
                         <Card className="glass-card p-6">
                             <div className="flex items-center justify-between mb-2">
-                                <Users className="h-5 w-5 text-purple-400" />
-                                <Badge className="bg-purple-500/20 text-purple-300 border-purple-500/30">
+                                <Users className="h-5 w-5 text-foreground" />
+                                <Badge variant="outline" className="bg-muted/50 text-foreground border-border/70">
                                     Unique
                                 </Badge>
                             </div>
-                            <div className="text-3xl font-bold text-white mb-1">
+                            <div className="text-3xl font-semibold text-foreground mb-1">
                                 {metrics.unique_domains}
                             </div>
-                            <div className="text-sm text-white/50">Domains</div>
+                            <div className="text-sm text-muted-foreground">Domains</div>
                         </Card>
                     </div>
 
                     {/* Metrics Overview */}
-                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-fade-up">
                         <Card className="glass-card p-6">
                             <div className="flex items-center gap-3 mb-4">
                                 <div className="p-3 bg-red-500/10 rounded-lg">
-                                    <AlertTriangle className="h-6 w-6 text-red-400" />
+                                    <AlertTriangle className="h-6 w-6 text-red-500" />
                                 </div>
                                 <div>
-                                    <h3 className="font-semibold text-white">Total Issues</h3>
-                                    <p className="text-xs text-white/50">Across all audits</p>
+                                    <h3 className="font-semibold text-foreground">Total Issues</h3>
+                                    <p className="text-xs text-muted-foreground">Across all audits</p>
                                 </div>
                             </div>
-                            <div className="text-4xl font-bold text-red-400 mb-2">
+                            <div className="text-4xl font-semibold text-red-500 mb-2">
                                 {metrics.total_issues}
                             </div>
-                            <div className="text-sm text-white/60">
+                            <div className="text-sm text-muted-foreground">
                                 Avg: {metrics.average_issues_per_audit} per audit
                             </div>
                         </Card>
 
                         <Card className="glass-card p-6">
                             <div className="flex items-center gap-3 mb-4">
-                                <div className="p-3 bg-green-500/10 rounded-lg">
-                                    <Target className="h-6 w-6 text-green-400" />
+                                <div className="p-3 bg-emerald-500/10 rounded-lg">
+                                    <Target className="h-6 w-6 text-emerald-500" />
                                 </div>
                                 <div>
-                                    <h3 className="font-semibold text-white">Success Rate</h3>
-                                    <p className="text-xs text-white/50">Completion rate</p>
+                                    <h3 className="font-semibold text-foreground">Success Rate</h3>
+                                    <p className="text-xs text-muted-foreground">Completion rate</p>
                                 </div>
                             </div>
-                            <div className="text-4xl font-bold text-green-400 mb-2">
+                            <div className="text-4xl font-semibold text-emerald-500 mb-2">
                                 {summary.success_rate.toFixed(1)}%
                             </div>
-                            <div className="text-sm text-white/60">
+                            <div className="text-sm text-muted-foreground">
                                 {summary.completed_audits} of {summary.total_audits} completed
                             </div>
                         </Card>
 
                         <Card className="glass-card p-6">
                             <div className="flex items-center gap-3 mb-4">
-                                <div className="p-3 bg-blue-500/10 rounded-lg">
-                                    <TrendingUp className="h-6 w-6 text-blue-400" />
+                                <div className="p-3 bg-brand/10 rounded-lg">
+                                    <TrendingUp className="h-6 w-6 text-brand" />
                                 </div>
                                 <div>
-                                    <h3 className="font-semibold text-white">Performance</h3>
-                                    <p className="text-xs text-white/50">Overall health</p>
+                                    <h3 className="font-semibold text-foreground">Performance</h3>
+                                    <p className="text-xs text-muted-foreground">Overall health</p>
                                 </div>
                             </div>
-                            <div className="text-4xl font-bold text-blue-400 mb-2">
+                            <div className="text-4xl font-semibold text-brand mb-2">
                                 {summary.failed_audits === 0 ? 'Excellent' : 'Good'}
                             </div>
-                            <div className="text-sm text-white/60">
+                            <div className="text-sm text-muted-foreground">
                                 {summary.failed_audits} failed audits
                             </div>
                         </Card>
                     </div>
 
                     {/* Score History Section */}
-                    <Card className="glass-card p-6">
+                    <Card className="glass-card p-6 animate-fade-up">
                         <div className="flex items-center justify-between mb-6">
                             <div className="flex items-center gap-3">
-                                <div className="p-2 bg-indigo-500/20 rounded-lg">
-                                    <History className="h-5 w-5 text-indigo-400" />
+                                <div className="p-2 bg-brand/10 rounded-lg">
+                                    <History className="h-5 w-5 text-brand" />
                                 </div>
                                 <div>
-                                    <h2 className="text-xl font-semibold text-white">Score Tracking</h2>
-                                    <p className="text-sm text-white/50">Historial y comparativa temporal</p>
+                                    <h2 className="text-xl font-semibold text-foreground">Score Tracking</h2>
+                                    <p className="text-sm text-muted-foreground">History and time-based comparison</p>
                                 </div>
                             </div>
 
@@ -199,9 +199,9 @@ export default function AnalyticsPage() {
                                 <select
                                     value={selectedDomain}
                                     onChange={(e) => setSelectedDomain(e.target.value)}
-                                    className="bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white text-sm focus:outline-none focus:border-white/30"
+                                    className="glass-input rounded-lg px-4 py-2 text-sm"
                                 >
-                                    <option value="">Seleccionar dominio...</option>
+                                    <option value="">Select a domain...</option>
                                     {recent_audits.map((audit: any) => (
                                         <option key={audit.domain} value={audit.domain}>
                                             {audit.domain}
@@ -214,7 +214,7 @@ export default function AnalyticsPage() {
                                     onClick={() => setShowHistory(!showHistory)}
                                     className="gap-2"
                                 >
-                                    {showHistory ? 'Ocultar' : 'Ver Historial'}
+                                    {showHistory ? 'Hide history' : 'View history'}
                                     <ChevronDown className={`h-4 w-4 transition-transform ${showHistory ? 'rotate-180' : ''}`} />
                                 </Button>
                             </div>
@@ -223,52 +223,52 @@ export default function AnalyticsPage() {
                         {showHistory && selectedDomain ? (
                             <ScoreHistoryChart domain={selectedDomain} />
                         ) : showHistory && !selectedDomain ? (
-                            <div className="text-center py-12 text-white/40 border border-dashed border-white/10 rounded-xl">
-                                <History className="h-12 w-12 mx-auto mb-3 opacity-50" />
-                                <p>Selecciona un dominio para ver su historial de scores</p>
+                            <div className="text-center py-12 text-muted-foreground border border-dashed border-border/60 rounded-2xl glass-panel">
+                                <History className="h-12 w-12 mx-auto mb-3 opacity-40" />
+                                <p>Select a domain to view its score history.</p>
                             </div>
                         ) : null}
                     </Card>
 
                     {/* Recent Audits */}
-                    <Card className="glass-card p-6">
-                        <h2 className="text-xl font-semibold text-white mb-6">Recent Audits</h2>
+                    <Card className="glass-card p-6 animate-fade-up">
+                        <h2 className="text-xl font-semibold text-foreground mb-6">Recent Audits</h2>
                         <div className="space-y-4">
                             {recent_audits.slice(0, 10).map((audit: any) => (
                                 <div
                                     key={audit.id}
-                                    className="flex items-center justify-between p-4 bg-white/5 rounded-lg hover:bg-white/10 transition-all cursor-pointer"
+                                    className="flex items-center justify-between p-4 glass-panel rounded-xl hover:bg-muted/50 transition-all cursor-pointer"
                                     onClick={() => router.push(`/audits/${audit.id}`)}
                                 >
                                     <div className="flex-1">
                                         <div className="flex items-center gap-3 mb-1">
-                                            <h3 className="font-semibold text-white">{audit.domain}</h3>
+                                            <h3 className="font-semibold text-foreground">{audit.domain}</h3>
                                             <Badge
                                                 variant="outline"
                                                 className={`text-xs ${audit.status === 'completed'
-                                                    ? 'border-green-500/30 bg-green-500/10 text-green-300'
+                                                    ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-600'
                                                     : audit.status === 'running'
-                                                        ? 'border-yellow-500/30 bg-yellow-500/10 text-yellow-300'
-                                                        : 'border-red-500/30 bg-red-500/10 text-red-300'
+                                                        ? 'border-amber-500/30 bg-amber-500/10 text-amber-600'
+                                                        : 'border-red-500/30 bg-red-500/10 text-red-600'
                                                     }`}
                                             >
                                                 {audit.status}
                                             </Badge>
                                         </div>
-                                        <p className="text-sm text-white/50">{audit.url}</p>
+                                        <p className="text-sm text-muted-foreground">{audit.url}</p>
                                     </div>
 
                                     <div className="flex items-center gap-6">
                                         <div className="text-right">
-                                            <div className="text-sm text-white/50">Pages</div>
-                                            <div className="text-lg font-semibold text-white">
+                                            <div className="text-sm text-muted-foreground">Pages</div>
+                                            <div className="text-lg font-semibold text-foreground">
                                                 {audit.total_pages}
                                             </div>
                                         </div>
 
                                         <div className="text-right">
-                                            <div className="text-sm text-white/50">Issues</div>
-                                            <div className="text-lg font-semibold text-red-400">
+                                            <div className="text-sm text-muted-foreground">Issues</div>
+                                            <div className="text-lg font-semibold text-red-500">
                                                 {(audit.issues.critical || 0) +
                                                     (audit.issues.high || 0) +
                                                     (audit.issues.medium || 0) +
@@ -278,8 +278,8 @@ export default function AnalyticsPage() {
 
                                         {audit.status === 'running' && (
                                             <div className="text-right">
-                                                <div className="text-sm text-white/50">Progress</div>
-                                                <div className="text-lg font-semibold text-yellow-400">
+                                                <div className="text-sm text-muted-foreground">Progress</div>
+                                                <div className="text-lg font-semibold text-amber-500">
                                                     {audit.progress}%
                                                 </div>
                                             </div>
@@ -290,8 +290,8 @@ export default function AnalyticsPage() {
                         </div>
 
                         {recent_audits.length === 0 && (
-                            <div className="text-center py-12 text-white/40">
-                                <BarChart3 className="h-12 w-12 mx-auto mb-3 opacity-50" />
+                            <div className="text-center py-12 text-muted-foreground">
+                                <BarChart3 className="h-12 w-12 mx-auto mb-3 opacity-40" />
                                 <p>No audits yet. Start your first audit to see analytics.</p>
                             </div>
                         )}

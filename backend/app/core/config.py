@@ -79,14 +79,20 @@ class Settings(BaseSettings):
     REPORTS_BASE_DIR: str = "reports"
 
     # Configuración de auditoría
-    MAX_CRAWL_PAGES: int = 50
-    MAX_AUDIT_PAGES: int = 50
+    MAX_CRAWL_PAGES: int = int(os.getenv("MAX_CRAWL_PAGES", "50"))
+    MAX_AUDIT_PAGES: int = int(os.getenv("MAX_AUDIT_PAGES", "50"))
     ENABLE_PAGESPEED: bool = os.getenv("ENABLE_PAGESPEED", "True").lower() == "true"
     MAX_CRAWL_DEFAULT: int = 50
     RESPECT_ROBOTS: bool = os.getenv("RESPECT_ROBOTS", "False").lower() == "true"
     MAX_AUDIT_DEFAULT: int = 5
     DEFAULT_PAGE_SIZE: int = 20
     MAX_PAGE_SIZE: int = 100
+
+    # SSE / streaming
+    SSE_MAX_DURATION: int = int(os.getenv("SSE_MAX_DURATION", "3600"))
+
+    # LLM output limits (report generation)
+    NV_MAX_TOKENS_REPORT: int = int(os.getenv("NV_MAX_TOKENS_REPORT", "8192"))
 
     # Configuración general
     APP_NAME: str = "Auditor"

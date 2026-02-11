@@ -82,7 +82,7 @@ async def test_pdf_service_real_data_flow():
                 # Mock de la generación de PDF para no crear archivos reales
                 with patch("app.core.llm_kimi.get_llm_function", return_value=AsyncMock()):
                     with patch("app.services.pipeline_service.PipelineService.generate_report", new_callable=AsyncMock) as mock_gen:
-                        mock_gen.return_value = ("md", [])
+                        mock_gen.return_value = ("Report content " * 20, [])
                         with patch("app.services.pdf_service.PDFService.generate_comprehensive_pdf", new_callable=AsyncMock) as mock_pdf_gen:
                             mock_pdf_gen.return_value = "dummy.pdf"
                             
@@ -139,7 +139,7 @@ async def test_pdf_service_partial_failure():
             # Mock PDF generation internals
             with patch("app.core.llm_kimi.get_llm_function", return_value=AsyncMock()):
                 with patch("app.services.pipeline_service.PipelineService.generate_report", new_callable=AsyncMock) as mock_gen:
-                    mock_gen.return_value = ("md", [])
+                    mock_gen.return_value = ("Report content " * 20, [])
                     with patch("app.services.pdf_service.PDFService.generate_comprehensive_pdf", new_callable=AsyncMock) as mock_pdf_gen:
                         mock_pdf_gen.return_value = "dummy.pdf"
                         with patch("app.services.rank_tracker_service.RankTrackerService.track_rankings", new_callable=AsyncMock) as mock_rank:
@@ -206,7 +206,7 @@ async def test_pdf_service_fallback_to_db():
                  # Mock internals
                  with patch("app.core.llm_kimi.get_llm_function", return_value=AsyncMock()):
                     with patch("app.services.pipeline_service.PipelineService.generate_report", new_callable=AsyncMock) as mock_gen:
-                        mock_gen.return_value = ("md", [])
+                        mock_gen.return_value = ("Report content " * 20, [])
                         with patch("app.services.pdf_service.PDFService.generate_comprehensive_pdf", new_callable=AsyncMock) as mock_pdf_gen:
                             mock_pdf_gen.return_value = "dummy.pdf"
                             with patch("app.services.llm_visibility_service.LLMVisibilityService.generate_llm_visibility", new_callable=AsyncMock):
@@ -219,7 +219,7 @@ async def test_pdf_service_fallback_to_db():
                                     # Verify Keywords fallback
                                     k_data = kwargs.get('keywords_data', {})
                                     assert k_data.get("total_keywords") == 1
-                                    assert k_data["keywords"][0]["keyword"] == "fallback keyword"
+                                    assert k_data["items"][0]["keyword"] == "fallback keyword"
                                     
                                     # Verify Backlinks fallback
                                     b_data = kwargs.get('backlinks_data', {})

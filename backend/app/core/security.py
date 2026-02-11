@@ -10,7 +10,7 @@ from typing import Optional
 
 def normalize_url(url: str) -> str:
     """
-    Normaliza una URL a formato completo con https:// y www.
+    Normaliza una URL a formato completo con esquema HTTP/HTTPS.
 
     Convierte:
     - dominio.com → https://www.dominio.com
@@ -29,25 +29,24 @@ def normalize_url(url: str) -> str:
 
     url = url.strip().lower()
 
-    # Remover protocolo existente si hay
-    if url.startswith("http://"):
-        url = url[7:]
-    elif url.startswith("https://"):
-        url = url[8:]
+    parsed = urlparse(url)
+    if not parsed.scheme:
+        parsed = urlparse(f"https://{url}")
 
-    # Remover www. si existe para normalizar
-    if url.startswith("www."):
-        url = url[4:]
+    scheme = (parsed.scheme or "https").lower()
+    if scheme not in ("http", "https"):
+        scheme = "https"
 
-    # Agregar https://www.
-    url = f"https://www.{url}"
+    netloc = (parsed.netloc or "").lower()
+    path = parsed.path or ""
+
+    normalized = parsed._replace(scheme=scheme, netloc=netloc).geturl()
 
     # Asegurar que termine en / para dominios base
-    parsed = urlparse(url)
-    if not parsed.path or parsed.path == "":
-        url = f"{url}/"
+    if not path:
+        normalized = normalized.rstrip("/") + "/"
 
-    return url
+    return normalized
 
 
 def validate_url(url: str) -> bool:

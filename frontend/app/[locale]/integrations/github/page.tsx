@@ -35,7 +35,7 @@ export default function GitHubAdminPage() {
       setOutput({ action: label, data })
     } catch (e: any) {
       console.error(e)
-      setError(e?.message || "Error ejecutando acción.")
+      setError(e?.message || "Error executing action.")
       setOutput({ action: label, error: e?.message || String(e) })
     } finally {
       setLoading(false)
@@ -79,7 +79,7 @@ export default function GitHubAdminPage() {
               GitHub Admin
             </h1>
             <p className="text-muted-foreground mt-1">
-              Panel para ejecutar todas las funciones GitHub del backend
+              Admin panel to run GitHub backend actions and diagnostics.
             </p>
           </div>
           <Button onClick={authorize} className="glass-button-primary">
@@ -91,15 +91,15 @@ export default function GitHubAdminPage() {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="space-y-2">
               <Label>connection_id</Label>
-              <Input value={connectionId} onChange={(e) => setConnectionId(e.target.value)} placeholder="Ej: gh_conn_..." />
+              <Input value={connectionId} onChange={(e) => setConnectionId(e.target.value)} placeholder="e.g. gh_conn_..." />
             </div>
             <div className="space-y-2">
               <Label>repo_id</Label>
-              <Input value={repoId} onChange={(e) => setRepoId(e.target.value)} placeholder="Ej: gh_repo_..." />
+              <Input value={repoId} onChange={(e) => setRepoId(e.target.value)} placeholder="e.g. gh_repo_..." />
             </div>
             <div className="space-y-2">
               <Label>audit_id</Label>
-              <Input value={auditId} onChange={(e) => setAuditId(e.target.value)} placeholder="Ej: 123" inputMode="numeric" />
+              <Input value={auditId} onChange={(e) => setAuditId(e.target.value)} placeholder="e.g. 123" inputMode="numeric" />
             </div>
           </div>
         </Card>

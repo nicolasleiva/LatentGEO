@@ -7,8 +7,31 @@
 FROM node:20.9-slim AS builder
 WORKDIR /app
 
-# Habilitar corepack (proporciona pnpm de forma reproducible)
-RUN corepack enable && corepack prepare pnpm@latest --activate
+# Instalar pnpm de forma robusta (reintentos + registry configurable)
+ARG PNPM_VERSION=10.6.2
+ARG NPM_REGISTRY=https://registry.npmjs.org/
+ARG NPM_REGISTRY_FALLBACK=https://registry.npmmirror.com/
+RUN set -eux; \
+  npm config set fetch-retries 5; \
+  npm config set fetch-retry-factor 2; \
+  npm config set fetch-retry-mintimeout 10000; \
+  npm config set fetch-retry-maxtimeout 120000; \
+  npm config set fetch-timeout 120000; \
+  npm config set maxsockets 1; \
+  for registry in "${NPM_REGISTRY}" "${NPM_REGISTRY_FALLBACK}"; do \
+    npm config set registry "${registry}"; \
+    for i in 1 2 3 4 5; do \
+      if npm install -g "pnpm@${PNPM_VERSION}"; then \
+        break; \
+      fi; \
+      echo "pnpm install failed via ${registry}, retry $i/5"; \
+      sleep $((i * 5)); \
+    done; \
+    if command -v pnpm >/dev/null 2>&1; then \
+      break; \
+    fi; \
+  done; \
+  pnpm --version
 
 # Copiar todo el frontend primero (evita problemas con workspaces/paths relativos)
 # Asegurate que el contexto de build contenga la carpeta 'frontend'
@@ -23,7 +46,7 @@ ENV NEXT_PUBLIC_BACKEND_URL=$NEXT_PUBLIC_BACKEND_URL
 # Indicar que estamos en CI para evitar prompts interactivos durante pnpm install
 ENV CI=true
 
-# Hardening de red para instalaciones más estables en Docker
+# Hardening de red para instalaciones más estables en Docker (pnpm)
 RUN printf "fetch-retries=5\nfetch-retry-factor=2\nfetch-retry-mintimeout=10000\nfetch-retry-maxtimeout=120000\n" > /root/.npmrc
 
 # Instalar dependencias (NO usar --production aquí; el build necesita dev deps)
@@ -44,10 +67,11 @@ WORKDIR /app
 # Crear usuario no-root y cambiar permisos
 RUN addgroup --system --gid 1001 nodejs  && adduser --system --uid 1001 nextjs
 
-# Copiar artefactos standalone
-COPY --from=builder /app/.next/standalone ./
-COPY --from=builder /app/.next/static ./.next/static
+# Copiar artefactos de build (modo no-standalone)
+COPY --from=builder /app/.next ./.next
 COPY --from=builder /app/public ./public
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/package.json ./package.json
 
 ENV NODE_ENV=production
 ENV PORT=3000
@@ -61,4 +85,4 @@ EXPOSE 3000
 # Healthcheck simple (ajusta la URL/puerto si usas custom server)
 HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3   CMD ["node", "-e", "require('http').get('http://localhost:3000/en', (res) => process.exit((res.statusCode >= 200 && res.statusCode < 400) ? 0 : 1)).on('error', () => process.exit(1))"]
 
-CMD ["node", "server.js"]
+CMD ["node", "node_modules/next/dist/bin/next", "start", "-p", "3000"]

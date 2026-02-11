@@ -202,10 +202,15 @@ async def get_markdown_report(audit_id: int, db: Session = Depends(get_db)):
                 status_code=status.HTTP_404_NOT_FOUND, detail="Auditoría no encontrada"
             )
 
-        if audit.status != AuditStatus.COMPLETED or not audit.report_markdown:
+        if audit.status != AuditStatus.COMPLETED:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="El reporte aún no está listo.",
+            )
+        if not audit.report_markdown:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Report not generated. Generate PDF first.",
             )
 
         return JSONResponse(content={

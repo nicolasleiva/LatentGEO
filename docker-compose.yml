@@ -185,6 +185,8 @@ services:
     networks:
       - auditor_network
     restart: unless-stopped
+    healthcheck:
+      disable: true
 
 volumes:
   postgres_data:

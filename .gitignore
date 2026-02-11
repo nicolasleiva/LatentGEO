@@ -68,6 +68,7 @@ pnpm-debug.log*
 out/
 payload.json
 .next_old/
+.open-next/
 
 # ===================================================================
 # Docker

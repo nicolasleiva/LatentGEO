@@ -42,7 +42,7 @@ export default function CitationHistory({ auditId, backendUrl }: CitationHistory
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white"></div>
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-foreground"></div>
       </div>
     );
   }
@@ -58,9 +58,9 @@ export default function CitationHistory({ auditId, backendUrl }: CitationHistory
 
   if (history.length === 0) {
     return (
-      <div className="text-center py-12 bg-white/5 rounded-2xl border border-dashed border-white/10">
-        <History className="w-12 h-12 text-white/20 mx-auto mb-4" />
-        <p className="text-white/40">No historical data available yet. Data will appear after tracking for multiple months.</p>
+      <div className="text-center py-12 bg-muted/30 rounded-2xl border border-dashed border-border">
+        <History className="w-12 h-12 text-muted-foreground/60 mx-auto mb-4" />
+        <p className="text-muted-foreground">No historical data available yet. Data will appear after tracking for multiple months.</p>
       </div>
     );
   }
@@ -72,33 +72,33 @@ export default function CitationHistory({ auditId, backendUrl }: CitationHistory
         const trend = prevMonth ? month.citation_rate - prevMonth.citation_rate : 0;
         
         return (
-          <div key={`${month.year}-${month.month}`} className="bg-white/5 border border-white/10 rounded-xl p-6">
+          <div key={`${month.year}-${month.month}`} className="bg-muted/30 border border-border rounded-xl p-6">
             <div className="flex justify-between items-start mb-4">
               <div>
-                <h4 className="font-semibold text-white text-lg">
+                <h4 className="font-semibold text-foreground text-lg">
                   {month.month} {month.year}
                 </h4>
-                <p className="text-white/50 text-sm">{month.queries_tracked} queries tracked</p>
+                <p className="text-muted-foreground text-sm">{month.queries_tracked} queries tracked</p>
               </div>
               <div className="flex items-center gap-2">
-                <span className="text-2xl font-bold text-white">{month.citation_rate.toFixed(1)}%</span>
+                <span className="text-2xl font-bold text-foreground">{month.citation_rate.toFixed(1)}%</span>
                 {trend > 0 && <TrendingUp className="w-5 h-5 text-green-400" />}
                 {trend < 0 && <TrendingDown className="w-5 h-5 text-red-400" />}
-                {trend === 0 && <Minus className="w-5 h-5 text-white/40" />}
+                {trend === 0 && <Minus className="w-5 h-5 text-muted-foreground" />}
               </div>
             </div>
             
             <div className="flex items-center gap-2 mb-4">
-              <span className="text-white/60">Citations:</span>
-              <span className="font-semibold text-white">{month.citations}</span>
+              <span className="text-muted-foreground">Citations:</span>
+              <span className="font-semibold text-foreground">{month.citations}</span>
             </div>
             
             {month.top_queries.length > 0 && (
               <div>
-                <p className="text-white/50 text-sm mb-2">Top performing queries:</p>
+                <p className="text-muted-foreground text-sm mb-2">Top performing queries:</p>
                 <div className="flex flex-wrap gap-2">
                   {month.top_queries.map((query, qidx) => (
-                    <span key={qidx} className="bg-white/10 text-white/70 px-3 py-1 rounded-lg text-sm">
+                    <span key={qidx} className="bg-muted/40 text-muted-foreground px-3 py-1 rounded-lg text-sm">
                       {query}
                     </span>
                   ))}

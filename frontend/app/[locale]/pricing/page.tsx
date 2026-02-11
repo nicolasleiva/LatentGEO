@@ -13,7 +13,7 @@ const plans = [
         name: 'Free',
         price: '$0',
         period: 'forever',
-        description: 'Perfect for trying out Auditor GEO',
+        description: 'Perfect for trying out LatentGEO.ai',
         badge: null,
         features: [
             '3 audits per month',
@@ -29,7 +29,7 @@ const plans = [
             'Custom reports',
         ],
         cta: 'Get Started',
-        ctaStyle: 'bg-white/10 text-white hover:bg-white/20',
+        ctaStyle: 'border border-border bg-background/80 text-foreground hover:bg-foreground/5',
         popular: false,
     },
     {
@@ -53,7 +53,7 @@ const plans = [
             'White-label reports',
         ],
         cta: 'Start Free Trial',
-        ctaStyle: 'bg-gradient-to-r from-blue-500 to-purple-500 text-white hover:opacity-90',
+        ctaStyle: 'bg-brand text-brand-foreground hover:bg-brand/90 shadow-[0_12px_30px_rgba(16,185,129,0.25)]',
         popular: true,
     },
     {
@@ -74,7 +74,7 @@ const plans = [
         ],
         notIncluded: [],
         cta: 'Contact Sales',
-        ctaStyle: 'bg-white/10 text-white hover:bg-white/20',
+        ctaStyle: 'border border-border bg-background/80 text-foreground hover:bg-foreground/5',
         popular: false,
     },
 ]
@@ -100,20 +100,20 @@ const faqs = [
 
 export default function PricingPage() {
     return (
-        <div className="min-h-screen bg-black text-white">
+        <div className="min-h-screen bg-background text-foreground">
             <Header />
 
             <main className="max-w-6xl mx-auto px-6 py-16">
                 {/* Hero */}
                 <div className="text-center mb-16">
-                    <div className="inline-flex items-center gap-2 px-4 py-2 bg-green-500/10 border border-green-500/20 rounded-full text-green-400 text-sm mb-6">
+                    <div className="inline-flex items-center gap-2 px-4 py-2 bg-brand/10 border border-brand/20 rounded-full text-brand text-sm mb-6">
                         <Sparkles className="w-4 h-4" />
                         Simple, transparent pricing
                     </div>
                     <h1 className="text-4xl md:text-5xl font-bold mb-4">
                         Choose your plan
                     </h1>
-                    <p className="text-xl text-white/60 max-w-2xl mx-auto">
+                    <p className="text-xl text-muted-foreground max-w-2xl mx-auto">
                         Start free and scale as you grow. No hidden fees, no surprises.
                     </p>
                 </div>
@@ -124,12 +124,12 @@ export default function PricingPage() {
                         <div
                             key={plan.name}
                             className={`relative p-8 rounded-2xl border transition-all ${plan.popular
-                                    ? 'bg-gradient-to-b from-blue-500/10 to-purple-500/10 border-blue-500/30 shadow-lg shadow-blue-500/10'
-                                    : 'bg-white/5 border-white/10 hover:border-white/20'
+                                    ? 'bg-gradient-to-b from-brand/10 to-foreground/5 border-brand/30 shadow-lg shadow-brand/10'
+                                    : 'bg-background/70 border-border/70 hover:border-border'
                                 }`}
                         >
                             {plan.badge && (
-                                <Badge className="absolute -top-3 left-1/2 -translate-x-1/2 bg-gradient-to-r from-blue-500 to-purple-500 text-white border-0">
+                                <Badge className="absolute -top-3 left-1/2 -translate-x-1/2 bg-brand text-brand-foreground border-0">
                                     {plan.badge}
                                 </Badge>
                             )}
@@ -138,9 +138,9 @@ export default function PricingPage() {
                                 <h2 className="text-xl font-bold mb-2">{plan.name}</h2>
                                 <div className="flex items-baseline gap-1">
                                     <span className="text-4xl font-bold">{plan.price}</span>
-                                    <span className="text-white/60">/{plan.period}</span>
+                                    <span className="text-muted-foreground">/{plan.period}</span>
                                 </div>
-                                <p className="text-white/60 mt-2">{plan.description}</p>
+                                <p className="text-muted-foreground mt-2">{plan.description}</p>
                             </div>
 
                             <button
@@ -152,16 +152,16 @@ export default function PricingPage() {
                             <div className="mt-8 space-y-3">
                                 {plan.features.map((feature) => (
                                     <div key={feature} className="flex items-center gap-3">
-                                        <Check className="w-5 h-5 text-green-400 flex-shrink-0" />
-                                        <span className="text-white/80">{feature}</span>
+                                        <Check className="w-5 h-5 text-brand flex-shrink-0" />
+                                        <span className="text-foreground/80">{feature}</span>
                                     </div>
                                 ))}
                                 {plan.notIncluded.map((feature) => (
                                     <div key={feature} className="flex items-center gap-3 opacity-50">
                                         <div className="w-5 h-5 flex items-center justify-center flex-shrink-0">
-                                            <div className="w-1.5 h-0.5 bg-white/40 rounded" />
+                                            <div className="w-1.5 h-0.5 bg-foreground/30 rounded" />
                                         </div>
-                                        <span className="text-white/40">{feature}</span>
+                                        <span className="text-muted-foreground/60">{feature}</span>
                                     </div>
                                 ))}
                             </div>
@@ -172,34 +172,34 @@ export default function PricingPage() {
                 {/* Features Comparison */}
                 <div className="mb-20">
                     <h2 className="text-2xl font-bold text-center mb-8">
-                        Why choose Auditor GEO?
+                        Why choose LatentGEO.ai?
                     </h2>
                     <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-                        <div className="p-6 bg-white/5 border border-white/10 rounded-2xl text-center">
-                            <Globe className="w-8 h-8 text-blue-400 mx-auto mb-4" />
+                        <div className="p-6 bg-background/70 border border-border/70 rounded-2xl text-center">
+                            <Globe className="w-8 h-8 text-brand mx-auto mb-4" />
                             <h3 className="font-semibold mb-2">GEO Focused</h3>
-                            <p className="text-sm text-white/60">
+                            <p className="text-sm text-muted-foreground">
                                 The only tool built specifically for AI search optimization
                             </p>
                         </div>
-                        <div className="p-6 bg-white/5 border border-white/10 rounded-2xl text-center">
-                            <GitBranch className="w-8 h-8 text-purple-400 mx-auto mb-4" />
+                        <div className="p-6 bg-background/70 border border-border/70 rounded-2xl text-center">
+                            <GitBranch className="w-8 h-8 text-brand mx-auto mb-4" />
                             <h3 className="font-semibold mb-2">Auto-Fix</h3>
-                            <p className="text-sm text-white/60">
+                            <p className="text-sm text-muted-foreground">
                                 Automatically fix issues with GitHub integration
                             </p>
                         </div>
-                        <div className="p-6 bg-white/5 border border-white/10 rounded-2xl text-center">
-                            <BarChart3 className="w-8 h-8 text-green-400 mx-auto mb-4" />
+                        <div className="p-6 bg-background/70 border border-border/70 rounded-2xl text-center">
+                            <BarChart3 className="w-8 h-8 text-brand mx-auto mb-4" />
                             <h3 className="font-semibold mb-2">Competitor Intel</h3>
-                            <p className="text-sm text-white/60">
+                            <p className="text-sm text-muted-foreground">
                                 Compare your GEO score with competitors
                             </p>
                         </div>
-                        <div className="p-6 bg-white/5 border border-white/10 rounded-2xl text-center">
-                            <Clock className="w-8 h-8 text-yellow-400 mx-auto mb-4" />
+                        <div className="p-6 bg-background/70 border border-border/70 rounded-2xl text-center">
+                            <Clock className="w-8 h-8 text-brand mx-auto mb-4" />
                             <h3 className="font-semibold mb-2">Fast Results</h3>
-                            <p className="text-sm text-white/60">
+                            <p className="text-sm text-muted-foreground">
                                 Get actionable insights in minutes, not days
                             </p>
                         </div>
@@ -215,26 +215,26 @@ export default function PricingPage() {
                         {faqs.map((faq) => (
                             <div
                                 key={faq.q}
-                                className="p-6 bg-white/5 border border-white/10 rounded-2xl"
+                                className="p-6 bg-background/70 border border-border/70 rounded-2xl"
                             >
                                 <h3 className="font-semibold mb-2">{faq.q}</h3>
-                                <p className="text-white/60">{faq.a}</p>
+                                <p className="text-muted-foreground">{faq.a}</p>
                             </div>
                         ))}
                     </div>
                 </div>
 
                 {/* CTA */}
-                <div className="mt-20 text-center p-12 bg-gradient-to-br from-blue-500/10 to-purple-500/10 border border-white/10 rounded-2xl">
+                <div className="mt-20 text-center p-12 bg-gradient-to-br from-brand/10 to-foreground/5 border border-border/70 rounded-2xl">
                     <h2 className="text-3xl font-bold mb-4">
                         Ready to optimize for the AI era?
                     </h2>
-                    <p className="text-white/60 mb-8 max-w-xl mx-auto">
+                    <p className="text-muted-foreground mb-8 max-w-xl mx-auto">
                         Start your free trial today. No credit card required.
                     </p>
                     <a
                         href="/"
-                        className="inline-flex items-center gap-2 px-8 py-4 bg-white text-black rounded-xl font-semibold hover:bg-white/90 transition-colors"
+                        className="inline-flex items-center gap-2 px-8 py-4 bg-brand text-brand-foreground rounded-xl font-semibold hover:bg-brand/90 transition-colors shadow-[0_12px_30px_rgba(16,185,129,0.25)]"
                     >
                         <Zap className="w-5 h-5" />
                         Start Free Audit
@@ -243,9 +243,9 @@ export default function PricingPage() {
             </main>
 
             {/* Footer */}
-            <footer className="border-t border-white/5 mt-20 py-8">
-                <div className="max-w-6xl mx-auto px-6 text-center text-white/40 text-sm">
-                    © 2024 Auditor GEO. All prices in USD.
+            <footer className="border-t border-border mt-20 py-8">
+                <div className="max-w-6xl mx-auto px-6 text-center text-muted-foreground/60 text-sm">
+                    © 2026 LatentGEO.ai. All prices in USD.
                 </div>
             </footer>
         </div>

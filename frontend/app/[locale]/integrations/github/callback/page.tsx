@@ -18,13 +18,13 @@ function CallbackContent() {
 
         if (error) {
             setStatus('error')
-            setMessage('Error en la autorización de GitHub')
+            setMessage('GitHub authorization error')
             return
         }
 
         if (!code) {
             setStatus('error')
-            setMessage('No se recibió código de autorización')
+            setMessage('Authorization code not received')
             return
         }
 
@@ -39,12 +39,12 @@ function CallbackContent() {
                 })
 
                 if (!response.ok) {
-                    throw new Error('Error al intercambiar el código')
+                    throw new Error('Error exchanging authorization code')
                 }
 
                 const data = await response.json()
                 setStatus('success')
-                setMessage('¡Conexión exitosa! Redirigiendo...')
+                setMessage('Connection successful! Redirecting...')
 
                 // Guardar connection_id si es necesario o simplemente redirigir
                 setTimeout(() => {
@@ -68,14 +68,14 @@ function CallbackContent() {
                     {status === 'loading' && <Loader2 className="h-6 w-6 animate-spin" />}
                     {status === 'success' && <CheckCircle2 className="h-6 w-6 text-green-500" />}
                     {status === 'error' && <XCircle className="h-6 w-6 text-red-500" />}
-                    Conexión GitHub
+                    GitHub connection
                 </CardTitle>
             </CardHeader>
             <CardContent>
                 <p className="text-muted-foreground mb-4">{message}</p>
                 {status === 'error' && (
                     <div className="bg-red-50 p-2 rounded text-xs text-red-800 break-all">
-                        <p>Si el error persiste, copia este código y envíalo al soporte:</p>
+                        <p>If the error persists, copy this code and send it to support:</p>
                         <code className="font-mono font-bold mt-2 block">{searchParams.get('code')}</code>
                     </div>
                 )}
@@ -87,7 +87,7 @@ function CallbackContent() {
 export default function GitHubCallback() {
     return (
         <div className="flex h-screen w-full items-center justify-center bg-gray-50">
-            <Suspense fallback={<div>Cargando...</div>}>
+            <Suspense fallback={<div>Loading...</div>}>
                 <CallbackContent />
             </Suspense>
         </div>

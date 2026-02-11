@@ -28,7 +28,7 @@ export default function WebhooksOpsPage() {
       setOutput({ action: label, data })
     } catch (e: any) {
       console.error(e)
-      setError(e?.message || "Error ejecutando acción.")
+      setError(e?.message || "Error executing action.")
       setOutput({ action: label, error: e?.message || String(e) })
     } finally {
       setLoading(false)
@@ -83,7 +83,7 @@ export default function WebhooksOpsPage() {
               <Input value={configSecret} onChange={(e) => setConfigSecret(e.target.value)} placeholder="min 16 chars" />
             </div>
             <div className="space-y-2">
-              <Label>Events (1 por línea)</Label>
+              <Label>Events (one per line)</Label>
               <Textarea value={configEvents} onChange={(e) => setConfigEvents(e.target.value)} className="min-h-[120px] font-mono text-xs" />
             </div>
             <div className="flex flex-wrap gap-2">

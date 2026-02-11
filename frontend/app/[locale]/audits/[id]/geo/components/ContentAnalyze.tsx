@@ -61,15 +61,15 @@ export default function ContentAnalyze({ backendUrl }: ContentAnalyzeProps) {
 
   return (
     <div className="space-y-6">
-      <div className="bg-white/5 border border-white/10 rounded-xl p-6">
+      <div className="bg-muted/30 border border-border rounded-xl p-6">
         <div className="space-y-4">
           <div>
-            <Label className="text-white/70">Content to Analyze</Label>
+            <Label className="text-muted-foreground">Content to Analyze</Label>
             <Textarea
               placeholder="Paste your content here to analyze GEO optimization..."
               value={content}
               onChange={(e) => setContent(e.target.value)}
-              className="mt-2 min-h-[200px] bg-white/5 border-white/20 text-white placeholder:text-white/40"
+              className="mt-2 min-h-[200px] bg-muted/30 border-border/70 text-foreground placeholder:text-muted-foreground"
             />
           </div>
           
@@ -79,7 +79,7 @@ export default function ContentAnalyze({ backendUrl }: ContentAnalyzeProps) {
             className="glass-button-primary w-full"
           >
             {loading ? (
-              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-foreground"></div>
             ) : (
               <>
                 <Sparkles className="w-4 h-4 mr-2" />
@@ -100,12 +100,12 @@ export default function ContentAnalyze({ backendUrl }: ContentAnalyzeProps) {
       {result && (
         <div className="space-y-6">
           {/* Score */}
-          <div className={`${getScoreBg(result.score)} border border-white/10 rounded-xl p-6 text-center`}>
-            <p className="text-white/50 text-sm mb-2">GEO Readiness Score</p>
+          <div className={`${getScoreBg(result.score)} border border-border rounded-xl p-6 text-center`}>
+            <p className="text-muted-foreground text-sm mb-2">GEO Readiness Score</p>
             <p className={`text-5xl font-bold ${getScoreColor(result.score)}`}>
               {result.score}/100
             </p>
-            <p className="text-white/70 mt-2">{result.geo_readiness}</p>
+            <p className="text-muted-foreground mt-2">{result.geo_readiness}</p>
           </div>
 
           <div className="grid grid-cols-2 gap-6">
@@ -118,7 +118,7 @@ export default function ContentAnalyze({ backendUrl }: ContentAnalyzeProps) {
                 </h4>
                 <ul className="space-y-2">
                   {result.strengths.map((strength, idx) => (
-                    <li key={idx} className="text-white/70 text-sm flex items-start gap-2">
+                    <li key={idx} className="text-muted-foreground text-sm flex items-start gap-2">
                       <span className="text-green-400">•</span> {strength}
                     </li>
                   ))}
@@ -135,7 +135,7 @@ export default function ContentAnalyze({ backendUrl }: ContentAnalyzeProps) {
                 </h4>
                 <ul className="space-y-2">
                   {result.weaknesses.map((weakness, idx) => (
-                    <li key={idx} className="text-white/70 text-sm flex items-start gap-2">
+                    <li key={idx} className="text-muted-foreground text-sm flex items-start gap-2">
                       <span className="text-red-400">•</span> {weakness}
                     </li>
                   ))}
@@ -153,7 +153,7 @@ export default function ContentAnalyze({ backendUrl }: ContentAnalyzeProps) {
               </h4>
               <ul className="space-y-2">
                 {result.recommendations.map((rec, idx) => (
-                  <li key={idx} className="text-white/70 text-sm flex items-start gap-2">
+                  <li key={idx} className="text-muted-foreground text-sm flex items-start gap-2">
                     <span className="text-blue-400">•</span> {rec}
                   </li>
                 ))}

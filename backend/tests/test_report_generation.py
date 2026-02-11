@@ -70,8 +70,8 @@ async def test_generate_report_partial_data():
     search_results = {}
     competitor_audits = []
 
-    # Only PageSpeed is present
-    pagespeed = {"mobile": {"score": 50}}
+    # Only PageSpeed is present (current schema)
+    pagespeed = {"mobile": {"performance_score": 50}}
 
     await PipelineService.generate_report(
         target_audit,
@@ -87,7 +87,7 @@ async def test_generate_report_partial_data():
     
     # Check that pagespeed is present
     assert '"pagespeed":' in user_prompt
-    assert '"score": 50' in user_prompt
+    assert '"performance_score": 50' in user_prompt
     
     # Check that missing keys are present as empty dicts (based on _ensure_dict or logic in generate_report)
     # The current implementation generates a context dict with keys even if None, 

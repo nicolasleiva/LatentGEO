@@ -86,7 +86,7 @@ export default function ContentEditorPage() {
             <div className="flex-1 flex overflow-hidden p-6 gap-6">
                 {/* Editor Area (Left) */}
                 <div className="flex-1 glass-card p-0 overflow-hidden flex flex-col relative group">
-                    <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-500/50 to-purple-500/50 opacity-0 group-hover:opacity-100 transition-opacity"></div>
+                    <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-brand/40 to-foreground/10 opacity-0 group-hover:opacity-100 transition-opacity"></div>
                     <textarea
                         placeholder="Start writing your content here... Focus on direct answers and clear structure."
                         className="w-full h-full bg-transparent p-8 text-lg leading-relaxed resize-none border-none focus:ring-0 text-foreground placeholder:text-muted-foreground outline-none scrollbar-thin scrollbar-thumb-border scrollbar-track-transparent"

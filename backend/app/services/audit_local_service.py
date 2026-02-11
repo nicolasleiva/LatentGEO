@@ -205,6 +205,18 @@ class AuditLocalService:
         meta_kw_tag = soup.find("meta", attrs={"name": "keywords"})
         meta_keywords = meta_kw_tag.get("content", "").strip() if meta_kw_tag else ""
 
+        # Navigation cues (top-level menu labels) to capture core business terms
+        nav_texts = []
+        for nav in soup.find_all("nav"):
+            for a in nav.find_all("a"):
+                label = " ".join(a.stripped_strings)
+                if label:
+                    nav_texts.append(label)
+        multi_word = [t for t in nav_texts if len(t.split()) >= 2]
+        single_word = [t for t in nav_texts if len(t.split()) < 2]
+        ordered_nav = multi_word + single_word
+        nav_text_sample = " ".join(ordered_nav[:40])[:600]
+
         # Muestra breve de texto visible para contexto (limitado)
         text_sample_parts = []
         for p in paragraphs[:8]:
@@ -258,6 +270,8 @@ class AuditLocalService:
             "title": title_text,
             "meta_description": meta_desc,
             "meta_keywords": meta_keywords,
+            "nav_text": nav_text_sample,
+            "nav_items": ordered_nav[:40],
             "text_sample": text_sample,
             "fragment_clarity": {
                 "score": max(1, 10 - len(long_paragraphs)),
