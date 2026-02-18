@@ -54,7 +54,7 @@ export default function AIContentPage() {
             const newSuggestions = await api.generateAIContent(auditId, domain, topicList)
             setSuggestions(prev => [...newSuggestions, ...prev])
         } catch (e) {
-            setError('Failed to generate suggestions. Ensure OpenAI/Gemini key is set.')
+            setError(e instanceof Error ? e.message : 'Failed to generate suggestions. Ensure Kimi/NVIDIA key is set.')
         } finally {
             setLoading(false)
         }

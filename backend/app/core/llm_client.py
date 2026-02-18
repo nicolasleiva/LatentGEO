@@ -53,8 +53,3 @@ async def call_kimi_api(name: str, system_prompt: str, user_message: str) -> str
             except RuntimeError as close_err:
                 if "Event loop is closed" not in str(close_err):
                     logger.warning(f"Error closing KIMI client: {close_err}")
-
-# Mantener compatibilidad temporal si es necesario
-async def call_gemini_api(name: str, system_prompt: str, user_message: str) -> str:
-    logger.warning(f"call_gemini_api called for {name}, but Gemini is disabled. Using KIMI instead.")
-    return await call_kimi_api(name, system_prompt, user_message)

@@ -130,9 +130,7 @@
       }
     }
   },
-  "user_template": "Create a comprehensive technical fix plan from the following audit findings:\n\nAUDIT DATA:\n```json\n{audit_data}\n```\n\nEXISTING FIXES:\n```json\n{existing_fixes}\n```\n\nTEAM CONTEXT:\n- Team size: {team_size}
-- Sprint duration: {sprint_duration}
-- Technical stack: {tech_stack}\n\nRequirements:\n1. Generate complete fix_plan array with all technical details\n2. Create prioritization matrix (P1-P4)\n3. Define implementation phases with timelines\n4. Build RACI matrix for accountability\n5. Estimate resource requirements\n6. Identify risks and mitigation strategies\n7. Define success metrics\n\nEach fix must include: implementation steps, code examples, effort estimates, and testing requirements.",
+  "user_template": "Create a comprehensive technical fix plan from the following audit findings:\n\nAUDIT DATA:\n```json\n{audit_data}\n```\n\nEXISTING FIXES:\n```json\n{existing_fixes}\n```\n\nTEAM CONTEXT:\n- Team size: {team_size}\n- Sprint duration: {sprint_duration}\n- Technical stack: {tech_stack}\n\nRequirements:\n1. Generate complete fix_plan array with all technical details\n2. Create prioritization matrix (P1-P4)\n3. Define implementation phases with timelines\n4. Build RACI matrix for accountability\n5. Estimate resource requirements\n6. Identify risks and mitigation strategies\n7. Define success metrics\n\nEach fix must include: implementation steps, code examples, effort estimates, and testing requirements.",
   "instructions": [
     "Generate 10-50 specific fix items depending on audit complexity",
     "Prioritize strictly by: business impact × implementation ease",

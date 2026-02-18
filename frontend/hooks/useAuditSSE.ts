@@ -15,6 +15,7 @@ interface UseAuditSSEOptions {
   onMessage?: (data: AuditProgress) => void;
   onComplete?: (data: AuditProgress) => void;
   onError?: (error: Error) => void;
+  enabled?: boolean;
 }
 
 /**
@@ -45,11 +46,15 @@ export function useAuditSSE(
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const reconnectAttemptsRef = useRef(0);
+  const intentionallyClosedRef = useRef(false);
+  const terminalNotifiedRef = useRef(false);
   const maxReconnectAttempts = 3;
+  const enabled = options.enabled ?? true;
 
   const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
 
-  const cleanup = useCallback(() => {
+  const cleanup = useCallback((intentional = true) => {
+    intentionallyClosedRef.current = intentional;
     if (eventSourceRef.current) {
       eventSourceRef.current.close();
       eventSourceRef.current = null;
@@ -67,7 +72,7 @@ export function useAuditSSE(
 
   // Fallback: Polling tradicional
   const startPolling = useCallback(() => {
-    if (!auditId) return;
+    if (!auditId || !enabled) return;
 
     logger.log('[Fallback] Using polling instead of SSE');
     setUseFallback(true);
@@ -75,20 +80,35 @@ export function useAuditSSE(
     const poll = async () => {
       try {
         const res = await fetchWithBackendAuth(`${backendUrl}/api/audits/${auditId}/status`);
-        if (res.ok) {
-          const data: AuditProgress = await res.json();
-          setLastMessage(data);
-
-          if (optionsRef.current.onMessage) {
-            optionsRef.current.onMessage(data);
-          }
-
-          if (data.status === 'completed' || data.status === 'failed') {
-            if (optionsRef.current.onComplete) {
-              optionsRef.current.onComplete(data);
+        if (!res.ok) {
+          if (res.status === 401 || res.status === 403) {
+            const authError = new Error('Unauthorized polling for audit status');
+            setError(authError);
+            if (optionsRef.current.onError) {
+              optionsRef.current.onError(authError);
             }
-            cleanup();
+            cleanup(true);
           }
+          return;
+        }
+
+        const data: AuditProgress = await res.json();
+        setLastMessage(data);
+
+        if (optionsRef.current.onMessage) {
+          optionsRef.current.onMessage(data);
+        }
+
+        if (data.status === 'completed' || data.status === 'failed') {
+          if (terminalNotifiedRef.current) {
+            cleanup(true);
+            return;
+          }
+          terminalNotifiedRef.current = true;
+          if (optionsRef.current.onComplete) {
+            optionsRef.current.onComplete(data);
+          }
+          cleanup(true);
         }
       } catch (err) {
         console.error('[Fallback] Polling error:', err);
@@ -98,12 +118,14 @@ export function useAuditSSE(
     // Poll every 3 seconds
     poll();
     pollingIntervalRef.current = setInterval(poll, 3000);
-  }, [auditId, backendUrl, cleanup]);
+  }, [auditId, backendUrl, cleanup, enabled]);
 
   const connect = useCallback(async () => {
-    if (!auditId) return;
+    if (!auditId || !enabled) return;
 
-    cleanup();
+    intentionallyClosedRef.current = false;
+    terminalNotifiedRef.current = false;
+    cleanup(false);
 
     const sseUrl = await buildAuthenticatedSseUrl(
       backendUrl,
@@ -136,11 +158,16 @@ export function useAuditSSE(
           }
 
           if (data.status === 'completed' || data.status === 'failed') {
+            if (terminalNotifiedRef.current) {
+              cleanup(true);
+              return;
+            }
+            terminalNotifiedRef.current = true;
             logger.log(`[SSE] Audit ${data.status}, closing connection`);
             if (optionsRef.current.onComplete) {
               optionsRef.current.onComplete(data);
             }
-            cleanup();
+            cleanup(true);
           }
         } catch (err) {
           console.error('[SSE] Failed to parse message:', err);
@@ -148,6 +175,9 @@ export function useAuditSSE(
       };
 
       eventSource.onerror = (err) => {
+        if (intentionallyClosedRef.current || !enabled) {
+          return;
+        }
         console.error('[SSE] Connection error:', err);
         setIsConnected(false);
 
@@ -169,7 +199,7 @@ export function useAuditSSE(
           }, delay);
         } else {
           console.warn('[SSE] Max reconnection attempts reached, falling back to polling');
-          cleanup();
+          cleanup(false);
           startPolling();
         }
       };
@@ -177,12 +207,16 @@ export function useAuditSSE(
       console.error('[SSE] Failed to create EventSource:', err);
       startPolling();
     }
-  }, [auditId, backendUrl, cleanup, startPolling]);
+  }, [auditId, backendUrl, cleanup, startPolling, enabled]);
 
   useEffect(() => {
+    if (!auditId || !enabled) {
+      cleanup(true);
+      return;
+    }
     void connect();
-    return cleanup;
-  }, [connect, cleanup]);
+    return () => cleanup(true);
+  }, [connect, cleanup, auditId, enabled]);
 
   return {
     isConnected,

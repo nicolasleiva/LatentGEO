@@ -26,6 +26,16 @@ def test_map_issue_to_fix_type(mock_db):
     # Test unmappable
     assert service._map_issue_to_fix_type("Update server") == "other"
 
+    # Test issue_code mappings
+    assert service._map_issue_to_fix_type("", "H1_MISSING") == "h1"
+    assert service._map_issue_to_fix_type("", "H1_HIERARCHY_SKIP") == "structure"
+    assert service._map_issue_to_fix_type("", "SCHEMA_MISSING") == "schema"
+    assert service._map_issue_to_fix_type("", "PRODUCT_SCHEMA_MISSING") == "schema"
+    assert service._map_issue_to_fix_type("", "AUTHOR_MISSING") == "add_author_metadata"
+    assert service._map_issue_to_fix_type("", "FAQ_MISSING") == "add_faq_section"
+    assert service._map_issue_to_fix_type("", "LONG_PARAGRAPH") == "add_lists_tables"
+    assert service._map_issue_to_fix_type("", "PRODUCT_CONTENT_GAP") == "content_enhancement"
+
 def test_prepare_fixes_from_audit_valid_fixes(mock_db):
     service = GitHubService(mock_db)
     

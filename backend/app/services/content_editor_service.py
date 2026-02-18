@@ -16,61 +16,74 @@ class ContentEditorService:
         if not text or not keyword:
             return {"score": 0, "suggestions": [], "analysis": {}}
 
-        prompt = f"""
-        You are an expert in GEO (Generative Engine Optimization) and SEO. 
-        Analyze the following text content targeting the keyword: "{keyword}".
-        
-        Your goal is to evaluate how likely this content is to be cited by an AI (like ChatGPT, Gemini, Perplexity) as a source.
-        
-        Evaluate based on these 4 GEO Pillars:
-        1. **Direct Answer Capability**: Does it provide a concise, direct answer to the implicit question?
-        2. **Structural Clarity**: Does it use lists, bold text, or clear headers that AIs can easily parse?
-        3. **Authority & Data**: Does it use specific statistics, numbers, or authoritative citations?
-        4. **Semantic Coverage**: Does it cover related entities and sub-topics naturally?
+        system_prompt = """
+        You are an expert in GEO (Generative Engine Optimization) and SEO.
+        Evaluate content quality for AI citation probability.
 
         Return a JSON object with this EXACT structure:
-        {{
+        {
             "score": <integer_0_to_100>,
             "summary": "<short_one_sentence_summary>",
-            "pillars": {{
-                "direct_answer": {{ "score": <0-10>, "feedback": "<specific_feedback>" }},
-                "structure": {{ "score": <0-10>, "feedback": "<specific_feedback>" }},
-                "authority": {{ "score": <0-10>, "feedback": "<specific_feedback>" }},
-                "semantics": {{ "score": <0-10>, "feedback": "<specific_feedback>" }}
-            }},
+            "pillars": {
+                "direct_answer": { "score": <0-10>, "feedback": "<specific_feedback>" },
+                "structure": { "score": <0-10>, "feedback": "<specific_feedback>" },
+                "authority": { "score": <0-10>, "feedback": "<specific_feedback>" },
+                "semantics": { "score": <0-10>, "feedback": "<specific_feedback>" }
+            },
             "suggestions": [
-                {{ "type": "critical", "text": "<actionable_advice>" }},
-                {{ "type": "improvement", "text": "<actionable_advice>" }}
+                { "type": "critical", "text": "<actionable_advice>" },
+                { "type": "improvement", "text": "<actionable_advice>" }
             ],
             "missing_entities": ["<entity1>", "<entity2>", "<entity3>"]
-        }}
+        }
+        """
+        user_prompt = f"""
+        Analyze the following text content targeting the keyword: "{keyword}".
+
+        Your goal is to evaluate how likely this content is to be cited by an AI
+        (like ChatGPT, Gemini, Perplexity) as a source.
+
+        Evaluate using these 4 GEO pillars:
+        1. Direct Answer Capability
+        2. Structural Clarity
+        3. Authority & Data
+        4. Semantic Coverage
 
         TEXT TO ANALYZE:
-        {text[:4000]} 
+        {text[:4000]}
         """
 
         try:
-            response = await self.llm_function(prompt)
+            response = await self.llm_function(
+                system_prompt=system_prompt,
+                user_prompt=user_prompt,
+            )
             
             # Clean response to ensure valid JSON
-            cleaned_response = response.replace("```json", "").replace("```", "").strip()
+            cleaned_response = str(response).replace("```json", "").replace("```", "").strip()
             
             try:
                 data = json.loads(cleaned_response)
                 return data
             except json.JSONDecodeError:
                 logger.error(f"Failed to parse LLM response: {cleaned_response}")
-                # Fallback structure
+                # Deterministic non-fabricated fallback
                 return {
-                    "score": 50,
-                    "summary": "Analysis completed but format was irregular.",
+                    "score": 0,
+                    "status": "insufficient_data",
+                    "summary": "The model response was not valid JSON; no reliable analysis was produced.",
                     "pillars": {
-                        "direct_answer": {"score": 5, "feedback": "Check manually."},
-                        "structure": {"score": 5, "feedback": "Check manually."},
-                        "authority": {"score": 5, "feedback": "Check manually."},
-                        "semantics": {"score": 5, "feedback": "Check manually."}
+                        "direct_answer": {"score": 0, "feedback": "Insufficient data."},
+                        "structure": {"score": 0, "feedback": "Insufficient data."},
+                        "authority": {"score": 0, "feedback": "Insufficient data."},
+                        "semantics": {"score": 0, "feedback": "Insufficient data."}
                     },
-                    "suggestions": [{"type": "info", "text": "Could not parse detailed AI response."}],
+                    "suggestions": [
+                        {
+                            "type": "error",
+                            "text": "Retry analysis after confirming model output format.",
+                        }
+                    ],
                     "missing_entities": []
                 }
 

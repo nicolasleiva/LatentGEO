@@ -8,13 +8,13 @@ from fastapi import (
     status,
     BackgroundTasks,
 )
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from sqlalchemy.orm import Session
 from pathlib import Path
-import os, uuid, json
+import os, json
 from ...core.database import get_db
 from ...models import AuditStatus
-from ...schemas import ReportResponse, PDFRequest, PDFResponse
+from ...schemas import ReportResponse, PDFRequest
 from ...services.audit_service import AuditService, ReportService
 from ...core.logger import get_logger
 from ...core.auth import AuthUser, get_current_user
@@ -104,9 +104,7 @@ async def generate_pdf_background(
         logger.error(f"Error en la generación de PDF en segundo plano: {e}")
 
 
-@router.post(
-    "/generate-pdf", response_model=PDFResponse, status_code=status.HTTP_202_ACCEPTED
-)
+@router.post("/generate-pdf", response_model=None, status_code=status.HTTP_307_TEMPORARY_REDIRECT)
 async def generate_pdf(
     pdf_request: PDFRequest,
     background_tasks: BackgroundTasks,
@@ -114,54 +112,32 @@ async def generate_pdf(
     current_user: AuthUser = Depends(get_current_user),
 ):
     """
-    Generar PDF de auditoría (asincrónico)
-
-    - **audit_id**: ID de la auditoría (requerido)
-    - **include_competitor_analysis**: Incluir análisis competitivo (default: false)
-    - **include_raw_data**: Incluir datos crudos (default: false)
+    Deprecated legacy endpoint.
+    Use `POST /api/audits/{audit_id}/generate-pdf` instead.
     """
-    if not FPDF_AVAILABLE:
-        raise HTTPException(
-            status_code=status.HTTP_501_NOT_IMPLEMENTED,
-            detail="La funcionalidad de PDF no está disponible. Instala 'fpdf2'.",
-        )
-
     try:
         audit = _get_owned_audit(db, pdf_request.audit_id, current_user)
-
-        if audit.status != AuditStatus.COMPLETED or not audit.report_markdown:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="La auditoría no está completada o no tiene reporte.",
-            )
-
-        # Crear un directorio único para los archivos de este reporte
-        report_session_id = str(uuid.uuid4())
-        report_dir = os.path.join("reports", audit.domain, report_session_id)
-        os.makedirs(report_dir, exist_ok=True)
-
-        # Añadir la tarea de generación de PDF al background
-        background_tasks.add_task(
-            generate_pdf_background,
-            audit_id=audit.id,
-            report_dir=report_dir,
-            db=db,
+        redirect_to = f"/api/audits/{audit.id}/generate-pdf"
+        logger.warning(
+            "Deprecated endpoint /api/reports/generate-pdf invoked for audit %s. Redirecting to %s",
+            audit.id,
+            redirect_to,
         )
-
-        return PDFResponse(
-            task_id=report_session_id,
-            audit_id=pdf_request.audit_id,
-            status=AuditStatus.PENDING,
-            # En un sistema real, aquí devolverías una URL para consultar el estado
-            file_url=None,
+        return RedirectResponse(
+            url=redirect_to,
+            status_code=status.HTTP_307_TEMPORARY_REDIRECT,
+            headers={
+                "X-Deprecated-Endpoint": "/api/reports/generate-pdf",
+                "X-Replacement-Endpoint": redirect_to,
+            },
         )
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error generando PDF: {e}")
+        logger.error(f"Error redirecting deprecated PDF endpoint: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Error generando PDF",
+            detail="Error redirecting deprecated endpoint",
         )
 
 

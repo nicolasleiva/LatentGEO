@@ -38,6 +38,18 @@ except ImportError as e:
 
 
 @pytest.fixture(scope="function", autouse=True)
+def relax_report_length_settings(monkeypatch):
+    """
+    Keep report length enforcement disabled for unit tests that mock the LLM.
+    """
+    try:
+        monkeypatch.setattr(settings, "REPORT_LENGTH_STRICT", False, raising=False)
+    except Exception:
+        pass
+    yield
+
+
+@pytest.fixture(scope="function", autouse=True)
 def setup_test_db():
     """
     Fixture para crear y destruir la base de datos de test.

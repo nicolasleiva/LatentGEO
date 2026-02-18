@@ -1,14 +1,31 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { Header } from '@/components/header';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { Github, GitPullRequest, CheckCircle2, XCircle, Clock, ExternalLink, ArrowLeft, AlertCircle } from 'lucide-react';
 import { API_URL } from '@/lib/api';
 import { fetchWithBackendAuth } from '@/lib/backend-auth';
+import type { FixInputField, FixInputGroup, FixInputsResponse, FixInputChatResponse } from '@/lib/types';
+
+type ChatStep = {
+    id: string;
+    groupId: string;
+    issueCode: string;
+    pagePath: string;
+    required: boolean;
+    prompt?: string;
+    field: FixInputField;
+    assistantMessage?: string;
+    suggestedValue?: string;
+    confidence?: string;
+    loading?: boolean;
+};
 
 export default function GitHubAutoFixPage() {
     const params = useParams();
@@ -24,14 +41,86 @@ export default function GitHubAutoFixPage() {
     const [reposLoading, setReposLoading] = useState(false);
     const [creating, setCreating] = useState(false);
     const [prResult, setPrResult] = useState<any>(null);
+    const [missingInputs, setMissingInputs] = useState<FixInputGroup[]>([]);
+    const [missingInputsLoading, setMissingInputsLoading] = useState(false);
+    const [inputsSaving, setInputsSaving] = useState(false);
+    const [inputValues, setInputValues] = useState<Record<string, Record<string, string>>>({});
+    const [chatSteps, setChatSteps] = useState<ChatStep[]>([]);
+    const [currentStepIndex, setCurrentStepIndex] = useState(0);
+    const [chatHistory, setChatHistory] = useState<Array<{ role: 'user' | 'assistant'; content: string }>>([]);
+    const [stepError, setStepError] = useState<string | null>(null);
+    const chatSectionRef = useRef<HTMLDivElement>(null);
 
     const backendUrl = API_URL;
+    const hasMissingRequired = missingInputs.some(group => group.required);
+
+    const formatErrorMessage = (value: any) => {
+        if (!value) return 'Error creating PR';
+        if (typeof value === 'string') return value;
+        if (value instanceof Error) return value.message;
+        try {
+            return JSON.stringify(value);
+        } catch {
+            return String(value);
+        }
+    };
+
+    const safeParseJson = async (res: Response) => {
+        try {
+            return await res.json();
+        } catch {
+            return null;
+        }
+    };
+
+    const buildChatSteps = (groups: FixInputGroup[]): ChatStep[] => {
+        const requiredGroups = groups.filter(group => group.required);
+        const optionalGroups = groups.filter(group => !group.required);
+        const orderedGroups = [...requiredGroups, ...optionalGroups];
+
+        const steps: ChatStep[] = [];
+        orderedGroups.forEach(group => {
+            group.fields.forEach(field => {
+                steps.push({
+                    id: `${group.id}:${field.key}`,
+                    groupId: group.id,
+                    issueCode: group.issue_code,
+                    pagePath: group.page_path,
+                    required: Boolean(field.required || group.required),
+                    prompt: group.prompt,
+                    field,
+                });
+            });
+        });
+        return steps;
+    };
+
+    const initializeInputValues = (groups: FixInputGroup[]) => {
+        const values: Record<string, Record<string, string>> = {};
+        groups.forEach(group => {
+            values[group.id] = {};
+            group.fields.forEach(field => {
+                values[group.id][field.key] = field.value ?? '';
+            });
+        });
+        setInputValues(values);
+    };
 
     useEffect(() => {
         fetchAudit();
+        fetchMissingInputs();
         fetchConnections();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
+
+    useEffect(() => {
+        initializeInputValues(missingInputs);
+        setChatSteps(buildChatSteps(missingInputs));
+        setCurrentStepIndex(0);
+        setChatHistory([]);
+        setStepError(null);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [missingInputs]);
 
     const fetchAudit = async () => {
         try {
@@ -44,6 +133,21 @@ export default function GitHubAutoFixPage() {
             console.error('Error fetching audit:', err);
         } finally {
             setLoading(false);
+        }
+    };
+
+    const fetchMissingInputs = async () => {
+        setMissingInputsLoading(true);
+        try {
+            const res = await fetchWithBackendAuth(`${backendUrl}/api/github/fix-inputs/${auditId}`);
+            if (res.ok) {
+                const data: FixInputsResponse = await res.json();
+                setMissingInputs(data.missing_inputs || []);
+            }
+        } catch (err) {
+            console.error('Error fetching missing inputs:', err);
+        } finally {
+            setMissingInputsLoading(false);
         }
     };
 
@@ -84,6 +188,149 @@ export default function GitHubAutoFixPage() {
         fetchRepositories(connectionId);
     };
 
+    const updateInputValue = (groupId: string, fieldKey: string, value: string) => {
+        setInputValues(prev => ({
+            ...prev,
+            [groupId]: {
+                ...(prev[groupId] || {}),
+                [fieldKey]: value,
+            },
+        }));
+    };
+
+    const fetchChatSuggestion = async (step: ChatStep, index: number) => {
+        setChatSteps(prev =>
+            prev.map((s, i) => (i === index ? { ...s, loading: true } : s))
+        );
+        try {
+            const res = await fetchWithBackendAuth(`${backendUrl}/api/github/fix-inputs/chat/${auditId}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    issue_code: step.issueCode,
+                    field_key: step.field.key,
+                    field_label: step.field.label,
+                    placeholder: step.field.placeholder,
+                    current_values: inputValues[step.groupId] || {},
+                    language: 'en',
+                    history: chatHistory.slice(-6),
+                }),
+            });
+            if (res.ok) {
+                const data: FixInputChatResponse = await res.json();
+                setChatSteps(prev =>
+                    prev.map((s, i) =>
+                        i === index
+                            ? {
+                                ...s,
+                                loading: false,
+                                assistantMessage: data.assistant_message,
+                                suggestedValue: data.suggested_value,
+                                confidence: data.confidence,
+                            }
+                            : s
+                    )
+                );
+                if (data.assistant_message) {
+                    setChatHistory(prev => [...prev, { role: 'assistant', content: data.assistant_message }]);
+                }
+                return;
+            }
+        } catch (err) {
+            console.error('Error fetching chat suggestion:', err);
+        }
+        setChatSteps(prev =>
+            prev.map((s, i) =>
+                i === index
+                    ? {
+                        ...s,
+                        loading: false,
+                        assistantMessage: 'Please provide the requested data based on your audited content.',
+                        suggestedValue: '',
+                        confidence: 'unknown',
+                    }
+                    : s
+            )
+        );
+    };
+
+    const handleUseSuggestion = (step: ChatStep) => {
+        if (!step.suggestedValue) return;
+        updateInputValue(step.groupId, step.field.key, step.suggestedValue);
+        setStepError(null);
+    };
+
+    const handleNextStep = (step: ChatStep) => {
+        const value = (inputValues[step.groupId]?.[step.field.key] || '').trim();
+        if (step.required && !value) {
+            setStepError('This field is required to create the PR.');
+            return;
+        }
+        setStepError(null);
+        setChatHistory(prev => [...prev, { role: 'user', content: value || 'Skipped' }]);
+        setCurrentStepIndex(prev => Math.min(prev + 1, chatSteps.length - 1));
+    };
+
+    const buildInputsPayload = () => {
+        return missingInputs.map(group => {
+            const values: Record<string, any> = {};
+            const groupValues = inputValues[group.id] || {};
+            group.fields.forEach(field => {
+                values[field.key] = groupValues[field.key] ?? '';
+            });
+
+            if (group.issue_code?.toUpperCase().startsWith('FAQ_')) {
+                const faqItems: Array<{ question: string; answer: string }> = [];
+                for (let i = 1; i <= 3; i += 1) {
+                    const q = (values[`faq_q${i}`] || '').toString().trim();
+                    const a = (values[`faq_a${i}`] || '').toString().trim();
+                    if (q || a) {
+                        faqItems.push({ question: q, answer: a });
+                    }
+                }
+                return {
+                    id: group.id,
+                    issue_code: group.issue_code,
+                    page_path: group.page_path,
+                    values: { faq_items: faqItems },
+                };
+            }
+
+            return {
+                id: group.id,
+                issue_code: group.issue_code,
+                page_path: group.page_path,
+                values,
+            };
+        });
+    };
+
+    useEffect(() => {
+        const step = chatSteps[currentStepIndex];
+        if (!step || step.assistantMessage || step.loading) return;
+        fetchChatSuggestion(step, currentStepIndex);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [currentStepIndex, chatSteps]);
+
+    const saveFixInputs = async () => {
+        setInputsSaving(true);
+        try {
+            const res = await fetchWithBackendAuth(`${backendUrl}/api/github/fix-inputs/${auditId}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ inputs: buildInputsPayload() }),
+            });
+            const data: FixInputsResponse = await res.json();
+            if (res.ok) {
+                setMissingInputs(data.missing_inputs || []);
+            }
+        } catch (err) {
+            console.error('Error saving inputs:', err);
+        } finally {
+            setInputsSaving(false);
+        }
+    };
+
     const createAutoFixPR = async () => {
         if (!selectedConnection || !selectedRepo) return;
 
@@ -100,15 +347,26 @@ export default function GitHubAutoFixPage() {
                 }
             );
 
-            const data = await res.json();
+            const data = await safeParseJson(res);
 
             if (res.ok) {
                 setPrResult({ success: true, data });
             } else {
-                setPrResult({ success: false, error: data.detail || 'Error creating PR' });
+                if (res.status === 422 && data?.detail?.missing_inputs) {
+                    setMissingInputs(data.detail.missing_inputs || []);
+                    setPrResult({
+                        success: false,
+                        error: formatErrorMessage(data.detail.message || 'Missing required inputs'),
+                    });
+                    if (chatSectionRef.current) {
+                        chatSectionRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    }
+                } else {
+                    setPrResult({ success: false, error: formatErrorMessage(data?.detail || data || 'Error creating PR') });
+                }
             }
         } catch (err: any) {
-            setPrResult({ success: false, error: err.message });
+            setPrResult({ success: false, error: formatErrorMessage(err) });
         } finally {
             setCreating(false);
         }
@@ -272,10 +530,149 @@ export default function GitHubAutoFixPage() {
                                     </div>
                                 )}
 
+                                {/* Guided chat for missing inputs */}
+                                <div ref={chatSectionRef} className="glass-panel border border-border rounded-xl p-6 space-y-4">
+                                    <div>
+                                        <h4 className="text-sm font-semibold text-foreground">Guided inputs (Kimi)</h4>
+                                        <p className="text-xs text-muted-foreground mt-1">
+                                            Kimi will guide you with audit-based suggestions. Required fields block PR creation until saved.
+                                        </p>
+                                    </div>
+
+                                    {missingInputsLoading ? (
+                                        <div className="flex items-center gap-2 text-muted-foreground">
+                                            <Clock className="h-4 w-4 animate-spin" />
+                                            Loading required inputs...
+                                        </div>
+                                    ) : missingInputs.length === 0 ? (
+                                        <div className="text-sm text-emerald-600">
+                                            All required inputs are complete. You can create the PR.
+                                        </div>
+                                    ) : (
+                                        <div className="space-y-6">
+                                            {chatSteps.slice(0, currentStepIndex + 1).map((step, index) => {
+                                                const value = (inputValues[step.groupId]?.[step.field.key] || '').trim();
+                                                const isActive = index === currentStepIndex;
+                                                return (
+                                                    <div key={step.id} className="rounded-lg border border-border/70 bg-background/60 p-4">
+                                                        <div className="flex items-start justify-between gap-3">
+                                                            <div>
+                                                                <p className="text-xs text-muted-foreground">
+                                                                    {step.issueCode.replace(/_/g, ' ')} · {step.pagePath}
+                                                                </p>
+                                                                <p className="text-sm font-semibold text-foreground mt-1">
+                                                                    {step.field.label}
+                                                                </p>
+                                                                {step.prompt && (
+                                                                    <p className="text-xs text-muted-foreground mt-1">
+                                                                        {step.prompt}
+                                                                    </p>
+                                                                )}
+                                                            </div>
+                                                            {step.required && (
+                                                                <Badge className="border-red-500/30 text-red-500 bg-red-500/10">
+                                                                    Required
+                                                                </Badge>
+                                                            )}
+                                                        </div>
+
+                                                        <div className="mt-4 flex items-start gap-3">
+                                                            <div className="h-9 w-9 rounded-full bg-brand/15 flex items-center justify-center text-xs font-semibold text-brand">
+                                                                K
+                                                            </div>
+                                                            <div className="space-y-2 flex-1">
+                                                                {step.loading ? (
+                                                                    <div className="flex items-center gap-2 text-muted-foreground text-sm">
+                                                                        <Clock className="h-4 w-4 animate-spin" />
+                                                                        Thinking...
+                                                                    </div>
+                                                                ) : (
+                                                                    <p className="text-sm text-foreground">
+                                                                        {step.assistantMessage || 'Please provide the requested data based on your audited content.'}
+                                                                    </p>
+                                                                )}
+
+                                                                {step.suggestedValue && (
+                                                                    <div className="rounded-md border border-border/60 bg-muted/40 p-3">
+                                                                        <p className="text-xs text-muted-foreground mb-2">Suggested value</p>
+                                                                        <p className="text-sm text-foreground break-words">{step.suggestedValue}</p>
+                                                                        {isActive && (
+                                                                            <Button
+                                                                                variant="outline"
+                                                                                size="sm"
+                                                                                onClick={() => handleUseSuggestion(step)}
+                                                                                className="mt-2"
+                                                                            >
+                                                                                Use suggestion
+                                                                            </Button>
+                                                                        )}
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        </div>
+
+                                                        {isActive ? (
+                                                            <div className="mt-4 space-y-3">
+                                                                {step.field.input_type === 'textarea' ? (
+                                                                    <Textarea
+                                                                        value={inputValues[step.groupId]?.[step.field.key] || ''}
+                                                                        onChange={(e) => updateInputValue(step.groupId, step.field.key, e.target.value)}
+                                                                        placeholder={step.field.placeholder || ''}
+                                                                        className="min-h-[88px] bg-background"
+                                                                    />
+                                                                ) : (
+                                                                    <Input
+                                                                        value={inputValues[step.groupId]?.[step.field.key] || ''}
+                                                                        onChange={(e) => updateInputValue(step.groupId, step.field.key, e.target.value)}
+                                                                        placeholder={step.field.placeholder || ''}
+                                                                        className="bg-background"
+                                                                    />
+                                                                )}
+                                                                {stepError && (
+                                                                    <p className="text-xs text-red-500">{stepError}</p>
+                                                                )}
+                                                                <div className="flex flex-wrap items-center gap-2">
+                                                                    <Button
+                                                                        onClick={() => handleNextStep(step)}
+                                                                        className="bg-foreground text-background hover:bg-foreground/90"
+                                                                    >
+                                                                        {index === chatSteps.length - 1 ? 'Finish' : 'Next'}
+                                                                    </Button>
+                                                                </div>
+                                                            </div>
+                                                        ) : (
+                                                            <div className="mt-4 text-xs text-muted-foreground">
+                                                                Your answer: {value || 'Skipped'}
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                );
+                                            })}
+
+                                            {chatSteps.length > 0 && currentStepIndex >= chatSteps.length - 1 && (
+                                                <Button
+                                                    onClick={saveFixInputs}
+                                                    disabled={inputsSaving}
+                                                    className="bg-foreground text-background hover:bg-foreground/90"
+                                                >
+                                                    {inputsSaving ? (
+                                                        <>
+                                                            <Clock className="h-4 w-4 mr-2 animate-spin" />
+                                                            Saving data...
+                                                        </>
+                                                    ) : (
+                                                        'Save data'
+                                                    )}
+                                                </Button>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
+
                                 {/* Create PR Button */}
                                 <Button
                                     onClick={createAutoFixPR}
-                                    disabled={!selectedRepo || creating}
+                                    disabled={!selectedRepo || creating || hasMissingRequired}
                                     className="w-full bg-brand text-brand-foreground hover:bg-brand/90 py-6 text-lg font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
                                 >
                                     {creating ? (

@@ -14,9 +14,10 @@ services:
     volumes:
       - postgres_data_dev:/var/lib/postgresql/data
     ports:
-      - "5432:5432"
+      # Override with DEV_DB_HOST_PORT if 5432 is already used on host
+      - "${DEV_DB_HOST_PORT:-5432}:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U auditor"]
+      test: ["CMD-SHELL", "pg_isready -U auditor -d auditor_db"]
       interval: 5s
       timeout: 3s
       retries: 5
@@ -65,13 +66,38 @@ services:
       DEBUG: "True"
       PYTHONUNBUFFERED: "1"
       PYTHONDONTWRITEBYTECODE: "1"
-      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
       CSE_ID: ${CSE_ID:-}
       NVIDIA_API_KEY: ${NVIDIA_API_KEY:-}
       NV_API_KEY_CODE: ${NV_API_KEY_CODE:-}
       NV_API_KEY_ANALYSIS: ${NV_API_KEY_ANALYSIS:-}
+      NV_MODEL_ANALYSIS: ${NV_MODEL_ANALYSIS:-}
+      NV_MAX_TOKENS_REPORT: ${NV_MAX_TOKENS_REPORT:-32000}
+      NV_KIMI_SEARCH_ENABLED: ${NV_KIMI_SEARCH_ENABLED:-false}
+      NV_KIMI_SEARCH_MODEL: ${NV_KIMI_SEARCH_MODEL:-moonshotai/kimi-k2.5}
+      NV_KIMI_SEARCH_TIMEOUT: ${NV_KIMI_SEARCH_TIMEOUT:-60}
+      NV_KIMI_SEARCH_PROVIDER: ${NV_KIMI_SEARCH_PROVIDER:-kimi}
+      GEO_ARTICLE_AUDIT_ONLY: ${GEO_ARTICLE_AUDIT_ONLY:-true}
+      GEO_ARTICLE_REQUIRE_QA: ${GEO_ARTICLE_REQUIRE_QA:-true}
+      GEO_ARTICLE_REQUIRE_INTERNAL_CITATION: ${GEO_ARTICLE_REQUIRE_INTERNAL_CITATION:-true}
+      GEO_ARTICLE_REQUIRE_EXTERNAL_CITATION: ${GEO_ARTICLE_REQUIRE_EXTERNAL_CITATION:-true}
+      GEO_ARTICLE_REQUIRE_AUTHORITY_ARTICLES: ${GEO_ARTICLE_REQUIRE_AUTHORITY_ARTICLES:-true}
+      GEO_ARTICLE_REQUIRE_TOPIC_MATCH: ${GEO_ARTICLE_REQUIRE_TOPIC_MATCH:-true}
+      GEO_ARTICLE_MIN_QA_PAIRS: ${GEO_ARTICLE_MIN_QA_PAIRS:-3}
+      GEO_ARTICLE_ALLOWED_EXTERNAL_SOURCES: ${GEO_ARTICLE_ALLOWED_EXTERNAL_SOURCES:-8}
+      GEO_ARTICLE_REPAIR_INVALID_CITATIONS: ${GEO_ARTICLE_REPAIR_INVALID_CITATIONS:-true}
+      GEO_ARTICLE_EXTRA_SEARCH_QUERIES: ${GEO_ARTICLE_EXTRA_SEARCH_QUERIES:-3}
+      GEO_ARTICLE_EXTRA_SEARCH_TOP_K: ${GEO_ARTICLE_EXTRA_SEARCH_TOP_K:-10}
+      REPORT_MIN_WORDS: ${REPORT_MIN_WORDS:-8000}
+      REPORT_MIN_SECTION_WORDS: ${REPORT_MIN_SECTION_WORDS:-400}
+      REPORT_MIN_EXEC_SUMMARY_WORDS: ${REPORT_MIN_EXEC_SUMMARY_WORDS:-800}
+      AGENT1_LLM_TIMEOUT_SECONDS: ${AGENT1_LLM_TIMEOUT_SECONDS:-60}
+      AGENT1_RELAXED_QUERY_FILTER: ${AGENT1_RELAXED_QUERY_FILTER:-false}
+      AGENT1_QUERY_DIAGNOSTICS: ${AGENT1_QUERY_DIAGNOSTICS:-false}
+      PDF_REPORT_TIMEOUT_SECONDS: ${PDF_REPORT_TIMEOUT_SECONDS:-1200}
+      PDF_GENERATION_MAX_SECONDS: ${PDF_GENERATION_MAX_SECONDS:-1800}
       GOOGLE_PAGESPEED_API_KEY: ${GOOGLE_PAGESPEED_API_KEY:-}
+      BACKEND_INTERNAL_JWT_SECRET: ${BACKEND_INTERNAL_JWT_SECRET:-}
       SECRET_KEY: ${SECRET_KEY:-}
       # GitHub Integration
       GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
@@ -95,6 +121,8 @@ services:
       - ./backend:/app:cached
       - ./reports:/app/reports:cached
       - ./logs:/app/logs:cached
+      - ./scripts:/app/scripts:cached
+      - ./fonts:/app/app/services/fonts:ro
       # tmpfs for temp files (faster I/O)
       - type: tmpfs
         target: /tmp
@@ -123,7 +151,8 @@ services:
     environment:
       NEXT_PUBLIC_API_URL: http://localhost:8000
       NEXT_PUBLIC_BACKEND_URL: http://localhost:8000
-      NODE_ENV: development
+      BACKEND_INTERNAL_JWT_SECRET: ${BACKEND_INTERNAL_JWT_SECRET:-}
+      SECRET_KEY: ${SECRET_KEY:-}
       # Speed up Next.js
       NEXT_TELEMETRY_DISABLED: 1
       # Enable polling for file watching (more reliable in Docker)
@@ -140,7 +169,7 @@ services:
         corepack enable && 
         corepack prepare pnpm@latest --activate &&
         pnpm install --frozen-lockfile &&
-        pnpm run dev
+        NODE_ENV=development pnpm run dev
       "
     depends_on:
       - backend
@@ -168,18 +197,54 @@ services:
       dockerfile: Dockerfile.backend.dev
     container_name: auditor_worker_dev
     command: celery -A app.workers.tasks worker --loglevel=info --concurrency=1
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "python -c \"import pathlib,sys; cmd=pathlib.Path('/proc/1/cmdline').read_bytes(); ok=(b'celery' in cmd and b'app.workers.tasks' in cmd and b'worker' in cmd); sys.exit(0 if ok else 1)\"",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
     environment:
       DATABASE_URL: postgresql+psycopg2://auditor:auditor_password@postgres:5432/auditor_db
       REDIS_URL: redis://redis:6379/0
       CELERY_BROKER: redis://redis:6379/0
       CELERY_BACKEND: redis://redis:6379/1
-      GEMINI_API_KEY: ${GEMINI_API_KEY}
-      GOOGLE_API_KEY: ${GOOGLE_API_KEY}
-      CSE_ID: ${CSE_ID}
-      NVIDIA_API_KEY: ${NVIDIA_API_KEY}
+      GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
+      CSE_ID: ${CSE_ID:-}
+      NVIDIA_API_KEY: ${NVIDIA_API_KEY:-}
       NV_API_KEY_CODE: ${NV_API_KEY_CODE:-}
       NV_API_KEY_ANALYSIS: ${NV_API_KEY_ANALYSIS:-}
+      NV_MODEL_ANALYSIS: ${NV_MODEL_ANALYSIS:-}
+      NV_MAX_TOKENS_REPORT: ${NV_MAX_TOKENS_REPORT:-32000}
+      NV_KIMI_SEARCH_ENABLED: ${NV_KIMI_SEARCH_ENABLED:-false}
+      NV_KIMI_SEARCH_MODEL: ${NV_KIMI_SEARCH_MODEL:-moonshotai/kimi-k2.5}
+      NV_KIMI_SEARCH_TIMEOUT: ${NV_KIMI_SEARCH_TIMEOUT:-60}
+      NV_KIMI_SEARCH_PROVIDER: ${NV_KIMI_SEARCH_PROVIDER:-kimi}
+      GEO_ARTICLE_AUDIT_ONLY: ${GEO_ARTICLE_AUDIT_ONLY:-true}
+      GEO_ARTICLE_REQUIRE_QA: ${GEO_ARTICLE_REQUIRE_QA:-true}
+      GEO_ARTICLE_REQUIRE_INTERNAL_CITATION: ${GEO_ARTICLE_REQUIRE_INTERNAL_CITATION:-true}
+      GEO_ARTICLE_REQUIRE_EXTERNAL_CITATION: ${GEO_ARTICLE_REQUIRE_EXTERNAL_CITATION:-true}
+      GEO_ARTICLE_REQUIRE_AUTHORITY_ARTICLES: ${GEO_ARTICLE_REQUIRE_AUTHORITY_ARTICLES:-true}
+      GEO_ARTICLE_REQUIRE_TOPIC_MATCH: ${GEO_ARTICLE_REQUIRE_TOPIC_MATCH:-true}
+      GEO_ARTICLE_MIN_QA_PAIRS: ${GEO_ARTICLE_MIN_QA_PAIRS:-3}
+      GEO_ARTICLE_ALLOWED_EXTERNAL_SOURCES: ${GEO_ARTICLE_ALLOWED_EXTERNAL_SOURCES:-8}
+      GEO_ARTICLE_REPAIR_INVALID_CITATIONS: ${GEO_ARTICLE_REPAIR_INVALID_CITATIONS:-true}
+      GEO_ARTICLE_EXTRA_SEARCH_QUERIES: ${GEO_ARTICLE_EXTRA_SEARCH_QUERIES:-3}
+      GEO_ARTICLE_EXTRA_SEARCH_TOP_K: ${GEO_ARTICLE_EXTRA_SEARCH_TOP_K:-10}
+      REPORT_MIN_WORDS: ${REPORT_MIN_WORDS:-8000}
+      REPORT_MIN_SECTION_WORDS: ${REPORT_MIN_SECTION_WORDS:-400}
+      REPORT_MIN_EXEC_SUMMARY_WORDS: ${REPORT_MIN_EXEC_SUMMARY_WORDS:-800}
+      AGENT1_LLM_TIMEOUT_SECONDS: ${AGENT1_LLM_TIMEOUT_SECONDS:-60}
+      AGENT1_RELAXED_QUERY_FILTER: ${AGENT1_RELAXED_QUERY_FILTER:-false}
+      AGENT1_QUERY_DIAGNOSTICS: ${AGENT1_QUERY_DIAGNOSTICS:-false}
+      PDF_REPORT_TIMEOUT_SECONDS: ${PDF_REPORT_TIMEOUT_SECONDS:-1200}
+      PDF_GENERATION_MAX_SECONDS: ${PDF_GENERATION_MAX_SECONDS:-1800}
       GOOGLE_PAGESPEED_API_KEY: ${GOOGLE_PAGESPEED_API_KEY}
+      BACKEND_INTERNAL_JWT_SECRET: ${BACKEND_INTERNAL_JWT_SECRET:-}
+      SECRET_KEY: ${SECRET_KEY:-}
       C_FORCE_ROOT: '1'
       # GitHub Integration
       GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
@@ -199,6 +264,8 @@ services:
       - ./backend:/app:cached
       - ./reports:/app/reports:cached
       - ./logs:/app/logs:cached
+      - ./scripts:/app/scripts:cached
+      - ./fonts:/app/app/services/fonts:ro
     networks:
       - auditor_network_dev
     deploy:

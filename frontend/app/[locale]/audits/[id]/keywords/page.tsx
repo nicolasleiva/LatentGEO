@@ -53,7 +53,7 @@ export default function KeywordsPage() {
             const newKeywords = await api.researchKeywords(auditId, domain, seedList)
             setKeywords(prev => [...newKeywords, ...prev])
         } catch (e) {
-            setError('Failed to research keywords. Ensure OpenAI/Gemini key is set.')
+            setError(e instanceof Error ? e.message : 'Failed to research keywords. Ensure Kimi/NVIDIA key is set.')
         } finally {
             setLoading(false)
         }

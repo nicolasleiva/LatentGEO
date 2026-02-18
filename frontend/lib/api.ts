@@ -17,6 +17,32 @@ export const API_URL = resolveApiUrl()
 class APIService {
   private baseUrl = API_URL;
 
+  private async buildApiError(res: Response): Promise<Error> {
+    let message = `API error: ${res.status}`
+    try {
+      const payload: unknown = await res.json()
+      if (payload && typeof payload === 'object') {
+        const detail = (payload as { detail?: unknown }).detail
+        if (typeof detail === 'string' && detail.trim()) {
+          message = detail
+        } else if (detail && typeof detail === 'object') {
+          const detailMessage = (detail as { message?: unknown }).message
+          if (typeof detailMessage === 'string' && detailMessage.trim()) {
+            message = detailMessage
+          }
+        } else {
+          const payloadMessage = (payload as { message?: unknown }).message
+          if (typeof payloadMessage === 'string' && payloadMessage.trim()) {
+            message = payloadMessage
+          }
+        }
+      }
+    } catch {
+      // Keep fallback message from status code.
+    }
+    return new Error(message)
+  }
+
   async searchAI(query: string): Promise<{ response: string; suggestions: string[]; audit_started?: boolean; audit_id?: number }> {
     const res = await fetchWithBackendAuth(`${this.baseUrl}/api/search`, {
       method: 'POST',
@@ -132,7 +158,7 @@ class APIService {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(seedKeywords || [])
     })
-    if (!res.ok) throw new Error(`API error: ${res.status}`)
+    if (!res.ok) throw await this.buildApiError(res)
     return res.json()
   }
 
@@ -164,7 +190,7 @@ class APIService {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(queries)
     })
-    if (!res.ok) throw new Error(`API error: ${res.status}`)
+    if (!res.ok) throw await this.buildApiError(res)
     return res.json()
   }
 
@@ -180,7 +206,7 @@ class APIService {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(topics)
     })
-    if (!res.ok) throw new Error(`API error: ${res.status}`)
+    if (!res.ok) throw await this.buildApiError(res)
     return res.json()
   }
 
