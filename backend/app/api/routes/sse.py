@@ -2,17 +2,17 @@
 Server-Sent Events (SSE) endpoint for real-time audit progress updates.
 Replaces polling to reduce server load and improve responsiveness.
 """
-from fastapi import APIRouter, Query
-from fastapi.responses import StreamingResponse
 import asyncio
 import json
 from typing import AsyncGenerator
 
-from app.services.audit_service import AuditService
-from app.core.logger import get_logger
-from app.core.config import settings
-from app.core.auth import AuthUser, get_user_from_bearer_token
 from app.core.access_control import ensure_audit_access
+from app.core.auth import AuthUser, get_user_from_bearer_token
+from app.core.config import settings
+from app.core.logger import get_logger
+from app.services.audit_service import AuditService
+from fastapi import APIRouter, Query
+from fastapi.responses import StreamingResponse
 
 logger = get_logger(__name__)
 
@@ -36,7 +36,7 @@ async def audit_progress_stream(
     last_status = None
     last_progress = None
     heartbeat_counter = 0
-    
+
     try:
         while True:
             # Check timeout
@@ -44,15 +44,16 @@ async def audit_progress_stream(
                 logger.warning(f"SSE stream timeout for audit {audit_id}")
                 yield f"data: {json.dumps({'error': 'Stream timeout'})}\n\n"
                 break
-            
+
             # Get fresh DB session for each query to avoid stale data
             from app.core.database import SessionLocal
+
             db_session = SessionLocal()
             try:
                 audit = AuditService.get_audit(db_session, audit_id)
-                
+
                 audit = ensure_audit_access(audit, current_user)
-                
+
                 # Send update if something changed
                 if audit.status != last_status or audit.progress != last_progress:
                     data = {
@@ -63,15 +64,17 @@ async def audit_progress_stream(
                         "geo_score": audit.geo_score,
                         "total_pages": audit.total_pages,
                     }
-                    
+
                     yield f"data: {json.dumps(data)}\n\n"
-                    
+
                     last_status = audit.status
                     last_progress = audit.progress
-                    
+
                     # Stop streaming if audit is completed or failed
                     if audit.status.value in ["completed", "failed"]:
-                        logger.info(f"SSE stream ended for audit {audit_id}: {audit.status.value}")
+                        logger.info(
+                            f"SSE stream ended for audit {audit_id}: {audit.status.value}"
+                        )
                         break
                 else:
                     # Send heartbeat every 30 seconds to keep connection alive
@@ -81,15 +84,16 @@ async def audit_progress_stream(
                         heartbeat_counter = 0
             finally:
                 db_session.close()
-            
+
             await asyncio.sleep(2)
-            
+
     except asyncio.CancelledError:
         logger.info(f"SSE stream cancelled for audit {audit_id}")
         raise
     except Exception as e:
         logger.error(f"Error in SSE stream for audit {audit_id}: {e}")
         yield f"data: {json.dumps({'error': str(e)})}\n\n"
+
 
 @router.get("/audits/{audit_id}/progress")
 async def stream_audit_progress(
@@ -105,6 +109,7 @@ async def stream_audit_progress(
 
     # Ownership check before opening stream
     from app.core.database import SessionLocal
+
     db_session = SessionLocal()
     try:
         audit = AuditService.get_audit(db_session, audit_id)
@@ -113,7 +118,7 @@ async def stream_audit_progress(
         db_session.close()
 
     logger.info(f"SSE connection established for audit {audit_id}")
-    
+
     return StreamingResponse(
         audit_progress_stream(audit_id, current_user),
         media_type="text/event-stream",
@@ -121,5 +126,5 @@ async def stream_audit_progress(
             "Cache-Control": "no-cache",
             "Connection": "keep-alive",
             "X-Accel-Buffering": "no",
-        }
+        },
     )

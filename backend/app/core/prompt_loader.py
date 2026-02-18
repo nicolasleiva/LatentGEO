@@ -4,11 +4,9 @@ Dynamic loading and caching of JSON-based prompts with validation.
 """
 
 import json
-import os
-from pathlib import Path
-from typing import Dict, Any, Optional
-from functools import lru_cache
 import logging
+from pathlib import Path
+from typing import Any, Dict, Optional
 
 logger = logging.getLogger(__name__)
 

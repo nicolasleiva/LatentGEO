@@ -1,9 +1,11 @@
 import json
 import logging
-from typing import Dict, List, Any
+from typing import Any, Dict
+
 from app.core.llm_kimi import get_llm_function
 
 logger = logging.getLogger(__name__)
+
 
 class ContentEditorService:
     def __init__(self):
@@ -58,10 +60,12 @@ class ContentEditorService:
                 system_prompt=system_prompt,
                 user_prompt=user_prompt,
             )
-            
+
             # Clean response to ensure valid JSON
-            cleaned_response = str(response).replace("```json", "").replace("```", "").strip()
-            
+            cleaned_response = (
+                str(response).replace("```json", "").replace("```", "").strip()
+            )
+
             try:
                 data = json.loads(cleaned_response)
                 return data
@@ -76,7 +80,7 @@ class ContentEditorService:
                         "direct_answer": {"score": 0, "feedback": "Insufficient data."},
                         "structure": {"score": 0, "feedback": "Insufficient data."},
                         "authority": {"score": 0, "feedback": "Insufficient data."},
-                        "semantics": {"score": 0, "feedback": "Insufficient data."}
+                        "semantics": {"score": 0, "feedback": "Insufficient data."},
                     },
                     "suggestions": [
                         {
@@ -84,7 +88,7 @@ class ContentEditorService:
                             "text": "Retry analysis after confirming model output format.",
                         }
                     ],
-                    "missing_entities": []
+                    "missing_entities": [],
                 }
 
         except Exception as e:

@@ -5,9 +5,9 @@ Analyzes e-commerce sites and optimizes product visibility in LLMs and AI assist
 
 import json
 import logging
-from typing import Dict, List, Any, Optional, Tuple
 from dataclasses import dataclass
 from enum import Enum
+from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -593,7 +593,10 @@ class ProductIntelligenceService:
                 }
             )
 
-        if offer_stats.get("price_missing", 0) > 0 or offer_stats.get("currency_missing", 0) > 0:
+        if (
+            offer_stats.get("price_missing", 0) > 0
+            or offer_stats.get("currency_missing", 0) > 0
+        ):
             recommendations.append(
                 {
                     "priority": "high",

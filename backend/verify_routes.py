@@ -6,35 +6,79 @@ import re
 
 # Rutas que existen en el directorio
 existing_files = [
-    'ai_content.py', 'analytics.py', 'audits.py', 'backlinks.py',
-    'content_analysis.py', 'content_editor.py', 'geo.py', 'github.py',
-    'health.py', 'hubspot.py', 'keywords.py', 'llm_visibility.py',
-    'pagespeed.py', 'rank_tracking.py', 'realtime.py', 'reports.py',
-    'search.py', 'sse.py', 'webhooks.py'
+    "ai_content.py",
+    "analytics.py",
+    "audits.py",
+    "backlinks.py",
+    "content_analysis.py",
+    "content_editor.py",
+    "geo.py",
+    "github.py",
+    "health.py",
+    "hubspot.py",
+    "keywords.py",
+    "llm_visibility.py",
+    "pagespeed.py",
+    "rank_tracking.py",
+    "realtime.py",
+    "reports.py",
+    "search.py",
+    "sse.py",
+    "webhooks.py",
 ]
 
 # Rutas importadas en __init__.py
 imported_routes = [
-    'audits', 'reports', 'analytics', 'health', 'search', 'pagespeed', 
-    'realtime', 'sse', 'content_analysis', 'geo', 'hubspot', 'github', 
-    'webhooks', 'backlinks', 'keywords', 'rank_tracking', 'llm_visibility', 
-    'ai_content', 'content_editor'
+    "audits",
+    "reports",
+    "analytics",
+    "health",
+    "search",
+    "pagespeed",
+    "realtime",
+    "sse",
+    "content_analysis",
+    "geo",
+    "hubspot",
+    "github",
+    "webhooks",
+    "backlinks",
+    "keywords",
+    "rank_tracking",
+    "llm_visibility",
+    "ai_content",
+    "content_editor",
 ]
 
 # Rutas registradas en main.py
 registered_routes = [
-    'audits', 'reports', 'analytics', 'search', 'pagespeed', 'backlinks',
-    'keywords', 'rank_tracking', 'llm_visibility', 'ai_content', 
-    'content_editor', 'content_analysis', 'geo', 'hubspot', 'github',
-    'webhooks', 'sse', 'health', 'realtime'
+    "audits",
+    "reports",
+    "analytics",
+    "search",
+    "pagespeed",
+    "backlinks",
+    "keywords",
+    "rank_tracking",
+    "llm_visibility",
+    "ai_content",
+    "content_editor",
+    "content_analysis",
+    "geo",
+    "hubspot",
+    "github",
+    "webhooks",
+    "sse",
+    "health",
+    "realtime",
 ]
 
-print("="*60)
+print("=" * 60)
 print("VERIFICACIÓN DE RUTAS")
-print("="*60)
+print("=" * 60)
 
 # Convertir archivos a nombres de módulos
-existing_modules = [f.replace('.py', '') for f in existing_files]
+existing_modules = [f.replace(".py", "") for f in existing_files]
 
 print("\n1. Archivos que existen pero NO están importados:")
 not_imported = set(existing_modules) - set(imported_routes)
@@ -68,9 +112,9 @@ if registered_not_imported:
 else:
     print("   OK Todas las rutas registradas estan importadas")
 
-print("\n" + "="*60)
+print("\n" + "=" * 60)
 print("RESUMEN")
-print("="*60)
+print("=" * 60)
 print(f"Archivos existentes: {len(existing_modules)}")
 print(f"Rutas importadas: {len(imported_routes)}")
 print(f"Rutas registradas: {len(registered_routes)}")

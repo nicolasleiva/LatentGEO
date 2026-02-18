@@ -1,24 +1,21 @@
 """
 API Endpoints para PDF y Reportes
 """
-from fastapi import (
-    APIRouter,
-    Depends,
-    HTTPException,
-    status,
-    BackgroundTasks,
-)
+import json
+import os
+from pathlib import Path
+
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from sqlalchemy.orm import Session
-from pathlib import Path
-import os, json
-from ...core.database import get_db
-from ...models import AuditStatus
-from ...schemas import ReportResponse, PDFRequest
-from ...services.audit_service import AuditService, ReportService
-from ...core.logger import get_logger
-from ...core.auth import AuthUser, get_current_user
+
 from ...core.access_control import ensure_audit_access
+from ...core.auth import AuthUser, get_current_user
+from ...core.database import get_db
+from ...core.logger import get_logger
+from ...models import AuditStatus
+from ...schemas import PDFRequest, ReportResponse
+from ...services.audit_service import AuditService, ReportService
 
 logger = get_logger(__name__)
 
@@ -33,9 +30,10 @@ def _get_owned_audit(db: Session, audit_id: int, current_user: AuthUser):
     audit = AuditService.get_audit(db, audit_id)
     return ensure_audit_access(audit, current_user)
 
+
 # Importar la lógica de creación de PDF del script heredado
 try:
-    from create_pdf import create_comprehensive_pdf, FPDF_AVAILABLE
+    from create_pdf import FPDF_AVAILABLE, create_comprehensive_pdf
 except ImportError:
     FPDF_AVAILABLE = False
 
@@ -66,13 +64,13 @@ async def get_audit_reports(
         )
 
 
-async def generate_pdf_background(
-    audit_id: int, report_dir: str, db: Session
-):
+async def generate_pdf_background(audit_id: int, report_dir: str, db: Session):
     """
     Tarea en segundo plano para generar el PDF.
     """
-    logger.info(f"Iniciando generación de PDF para auditoría {audit_id} en {report_dir}")
+    logger.info(
+        f"Iniciando generación de PDF para auditoría {audit_id} en {report_dir}"
+    )
     try:
         audit = AuditService.get_audit(db, audit_id)
         if not audit:
@@ -80,11 +78,17 @@ async def generate_pdf_background(
             return
 
         # 1. Guardar los datos de la BD en archivos temporales que create_pdf espera
-        with open(os.path.join(report_dir, "ag2_report.md"), "w", encoding="utf-8") as f:
+        with open(
+            os.path.join(report_dir, "ag2_report.md"), "w", encoding="utf-8"
+        ) as f:
             f.write(audit.report_markdown or "# Reporte no disponible")
-        with open(os.path.join(report_dir, "fix_plan.json"), "w", encoding="utf-8") as f:
+        with open(
+            os.path.join(report_dir, "fix_plan.json"), "w", encoding="utf-8"
+        ) as f:
             json.dump(audit.fix_plan or [], f, indent=2, ensure_ascii=False)
-        with open(os.path.join(report_dir, "aggregated_summary.json"), "w", encoding="utf-8") as f:
+        with open(
+            os.path.join(report_dir, "aggregated_summary.json"), "w", encoding="utf-8"
+        ) as f:
             json.dump(audit.target_audit or {}, f, indent=2, ensure_ascii=False)
 
         # 2. Llamar a la función de creación de PDF
@@ -96,7 +100,7 @@ async def generate_pdf_background(
                 logger.info(f"PDF generado exitosamente: {pdf_path}")
                 # Aquí podrías actualizar la BD con la ruta del archivo
             else:
-                logger.error(f"create_comprehensive_pdf no generó el archivo esperado.")
+                logger.error("create_comprehensive_pdf no generó el archivo esperado.")
         else:
             logger.error("FPDF no está disponible. No se puede generar el PDF.")
 
@@ -104,7 +108,9 @@ async def generate_pdf_background(
         logger.error(f"Error en la generación de PDF en segundo plano: {e}")
 
 
-@router.post("/generate-pdf", response_model=None, status_code=status.HTTP_307_TEMPORARY_REDIRECT)
+@router.post(
+    "/generate-pdf", response_model=None, status_code=status.HTTP_307_TEMPORARY_REDIRECT
+)
 async def generate_pdf(
     pdf_request: PDFRequest,
     background_tasks: BackgroundTasks,
@@ -199,11 +205,15 @@ async def get_markdown_report(
                 detail="Report not generated. Generate PDF first.",
             )
 
-        return JSONResponse(content={
-            "audit_id": audit_id,
-            "markdown": audit.report_markdown,
-            "created_at": audit.completed_at.isoformat() if audit.completed_at else None,
-        })
+        return JSONResponse(
+            content={
+                "audit_id": audit_id,
+                "markdown": audit.report_markdown,
+                "created_at": audit.completed_at.isoformat()
+                if audit.completed_at
+                else None,
+            }
+        )
     except HTTPException:
         raise
     except Exception as e:

@@ -7,14 +7,14 @@
 # - Actualizado a la API moderna de fpdf2 (XPos/YPos) para eliminar warnings
 # - Añadido pdf.add_page() antes de cada Anexo para forzar saltos de página
 
-import sys
-import os
-import json
 import glob
+import json
 import logging
-import traceback
-import re
 import math
+import os
+import re
+import sys
+import traceback
 from datetime import datetime
 
 # --- INICIO DE LA CORRECCIÓN ---
@@ -124,7 +124,6 @@ def clean_string_for_pdf(text):
         "•": "-",
         "–": "-",
         "—": "-",
-        "'": "'",
         "'": "'",
         "“": '"',
         "”": '"',
@@ -306,7 +305,7 @@ class PDFReport(FPDF):
                     if not e.get("link") and link_id:
                         e["link"] = link_id
                     return e.get("link")
-            except Exception:
+            except Exception:  # nosec B112
                 continue
         entry = {"title": title, "level": level, "link": link_id}
         self._toc_entries.append(entry)
@@ -323,7 +322,7 @@ class PDFReport(FPDF):
         try:
             if link_id is not None:
                 self.set_link(link_id, page=self.page_no())
-        except Exception:
+        except Exception:  # nosec B110
             pass
         return link_id
 
@@ -358,7 +357,7 @@ class PDFReport(FPDF):
         if link_id is not None:
             try:
                 self.set_link(link_id, page=self.page_no())
-            except Exception:
+            except Exception:  # nosec B110
                 pass
 
     # -------------------- Cover (Centrado) --------------------
@@ -403,12 +402,12 @@ class PDFReport(FPDF):
             self.set_font(fam, "", 9)
             if self.footer_left:
                 self.multi_cell(usable_w, 6, self.footer_left, 0, "C")
-        except Exception:
+        except Exception:  # nosec B110
             pass
 
         try:
             self._register_section("Cover", 0, link_id=None)
-        except Exception:
+        except Exception:  # nosec B110
             pass
 
     # -------------------- Contenido: markdown y tablas --------------------
@@ -427,9 +426,7 @@ class PDFReport(FPDF):
             "\u2265": ">=",
             "\u2264": "<=",  # mayor/menor igual
             "\u2026": "...",  # elipsis
-            "\u2022": "-",  # bullet
-            "\u2265": ">=",
-            "\u2264": "<=",  # duplicados por seguridad
+            "\u2022": "-",  # duplicados por seguridad
         }
         for k, v in replacements.items():
             text = text.replace(k, v)
@@ -466,7 +463,11 @@ class PDFReport(FPDF):
         if self._toc_page_no is None or self._toc_page_count <= 0:
             return False
         current = page_no if page_no is not None else self.page_no()
-        return self._toc_page_no <= current <= (self._toc_page_no + self._toc_page_count - 1)
+        return (
+            self._toc_page_no
+            <= current
+            <= (self._toc_page_no + self._toc_page_count - 1)
+        )
 
     def _toc_header_start_y(self):
         return self.t_margin + HEADER_HEIGHT_MM + 10
@@ -507,9 +508,9 @@ class PDFReport(FPDF):
         if current_is_toc:
             # encontrar primer non-empty line
             first_non_empty = None
-            for l in text.splitlines():
-                if l.strip():
-                    first_non_empty = l.strip()
+            for line in text.splitlines():
+                if line.strip():
+                    first_non_empty = line.strip()
                     break
             if first_non_empty:
                 # si primer bloque NO es H1, crear página de contenido ahora
@@ -589,7 +590,7 @@ class PDFReport(FPDF):
                             try:
                                 self.set_xy(start_x, row_start_y)
                                 self.rect(start_x, row_start_y, w, max_h, style="DF")
-                            except Exception:
+                            except Exception:  # nosec B110
                                 pass
                             self.set_xy(start_x + 3, row_start_y + 3)
                             self.multi_cell(
@@ -623,7 +624,7 @@ class PDFReport(FPDF):
                         align = table_aligns[i] if i < len(table_aligns) else "L"
                         try:
                             self.rect(start_x, row_start_y, w, row_h)
-                        except Exception:
+                        except Exception:  # nosec B110
                             pass
                         try:
                             self.set_xy(start_x + 3, row_start_y + 3)
@@ -650,7 +651,7 @@ class PDFReport(FPDF):
                                     border=0,
                                     align=align,
                                 )
-                            except Exception:
+                            except Exception:  # nosec B110
                                 pass
                         start_x += w
                     try:
@@ -945,7 +946,7 @@ class PDFReport(FPDF):
                     "L",
                 )
                 self.page = int(last_page)
-            except Exception:
+            except Exception:  # nosec B110
                 pass
             return
 
@@ -1048,7 +1049,7 @@ class PDFReport(FPDF):
             try:
                 self.set_y(top_limit)
                 current_y = top_limit
-            except Exception:
+            except Exception:  # nosec B110
                 pass
         if (current_y + needed_h) > bottom_limit:
             self.add_page()
@@ -1234,7 +1235,9 @@ def create_comprehensive_pdf(report_folder_path, metadata=None):
         static_toc_entries += 1  # Appendix E
         static_toc_entries += 1  # Appendix F
 
-        toc_entry_estimate = _estimate_markdown_toc_entries(markdown_text) + static_toc_entries
+        toc_entry_estimate = (
+            _estimate_markdown_toc_entries(markdown_text) + static_toc_entries
+        )
         toc_pages = pdf.estimate_toc_pages(toc_entry_estimate)
         for _ in range(max(1, toc_pages)):
             pdf.add_page()
@@ -1253,10 +1256,10 @@ def create_comprehensive_pdf(report_folder_path, metadata=None):
                     if agg_summary_data
                     else "N/A"
                 )
-            except:
+            except Exception:
                 pages_audited = "N/A"
 
-            summary = summarize_fix_plan(fix_plan_data, top_n=3)
+            summarize_fix_plan(fix_plan_data, top_n=3)
             pdf.set_font(
                 "Roboto" if "Roboto" in pdf._fonts_added else "helvetica", "B", 12
             )
@@ -1288,9 +1291,7 @@ def create_comprehensive_pdf(report_folder_path, metadata=None):
                 with open(pagespeed_analysis_file, "r", encoding="utf-8") as f:
                     ps_analysis = f.read()
                 pdf.add_page()
-                pdf.begin_section(
-                    "Performance Analysis (PageSpeed Insights)", level=1
-                )
+                pdf.begin_section("Performance Analysis (PageSpeed Insights)", level=1)
                 pdf.write_markdown_text(ps_analysis)
             except Exception as e:
                 logger.warning(f"Error leyendo análisis PageSpeed: {e}")
@@ -1324,6 +1325,7 @@ def create_comprehensive_pdf(report_folder_path, metadata=None):
             # Extract mobile data if it exists
             mobile_data = pagespeed_data.get("mobile", pagespeed_data)
             if mobile_data:
+
                 def _format_ms(value):
                     if value is None:
                         return "N/A"
@@ -1396,9 +1398,7 @@ def create_comprehensive_pdf(report_folder_path, metadata=None):
         # --- Appendix D.2 (Keywords) ---
         if keywords_data:
             pdf.add_page()
-            pdf.begin_section(
-                "Appendix D.2: Keyword Analysis (keywords.json)", level=1
-            )
+            pdf.begin_section("Appendix D.2: Keyword Analysis (keywords.json)", level=1)
             pdf.write_json_summary_box(
                 keywords_data, top_n=10, filename_hint="keywords.json"
             )
@@ -1406,7 +1406,9 @@ def create_comprehensive_pdf(report_folder_path, metadata=None):
         # --- Appendix D.3 (Backlinks) ---
         if backlinks_data:
             pdf.add_page()
-            pdf.begin_section("Appendix D.3: Backlink Profile (backlinks.json)", level=1)
+            pdf.begin_section(
+                "Appendix D.3: Backlink Profile (backlinks.json)", level=1
+            )
             pdf.write_json_summary_box(
                 backlinks_data, top_n=10, filename_hint="backlinks.json"
             )
@@ -1433,17 +1435,13 @@ def create_comprehensive_pdf(report_folder_path, metadata=None):
 
         # --- Appendix E ---
         pdf.add_page()
-        pdf.begin_section(
-            "Appendix E: Individual Page Reports (Summary)", level=1
-        )
+        pdf.begin_section("Appendix E: Individual Page Reports (Summary)", level=1)
 
         if not page_json_files:
             pdf.set_font(
                 "Roboto" if "Roboto" in pdf._fonts_added else "helvetica", "", 10
             )
-            pdf.multi_cell(
-                0, 5, "(No individual page reports found in 'pages' folder)"
-            )
+            pdf.multi_cell(0, 5, "(No individual page reports found in 'pages' folder)")
 
         for i, page_file in enumerate(page_json_files):
             page_title = pdf._sanitize_for_current_font(

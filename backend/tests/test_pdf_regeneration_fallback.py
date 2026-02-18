@@ -1,6 +1,6 @@
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
 from app.services.pdf_service import PDFService
 
 
@@ -82,8 +82,14 @@ async def test_pdf_generation_fails_when_no_persisted_markdown_and_llm_fails():
     mock_audit.search_results = {}
     mock_audit.competitor_audits = []
     mock_audit.pagespeed_data = {
-        "mobile": {"performance_score": 42, "metadata": {"fetch_time": "2099-01-01T00:00:00Z"}},
-        "desktop": {"performance_score": 61, "metadata": {"fetch_time": "2099-01-01T00:00:00Z"}},
+        "mobile": {
+            "performance_score": 42,
+            "metadata": {"fetch_time": "2099-01-01T00:00:00Z"},
+        },
+        "desktop": {
+            "performance_score": 61,
+            "metadata": {"fetch_time": "2099-01-01T00:00:00Z"},
+        },
     }
     mock_audit.keywords = []
     mock_audit.backlinks = []

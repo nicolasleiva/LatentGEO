@@ -1,5 +1,6 @@
-import redis
 import json
+
+import redis
 from app.core.config import settings
 from app.core.logger import get_logger
 
@@ -7,6 +8,7 @@ logger = get_logger(__name__)
 
 # Conexión persistente a Redis
 redis_client = redis.from_url(settings.REDIS_URL, decode_responses=True)
+
 
 def publish_audit_update(audit_id: int, data: dict):
     """Publica una actualización de auditoría en el canal de Redis."""

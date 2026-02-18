@@ -3,16 +3,15 @@ Tests para verificar que los servicios de GEO funcionan con APIs reales.
 NO usa mocks ni datos falsos - solo APIs reales.
 """
 
-import pytest
-import asyncio
 import os
-from sqlalchemy.orm import Session
+
+import pytest
 from app.core.config import settings
-from app.services.pagespeed_service import PageSpeedService
-from app.services.keyword_service import KeywordService
-from app.services.backlink_service import BacklinkService
-from app.services.rank_tracker_service import RankTrackerService
 from app.core.database import SessionLocal
+from app.services.backlink_service import BacklinkService
+from app.services.keyword_service import KeywordService
+from app.services.pagespeed_service import PageSpeedService
+from app.services.rank_tracker_service import RankTrackerService
 
 pytestmark = pytest.mark.skipif(
     os.getenv("RUN_INTEGRATION_TESTS") != "1",
@@ -26,12 +25,12 @@ class TestPageSpeedServiceReal:
     @pytest.mark.asyncio
     async def test_pagespeed_api_key_configured(self):
         """Verifica que la API key está configurada"""
-        assert settings.GOOGLE_PAGESPEED_API_KEY is not None, (
-            "GOOGLE_PAGESPEED_API_KEY no está configurada"
-        )
-        assert len(settings.GOOGLE_PAGESPEED_API_KEY) > 10, (
-            "GOOGLE_PAGESPEED_API_KEY parece inválida"
-        )
+        assert (
+            settings.GOOGLE_PAGESPEED_API_KEY is not None
+        ), "GOOGLE_PAGESPEED_API_KEY no está configurada"
+        assert (
+            len(settings.GOOGLE_PAGESPEED_API_KEY) > 10
+        ), "GOOGLE_PAGESPEED_API_KEY parece inválida"
 
     @pytest.mark.asyncio
     async def test_analyze_url_returns_real_data(self):
@@ -55,12 +54,12 @@ class TestPageSpeedServiceReal:
         assert result["url"] == url, f"URL no coincide: {result['url']} != {url}"
 
         # Verificar que los scores son números reales (0-100)
-        assert 0 <= result["performance_score"] <= 100, (
-            f"performance_score inválido: {result['performance_score']}"
-        )
-        assert 0 <= result["accessibility_score"] <= 100, (
-            f"accessibility_score inválido: {result['accessibility_score']}"
-        )
+        assert (
+            0 <= result["performance_score"] <= 100
+        ), f"performance_score inválido: {result['performance_score']}"
+        assert (
+            0 <= result["accessibility_score"] <= 100
+        ), f"accessibility_score inválido: {result['accessibility_score']}"
 
     @pytest.mark.asyncio
     async def test_analyze_both_strategies(self):
@@ -78,9 +77,9 @@ class TestPageSpeedServiceReal:
 
         # Verificar que ambos tienen datos reales
         for strategy in ["mobile", "desktop"]:
-            assert "performance_score" in result[strategy], (
-                f"No performance_score en {strategy}"
-            )
+            assert (
+                "performance_score" in result[strategy]
+            ), f"No performance_score en {strategy}"
             assert result[strategy]["url"] == url, f"URL no coincide en {strategy}"
 
 
@@ -212,7 +211,7 @@ class TestDataQuality:
 
         # Verificar que los datos parecen reales (variabilidad)
         # Los scores reales típicamente varían y no son valores redondos como 50, 75, 100
-        scores = [
+        [
             result.get("performance_score", 0),
             result.get("accessibility_score", 0),
             result.get("best_practices_score", 0),

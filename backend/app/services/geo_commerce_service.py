@@ -17,12 +17,11 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 from urllib.parse import urlparse
 
-from sqlalchemy.orm import Session
-
-from app.core.logger import get_logger
 from app.core.llm_kimi import kimi_search_serp
+from app.core.logger import get_logger
 from app.models import Audit, GeoCommerceCampaign
 from app.services.competitive_intel_service import CompetitiveIntelService
+from sqlalchemy.orm import Session
 
 logger = get_logger(__name__)
 
@@ -77,7 +76,7 @@ class GeoCommerceService:
             if domain and domain not in normalized:
                 normalized.append(domain)
 
-        for comp in (getattr(audit, "competitor_audits", None) or []):
+        for comp in getattr(audit, "competitor_audits", None) or []:
             if not isinstance(comp, dict):
                 continue
             domain = GeoCommerceService._normalize_domain(
@@ -86,7 +85,7 @@ class GeoCommerceService:
             if domain and domain not in normalized:
                 normalized.append(domain)
 
-        for item in (getattr(audit, "competitors", None) or []):
+        for item in getattr(audit, "competitors", None) or []:
             domain = GeoCommerceService._normalize_domain(item)
             if domain and domain not in normalized:
                 normalized.append(domain)
@@ -99,8 +98,14 @@ class GeoCommerceService:
         normalized_competitors: List[str],
     ) -> Dict[str, Any]:
         target_audit = getattr(audit, "target_audit", None) or {}
-        site_metrics = target_audit.get("site_metrics", {}) if isinstance(target_audit, dict) else {}
-        benchmark = target_audit.get("benchmark", {}) if isinstance(target_audit, dict) else {}
+        site_metrics = (
+            target_audit.get("site_metrics", {})
+            if isinstance(target_audit, dict)
+            else {}
+        )
+        benchmark = (
+            target_audit.get("benchmark", {}) if isinstance(target_audit, dict) else {}
+        )
 
         coverage = CompetitiveIntelService.build_competitor_query_coverage(
             getattr(audit, "search_results", None) or {},
@@ -117,7 +122,9 @@ class GeoCommerceService:
                 top_competitors.append(
                     {
                         "domain": row.get("domain"),
-                        "appearance_rate_percent": row.get("appearance_rate_percent", 0),
+                        "appearance_rate_percent": row.get(
+                            "appearance_rate_percent", 0
+                        ),
                         "sample_queries": row.get("sample_queries", []),
                     }
                 )
@@ -126,7 +133,10 @@ class GeoCommerceService:
                     top_competitors[0].get("appearance_rate_percent", 0) or 0
                 )
         elif normalized_competitors:
-            top_competitors = [{"domain": d, "appearance_rate_percent": None, "sample_queries": []} for d in normalized_competitors[:5]]
+            top_competitors = [
+                {"domain": d, "appearance_rate_percent": None, "sample_queries": []}
+                for d in normalized_competitors[:5]
+            ]
 
         geo_score = float(getattr(audit, "geo_score", 0) or 0)
         if not geo_score and isinstance(benchmark, dict):
@@ -158,7 +168,9 @@ class GeoCommerceService:
         market: str,
         channels: List[str],
     ) -> List[Dict[str, Any]]:
-        schema_gap = max(0.0, 100.0 - float(baseline.get("schema_coverage_percent", 0) or 0))
+        schema_gap = max(
+            0.0, 100.0 - float(baseline.get("schema_coverage_percent", 0) or 0)
+        )
         faq_gap = 1 if int(baseline.get("faq_page_count", 0) or 0) == 0 else 0
         product_pages = int(baseline.get("product_page_count", 0) or 0)
         top_comp_rate = float(baseline.get("top_competitor_rate_proxy_percent", 0) or 0)
@@ -251,8 +263,7 @@ class GeoCommerceService:
             return []
 
         system_prompt = (
-            "You are a senior GEO strategist for ecommerce. "
-            "Return only valid JSON."
+            "You are a senior GEO strategist for ecommerce. " "Return only valid JSON."
         )
         user_prompt = json.dumps(
             {
@@ -267,7 +278,9 @@ class GeoCommerceService:
         )
 
         try:
-            text = await llm_function(system_prompt=system_prompt, user_prompt=user_prompt)
+            text = await llm_function(
+                system_prompt=system_prompt, user_prompt=user_prompt
+            )
             if not text:
                 return []
             cleaned = text.strip()
@@ -387,7 +400,9 @@ class GeoCommerceService:
         return campaign
 
     @staticmethod
-    def get_latest_campaign(db: Session, audit_id: int) -> Optional[GeoCommerceCampaign]:
+    def get_latest_campaign(
+        db: Session, audit_id: int
+    ) -> Optional[GeoCommerceCampaign]:
         return (
             db.query(GeoCommerceCampaign)
             .filter(GeoCommerceCampaign.audit_id == audit_id)
@@ -413,7 +428,7 @@ class GeoCommerceService:
         try:
             parsed = json.loads(cleaned)
             return parsed if isinstance(parsed, dict) else None
-        except Exception:
+        except Exception:  # nosec B110
             pass
         start = cleaned.find("{")
         end = cleaned.rfind("}")
@@ -435,9 +450,15 @@ class GeoCommerceService:
         )
         return {
             "geo_score": float(getattr(audit, "geo_score", 0) or 0),
-            "schema_coverage_percent": float(site_metrics.get("schema_coverage_percent", 0) or 0),
-            "structure_score_percent": float(site_metrics.get("structure_score_percent", 0) or 0),
-            "h1_coverage_percent": float(site_metrics.get("h1_coverage_percent", 0) or 0),
+            "schema_coverage_percent": float(
+                site_metrics.get("schema_coverage_percent", 0) or 0
+            ),
+            "structure_score_percent": float(
+                site_metrics.get("structure_score_percent", 0) or 0
+            ),
+            "h1_coverage_percent": float(
+                site_metrics.get("h1_coverage_percent", 0) or 0
+            ),
             "faq_page_count": int(site_metrics.get("faq_page_count", 0) or 0),
             "product_page_count": int(site_metrics.get("product_page_count", 0) or 0),
             "pages_analyzed": int(site_metrics.get("pages_analyzed", 0) or 0),
@@ -599,16 +620,22 @@ class GeoCommerceService:
         )
 
         try:
-            raw = await llm_function(system_prompt=system_prompt, user_prompt=user_prompt)
+            raw = await llm_function(
+                system_prompt=system_prompt, user_prompt=user_prompt
+            )
             parsed = GeoCommerceService._safe_json_parse(raw)
             if not parsed:
                 return {}
             return {
-                "why_not_first": parsed.get("why_not_first") if isinstance(parsed.get("why_not_first"), list) else [],
+                "why_not_first": parsed.get("why_not_first")
+                if isinstance(parsed.get("why_not_first"), list)
+                else [],
                 "disadvantages_vs_top1": parsed.get("disadvantages_vs_top1")
                 if isinstance(parsed.get("disadvantages_vs_top1"), list)
                 else [],
-                "action_plan": parsed.get("action_plan") if isinstance(parsed.get("action_plan"), list) else [],
+                "action_plan": parsed.get("action_plan")
+                if isinstance(parsed.get("action_plan"), list)
+                else [],
             }
         except Exception as exc:
             logger.warning(f"LLM diagnosis failed for commerce query analyzer: {exc}")
@@ -627,7 +654,9 @@ class GeoCommerceService:
     ) -> GeoCommerceCampaign:
         domain = GeoCommerceService._normalize_domain(audit.url or audit.domain or "")
         if not domain:
-            raise ValueError("Unable to resolve audited domain for commerce query analysis.")
+            raise ValueError(
+                "Unable to resolve audited domain for commerce query analysis."
+            )
 
         search_payload = await kimi_search_serp(
             query=query,
@@ -635,7 +664,11 @@ class GeoCommerceService:
             top_k=top_k,
             language=language,
         )
-        serp_results = search_payload.get("results", []) if isinstance(search_payload, dict) else []
+        serp_results = (
+            search_payload.get("results", [])
+            if isinstance(search_payload, dict)
+            else []
+        )
         if not serp_results:
             raise ValueError("Kimi search returned zero results for this query.")
 
@@ -670,7 +703,10 @@ class GeoCommerceService:
         )
 
         why_not_first = llm_diagnosis.get("why_not_first") or fallback["why_not_first"]
-        disadvantages = llm_diagnosis.get("disadvantages_vs_top1") or fallback["disadvantages_vs_top1"]
+        disadvantages = (
+            llm_diagnosis.get("disadvantages_vs_top1")
+            or fallback["disadvantages_vs_top1"]
+        )
         action_plan = llm_diagnosis.get("action_plan") or fallback["action_plan"]
         evidence = search_payload.get("evidence", [])
         if isinstance(evidence, list):
@@ -709,7 +745,9 @@ class GeoCommerceService:
         return record
 
     @staticmethod
-    def get_latest_query_analysis(db: Session, audit_id: int) -> Optional[GeoCommerceCampaign]:
+    def get_latest_query_analysis(
+        db: Session, audit_id: int
+    ) -> Optional[GeoCommerceCampaign]:
         recent = (
             db.query(GeoCommerceCampaign)
             .filter(GeoCommerceCampaign.audit_id == audit_id)
@@ -718,6 +756,9 @@ class GeoCommerceService:
             .all()
         )
         for row in recent:
-            if isinstance(row.payload, dict) and row.payload.get("mode") == "query_analyzer":
+            if (
+                isinstance(row.payload, dict)
+                and row.payload.get("mode") == "query_analyzer"
+            ):
                 return row
         return None

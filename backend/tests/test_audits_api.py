@@ -1,10 +1,10 @@
 """
 Tests para el API de Auditorías
 """
-from fastapi.testclient import TestClient
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 from app.schemas import AuditStatus
+from fastapi.testclient import TestClient
 
 
 def test_create_audit_dispatches_task(client: TestClient):
@@ -19,9 +19,14 @@ def test_create_audit_dispatches_task(client: TestClient):
         mock_task = MagicMock()
         mock_task.id = "test-task-id"
         mock_delay.return_value = mock_task
-        
+
         # Datos para la nueva auditoría
-        audit_data = {"url": "https://ceibo.digital", "max_crawl": 10, "max_audit": 2, "market": "AR"}
+        audit_data = {
+            "url": "https://ceibo.digital",
+            "max_crawl": 10,
+            "max_audit": 2,
+            "market": "AR",
+        }
 
         # Realizar la petición
         response = client.post("/api/audits/", json=audit_data)

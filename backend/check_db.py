@@ -1,5 +1,6 @@
-from sqlalchemy import create_engine, text
 import os
+
+from sqlalchemy import create_engine, text
 
 db_url = "sqlite:///./auditor.db"
 engine = create_engine(db_url)

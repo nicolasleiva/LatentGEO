@@ -1,9 +1,9 @@
 """
 Test for fix plan generation in PDF service.
 """
-import pytest
-import json
 from unittest.mock import AsyncMock, patch
+
+import pytest
 from app.services.pipeline_service import PipelineService
 
 
@@ -17,19 +17,16 @@ async def test_generate_report_with_fix_plan():
         "status": 200,
         "structure": {
             "h1_check": {"status": "warn", "details": "H1 issues found"},
-            "header_hierarchy": {"issues": [{"prev_tag_html": "<h2>", "current_tag_html": "<h4>"}]}
+            "header_hierarchy": {
+                "issues": [{"prev_tag_html": "<h2>", "current_tag_html": "<h4>"}]
+            },
         },
         "eeat": {
             "author_presence": {"status": "fail"},
-            "citations_and_sources": {"external_links": 5, "authoritative_links": 2}
+            "citations_and_sources": {"external_links": 5, "authoritative_links": 2},
         },
-        "schema": {
-            "schema_presence": {"status": "warn"},
-            "schema_types": []
-        },
-        "content": {
-            "question_targeting": {"status": "fail"}
-        }
+        "schema": {"schema_presence": {"status": "warn"}, "schema_types": []},
+        "content": {"question_targeting": {"status": "fail"}},
     }
 
     external_intelligence = {"is_ymyl": False, "category": "Business"}
@@ -71,7 +68,7 @@ Some content here.
     }
 ]"""
 
-    with patch('app.core.llm_kimi.get_llm_function') as mock_get_llm:
+    with patch("app.core.llm_kimi.get_llm_function") as mock_get_llm:
         mock_llm = AsyncMock(return_value=mock_llm_response)
         mock_get_llm.return_value = mock_llm
 
@@ -81,7 +78,7 @@ Some content here.
             external_intelligence=external_intelligence,
             search_results=search_results,
             competitor_audits=competitor_audits,
-            llm_function=mock_llm
+            llm_function=mock_llm,
         )
 
         # Assertions
@@ -120,17 +117,13 @@ async def test_generate_report_fallback_fix_plan():
         "status": 200,
         "structure": {
             "h1_check": {"status": "fail"},
-            "header_hierarchy": {"issues": [{"prev_tag_html": "<h1>", "current_tag_html": "<h3>"}]}
+            "header_hierarchy": {
+                "issues": [{"prev_tag_html": "<h1>", "current_tag_html": "<h3>"}]
+            },
         },
-        "eeat": {
-            "author_presence": {"status": "fail"}
-        },
-        "schema": {
-            "schema_presence": {"status": "fail"}
-        },
-        "content": {
-            "question_targeting": {"status": "fail"}
-        }
+        "eeat": {"author_presence": {"status": "fail"}},
+        "schema": {"schema_presence": {"status": "fail"}},
+        "content": {"question_targeting": {"status": "fail"}},
     }
 
     external_intelligence = {"is_ymyl": True, "category": "Finance"}
@@ -144,7 +137,7 @@ async def test_generate_report_fallback_fix_plan():
 This report has markdown but no fix plan JSON.
 """
 
-    with patch('app.core.llm_kimi.get_llm_function') as mock_get_llm:
+    with patch("app.core.llm_kimi.get_llm_function") as mock_get_llm:
         mock_llm = AsyncMock(return_value=mock_llm_response)
         mock_get_llm.return_value = mock_llm
 
@@ -154,7 +147,7 @@ This report has markdown but no fix plan JSON.
             external_intelligence=external_intelligence,
             search_results=search_results,
             competitor_audits=competitor_audits,
-            llm_function=mock_llm
+            llm_function=mock_llm,
         )
 
         # Assertions
@@ -172,18 +165,19 @@ This report has markdown but no fix plan JSON.
 async def test_pdf_service_context_loading():
     """Test that PDF service loads complete audit context correctly."""
 
-    from app.services.pdf_service import PDFService
-    from app.services.audit_service import AuditService
     from unittest.mock import Mock, patch
+
     from app.models import Audit
+    from app.services.audit_service import AuditService
+    from app.services.pdf_service import PDFService
 
     # Mock audit with relationships
     mock_audit = Mock(spec=Audit)
     mock_audit.id = 1
     mock_audit.target_audit = '{"url": "https://example.com"}'
     mock_audit.external_intelligence = '{"is_ymyl": false}'
-    mock_audit.search_results = '{}'
-    mock_audit.competitor_audits = '[]'
+    mock_audit.search_results = "{}"
+    mock_audit.competitor_audits = "[]"
     mock_audit.pagespeed_data = '{"mobile": {"score": 85}}'
 
     # Mock relationships
@@ -193,7 +187,7 @@ async def test_pdf_service_context_loading():
     mock_audit.llm_visibilities = []
     mock_audit.ai_content_suggestions = []
 
-    with patch.object(AuditService, 'get_audit') as mock_get_audit:
+    with patch.object(AuditService, "get_audit") as mock_get_audit:
         mock_get_audit.return_value = mock_audit
 
         # Call context loading

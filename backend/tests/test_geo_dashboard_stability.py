@@ -27,7 +27,9 @@ def _seed_audit(db_session) -> int:
     return audit.id
 
 
-def test_geo_dashboard_survives_citation_history_failures(client, db_session, monkeypatch):
+def test_geo_dashboard_survives_citation_history_failures(
+    client, db_session, monkeypatch
+):
     audit_id = _seed_audit(db_session)
 
     def explode(*args, **kwargs):
@@ -43,4 +45,3 @@ def test_geo_dashboard_survives_citation_history_failures(client, db_session, mo
     assert payload["citation_tracking"]["citation_rate"] == 0
     assert payload["citation_tracking"]["mentions"] == 0
     assert "commerce_query_analyzer" in payload
-

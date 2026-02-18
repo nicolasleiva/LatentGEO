@@ -3,9 +3,9 @@
 Test específico para la generación de auditorías de competidores
 """
 
-import sys
-import os
 import asyncio
+import os
+import sys
 
 # Load .env from parent directory
 from dotenv import load_dotenv
@@ -21,8 +21,8 @@ os.environ["DATABASE_URL"] = "sqlite:///./test_competitors.db"
 sys.path.append(current_dir)
 
 from app.core.config import settings
-from app.services.pipeline_service import PipelineService
 from app.services.audit_local_service import AuditLocalService
+from app.services.pipeline_service import PipelineService
 
 
 async def test_competitor_audit_generation():

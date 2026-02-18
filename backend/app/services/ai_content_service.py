@@ -2,50 +2,56 @@
 Servicio para sugerencias de contenido AI.
 Genera recomendaciones de contenido basadas en keywords y gaps.
 """
-import logging
 import json
-from typing import List, Dict, Any
-from urllib.parse import urlparse
+import logging
+from typing import Any, Dict, List
+
 from sqlalchemy.orm import Session
-from ..models import AIContentSuggestion
+
 from ..core.llm_kimi import (
+    KimiGenerationError,
+    KimiUnavailableError,
     get_llm_function,
     is_kimi_configured,
-    KimiUnavailableError,
-    KimiGenerationError,
 )
+from ..models import AIContentSuggestion
 
 logger = logging.getLogger(__name__)
 
 
 class AIContentService:
     """Servicio para generar sugerencias de contenido."""
-    
+
     def __init__(self, db: Session):
         self.db = db
         self.llm_function = get_llm_function()
-    
-    async def generate_suggestions(self, audit_id: int, domain: str, topics: List[str]) -> List[AIContentSuggestion]:
+
+    async def generate_suggestions(
+        self, audit_id: int, domain: str, topics: List[str]
+    ) -> List[AIContentSuggestion]:
         """
         Genera sugerencias de contenido usando IA basándose en el contexto real del negocio.
-        
+
         Args:
             audit_id: ID de la auditoría
             domain: Dominio del sitio
             topics: Lista de topics adicionales a analizar
-            
+
         Returns:
             Lista de sugerencias guardadas
         """
-        logger.info(f"Generating AI content suggestions for {domain} with topics: {topics}")
-        
+        logger.info(
+            f"Generating AI content suggestions for {domain} with topics: {topics}"
+        )
+
         # Cargar contexto completo de la auditoría
         from ..models import Audit
+
         audit = self.db.query(Audit).filter(Audit.id == audit_id).first()
-        
+
         # Extraer información del negocio
         business_context = self._extract_business_context(audit, domain)
-        
+
         suggestions = []
         brand = domain.replace("www.", "").split(".")[0]
 
@@ -98,7 +104,7 @@ class AIContentService:
 
             response = await self.llm_function(
                 system_prompt="Eres un experto en SEO y Content Marketing. Responde solo con JSON válido.",
-                user_prompt=prompt
+                user_prompt=prompt,
             )
 
             # Parsear respuesta
@@ -121,9 +127,9 @@ class AIContentService:
                     content_outline={
                         "target_keyword": sugg.get("target_keyword", ""),
                         "sections": sugg.get("outline", []),
-                        "business_context": business_context['category']
+                        "business_context": business_context["category"],
                     },
-                    priority=sugg.get("priority", "medium")
+                    priority=sugg.get("priority", "medium"),
                 )
                 self.db.add(suggestion)
                 suggestions.append(suggestion)
@@ -150,10 +156,12 @@ class AIContentService:
         self.db.commit()
         for s in suggestions:
             self.db.refresh(s)
-        
-        logger.info(f"Generated {len(suggestions)} content suggestions for {business_context['category']}")
+
+        logger.info(
+            f"Generated {len(suggestions)} content suggestions for {business_context['category']}"
+        )
         return suggestions
-    
+
     def _extract_business_context(self, audit, domain: str) -> Dict[str, Any]:
         """Extrae el contexto del negocio desde la auditoría."""
         context = {
@@ -162,37 +170,39 @@ class AIContentService:
             "audience": "General",
             "competitors": [],
             "top_keywords": [],
-            "is_ymyl": False
+            "is_ymyl": False,
         }
-        
+
         if not audit:
             return context
-        
+
         # Extraer categoría desde external_intelligence o category
         if audit.category:
             context["category"] = audit.category
-        
+
         ext_intel = audit.external_intelligence or {}
         if ext_intel:
             context["category"] = ext_intel.get("category", context["category"])
             context["is_ymyl"] = ext_intel.get("is_ymyl", False)
             context["description"] = ext_intel.get("business_description", "")
             context["audience"] = ext_intel.get("target_audience", "General")
-        
+
         # Extraer competidores
         if audit.competitors:
-            context["competitors"] = audit.competitors if isinstance(audit.competitors, list) else []
-        
+            context["competitors"] = (
+                audit.competitors if isinstance(audit.competitors, list) else []
+            )
+
         comp_audits = audit.competitor_audits or []
         if comp_audits:
             for comp in comp_audits[:3]:
                 if isinstance(comp, dict) and comp.get("url"):
                     context["competitors"].append(comp["url"])
-        
+
         # Extraer keywords desde la BD
-        if hasattr(audit, 'keywords') and audit.keywords:
+        if hasattr(audit, "keywords") and audit.keywords:
             context["top_keywords"] = [k.term for k in audit.keywords[:10]]
-        
+
         # Extraer keywords desde target_audit
         target_audit = audit.target_audit or {}
         if target_audit:
@@ -200,18 +210,24 @@ class AIContentService:
             content = target_audit.get("content", {})
             if content.get("main_topics"):
                 context["top_keywords"].extend(content.get("main_topics", [])[:5])
-        
-        logger.info(f"Extracted business context: category={context['category']}, keywords={len(context['top_keywords'])}")
+
+        logger.info(
+            f"Extracted business context: category={context['category']}, keywords={len(context['top_keywords'])}"
+        )
         return context
-    
+
     def get_suggestions(self, audit_id: int) -> List[AIContentSuggestion]:
         """Obtiene sugerencias existentes para una auditoría."""
-        return self.db.query(AIContentSuggestion).filter(
-            AIContentSuggestion.audit_id == audit_id
-        ).all()
-    
+        return (
+            self.db.query(AIContentSuggestion)
+            .filter(AIContentSuggestion.audit_id == audit_id)
+            .all()
+        )
+
     @staticmethod
-    def generate_content_suggestions(keywords: List[Dict[str, Any]], url: str) -> List[Dict[str, Any]]:
+    def generate_content_suggestions(
+        keywords: List[Dict[str, Any]], url: str
+    ) -> List[Dict[str, Any]]:
         """
         Genera sugerencias de contenido basadas en keywords.
         Returns empty list if no real data available.

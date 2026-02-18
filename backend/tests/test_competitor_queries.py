@@ -1,5 +1,4 @@
 import pytest
-
 from app.services.pipeline_service import PipelineService
 
 
@@ -104,7 +103,9 @@ def test_extract_competitor_urls_falls_back_to_anchor_terms_when_core_terms_are_
         "Growth Analytics",
     )
     target["category"] = "E-commerce"
-    target["subcategory"] = "Musical Instruments & Pro Audio niche High-end guitar boutique"
+    target[
+        "subcategory"
+    ] = "Musical Instruments & Pro Audio niche High-end guitar boutique"
     target["market"] = "United States"
 
     search_results = {
@@ -126,7 +127,11 @@ def test_extract_competitor_urls_falls_back_to_anchor_terms_when_core_terms_are_
     external_intelligence = {
         "market": "United States",
         "queries_to_run": [
-            {"id": "q1", "query": "buy fender gibson guitar online USA", "purpose": "Competitor discovery"},
+            {
+                "id": "q1",
+                "query": "buy fender gibson guitar online USA",
+                "purpose": "Competitor discovery",
+            },
             {
                 "id": "q2",
                 "query": "premium electric acoustic guitar shop United States",
@@ -245,7 +250,11 @@ def test_prune_queries_keeps_competitor_markers_when_relevant():
     )
     queries = [
         {"id": "q1", "query": "best coding bootcamp", "purpose": "competitors"},
-        {"id": "q2", "query": "coding bootcamp vs universidad", "purpose": "comparison"},
+        {
+            "id": "q2",
+            "query": "coding bootcamp vs universidad",
+            "purpose": "comparison",
+        },
         {"id": "q3", "query": "bootcamp alternativas", "purpose": "comparison"},
     ]
 
@@ -401,7 +410,9 @@ def test_primary_query_guitar_ecommerce_es_market():
     target["category"] = "E-commerce"
     target["subcategory"] = "Instrumentos musicales"
     target["content"]["nav_items"] = ["Guitarras", "Acústicas", "Eléctricas"]
-    target["content"]["text_sample"] = "Tienda de guitarra profesional con stock disponible."
+    target["content"][
+        "text_sample"
+    ] = "Tienda de guitarra profesional con stock disponible."
 
     profile = PipelineService._build_core_business_profile(target, max_terms=6)
     query = PipelineService._build_primary_business_query(
@@ -423,9 +434,9 @@ def test_no_metadata_outlier_as_primary_query():
     target["category"] = "E-commerce"
     target["subcategory"] = "Musical Instruments"
     target["content"]["nav_items"] = ["Shop", "Electrics", "Acoustics"]
-    target["content"]["text_sample"] = (
-        "Handcrafted guitars for modern musicians. Fender and Gibson collection."
-    )
+    target["content"][
+        "text_sample"
+    ] = "Handcrafted guitars for modern musicians. Fender and Gibson collection."
 
     profile = PipelineService._build_core_business_profile(target, max_terms=6)
     query = PipelineService._build_primary_business_query(
@@ -450,8 +461,16 @@ def test_reject_outlier_queries_keep_core_queries():
         "outlier_terms": ["seo", "growth", "analytics"],
     }
     queries = [
-        {"id": "q1", "query": "seo growth analytics argentina", "purpose": "competitor discovery"},
-        {"id": "q2", "query": "tienda de guitarras online argentina", "purpose": "competitor discovery"},
+        {
+            "id": "q1",
+            "query": "seo growth analytics argentina",
+            "purpose": "competitor discovery",
+        },
+        {
+            "id": "q2",
+            "query": "tienda de guitarras online argentina",
+            "purpose": "competitor discovery",
+        },
     ]
 
     pruned = PipelineService._prune_competitor_queries(
@@ -500,7 +519,11 @@ async def test_agent1_infers_category_when_llm_returns_unknown():
     assert external_intel.get("category_source") in {"onsite_inference", "agent1"}
     assert isinstance(external_intel.get("queries_to_run"), list)
     assert len(external_intel.get("queries_to_run")) >= 1
-    assert external_intel.get("query_source") in {"agent1", "agent1_retry", "agent1_recovered"}
+    assert external_intel.get("query_source") in {
+        "agent1",
+        "agent1_retry",
+        "agent1_recovered",
+    }
     assert external_intel.get("primary_query")
     assert queries[0]["query"] == external_intel.get("primary_query")
     assert len(queries) >= 1
@@ -552,7 +575,12 @@ async def test_fail_closed_when_no_evidence_for_primary_query():
     service = PipelineService()
     target = {
         "url": "https://example.com/",
-        "content": {"title": "", "meta_description": "", "text_sample": "", "nav_items": []},
+        "content": {
+            "title": "",
+            "meta_description": "",
+            "text_sample": "",
+            "nav_items": [],
+        },
         "structure": {"h1_check": {"details": {"example": ""}}},
         "audited_page_paths": [],
         "language": "en",

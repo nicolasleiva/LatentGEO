@@ -1,6 +1,6 @@
 import os
-import pytest
 
+import pytest
 from app.core.config import settings
 from app.services.pagespeed_service import PageSpeedService
 

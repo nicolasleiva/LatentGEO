@@ -1,13 +1,12 @@
 """
 Tests para los Celery Workers
 """
-import pytest
-from unittest.mock import patch, MagicMock, ANY, AsyncMock
-from sqlalchemy.orm import Session
+from unittest.mock import ANY, AsyncMock, patch
 
-from app.workers.tasks import run_audit_task, generate_pdf_task
-from app.services.audit_service import AuditService
+import pytest
 from app.models import Audit, AuditStatus
+from app.workers.tasks import generate_pdf_task, run_audit_task
+from sqlalchemy.orm import Session
 
 # --- Test para run_audit_task ---
 
@@ -61,7 +60,9 @@ def test_run_audit_task_success(
 
 @patch("app.workers.tasks.AuditLocalService.run_local_audit", new_callable=AsyncMock)
 @patch("app.services.pipeline_service.run_initial_audit", new_callable=AsyncMock)
-def test_run_audit_task_failure(mock_run_initial, mock_local_audit, db_session: Session):
+def test_run_audit_task_failure(
+    mock_run_initial, mock_local_audit, db_session: Session
+):
     """
     Verifica el manejo de errores en la tarea 'run_audit_task'.
     """
@@ -93,7 +94,9 @@ def test_run_audit_task_failure(mock_run_initial, mock_local_audit, db_session: 
 
 @patch("app.workers.tasks.ReportService.create_report")
 @patch("app.workers.tasks.PDFService.create_from_audit")
-def test_generate_pdf_task(mock_create_from_audit, mock_create_report, db_session: Session):
+def test_generate_pdf_task(
+    mock_create_from_audit, mock_create_report, db_session: Session
+):
     """
     Verifica que la tarea 'generate_pdf_task' genera un PDF y lo registra.
     """

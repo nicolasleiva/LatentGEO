@@ -33,7 +33,9 @@ def _seed_audit(db_session) -> int:
 def test_commerce_query_analyze_endpoint_shape(client, db_session, monkeypatch):
     audit_id = _seed_audit(db_session)
 
-    async def fake_analyze_query(*, db, audit, query, market, top_k, language, llm_function):
+    async def fake_analyze_query(
+        *, db, audit, query, market, top_k, language, llm_function
+    ):
         payload = {
             "mode": "query_analyzer",
             "generated_at": datetime.now(timezone.utc).isoformat(),
@@ -66,7 +68,11 @@ def test_commerce_query_analyze_endpoint_shape(client, db_session, monkeypatch):
             ],
             "why_not_first": ["Low schema coverage."],
             "disadvantages_vs_top1": [
-                {"area": "Schema", "gap": "No Product schema on PDP", "impact": "Lower citation eligibility"}
+                {
+                    "area": "Schema",
+                    "gap": "No Product schema on PDP",
+                    "impact": "Lower citation eligibility",
+                }
             ],
             "action_plan": [
                 {
@@ -76,7 +82,12 @@ def test_commerce_query_analyze_endpoint_shape(client, db_session, monkeypatch):
                     "evidence": "Audit site metrics",
                 }
             ],
-            "evidence": [{"title": "SERP #1", "url": "https://www.mercadolibre.com.ar/zapatillas"}],
+            "evidence": [
+                {
+                    "title": "SERP #1",
+                    "url": "https://www.mercadolibre.com.ar/zapatillas",
+                }
+            ],
             "provider": "kimi-2.5-search",
         }
         row = GeoCommerceCampaign(
@@ -128,4 +139,3 @@ def test_commerce_query_requires_query_and_market(client, db_session):
         json={"audit_id": audit_id, "query": "zapatilla nike"},
     )
     assert missing_market.status_code == 422
-

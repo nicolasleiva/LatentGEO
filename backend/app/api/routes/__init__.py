@@ -2,10 +2,10 @@
 API Routes - Production Ready
 All routes are imported with error handling to prevent single module failures from breaking the app.
 """
-# Core routes (always available)
-from . import audits, reports, analytics, health, search, pagespeed, realtime, sse
-
 from app.core.logger import get_logger
+
+# Core routes (always available)
+from . import analytics, audits, health, pagespeed, realtime, reports, search, sse
 
 logger = get_logger(__name__)
 
@@ -78,9 +78,23 @@ except ImportError as e:
     logger.warning(f"content_editor module not available: {e}")
 
 __all__ = [
-    "audits", "reports", "analytics", "health", "search", "pagespeed", "realtime", "sse",
-    "content_analysis", "geo", "hubspot", "github", "webhooks",
-    "backlinks", "keywords", "rank_tracking", "llm_visibility", "ai_content", "content_editor"
+    "audits",
+    "reports",
+    "analytics",
+    "health",
+    "search",
+    "pagespeed",
+    "realtime",
+    "sse",
+    "content_analysis",
+    "geo",
+    "hubspot",
+    "github",
+    "webhooks",
+    "backlinks",
+    "keywords",
+    "rank_tracking",
+    "llm_visibility",
+    "ai_content",
+    "content_editor",
 ]
-
-

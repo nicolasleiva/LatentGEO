@@ -1,7 +1,7 @@
+from app.core.llm_kimi import KimiGenerationError
 from app.models import Audit, AuditStatus
 from app.services.keyword_service import KeywordService
 from app.services.llm_visibility_service import LLMVisibilityService
-from app.core.llm_kimi import KimiGenerationError
 
 
 def _seed_audit(db_session) -> int:
@@ -26,12 +26,16 @@ def _disable_kimi_keys(monkeypatch):
 
 
 def _enable_analysis_key_only(monkeypatch):
-    monkeypatch.setattr("app.core.llm_kimi.settings.NV_API_KEY_ANALYSIS", "analysis-key")
+    monkeypatch.setattr(
+        "app.core.llm_kimi.settings.NV_API_KEY_ANALYSIS", "analysis-key"
+    )
     monkeypatch.setattr("app.core.llm_kimi.settings.NVIDIA_API_KEY", None)
     monkeypatch.setattr("app.core.llm_kimi.settings.NV_API_KEY", None)
 
 
-def test_ai_content_generate_returns_503_when_kimi_missing(client, db_session, monkeypatch):
+def test_ai_content_generate_returns_503_when_kimi_missing(
+    client, db_session, monkeypatch
+):
     audit_id = _seed_audit(db_session)
     _disable_kimi_keys(monkeypatch)
 
@@ -44,7 +48,9 @@ def test_ai_content_generate_returns_503_when_kimi_missing(client, db_session, m
     assert payload["detail"]["code"] == "KIMI_UNAVAILABLE"
 
 
-def test_keywords_research_returns_503_when_kimi_missing(client, db_session, monkeypatch):
+def test_keywords_research_returns_503_when_kimi_missing(
+    client, db_session, monkeypatch
+):
     audit_id = _seed_audit(db_session)
     _disable_kimi_keys(monkeypatch)
 
@@ -57,7 +63,9 @@ def test_keywords_research_returns_503_when_kimi_missing(client, db_session, mon
     assert payload["detail"]["code"] == "KIMI_UNAVAILABLE"
 
 
-def test_llm_visibility_check_returns_503_when_kimi_missing(client, db_session, monkeypatch):
+def test_llm_visibility_check_returns_503_when_kimi_missing(
+    client, db_session, monkeypatch
+):
     audit_id = _seed_audit(db_session)
     _disable_kimi_keys(monkeypatch)
 
@@ -85,7 +93,9 @@ def test_ai_content_returns_502_on_invalid_kimi_json(client, db_session, monkeyp
     async def fake_llm(system_prompt: str, user_prompt: str):
         return "not-json"
 
-    monkeypatch.setattr("app.services.ai_content_service.get_llm_function", lambda: fake_llm)
+    monkeypatch.setattr(
+        "app.services.ai_content_service.get_llm_function", lambda: fake_llm
+    )
 
     response = client.post(
         f"/api/ai-content/generate/{audit_id}?domain=example.com",
@@ -96,14 +106,18 @@ def test_ai_content_returns_502_on_invalid_kimi_json(client, db_session, monkeyp
     assert payload["detail"]["code"] == "KIMI_GENERATION_FAILED"
 
 
-def test_llm_visibility_returns_502_on_kimi_runtime_error(client, db_session, monkeypatch):
+def test_llm_visibility_returns_502_on_kimi_runtime_error(
+    client, db_session, monkeypatch
+):
     audit_id = _seed_audit(db_session)
     _enable_analysis_key_only(monkeypatch)
 
     async def fake_analyze(*args, **kwargs):
         raise KimiGenerationError("forced visibility failure")
 
-    monkeypatch.setattr(LLMVisibilityService, "analyze_batch_visibility_with_llm", fake_analyze)
+    monkeypatch.setattr(
+        LLMVisibilityService, "analyze_batch_visibility_with_llm", fake_analyze
+    )
 
     response = client.post(
         f"/api/llm-visibility/check/{audit_id}?brand_name=example",
