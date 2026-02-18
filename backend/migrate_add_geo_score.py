@@ -1,12 +1,9 @@
-import psycopg2
 import os
 
+import psycopg2
+
 conn = psycopg2.connect(
-    host="db",
-    port=5432,
-    database="auditor_db",
-    user="auditor",
-    password="REDACTED_PASSWORD"
+    host="db", port=5432, database="auditor_db", user="auditor", password="REDACTED_PASSWORD"
 )
 
 cur = conn.cursor()

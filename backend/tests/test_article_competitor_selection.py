@@ -105,9 +105,13 @@ def test_process_batch_uses_audited_competitor_not_serp_social(db_session, monke
         ],
     )
 
-    monkeypatch.setattr("app.services.geo_article_engine_service.is_kimi_configured", lambda: True)
+    monkeypatch.setattr(
+        "app.services.geo_article_engine_service.is_kimi_configured", lambda: True
+    )
     monkeypatch.setattr(settings, "GEO_ARTICLE_AUDIT_ONLY", False, raising=False)
-    monkeypatch.setattr(settings, "GEO_ARTICLE_REPAIR_INVALID_CITATIONS", True, raising=False)
+    monkeypatch.setattr(
+        settings, "GEO_ARTICLE_REPAIR_INVALID_CITATIONS", True, raising=False
+    )
     monkeypatch.setattr(settings, "GEO_ARTICLE_REQUIRE_QA", False, raising=False)
 
     batch = GeoArticleEngineService.create_batch(
@@ -160,10 +164,22 @@ def test_process_batch_uses_audited_competitor_not_serp_social(db_session, monke
                 },
             ],
             "evidence": [
-                {"title": "PetMD", "url": "https://www.petmd.com/dog/nutrition/pet-food-guide"},
-                {"title": "AKC", "url": "https://www.akc.org/expert-advice/nutrition/dog-food-guide/"},
-                {"title": "RSPCA", "url": "https://www.rspca.org.uk/adviceandwelfare/pets/cats/diet"},
-                {"title": "Chewy", "url": "https://www.chewy.com/education/dog-food-buying-guide"},
+                {
+                    "title": "PetMD",
+                    "url": "https://www.petmd.com/dog/nutrition/pet-food-guide",
+                },
+                {
+                    "title": "AKC",
+                    "url": "https://www.akc.org/expert-advice/nutrition/dog-food-guide/",
+                },
+                {
+                    "title": "RSPCA",
+                    "url": "https://www.rspca.org.uk/adviceandwelfare/pets/cats/diet",
+                },
+                {
+                    "title": "Chewy",
+                    "url": "https://www.chewy.com/education/dog-food-buying-guide",
+                },
             ],
         }
 
@@ -188,8 +204,12 @@ def test_process_batch_uses_audited_competitor_not_serp_social(db_session, monke
             }
         )
 
-    monkeypatch.setattr("app.services.geo_article_engine_service.kimi_search_serp", fake_search)
-    monkeypatch.setattr("app.services.geo_article_engine_service.get_llm_function", lambda: fake_llm)
+    monkeypatch.setattr(
+        "app.services.geo_article_engine_service.kimi_search_serp", fake_search
+    )
+    monkeypatch.setattr(
+        "app.services.geo_article_engine_service.get_llm_function", lambda: fake_llm
+    )
 
     processed = asyncio.run(GeoArticleEngineService.process_batch(db_session, batch.id))
     assert processed.status == "completed"
@@ -198,7 +218,9 @@ def test_process_batch_uses_audited_competitor_not_serp_social(db_session, monke
     assert article["competitor_to_beat"] == "royalcanin.com"
 
 
-def test_process_batch_sets_competitor_to_none_when_no_valid_audited_competitor(db_session, monkeypatch):
+def test_process_batch_sets_competitor_to_none_when_no_valid_audited_competitor(
+    db_session, monkeypatch
+):
     audit = _seed_audit(
         db_session,
         competitors=[
@@ -207,7 +229,9 @@ def test_process_batch_sets_competitor_to_none_when_no_valid_audited_competitor(
         ],
     )
 
-    monkeypatch.setattr("app.services.geo_article_engine_service.is_kimi_configured", lambda: True)
+    monkeypatch.setattr(
+        "app.services.geo_article_engine_service.is_kimi_configured", lambda: True
+    )
     monkeypatch.setattr(settings, "GEO_ARTICLE_AUDIT_ONLY", True, raising=False)
     monkeypatch.setattr(settings, "GEO_ARTICLE_REQUIRE_QA", False, raising=False)
 
@@ -230,7 +254,9 @@ def test_process_batch_sets_competitor_to_none_when_no_valid_audited_competitor(
             }
         )
 
-    monkeypatch.setattr("app.services.geo_article_engine_service.get_llm_function", lambda: fake_llm)
+    monkeypatch.setattr(
+        "app.services.geo_article_engine_service.get_llm_function", lambda: fake_llm
+    )
 
     processed = asyncio.run(GeoArticleEngineService.process_batch(db_session, batch.id))
     assert processed.status == "completed"
@@ -243,8 +269,16 @@ def test_audits_competitors_route_filters_social_domains(client, db_session):
     audit = _seed_audit(
         db_session,
         competitors=[
-            {"url": "https://instagram.com/petshopbrand", "domain": "instagram.com", "geo_score": 99},
-            {"url": "https://www.royalcanin.com/ar", "domain": "royalcanin.com", "geo_score": 20},
+            {
+                "url": "https://instagram.com/petshopbrand",
+                "domain": "instagram.com",
+                "geo_score": 99,
+            },
+            {
+                "url": "https://www.royalcanin.com/ar",
+                "domain": "royalcanin.com",
+                "geo_score": 20,
+            },
         ],
     )
 

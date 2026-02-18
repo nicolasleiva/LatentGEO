@@ -1,13 +1,13 @@
 """
 Score History API Routes - Tracking histórico y comparativas temporales
 """
-from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy.orm import Session
-from typing import Optional, List
-from datetime import datetime
+from typing import List
 
-from ..core.database import get_db
+from fastapi import APIRouter, Depends, Query
+from sqlalchemy.orm import Session
+
 from ..core.auth import AuthUser, get_current_user
+from ..core.database import get_db
 from ..services.score_history_service import ScoreHistoryService
 
 router = APIRouter(prefix="/api/score-history", tags=["Score History"])
@@ -31,7 +31,7 @@ async def get_domain_history(
 ):
     """
     Obtiene el historial de scores para un dominio específico.
-    
+
     - **domain**: Dominio a consultar (ej: example.com)
     - **days**: Cantidad de días de historial (default: 90)
     """
@@ -41,7 +41,7 @@ async def get_domain_history(
         days=days,
         owner_ids=_owner_ids_from_user(current_user),
     )
-    
+
     return {
         "domain": domain,
         "days": days,
@@ -61,10 +61,10 @@ async def get_domain_history(
                 "high_issues": h.high_issues,
                 "total_pages": h.total_pages,
                 "citation_rate": h.citation_rate,
-                "audit_id": h.audit_id
+                "audit_id": h.audit_id,
             }
             for h in history
-        ]
+        ],
     }
 
 
@@ -76,7 +76,7 @@ async def get_monthly_comparison(
 ):
     """
     Compara los scores del mes actual vs el mes anterior.
-    
+
     Retorna:
     - Promedio de cada métrica para ambos meses
     - Diferencia absoluta y porcentual
@@ -87,7 +87,7 @@ async def get_monthly_comparison(
         domain=domain,
         owner_ids=_owner_ids_from_user(current_user),
     )
-    
+
     return comparison
 
 
@@ -99,19 +99,14 @@ async def get_domains_summary(
 ):
     """
     Obtiene un resumen de todos los dominios auditados.
-    
+
     Útil para dashboards que muestran múltiples sitios.
     """
     summary = ScoreHistoryService.get_all_domains_summary(
-        db=db,
-        owner_ids=_owner_ids_from_user(current_user),
-        days=days
+        db=db, owner_ids=_owner_ids_from_user(current_user), days=days
     )
-    
-    return {
-        "days": days,
-        "domains": summary
-    }
+
+    return {"days": days, "domains": summary}
 
 
 @router.post("/record")
@@ -127,7 +122,7 @@ async def record_score_manually(
 ):
     """
     Registra manualmente un score en el historial.
-    
+
     Normalmente se llama automáticamente cuando una auditoría se completa.
     """
     scores = {
@@ -136,18 +131,19 @@ async def record_score_manually(
         "geo_score": geo_score,
         "performance_score": performance_score,
     }
-    
+
     entry = ScoreHistoryService.record_score(
         db=db,
         domain=domain,
         audit_id=audit_id,
         scores=scores,
-        user_id=current_user.user_id or (current_user.email.lower() if current_user.email else None),
+        user_id=current_user.user_id
+        or (current_user.email.lower() if current_user.email else None),
     )
-    
+
     return {
         "success": True,
         "id": entry.id,
         "domain": domain,
-        "recorded_at": entry.recorded_at.isoformat()
+        "recorded_at": entry.recorded_at.isoformat(),
     }

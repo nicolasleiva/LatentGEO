@@ -1,47 +1,36 @@
-from fastapi import (
-    APIRouter,
-    Depends,
-    HTTPException,
-    Response,
-    status,
-    BackgroundTasks,
-    Request,
-)
-from fastapi.responses import JSONResponse
-from sqlalchemy.orm import Session
-from typing import List
 import asyncio
 import os
 from datetime import datetime
-from pydantic import BaseModel
+from typing import List
 from urllib.parse import urlparse
 
-from app.core.database import get_db
+from app.core.access_control import ensure_audit_access
+from app.core.auth import AuthUser, get_current_user
 from app.core.config import settings
+from app.core.database import get_db
+from app.core.logger import get_logger
 from app.models import Audit, AuditStatus, Competitor
 from app.schemas import (
+    AuditConfigRequest,
     AuditCreate,
     AuditResponse,
     AuditSummary,
-    AuditConfigRequest,
     ChatMessage,
 )
-from app.services.audit_service import AuditService
-from app.services.pipeline_service import PipelineService
 from app.services.audit_local_service import AuditLocalService
+from app.services.audit_service import AuditService
 from app.services.competitor_filters import (
     infer_vertical_hint,
     is_valid_competitor_domain,
     normalize_domain,
 )
-from app.core.logger import get_logger
-from app.core.auth import AuthUser, get_current_user
-from app.core.access_control import ensure_audit_access
-
-from app.core.llm_client import call_kimi_api
+from app.services.pipeline_service import PipelineService
 
 # Importar la tarea de Celery
 from app.workers.tasks import run_audit_task
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Response, status
+from fastapi.responses import JSONResponse
+from sqlalchemy.orm import Session
 
 logger = get_logger(__name__)
 
@@ -64,8 +53,8 @@ async def run_audit_sync(audit_id: int):
     Función auxiliar para ejecutar auditoría de forma síncrona como fallback.
     PageSpeed is NOT run here - it's executed on-demand when user requests it.
     """
-    from app.core.llm_kimi import get_llm_function
     from app.core.database import SessionLocal
+    from app.core.llm_kimi import get_llm_function
 
     logger.info(f"Running audit {audit_id} synchronously (Redis unavailable)")
 
@@ -101,8 +90,8 @@ async def run_audit_sync(audit_id: int):
             if audit.domain and not target_audit_result.get("domain"):
                 target_audit_result["domain"] = audit.domain
 
-        from app.services.pipeline_service import run_initial_audit
         from app.services.crawler_service import CrawlerService
+        from app.services.pipeline_service import run_initial_audit
 
         result = await run_initial_audit(
             url=str(audit.url),
@@ -144,7 +133,7 @@ async def run_audit_sync(audit_id: int):
         )
         logger.info(f"Audit {audit_id} completed successfully (sync mode)")
         logger.info(
-            f"Dashboard ready! PDF can be generated manually from the dashboard."
+            "Dashboard ready! PDF can be generated manually from the dashboard."
         )
 
     except Exception as e:
@@ -283,9 +272,12 @@ def get_audit(
     if isinstance(audit.target_audit, dict):
         try:
             from app.services.audit_service import CompetitorService
+
             recalculated = CompetitorService._calculate_geo_score(audit.target_audit)
             if recalculated is not None:
-                if (audit.geo_score is None or audit.geo_score <= 0) and recalculated >= 0:
+                if (
+                    audit.geo_score is None or audit.geo_score <= 0
+                ) and recalculated >= 0:
                     audit.geo_score = recalculated
                     db.commit()
                 elif recalculated > 0 and audit.geo_score != recalculated:
@@ -293,7 +285,9 @@ def get_audit(
                     audit.geo_score = recalculated
                     db.commit()
         except Exception as e:
-            logger.warning(f"No se pudo recalcular GEO score para audit {audit_id}: {e}")
+            logger.warning(
+                f"No se pudo recalcular GEO score para audit {audit_id}: {e}"
+            )
 
     return audit
 
@@ -491,7 +485,9 @@ def get_competitors(
     safe_limit = max(1, min(int(limit), 10))
     target_audit = audit.target_audit if isinstance(audit.target_audit, dict) else {}
     external_intelligence = (
-        audit.external_intelligence if isinstance(audit.external_intelligence, dict) else {}
+        audit.external_intelligence
+        if isinstance(audit.external_intelligence, dict)
+        else {}
     )
     vertical_hint = infer_vertical_hint(
         external_intelligence.get("category"),
@@ -507,7 +503,10 @@ def get_competitors(
 
     # Obtener competidores de la base de datos (con límite)
     competitors_db = (
-        db.query(Competitor).filter(Competitor.audit_id == audit_id).limit(safe_limit).all()
+        db.query(Competitor)
+        .filter(Competitor.audit_id == audit_id)
+        .limit(safe_limit)
+        .all()
     )
 
     # Si hay competidores en la BD, usarlos
@@ -517,7 +516,11 @@ def get_competitors(
             if not _is_valid_domain(comp.url or comp.domain or ""):
                 continue
             audit_data = comp.audit_data or {}
-            geo_score = CompetitorService._calculate_geo_score(audit_data) if audit_data else (comp.geo_score or 0)
+            geo_score = (
+                CompetitorService._calculate_geo_score(audit_data)
+                if audit_data
+                else (comp.geo_score or 0)
+            )
             if geo_score == 0 and comp.geo_score:
                 geo_score = comp.geo_score
             formatted = CompetitorService._format_competitor_data(
@@ -550,13 +553,19 @@ def get_competitors(
     # Último fallback: derivar competidores desde search_results existentes.
     # Útil para auditorías históricas que quedaron sin competitor_audits por filtros previos.
     try:
-        search_results = audit.search_results if isinstance(audit.search_results, dict) else {}
+        search_results = (
+            audit.search_results if isinstance(audit.search_results, dict) else {}
+        )
 
         target_domain = (audit.domain or "").replace("www.", "").strip().lower()
         if not target_domain:
-            target_domain = urlparse(str(audit.url or "")).netloc.replace("www.", "").lower()
+            target_domain = (
+                urlparse(str(audit.url or "")).netloc.replace("www.", "").lower()
+            )
 
-        core_profile = PipelineService._build_core_business_profile(target_audit, max_terms=6)
+        core_profile = PipelineService._build_core_business_profile(
+            target_audit, max_terms=6
+        )
         inferred_urls = PipelineService._extract_competitor_urls_from_search(
             search_results=search_results,
             target_domain=target_domain,
@@ -610,7 +619,6 @@ async def run_pagespeed_analysis(
         Complete PageSpeed data structure with all fields
     """
     from app.services.pagespeed_service import PageSpeedService
-    import asyncio
 
     audit = _get_owned_audit(db, audit_id, current_user)
 
@@ -661,7 +669,7 @@ async def run_pagespeed_analysis(
             pagespeed_data = {strategy: result}
 
         # Store complete data in database
-        logger.info(f"Storing PageSpeed data in database...")
+        logger.info("Storing PageSpeed data in database...")
         AuditService.set_pagespeed_data(db, audit_id, pagespeed_data)
 
         logger.info(f"PageSpeed analysis completed for audit {audit_id}")
@@ -710,8 +718,8 @@ async def generate_audit_pdf(
     - LLM visibility
     - AI content suggestions
     """
-    from app.services.pdf_service import PDFService
     from app.models import Report
+    from app.services.pdf_service import PDFService
 
     audit = _get_owned_audit(db, audit_id, current_user)
 
@@ -767,7 +775,7 @@ async def generate_audit_pdf(
             existing_report.file_path = pdf_path
             existing_report.file_size = file_size
             existing_report.created_at = datetime.now()
-            logger.info(f"Updated existing PDF report entry")
+            logger.info("Updated existing PDF report entry")
         else:
             # Create new report entry
             pdf_report = Report(
@@ -777,14 +785,14 @@ async def generate_audit_pdf(
                 file_size=file_size,
             )
             db.add(pdf_report)
-            logger.info(f"Created new PDF report entry")
+            logger.info("Created new PDF report entry")
 
         db.commit()
 
         # Refresh audit to get updated pagespeed_data
         db.refresh(audit)
 
-        logger.info(f"=== PDF generation completed successfully ===")
+        logger.info("=== PDF generation completed successfully ===")
         logger.info(f"PDF saved at: {pdf_path}")
         logger.info(f"PDF size: {file_size} bytes")
 
@@ -823,8 +831,8 @@ def download_audit_pdf(
     Descarga el PDF de una auditoría completada.
     Si el PDF no existe, sugiere generarlo primero.
     """
-    from fastapi.responses import FileResponse
     from app.models import Report
+    from fastapi.responses import FileResponse
 
     audit = _get_owned_audit(db, audit_id, current_user)
 
@@ -864,7 +872,7 @@ def download_audit_pdf(
         logger.info(f"Trying alternative path: {alt_path}")
         if os.path.exists(alt_path):
             pdf_path = alt_path
-            logger.info(f"Found PDF at alternative path")
+            logger.info("Found PDF at alternative path")
         else:
             raise HTTPException(
                 status_code=404,

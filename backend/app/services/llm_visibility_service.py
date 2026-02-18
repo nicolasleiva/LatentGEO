@@ -3,17 +3,17 @@ Servicio para análisis de visibilidad en LLMs.
 Genera datos de menciones en plataformas de IA.
 Core service for GEO (Generative Engine Optimization).
 """
-import logging
 import json
-from typing import List, Dict, Any, Optional
-from urllib.parse import urlparse
+import logging
 from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional
+from urllib.parse import urlparse
 
 from ..core.llm_kimi import (
+    KimiGenerationError,
+    KimiUnavailableError,
     get_llm_function,
     is_kimi_configured,
-    KimiUnavailableError,
-    KimiGenerationError,
 )
 
 logger = logging.getLogger(__name__)
@@ -21,12 +21,12 @@ logger = logging.getLogger(__name__)
 
 class LLMVisibilityService:
     """Servicio para generar análisis de visibilidad en LLMs usando KIMI."""
-    
+
     def __init__(self, db=None):
         """Inicializa el servicio (db es opcional)."""
         self.db = db
         self.llm = get_llm_function()
-    
+
     @staticmethod
     def _extract_term(raw_keyword: Any) -> str:
         if isinstance(raw_keyword, str):
@@ -91,15 +91,17 @@ class LLMVisibilityService:
         return raw if isinstance(raw, dict) else {}
 
     @staticmethod
-    async def generate_llm_visibility(keywords: List[Dict[str, Any]], url: str) -> List[Dict[str, Any]]:
+    async def generate_llm_visibility(
+        keywords: List[Dict[str, Any]], url: str
+    ) -> List[Dict[str, Any]]:
         """
         Genera análisis de visibilidad en LLMs en BATCH para keywords reales.
         Nunca inventa citas: si no hay evidencia clara, devuelve no visible.
         """
         logger.info(f"Generating batch LLM visibility analysis for {url} with KIMI")
 
-        domain = urlparse(url).netloc.replace('www.', '')
-        brand = domain.split('.')[0]
+        domain = urlparse(url).netloc.replace("www.", "")
+        brand = domain.split(".")[0]
 
         keyword_terms: List[str] = []
         for kw in (keywords or [])[:10]:
@@ -112,7 +114,9 @@ class LLMVisibilityService:
             return []
 
         service = LLMVisibilityService()
-        batch_analysis = await service.analyze_batch_visibility_with_llm(brand, keyword_terms)
+        batch_analysis = await service.analyze_batch_visibility_with_llm(
+            brand, keyword_terms
+        )
 
         results = []
         platforms = ["ChatGPT", "Gemini", "Perplexity"]
@@ -146,22 +150,30 @@ class LLMVisibilityService:
                 if not is_visible:
                     rank = None
 
-                results.append({
-                    "id": i * len(platforms) + j + 1,
-                    "audit_id": 0,
-                    "llm_name": platform,
-                    "query": term,
-                    "is_visible": is_visible,
-                    "rank": rank,
-                    "citation_text": citation,
-                    "evidence_status": "verified" if is_visible else "insufficient_data",
-                    "checked_at": datetime.now(timezone.utc).isoformat()
-                })
+                results.append(
+                    {
+                        "id": i * len(platforms) + j + 1,
+                        "audit_id": 0,
+                        "llm_name": platform,
+                        "query": term,
+                        "is_visible": is_visible,
+                        "rank": rank,
+                        "citation_text": citation,
+                        "evidence_status": "verified"
+                        if is_visible
+                        else "insufficient_data",
+                        "checked_at": datetime.now(timezone.utc).isoformat(),
+                    }
+                )
 
-        logger.info(f"Generated {len(results)} LLM visibility entries for {url} (Batch Mode)")
+        logger.info(
+            f"Generated {len(results)} LLM visibility entries for {url} (Batch Mode)"
+        )
         return results
 
-    async def analyze_batch_visibility_with_llm(self, brand: str, queries: List[str]) -> Dict[str, Any]:
+    async def analyze_batch_visibility_with_llm(
+        self, brand: str, queries: List[str]
+    ) -> Dict[str, Any]:
         """
         Usa KIMI para evaluar visibilidad sin fabricar datos.
         Si no hay evidencia clara, debe marcar visible=false.
@@ -198,6 +210,7 @@ class LLMVisibilityService:
             """
 
             from .pipeline_service import PipelineService
+
             response_text = await self.llm(system_prompt, user_prompt)
             if not isinstance(response_text, str) or not response_text.strip():
                 raise KimiGenerationError("Kimi returned empty visibility response.")
@@ -216,11 +229,11 @@ class LLMVisibilityService:
             raise
         except Exception as e:
             logger.error(f"Error in batch visibility analysis: {e}")
-            raise KimiGenerationError(
-                f"LLM visibility generation failed: {e}"
-            ) from e
+            raise KimiGenerationError(f"LLM visibility generation failed: {e}") from e
 
-    async def analyze_visibility_with_llm(self, brand: str, query: str) -> Dict[str, Any]:
+    async def analyze_visibility_with_llm(
+        self, brand: str, query: str
+    ) -> Dict[str, Any]:
         """
         DEPRECATED: Individual analysis replaced by analyze_batch_visibility_with_llm.
         """
@@ -230,12 +243,16 @@ class LLMVisibilityService:
             "perplexity": {"visible": False, "rank": None, "citation": None},
         }
 
-    async def check_visibility(self, audit_id: int, brand_name: str, queries: List[str]) -> List[Dict[str, Any]]:
+    async def check_visibility(
+        self, audit_id: int, brand_name: str, queries: List[str]
+    ) -> List[Dict[str, Any]]:
         """
         Analiza la visibilidad en LLMs y guarda los resultados en la base de datos.
         """
         try:
-            logger.info(f"Checking LLM visibility for audit {audit_id}, brand {brand_name}")
+            logger.info(
+                f"Checking LLM visibility for audit {audit_id}, brand {brand_name}"
+            )
 
             # Formatear queries como Keywords para generate_llm_visibility
             keywords = [{"term": q} for q in queries]
@@ -244,6 +261,7 @@ class LLMVisibilityService:
             audit = None
             if self.db:
                 from ..models import Audit
+
                 audit = self.db.query(Audit).filter(Audit.id == audit_id).first()
 
             url = audit.url if audit else f"https://{brand_name}.com"
@@ -254,15 +272,16 @@ class LLMVisibilityService:
             # Guardar en DB si tenemos sesión
             if self.db and results:
                 from ..models import LLMVisibility
+
                 for res in results:
                     visibility = LLMVisibility(
                         audit_id=audit_id,
-                        llm_name=res.get('llm_name'),
-                        query=res.get('query'),
-                        is_visible=res.get('is_visible', False),
-                        rank=res.get('rank'),
-                        citation_text=res.get('citation_text'),
-                        checked_at=datetime.now(timezone.utc)
+                        llm_name=res.get("llm_name"),
+                        query=res.get("query"),
+                        is_visible=res.get("is_visible", False),
+                        rank=res.get("rank"),
+                        citation_text=res.get("citation_text"),
+                        checked_at=datetime.now(timezone.utc),
                     )
                     self.db.add(visibility)
 
@@ -283,4 +302,9 @@ class LLMVisibilityService:
         if not self.db:
             return []
         from ..models import LLMVisibility
-        return self.db.query(LLMVisibility).filter(LLMVisibility.audit_id == audit_id).all()
+
+        return (
+            self.db.query(LLMVisibility)
+            .filter(LLMVisibility.audit_id == audit_id)
+            .all()
+        )

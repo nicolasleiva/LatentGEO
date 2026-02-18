@@ -1,11 +1,10 @@
 """
 Ownership and tenant isolation helpers.
 """
-from fastapi import HTTPException, status
-
 from app.core.auth import AuthUser
 from app.core.config import settings
 from app.models import Audit
+from fastapi import HTTPException, status
 
 
 def _normalize_email(value: str | None) -> str | None:
@@ -20,7 +19,9 @@ def ensure_audit_access(audit: Audit | None, user: AuthUser) -> Audit:
     Enforce strict access control over an audit object.
     """
     if audit is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Auditoría no encontrada")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Auditoría no encontrada"
+        )
 
     owner_user_id = (audit.user_id or "").strip()
     owner_email = _normalize_email(audit.user_email)
@@ -37,4 +38,7 @@ def ensure_audit_access(audit: Audit | None, user: AuthUser) -> Audit:
     if settings.DEBUG and not owner_user_id and not owner_email:
         return audit
 
-    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No autorizado para esta auditoría")
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="No autorizado para esta auditoría",
+    )

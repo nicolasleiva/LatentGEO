@@ -1,41 +1,38 @@
 """
 GEO Features API Routes
 """
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Body
-from sqlalchemy.orm import Session
-from typing import List, Optional, Dict, Any
-from pydantic import BaseModel, Field
-from urllib.parse import urlparse
 import json
 from datetime import datetime
+from typing import Any, Dict, List, Optional
+from urllib.parse import urlparse
 
+from app.core.access_control import ensure_audit_access
+from app.core.auth import AuthUser, get_current_user
 from app.core.database import get_db
+from app.core.llm_kimi import (
+    KimiGenerationError,
+    KimiSearchError,
+    KimiSearchUnavailableError,
+    KimiUnavailableError,
+    get_llm_function,
+)
+from app.core.logger import get_logger
+from app.models import CitationTracking, DiscoveredQuery
+from app.services.audit_service import AuditService
 from app.services.citation_tracker_service import CitationTrackerService
-from app.services.query_discovery_service import QueryDiscoveryService
 from app.services.competitor_citation_service import CompetitorCitationService
-from app.services.schema_optimizer_service import SchemaOptimizerService
 from app.services.content_template_service import ContentTemplateService
-from app.services.geo_commerce_service import GeoCommerceService
 from app.services.geo_article_engine_service import (
     ArticleDataPackIncompleteError,
     GeoArticleEngineService,
     InsufficientAuthoritySourcesError,
 )
-from app.services.audit_service import AuditService
-from app.core.llm_kimi import (
-    get_llm_function,
-    KimiGenerationError,
-    KimiUnavailableError,
-    KimiSearchUnavailableError,
-    KimiSearchError,
-)
-from app.core.logger import get_logger
-from app.core.auth import AuthUser, get_current_user
-from app.core.access_control import ensure_audit_access
-from app.models import (
-    CitationTracking,
-    DiscoveredQuery,
-)
+from app.services.geo_commerce_service import GeoCommerceService
+from app.services.query_discovery_service import QueryDiscoveryService
+from app.services.schema_optimizer_service import SchemaOptimizerService
+from fastapi import APIRouter, BackgroundTasks, Body, Depends, HTTPException
+from pydantic import BaseModel, Field
+from sqlalchemy.orm import Session
 
 logger = get_logger(__name__)
 
@@ -58,6 +55,7 @@ def _extract_domain_brand(url: str) -> tuple[str, str]:
 
 
 # ============= Pydantic Models =============
+
 
 class CitationTrackingRequest(BaseModel):
     audit_id: int
@@ -120,8 +118,12 @@ class CommerceCampaignRequest(BaseModel):
 
 class CommerceQueryAnalyzeRequest(BaseModel):
     audit_id: int
-    query: str = Field(..., min_length=1, description="Single commerce query to analyze")
-    market: str = Field(..., min_length=2, max_length=16, description="Market code (AR, US, MX, etc.)")
+    query: str = Field(
+        ..., min_length=1, description="Single commerce query to analyze"
+    )
+    market: str = Field(
+        ..., min_length=2, max_length=16, description="Market code (AR, US, MX, etc.)"
+    )
     top_k: int = Field(default=10, ge=1, le=20)
     language: str = "es"
 
@@ -138,6 +140,7 @@ class ArticleEngineRequest(BaseModel):
 
 # ============= Citation Tracking Endpoints =============
 
+
 @router.post("/citation-tracking/start")
 async def start_citation_tracking(
     request: CitationTrackingRequest,
@@ -149,13 +152,13 @@ async def start_citation_tracking(
     try:
         # Obtener audit
         audit = _get_owned_audit(db, request.audit_id, current_user)
-        
+
         # Obtener datos del audit
         domain, brand_name = _extract_domain_brand(audit.url)
-        
+
         # Ejecutar en background
         async def run_tracking():
-            llm_function = get_llm_function()
+            get_llm_function()
             await CitationTrackerService.track_citations(
                 db=db,
                 audit_id=request.audit_id,
@@ -163,17 +166,17 @@ async def start_citation_tracking(
                 domain=domain,
                 industry=request.industry,
                 keywords=request.keywords,
-                llm_name=request.llm_name
+                llm_name=request.llm_name,
             )
-        
+
         background_tasks.add_task(run_tracking)
-        
+
         return {
             "message": "Citation tracking started",
             "audit_id": request.audit_id,
-            "status": "processing"
+            "status": "processing",
         }
-        
+
     except Exception as e:
         logger.error(f"Error starting citation tracking: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -207,19 +210,25 @@ def get_recent_citations(
     try:
         _get_owned_audit(db, audit_id, current_user)
         from sqlalchemy import desc
-        
-        citations = db.query(CitationTracking).filter(
-            CitationTracking.audit_id == audit_id,
-            CitationTracking.is_mentioned == True
-        ).order_by(desc(CitationTracking.tracked_at)).limit(limit).all()
-        
+
+        citations = (
+            db.query(CitationTracking)
+            .filter(
+                CitationTracking.audit_id == audit_id,
+                CitationTracking.is_mentioned,
+            )
+            .order_by(desc(CitationTracking.tracked_at))
+            .limit(limit)
+            .all()
+        )
+
         return [
             {
                 "query": c.query,
                 "citation_text": c.citation_text,
                 "sentiment": c.sentiment,
                 "llm_name": c.llm_name,
-                "tracked_at": c.tracked_at.isoformat()
+                "tracked_at": c.tracked_at.isoformat(),
             }
             for c in citations
         ]
@@ -244,7 +253,7 @@ def get_recent_citations_legacy(
             db.query(CitationTracking)
             .filter(
                 CitationTracking.audit_id == audit_id,
-                CitationTracking.is_mentioned == True,
+                CitationTracking.is_mentioned,
             )
             .order_by(desc(CitationTracking.tracked_at))
             .limit(limit)
@@ -255,9 +264,13 @@ def get_recent_citations_legacy(
                 {
                     "id": c.id,
                     "query": c.query,
-                    "response_preview": (c.citation_text or c.full_response or "")[:220],
+                    "response_preview": (c.citation_text or c.full_response or "")[
+                        :220
+                    ],
                     "llm_name": c.llm_name,
-                    "citation_type": "direct" if c.position and c.position <= 2 else "indirect",
+                    "citation_type": "direct"
+                    if c.position and c.position <= 2
+                    else "indirect",
                     "confidence": 0.85 if c.is_mentioned else 0.4,
                     "created_at": c.tracked_at.isoformat(),
                 }
@@ -278,8 +291,9 @@ def get_citation_history_legacy(
     """Legacy monthly citation history endpoint used by current GEO UI."""
     try:
         _get_owned_audit(db, audit_id, current_user)
-        from sqlalchemy import desc
         from collections import defaultdict
+
+        from sqlalchemy import desc
 
         rows = (
             db.query(CitationTracking)
@@ -312,7 +326,9 @@ def get_citation_history_legacy(
                     "year": year,
                     "citations": data["mentions"],
                     "queries_tracked": data["total"],
-                    "citation_rate": round((data["mentions"] / max(1, data["total"])) * 100, 1),
+                    "citation_rate": round(
+                        (data["mentions"] / max(1, data["total"])) * 100, 1
+                    ),
                     "top_queries": data["queries"][:4],
                 }
             )
@@ -324,10 +340,10 @@ def get_citation_history_legacy(
 
 # ============= Query Discovery Endpoints =============
 
+
 @router.post("/query-discovery/discover")
 async def discover_queries(
-    request: QueryDiscoveryRequest,
-    db: Session = Depends(get_db)
+    request: QueryDiscoveryRequest, db: Session = Depends(get_db)
 ):
     """Descubre queries relevantes para el nicho."""
     try:
@@ -338,7 +354,7 @@ async def discover_queries(
                 system_prompt="You generate realistic search and assistant queries.",
                 user_prompt=prompt_text,
             )
-        
+
         queries = await QueryDiscoveryService.discover_queries(
             brand_name=request.brand_name,
             domain=request.domain,
@@ -346,12 +362,9 @@ async def discover_queries(
             keywords=request.keywords,
             llm_function=llm_adapter,
         )
-        
-        return {
-            "total_discovered": len(queries),
-            "queries": queries[:20]  # Top 20
-        }
-        
+
+        return {"total_discovered": len(queries), "queries": queries[:20]}  # Top 20
+
     except Exception as e:
         logger.error(f"Error discovering queries: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -389,8 +402,12 @@ async def discover_queries_legacy(
             keywords=keywords,
             llm_function=None,
         )
-        QueryDiscoveryService.save_discovered_queries(db, request.audit_id, discovered[:20])
-        opportunities = QueryDiscoveryService.get_top_opportunities(db, request.audit_id, limit=10)
+        QueryDiscoveryService.save_discovered_queries(
+            db, request.audit_id, discovered[:20]
+        )
+        opportunities = QueryDiscoveryService.get_top_opportunities(
+            db, request.audit_id, limit=10
+        )
 
         mapped = []
         for row in opportunities:
@@ -400,7 +417,9 @@ async def discover_queries_legacy(
                     "intent": row.get("intent", "informational"),
                     "potential_score": row.get("potential_score", 0),
                     "volume_estimate": "medium",
-                    "competition_level": "high" if row.get("potential_score", 0) > 60 else "medium",
+                    "competition_level": "high"
+                    if row.get("potential_score", 0) > 60
+                    else "medium",
                     "recommendation": "Create a citation-ready page with direct answers, proof blocks, and trusted external sources.",
                 }
             )
@@ -429,7 +448,7 @@ def get_query_opportunities(
         opportunities = QueryDiscoveryService.get_top_opportunities(db, audit_id, limit)
         return {
             "total_opportunities": len(opportunities),
-            "opportunities": opportunities
+            "opportunities": opportunities,
         }
     except Exception as e:
         logger.error(f"Error getting opportunities: {e}")
@@ -437,6 +456,7 @@ def get_query_opportunities(
 
 
 # ============= Competitor Citation Endpoints =============
+
 
 @router.post("/competitor-analysis/analyze")
 async def analyze_competitor_citations(
@@ -449,9 +469,9 @@ async def analyze_competitor_citations(
     try:
         # Obtener audit
         audit = _get_owned_audit(db, request.audit_id, current_user)
-        
+
         domain, brand_name = _extract_domain_brand(audit.url)
-        
+
         # Ejecutar análisis
         async def run_analysis():
             llm_function = get_llm_function()
@@ -462,17 +482,17 @@ async def analyze_competitor_citations(
                 domain=domain,
                 competitor_domains=request.competitor_domains,
                 queries=request.queries,
-                llm_function=llm_function
+                llm_function=llm_function,
             )
-        
+
         background_tasks.add_task(run_analysis)
-        
+
         return {
             "message": "Competitor analysis started",
             "audit_id": request.audit_id,
-            "competitors_count": len(request.competitor_domains)
+            "competitors_count": len(request.competitor_domains),
         }
-        
+
     except Exception as e:
         logger.error(f"Error analyzing competitors: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -504,9 +524,13 @@ async def analyze_competitor_citations_legacy(
     try:
         audit = _get_owned_audit(db, request.audit_id, current_user)
         domain, brand_name = _extract_domain_brand(audit.url)
-        competitor_domains = [c.strip() for c in (request.competitors or []) if c and c.strip()]
+        competitor_domains = [
+            c.strip() for c in (request.competitors or []) if c and c.strip()
+        ]
         if not competitor_domains:
-            raise HTTPException(status_code=400, detail="At least one competitor is required")
+            raise HTTPException(
+                status_code=400, detail="At least one competitor is required"
+            )
 
         # Build compact query set using discovered opportunities, then fallback to default.
         query_rows = (
@@ -599,6 +623,7 @@ async def analyze_competitor_citations_legacy(
 
 # ============= Schema Optimizer Endpoints =============
 
+
 @router.post("/schema/generate")
 async def generate_schema(request: SchemaGeneratorRequest):
     """Genera Schema.org optimizado para la página."""
@@ -610,16 +635,16 @@ async def generate_schema(request: SchemaGeneratorRequest):
                 system_prompt="You improve schema descriptions for machine readability.",
                 user_prompt=prompt_text,
             )
-        
+
         result = await SchemaOptimizerService.generate_schema(
             html_content=request.html_content,
             url=request.url,
             page_type=request.page_type,
             llm_function=llm_adapter,
         )
-        
+
         return result
-        
+
     except Exception as e:
         logger.error(f"Error generating schema: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -630,15 +655,11 @@ async def generate_multiple_schemas(request: SchemaGeneratorRequest):
     """Genera múltiples schemas si la página lo amerita."""
     try:
         schemas = SchemaOptimizerService.generate_multiple_schemas(
-            html_content=request.html_content,
-            url=request.url
+            html_content=request.html_content, url=request.url
         )
-        
-        return {
-            "total_schemas": len(schemas),
-            "schemas": schemas
-        }
-        
+
+        return {"total_schemas": len(schemas), "schemas": schemas}
+
     except Exception as e:
         logger.error(f"Error generating schemas: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -655,6 +676,7 @@ async def generate_schema_legacy(request: SchemaGeneratorLegacyRequest):
                 system_prompt="You improve schema descriptions for machine readability.",
                 user_prompt=prompt_text,
             )
+
         result = await SchemaOptimizerService.generate_schema(
             html_content=request.html_content or "",
             url=request.url,
@@ -687,8 +709,12 @@ async def generate_multiple_schemas_legacy(request: SchemaGeneratorLegacyRequest
                 {
                     "schema_type": row.get("type", "Organization"),
                     "reason": "Suggested based on detected page structure and intent.",
-                    "priority": "high" if row.get("type") in {"Product", "Article", "FAQPage"} else "medium",
-                    "schema_json": json.dumps(row.get("schema", {}), indent=2, ensure_ascii=False),
+                    "priority": "high"
+                    if row.get("type") in {"Product", "Article", "FAQPage"}
+                    else "medium",
+                    "schema_json": json.dumps(
+                        row.get("schema", {}), indent=2, ensure_ascii=False
+                    ),
                 }
                 for row in schemas
             ]
@@ -700,15 +726,13 @@ async def generate_multiple_schemas_legacy(request: SchemaGeneratorLegacyRequest
 
 # ============= Content Template Endpoints =============
 
+
 @router.get("/content-templates/list")
 def list_content_templates():
     """Lista todos los templates disponibles."""
     try:
         templates = ContentTemplateService.get_all_templates()
-        return {
-            "total_templates": len(templates),
-            "templates": templates
-        }
+        return {"total_templates": len(templates), "templates": templates}
     except Exception as e:
         logger.error(f"Error listing templates: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -760,16 +784,16 @@ async def generate_content_template(request: ContentTemplateRequest):
                 system_prompt="You are a GEO content strategist.",
                 user_prompt=prompt_text,
             )
-        
+
         template = await ContentTemplateService.generate_template(
             template_type=request.template_type,
             topic=request.topic,
             keywords=request.keywords,
             llm_function=llm_adapter,
         )
-        
+
         return template
-        
+
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
@@ -821,6 +845,7 @@ def analyze_content_legacy(payload: Dict[str, Any] = Body(...)):
 
 # ============= Commerce LLM Tool =============
 
+
 @router.post("/commerce-query/analyze")
 async def analyze_commerce_query(
     request: CommerceQueryAnalyzeRequest,
@@ -857,7 +882,9 @@ async def analyze_commerce_query(
             "action_plan": payload.get("action_plan", []),
             "evidence": payload.get("evidence", []),
             "provider": payload.get("provider", "kimi-2.5-search"),
-            "generated_at": payload.get("generated_at", analysis.created_at.isoformat()),
+            "generated_at": payload.get(
+                "generated_at", analysis.created_at.isoformat()
+            ),
         }
     except KimiSearchUnavailableError as exc:
         raise HTTPException(status_code=503, detail=str(exc))
@@ -963,6 +990,7 @@ def get_latest_commerce_campaign(
 
 # ============= Article Engine Tool =============
 
+
 @router.post("/article-engine/generate")
 async def generate_article_batch(
     request: ArticleEngineRequest,
@@ -998,7 +1026,9 @@ async def generate_article_batch(
             articles = processed.articles or []
             first_error = None
             for article in articles:
-                if isinstance(article, dict) and isinstance(article.get("generation_error"), dict):
+                if isinstance(article, dict) and isinstance(
+                    article.get("generation_error"), dict
+                ):
                     first_error = article["generation_error"]
                     break
             if first_error:
@@ -1007,7 +1037,10 @@ async def generate_article_batch(
                     raise HTTPException(status_code=503, detail=first_error)
                 if code == "KIMI_GENERATION_FAILED":
                     raise HTTPException(status_code=502, detail=first_error)
-                if code in {"ARTICLE_DATA_PACK_INCOMPLETE", "INSUFFICIENT_AUTHORITY_SOURCES"}:
+                if code in {
+                    "ARTICLE_DATA_PACK_INCOMPLETE",
+                    "INSUFFICIENT_AUTHORITY_SOURCES",
+                }:
                     raise HTTPException(status_code=422, detail=first_error)
         return GeoArticleEngineService.serialize_batch(processed)
     except KimiUnavailableError as exc:
@@ -1097,6 +1130,7 @@ def get_latest_article_batch(
 
 # ============= Dashboard Summary Endpoint =============
 
+
 @router.get("/dashboard/{audit_id}")
 async def get_geo_dashboard(
     audit_id: int,
@@ -1114,49 +1148,71 @@ async def get_geo_dashboard(
         latest_batch = None
 
         try:
-            citation_history = CitationTrackerService.get_citation_history(db, audit_id, 30) or {}
+            citation_history = (
+                CitationTrackerService.get_citation_history(db, audit_id, 30) or {}
+            )
         except Exception as history_exc:
-            logger.warning(f"Citation history failed for audit {audit_id}: {history_exc}")
+            logger.warning(
+                f"Citation history failed for audit {audit_id}: {history_exc}"
+            )
 
         try:
-            opportunities = QueryDiscoveryService.get_top_opportunities(db, audit_id, 5) or []
+            opportunities = (
+                QueryDiscoveryService.get_top_opportunities(db, audit_id, 5) or []
+            )
         except Exception as opportunities_exc:
-            logger.warning(f"Query opportunities failed for audit {audit_id}: {opportunities_exc}")
+            logger.warning(
+                f"Query opportunities failed for audit {audit_id}: {opportunities_exc}"
+            )
 
         try:
-            benchmark = CompetitorCitationService.get_citation_benchmark(db, audit_id) or {}
+            benchmark = (
+                CompetitorCitationService.get_citation_benchmark(db, audit_id) or {}
+            )
         except Exception as benchmark_exc:
-            logger.warning(f"Competitor benchmark failed for audit {audit_id}: {benchmark_exc}")
+            logger.warning(
+                f"Competitor benchmark failed for audit {audit_id}: {benchmark_exc}"
+            )
 
         try:
             latest_campaign = GeoCommerceService.get_latest_campaign(db, audit_id)
         except Exception as campaign_exc:
-            logger.warning(f"Legacy commerce campaign lookup failed for audit {audit_id}: {campaign_exc}")
+            logger.warning(
+                f"Legacy commerce campaign lookup failed for audit {audit_id}: {campaign_exc}"
+            )
 
         try:
-            latest_query_analysis = GeoCommerceService.get_latest_query_analysis(db, audit_id)
+            latest_query_analysis = GeoCommerceService.get_latest_query_analysis(
+                db, audit_id
+            )
         except Exception as query_exc:
-            logger.warning(f"Commerce query analysis lookup failed for audit {audit_id}: {query_exc}")
+            logger.warning(
+                f"Commerce query analysis lookup failed for audit {audit_id}: {query_exc}"
+            )
 
         try:
             latest_batch = GeoArticleEngineService.get_latest_batch(db, audit_id)
         except Exception as batch_exc:
-            logger.warning(f"Article engine lookup failed for audit {audit_id}: {batch_exc}")
-        
+            logger.warning(
+                f"Article engine lookup failed for audit {audit_id}: {batch_exc}"
+            )
+
         return {
             "audit_id": audit_id,
             "citation_tracking": {
-                "citation_rate": citation_history.get('citation_rate', 0),
-                "total_queries": citation_history.get('total_queries', 0),
-                "mentions": citation_history.get('mentions', 0),
-                "sentiment_breakdown": citation_history.get('sentiment_breakdown', {})
+                "citation_rate": citation_history.get("citation_rate", 0),
+                "total_queries": citation_history.get("total_queries", 0),
+                "mentions": citation_history.get("mentions", 0),
+                "sentiment_breakdown": citation_history.get("sentiment_breakdown", {}),
             },
             "top_opportunities": opportunities,
             "competitor_benchmark": {
-                "has_data": benchmark.get('has_data', False),
-                "your_mentions": benchmark.get('your_mentions', 0),
-                "top_competitor": benchmark.get('competitors', [{}])[0].get('name') if benchmark.get('competitors') else None,
-                "gap_analysis": benchmark.get('gap_analysis', {})
+                "has_data": benchmark.get("has_data", False),
+                "your_mentions": benchmark.get("your_mentions", 0),
+                "top_competitor": benchmark.get("competitors", [{}])[0].get("name")
+                if benchmark.get("competitors")
+                else None,
+                "gap_analysis": benchmark.get("gap_analysis", {}),
             },
             "commerce_campaign": {
                 "has_data": latest_campaign is not None,
@@ -1164,17 +1220,27 @@ async def get_geo_dashboard(
             },
             "commerce_query_analyzer": {
                 "has_data": latest_query_analysis is not None,
-                "analysis_id": latest_query_analysis.id if latest_query_analysis else None,
-                "query": (latest_query_analysis.payload or {}).get("query") if latest_query_analysis else None,
-                "market": (latest_query_analysis.payload or {}).get("market") if latest_query_analysis else None,
+                "analysis_id": latest_query_analysis.id
+                if latest_query_analysis
+                else None,
+                "query": (latest_query_analysis.payload or {}).get("query")
+                if latest_query_analysis
+                else None,
+                "market": (latest_query_analysis.payload or {}).get("market")
+                if latest_query_analysis
+                else None,
             },
             "article_engine": {
                 "has_data": latest_batch is not None,
                 "batch_id": latest_batch.id if latest_batch else None,
-                "generated_count": (latest_batch.summary or {}).get("generated_count", 0) if latest_batch else 0,
+                "generated_count": (latest_batch.summary or {}).get(
+                    "generated_count", 0
+                )
+                if latest_batch
+                else 0,
             },
         }
-        
+
     except Exception as e:
         logger.error(f"Error getting GEO dashboard: {e}")
         raise HTTPException(status_code=500, detail=str(e))

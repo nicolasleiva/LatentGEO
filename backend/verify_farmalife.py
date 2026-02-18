@@ -1,6 +1,6 @@
-import sys
-import os
 import logging
+import os
+import sys
 
 # Load .env from parent directory before importing app modules
 from dotenv import load_dotenv
@@ -16,10 +16,10 @@ os.environ["DATABASE_URL"] = "sqlite:///./test_farmalife.db"
 # Add the parent directory to sys.path to allow imports from app
 sys.path.append(current_dir)
 
+from app.core.config import settings
 from app.core.database import SessionLocal, init_db
 from app.models import Audit, AuditStatus
 from app.workers.tasks import run_audit_task
-from app.core.config import settings
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -31,8 +31,9 @@ def verify_audit():
 
     # Ensure DB is initialized (if using sqlite/local)
     import asyncio
-    from app.core.database import init_db
+
     from app import models  # Ensure models are loaded
+    from app.core.database import init_db
 
     asyncio.run(init_db())
 

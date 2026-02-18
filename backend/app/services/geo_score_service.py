@@ -7,14 +7,14 @@ por Grandes Modelos de Lenguaje (LLMs) como ChatGPT, Gemini, Claude.
 Basado en el manual de GEO (Generative Engine Optimization).
 """
 
-from typing import Dict, List, Any, Optional
-from sqlalchemy.orm import Session
-from datetime import datetime
 import re
+from datetime import datetime
+from typing import Any, Dict, List, Optional
+
+from sqlalchemy.orm import Session
 
 from ..core.logger import get_logger
 from .citation_tracker_service import CitationTrackerService
-from .query_discovery_service import QueryDiscoveryService
 
 logger = get_logger(__name__)
 
@@ -476,7 +476,7 @@ class GEOScoreService:
                         "breakdown": comp_score["breakdown"],
                     }
                 )
-            except:
+            except Exception:  # nosec B112
                 continue
 
         # Análisis de gaps

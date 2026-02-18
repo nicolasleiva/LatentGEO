@@ -3,9 +3,9 @@
 Test simple para verificar la búsqueda de competidores
 """
 
-import sys
-import os
 import asyncio
+import os
+import sys
 
 # Load .env from parent directory
 from dotenv import load_dotenv

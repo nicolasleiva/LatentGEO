@@ -1,17 +1,19 @@
-from sqlalchemy.orm import Session
-from ..models import Keyword
-from ..core.config import settings
-from typing import List, Dict, Optional, Any
-import logging
 import json
+import logging
 import re
+from typing import Any, Dict, List
+
 from openai import AsyncOpenAI
-from .google_ads_service import GoogleAdsService
+from sqlalchemy.orm import Session
+
+from ..core.config import settings
 from ..core.llm_kimi import (
-    resolve_kimi_api_key,
-    KimiUnavailableError,
     KimiGenerationError,
+    KimiUnavailableError,
+    resolve_kimi_api_key,
 )
+from ..models import Keyword
+from .google_ads_service import GoogleAdsService
 
 logger = logging.getLogger(__name__)
 
@@ -77,7 +79,9 @@ class KeywordService:
             raise KimiGenerationError(f"Keyword generation failed: {e}") from e
 
     def _get_prompt(self, domain: str, seeds: List[str]) -> str:
-        seed_text = ", ".join([s for s in (seeds or []) if isinstance(s, str) and s.strip()])
+        seed_text = ", ".join(
+            [s for s in (seeds or []) if isinstance(s, str) and s.strip()]
+        )
         return f"""
         You are a senior SEO strategist.
         Generate exactly 10 keyword ideas for the target business domain: {domain}.

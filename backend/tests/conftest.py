@@ -1,38 +1,40 @@
 """
 Configuración de Pytest y fixtures
 """
+import os
+import sys
+from typing import Generator
+
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
-from sqlalchemy.pool import StaticPool
 from sqlalchemy.orm import sessionmaker
-from typing import Generator
-
-import sys
-import os
+from sqlalchemy.pool import StaticPool
 
 RUN_INTEGRATION_TESTS = os.getenv("RUN_INTEGRATION_TESTS") == "1"
 
 # Add the backend directory to sys.path
 # In Docker, this is /app. Locally, it's the backend folder.
 current_dir = os.path.dirname(os.path.abspath(__file__))
-project_root = os.path.dirname(current_dir) # This should be 'backend' local or '/app' in Docker
+project_root = os.path.dirname(
+    current_dir
+)  # This should be 'backend' local or '/app' in Docker
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
 # Now imports should work relatively to project_root
 try:
-    from app.main import app
-    from app.core.database import get_db, Base
-    from app.core.auth import get_current_user, AuthUser
+    from app.core.auth import AuthUser, get_current_user
     from app.core.config import settings
+    from app.core.database import Base, get_db
+    from app.main import app
 except ImportError as e:
     print(f"Failed to import from app.main: {e}")
     # Fallback for different environments if necessary
     try:
-        from backend.app.main import app
-        from backend.app.core.database import get_db, Base
         from backend.app.core.config import settings
+        from backend.app.core.database import Base, get_db
+        from backend.app.main import app
     except ImportError:
         raise e
 
@@ -62,9 +64,9 @@ def setup_test_db():
     # Usar base de datos en memoria para evitar bloqueos de archivo en Windows
     TEST_DATABASE_URL = "sqlite:///:memory:"
     engine = create_engine(
-        TEST_DATABASE_URL, 
+        TEST_DATABASE_URL,
         connect_args={"check_same_thread": False},
-        poolclass=StaticPool
+        poolclass=StaticPool,
     )
 
     Base.metadata.create_all(bind=engine)

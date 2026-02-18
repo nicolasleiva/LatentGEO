@@ -3,16 +3,14 @@ Generador de Reportes Comparativos HTML
 """
 import json
 from pathlib import Path
-from typing import Dict, List, Any
+from typing import Dict, List
 
 
 def generate_html_report(
-    all_scores: List[Dict],
-    all_analysis: List[Dict],
-    output_path: Path
+    all_scores: List[Dict], all_analysis: List[Dict], output_path: Path
 ) -> None:
     """Genera reporte HTML comparativo."""
-    
+
     html = """<!DOCTYPE html>
 <html lang="es">
 <head>
@@ -58,10 +56,16 @@ def generate_html_report(
             </thead>
             <tbody>
 """
-    
-    sorted_scores = sorted(all_scores, key=lambda x: x['scores']['total'], reverse=True)
+
+    sorted_scores = sorted(all_scores, key=lambda x: x["scores"]["total"], reverse=True)
     for i, item in enumerate(sorted_scores, 1):
-        score_class = 'score-high' if item['scores']['total'] >= 70 else 'score-medium' if item['scores']['total'] >= 50 else 'score-low'
+        score_class = (
+            "score-high"
+            if item["scores"]["total"] >= 70
+            else "score-medium"
+            if item["scores"]["total"] >= 50
+            else "score-low"
+        )
         html += f"""
                 <tr>
                     <td><span class="ranking">{i}</span></td>
@@ -69,7 +73,7 @@ def generate_html_report(
                     <td><span class="score {score_class}">{item['scores']['total']}/100</span></td>
                 </tr>
 """
-    
+
     html += """
             </tbody>
         </table>
@@ -88,9 +92,9 @@ def generate_html_report(
             </thead>
             <tbody>
 """
-    
+
     for item in all_scores:
-        scores = item['scores']
+        scores = item["scores"]
         html += f"""
                 <tr>
                     <td>{item['url']}</td>
@@ -101,7 +105,7 @@ def generate_html_report(
                     <td><span class="score {'score-high' if scores['total'] >= 70 else 'score-medium' if scores['total'] >= 50 else 'score-low'}">{scores['total']}</span></td>
                 </tr>
 """
-    
+
     html += """
             </tbody>
         </table>
@@ -112,7 +116,7 @@ def generate_html_report(
         
         <h2>💪 Fortalezas y Debilidades</h2>
 """
-    
+
     for analysis in all_analysis:
         html += f"""
         <div class="analysis-card">
@@ -121,12 +125,12 @@ def generate_html_report(
                 <strong>✓ Fortalezas:</strong>
                 <ul>
 """
-        if analysis['strengths']:
-            for s in analysis['strengths']:
+        if analysis["strengths"]:
+            for s in analysis["strengths"]:
                 html += f"<li>{s}</li>"
         else:
             html += "<li>Ninguna destacada</li>"
-        
+
         html += """
                 </ul>
             </div>
@@ -134,25 +138,28 @@ def generate_html_report(
                 <strong>✗ Debilidades:</strong>
                 <ul>
 """
-        if analysis['weaknesses']:
-            for w in analysis['weaknesses']:
+        if analysis["weaknesses"]:
+            for w in analysis["weaknesses"]:
                 html += f"<li>{w}</li>"
         else:
             html += "<li>Ninguna crítica</li>"
-        
+
         html += """
                 </ul>
             </div>
         </div>
 """
-    
+
     # Chart data
-    labels = [item['url'][:30] + '...' if len(item['url']) > 30 else item['url'] for item in all_scores]
-    structure_data = [item['scores']['structure'] for item in all_scores]
-    content_data = [item['scores']['content'] for item in all_scores]
-    eeat_data = [item['scores']['eeat'] for item in all_scores]
-    schema_data = [item['scores']['schema'] for item in all_scores]
-    
+    labels = [
+        item["url"][:30] + "..." if len(item["url"]) > 30 else item["url"]
+        for item in all_scores
+    ]
+    structure_data = [item["scores"]["structure"] for item in all_scores]
+    content_data = [item["scores"]["content"] for item in all_scores]
+    eeat_data = [item["scores"]["eeat"] for item in all_scores]
+    schema_data = [item["scores"]["schema"] for item in all_scores]
+
     html += f"""
     </div>
     
@@ -218,6 +225,6 @@ def generate_html_report(
 </body>
 </html>
 """
-    
-    with open(output_path, 'w', encoding='utf-8') as f:
+
+    with open(output_path, "w", encoding="utf-8") as f:
         f.write(html)

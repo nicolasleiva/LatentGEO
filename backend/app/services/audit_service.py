@@ -1,22 +1,21 @@
 """
 Servicio de Auditoría - Lógica principal
 """
-from sqlalchemy.orm import Session
-from sqlalchemy import desc, or_
-from datetime import datetime, timezone
-from typing import List, Optional, Dict, Any
 import json
 import os
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional
 from urllib.parse import urlparse
 
-from ..models import Audit, AuditedPage, Report, Competitor, AuditStatus, CrawlJob
-from ..schemas import AuditCreate, AuditSummary, AuditDetail
+from sqlalchemy import desc, or_
+from sqlalchemy.orm import Session
+
 from ..core.config import settings
 from ..core.logger import get_logger
+from ..models import Audit, AuditedPage, AuditStatus, Competitor, Report
+from ..schemas import AuditCreate
 
 # Importar servicios adicionales
-from .crawler_service import CrawlerService
-from .audit_local_service import AuditLocalService
 from .pipeline_service import PipelineService
 
 logger = get_logger(__name__)
@@ -40,11 +39,11 @@ class AuditService:
     def create_audit(db: Session, audit_create: AuditCreate) -> Audit:
         """Crear nueva auditoría con prevención de duplicados (Level 3)"""
         url = str(audit_create.url)
-        
+
         # Level 3: Idempotency - Check for active audits for this URL
         query = db.query(Audit).filter(
             Audit.url == url,
-            Audit.status.in_([AuditStatus.PENDING, AuditStatus.RUNNING])
+            Audit.status.in_([AuditStatus.PENDING, AuditStatus.RUNNING]),
         )
         owner_filter = AuditService._build_owner_filter(
             audit_create.user_id, audit_create.user_email
@@ -52,13 +51,15 @@ class AuditService:
         if owner_filter is not None:
             query = query.filter(owner_filter)
         active_audit = query.first()
-        
+
         if active_audit:
             logger.info(f"Audit already active for {url}: {active_audit.id}")
             return active_audit
 
         parsed_url = urlparse(url if "://" in url else f"https://{url}")
-        host = (parsed_url.hostname or parsed_url.netloc or "").strip().lower().strip(".")
+        host = (
+            (parsed_url.hostname or parsed_url.netloc or "").strip().lower().strip(".")
+        )
         if host.startswith("www."):
             host = host[4:]
         domain = host
@@ -72,7 +73,7 @@ class AuditService:
             market=audit_create.market,
             source=audit_create.source,
             user_id=audit_create.user_id,
-            user_email=audit_create.user_email
+            user_email=audit_create.user_email,
         )
         db.add(audit)
         db.flush()
@@ -82,29 +83,32 @@ class AuditService:
         # Level 2: Invalidate list cache for this user
         if audit.user_email:
             from .cache_service import cache
+
             cache.delete(f"audits_list_{audit.user_email}")
 
-        logger.info(f"Auditoría creada: {audit.id} para {url}, user: {audit_create.user_email}")
+        logger.info(
+            f"Auditoría creada: {audit.id} para {url}, user: {audit_create.user_email}"
+        )
         return audit
 
     @staticmethod
     def get_audit(db: Session, audit_id: int) -> Optional[Audit]:
         """Obtener auditoría por ID con caching (Level 2)"""
         # Level 2 Caching: Use CacheService for frequent reads
-        from .cache_service import cache
-        cache_key = f"audit_detail_{audit_id}"
-        
+
         # We can't easily cache SQLAlchemy models, so we only cache if COMPLETED/FAILED
         audit = db.query(Audit).filter(Audit.id == audit_id).first()
-        
+
         if audit:
             # Check if we should enrich with PDF path
-            pdf_report = db.query(Report).filter(
-                Report.audit_id == audit_id,
-                Report.report_type == "PDF"
-            ).order_by(desc(Report.created_at)).first()
+            pdf_report = (
+                db.query(Report)
+                .filter(Report.audit_id == audit_id, Report.report_type == "PDF")
+                .order_by(desc(Report.created_at))
+                .first()
+            )
             audit.report_pdf_path = pdf_report.file_path if pdf_report else None
-            
+
         return audit
 
     @staticmethod
@@ -117,37 +121,33 @@ class AuditService:
     ) -> List[Audit]:
         """Obtener lista de auditorías con paginación y filtro opcional por usuario"""
         query = db.query(Audit)
-        
+
         # Filtrar por usuario si se proporciona
         owner_filter = AuditService._build_owner_filter(user_id, user_email)
         if owner_filter is not None:
             query = query.filter(owner_filter)
-        
-        audits = (
-            query
-            .order_by(desc(Audit.created_at))
-            .offset(skip)
-            .limit(limit)
-            .all()
-        )
-        
+
+        audits = query.order_by(desc(Audit.created_at)).offset(skip).limit(limit).all()
+
         # Optimización: Cargar PDFs en una sola query
         if audits:
             audit_ids = [a.id for a in audits]
-            pdf_reports = db.query(Report).filter(
-                Report.audit_id.in_(audit_ids),
-                Report.report_type == "PDF"
-            ).order_by(desc(Report.created_at)).all()
-            
+            pdf_reports = (
+                db.query(Report)
+                .filter(Report.audit_id.in_(audit_ids), Report.report_type == "PDF")
+                .order_by(desc(Report.created_at))
+                .all()
+            )
+
             # Mapear PDFs a audits
             pdf_map = {}
             for pdf in pdf_reports:
                 if pdf.audit_id not in pdf_map:
                     pdf_map[pdf.audit_id] = pdf.file_path
-            
+
             for audit in audits:
                 audit.report_pdf_path = pdf_map.get(audit.id)
-        
+
         return audits
 
     @staticmethod
@@ -196,18 +196,21 @@ class AuditService:
 
         db.commit()
         db.refresh(audit)
-        
+
         # Level 2/3: Broadcast progress via Redis Pub/Sub
         try:
             from .cache_service import cache
+
             if cache.enabled:
                 progress_msg = {
                     "audit_id": audit_id,
                     "progress": audit.progress,
                     "status": audit.status.value if audit.status else None,
-                    "error_message": audit.error_message
+                    "error_message": audit.error_message,
                 }
-                cache.redis_client.publish(f"audit_progress_{audit_id}", json.dumps(progress_msg))
+                cache.redis_client.publish(
+                    f"audit_progress_{audit_id}", json.dumps(progress_msg)
+                )
         except Exception as e:
             logger.error(f"Error publishing progress to Redis: {e}")
 
@@ -245,8 +248,12 @@ class AuditService:
             try:
                 sanitized = {}
                 for key, val in value.items():
-                    safe_key = key if isinstance(key, (str, int, float, bool)) else str(key)
-                    sanitized[str(safe_key)] = AuditService._sanitize_json_value(val, _stack)
+                    safe_key = (
+                        key if isinstance(key, (str, int, float, bool)) else str(key)
+                    )
+                    sanitized[str(safe_key)] = AuditService._sanitize_json_value(
+                        val, _stack
+                    )
                 return sanitized
             finally:
                 _stack.discard(obj_id)
@@ -254,15 +261,19 @@ class AuditService:
         if isinstance(value, (list, tuple, set)):
             _stack.add(obj_id)
             try:
-                return [AuditService._sanitize_json_value(item, _stack) for item in value]
+                return [
+                    AuditService._sanitize_json_value(item, _stack) for item in value
+                ]
             finally:
                 _stack.discard(obj_id)
 
         for attr in ("model_dump", "dict"):
             if hasattr(value, attr) and callable(getattr(value, attr)):
                 try:
-                    return AuditService._sanitize_json_value(getattr(value, attr)(), _stack)
-                except Exception:
+                    return AuditService._sanitize_json_value(
+                        getattr(value, attr)(), _stack
+                    )
+                except Exception:  # nosec B110
                     pass
 
         return str(value)
@@ -301,7 +312,9 @@ class AuditService:
         pagespeed_data = pagespeed_data or {}
 
         safe_target_audit = AuditService._sanitize_json_value(target_audit)
-        safe_external_intelligence = AuditService._sanitize_json_value(external_intelligence)
+        safe_external_intelligence = AuditService._sanitize_json_value(
+            external_intelligence
+        )
         safe_search_results = AuditService._sanitize_json_value(search_results)
         safe_competitor_audits = AuditService._sanitize_json_value(competitor_audits)
         safe_fix_plan = AuditService._sanitize_json_value(fix_plan)
@@ -370,12 +383,9 @@ class AuditService:
 
         # Persist inferred market when missing (avoid empty Market Context)
         try:
-            market_value = (
-                PipelineService._normalize_market_value(
-                    external_intelligence.get("market")
-                )
-                or PipelineService._normalize_market_value(target_audit.get("market"))
-            )
+            market_value = PipelineService._normalize_market_value(
+                external_intelligence.get("market")
+            ) or PipelineService._normalize_market_value(target_audit.get("market"))
             if not market_value:
                 market_value = PipelineService._infer_market_from_url(audit.url)
             if market_value and not audit.market:
@@ -384,15 +394,19 @@ class AuditService:
             logger.warning(f"No se pudo inferir mercado para audit {audit_id}: {e}")
 
         # Contar issues reales desde las páginas auditadas (Más preciso para el dashboard)
-        saved_pages = db.query(AuditedPage).filter(AuditedPage.audit_id == audit_id).all()
-        
+        saved_pages = (
+            db.query(AuditedPage).filter(AuditedPage.audit_id == audit_id).all()
+        )
+
         if saved_pages:
             audit.total_pages = len(saved_pages)
             audit.critical_issues = sum(p.critical_issues for p in saved_pages)
             audit.high_issues = sum(p.high_issues for p in saved_pages)
             audit.medium_issues = sum(p.medium_issues for p in saved_pages)
             audit.low_issues = sum(p.low_issues for p in saved_pages)
-            logger.info(f"Issues calculados desde {len(saved_pages)} páginas: C={audit.critical_issues}, H={audit.high_issues}")
+            logger.info(
+                f"Issues calculados desde {len(saved_pages)} páginas: C={audit.critical_issues}, H={audit.high_issues}"
+            )
         else:
             # Fallback a fix_plan si no hay páginas guardadas
             fix_plan_list = fix_plan if isinstance(fix_plan, list) else []
@@ -405,8 +419,10 @@ class AuditService:
             audit.medium_issues = len(
                 [f for f in fix_plan_list if f.get("priority") == "MEDIUM"]
             )
-            audit.low_issues = len([f for f in fix_plan_list if f.get("priority") == "LOW"])
-        
+            audit.low_issues = len(
+                [f for f in fix_plan_list if f.get("priority") == "LOW"]
+            )
+
         # Guardar competidores con GEO scores calculados
         for comp_data in safe_competitor_audits:
             if isinstance(comp_data, dict) and comp_data.get("url"):
@@ -417,10 +433,12 @@ class AuditService:
                         audit_id=audit_id,
                         url=comp_data.get("url"),
                         geo_score=0,  # Se calculará automáticamente
-                        audit_data=comp_data
+                        audit_data=comp_data,
                     )
                 except Exception as e:
-                    logger.error(f"Error guardando competidor {comp_data.get('url')}: {e}")
+                    logger.error(
+                        f"Error guardando competidor {comp_data.get('url')}: {e}"
+                    )
 
         # Guardar JSONs como en ag2_pipeline.py
         await AuditService._save_audit_files(
@@ -434,7 +452,7 @@ class AuditService:
             keywords,
             backlinks,
             rankings,
-            llm_visibility
+            llm_visibility,
         )
 
         db.commit()
@@ -459,15 +477,25 @@ class AuditService:
         """Guardar archivos JSON de auditoría como en ag2_pipeline.py"""
         try:
             safe_target_audit = AuditService._sanitize_json_value(target_audit)
-            safe_external_intelligence = AuditService._sanitize_json_value(external_intelligence or {})
-            safe_search_results = AuditService._sanitize_json_value(search_results or {})
-            safe_competitor_audits = AuditService._sanitize_json_value(competitor_audits or [])
+            safe_external_intelligence = AuditService._sanitize_json_value(
+                external_intelligence or {}
+            )
+            safe_search_results = AuditService._sanitize_json_value(
+                search_results or {}
+            )
+            safe_competitor_audits = AuditService._sanitize_json_value(
+                competitor_audits or []
+            )
             safe_fix_plan = AuditService._sanitize_json_value(fix_plan or [])
-            safe_pagespeed_data = AuditService._sanitize_json_value(pagespeed_data or {})
+            safe_pagespeed_data = AuditService._sanitize_json_value(
+                pagespeed_data or {}
+            )
             safe_keywords = AuditService._sanitize_json_value(keywords or [])
             safe_backlinks = AuditService._sanitize_json_value(backlinks or [])
             safe_rankings = AuditService._sanitize_json_value(rankings or [])
-            safe_llm_visibility = AuditService._sanitize_json_value(llm_visibility or [])
+            safe_llm_visibility = AuditService._sanitize_json_value(
+                llm_visibility or []
+            )
 
             if not isinstance(safe_competitor_audits, list):
                 safe_competitor_audits = []
@@ -475,7 +503,9 @@ class AuditService:
                 safe_fix_plan = []
 
             # Crear directorio de reportes
-            reports_dir = os.path.join(settings.REPORTS_DIR or "reports", f"audit_{audit_id}")
+            reports_dir = os.path.join(
+                settings.REPORTS_DIR or "reports", f"audit_{audit_id}"
+            )
             pages_dir = os.path.join(reports_dir, "pages")
             competitors_dir = os.path.join(reports_dir, "competitors")
             os.makedirs(reports_dir, exist_ok=True)
@@ -485,61 +515,63 @@ class AuditService:
 
             # Guardar resumen agregado
             aggregated_path = os.path.join(reports_dir, "aggregated_summary.json")
-            with open(aggregated_path, 'w', encoding='utf-8') as f:
+            with open(aggregated_path, "w", encoding="utf-8") as f:
                 json.dump(safe_target_audit, f, ensure_ascii=False, indent=2)
 
             # Guardar fix_plan
             fix_plan_path = os.path.join(reports_dir, "fix_plan.json")
-            with open(fix_plan_path, 'w', encoding='utf-8') as f:
+            with open(fix_plan_path, "w", encoding="utf-8") as f:
                 json.dump(safe_fix_plan, f, ensure_ascii=False, indent=2)
 
             # Guardar PageSpeed
             if pagespeed_data:
                 pagespeed_path = os.path.join(reports_dir, "pagespeed.json")
-                with open(pagespeed_path, 'w', encoding='utf-8') as f:
+                with open(pagespeed_path, "w", encoding="utf-8") as f:
                     json.dump(safe_pagespeed_data, f, ensure_ascii=False, indent=2)
 
             # Guardar Keywords
             if keywords:
                 keywords_path = os.path.join(reports_dir, "keywords.json")
-                with open(keywords_path, 'w', encoding='utf-8') as f:
+                with open(keywords_path, "w", encoding="utf-8") as f:
                     json.dump(safe_keywords, f, ensure_ascii=False, indent=2)
 
             # Guardar Backlinks
             if backlinks:
                 backlinks_path = os.path.join(reports_dir, "backlinks.json")
-                with open(backlinks_path, 'w', encoding='utf-8') as f:
+                with open(backlinks_path, "w", encoding="utf-8") as f:
                     json.dump(safe_backlinks, f, ensure_ascii=False, indent=2)
 
             # Guardar Rankings
             if rankings:
                 rankings_path = os.path.join(reports_dir, "rankings.json")
-                with open(rankings_path, 'w', encoding='utf-8') as f:
+                with open(rankings_path, "w", encoding="utf-8") as f:
                     json.dump(safe_rankings, f, ensure_ascii=False, indent=2)
 
             # Guardar LLM Visibility
             if llm_visibility:
                 visibility_path = os.path.join(reports_dir, "llm_visibility.json")
-                with open(visibility_path, 'w', encoding='utf-8') as f:
+                with open(visibility_path, "w", encoding="utf-8") as f:
                     json.dump(safe_llm_visibility, f, ensure_ascii=False, indent=2)
 
             # Guardar competidores individuales
             for i, comp in enumerate(safe_competitor_audits):
                 try:
-                    domain = comp.get('domain') or f"competitor_{i}"
-                    safe_domain = re.sub(r'[^\w\-_.]', '_', domain)
+                    domain = comp.get("domain") or f"competitor_{i}"
+                    safe_domain = re.sub(r"[^\w\-_.]", "_", domain)
                     if not comp.get("geo_score"):
                         comp["geo_score"] = CompetitorService._calculate_geo_score(comp)
                     if "benchmark" not in comp:
                         comp["benchmark"] = CompetitorService._format_competitor_data(
                             comp, comp.get("geo_score", 0.0), comp.get("url")
                         )
-                    comp_path = os.path.join(competitors_dir, f"competitor_{safe_domain}.json")
-                    with open(comp_path, 'w', encoding='utf-8') as f:
+                    comp_path = os.path.join(
+                        competitors_dir, f"competitor_{safe_domain}.json"
+                    )
+                    with open(comp_path, "w", encoding="utf-8") as f:
                         json.dump(comp, f, ensure_ascii=False, indent=2)
-                except:
+                except Exception:  # nosec B110
                     pass
-            
+
             # Guardar contexto final del LLM
             final_context = {
                 "target_audit": safe_target_audit,
@@ -550,20 +582,22 @@ class AuditService:
                 "keywords": safe_keywords,
                 "backlinks": safe_backlinks,
                 "rank_tracking": safe_rankings,
-                "llm_visibility": safe_llm_visibility
+                "llm_visibility": safe_llm_visibility,
             }
             context_path = os.path.join(reports_dir, "final_llm_context.json")
-            with open(context_path, 'w', encoding='utf-8') as f:
+            with open(context_path, "w", encoding="utf-8") as f:
                 json.dump(final_context, f, ensure_ascii=False, indent=2)
 
             # Guardar fix plan
             fix_plan_path = os.path.join(reports_dir, "fix_plan.json")
-            with open(fix_plan_path, 'w', encoding='utf-8') as f:
+            with open(fix_plan_path, "w", encoding="utf-8") as f:
                 json.dump(fix_plan, f, ensure_ascii=False, indent=2)
 
             logger.info(f"Archivos JSON guardados en {reports_dir}")
         except Exception as e:
-            logger.error(f"Error guardando archivos JSON para auditoría {audit_id}: {e}")
+            logger.error(
+                f"Error guardando archivos JSON para auditoría {audit_id}: {e}"
+            )
 
     @staticmethod
     def save_page_audit(
@@ -571,28 +605,36 @@ class AuditService:
         audit_id: int,
         page_url: str,
         audit_data: Dict[str, Any],
-        page_index: int = 0
+        page_index: int = 0,
     ) -> AuditedPage:
         """Guardar auditoría de página individual como en ag2_pipeline.py"""
         try:
             safe_audit_data = AuditService._sanitize_json_value(audit_data or {})
 
             # Crear directorio de páginas
-            reports_dir = os.path.join(settings.REPORTS_DIR or "reports", f"audit_{audit_id}")
+            reports_dir = os.path.join(
+                settings.REPORTS_DIR or "reports", f"audit_{audit_id}"
+            )
             pages_dir = os.path.join(reports_dir, "pages")
             os.makedirs(pages_dir, exist_ok=True)
 
             # Generar nombre de archivo seguro
             import re
-            safe_filename = re.sub(r"https?://", "", page_url).replace("/", "_").replace(":", "_")
-            page_json_path = os.path.join(pages_dir, f"report_{page_index}_{safe_filename}.json")
+
+            safe_filename = (
+                re.sub(r"https?://", "", page_url).replace("/", "_").replace(":", "_")
+            )
+            page_json_path = os.path.join(
+                pages_dir, f"report_{page_index}_{safe_filename}.json"
+            )
 
             # Guardar JSON de la página
-            with open(page_json_path, 'w', encoding='utf-8') as f:
+            with open(page_json_path, "w", encoding="utf-8") as f:
                 json.dump(safe_audit_data, f, ensure_ascii=False, indent=2)
 
             # Extraer path de la URL
             from urllib.parse import urlparse
+
             parsed_url = urlparse(page_url)
             path = parsed_url.path or "/"
 
@@ -606,7 +648,7 @@ class AuditService:
                 url=page_url,
                 path=path,
                 audit_data=safe_audit_data,
-                overall_score=overall_score
+                overall_score=overall_score,
             )
 
             logger.info(f"Página auditada guardada: {page_url} -> {page_json_path}")
@@ -626,24 +668,24 @@ class AuditService:
             content = AuditService._extract_content_score(audit_data)
             eeat = AuditService._extract_eeat_score(audit_data)
             schema = AuditService._extract_schema_score(audit_data)
-            
+
             # Pesos para el promedio ponderado
             weights = {
                 "h1": 0.15,
                 "structure": 0.20,
                 "content": 0.20,
                 "eeat": 0.25,
-                "schema": 0.20
+                "schema": 0.20,
             }
-            
+
             overall = (
-                h1 * weights["h1"] +
-                structure * weights["structure"] +
-                content * weights["content"] +
-                eeat * weights["eeat"] +
-                schema * weights["schema"]
+                h1 * weights["h1"]
+                + structure * weights["structure"]
+                + content * weights["content"]
+                + eeat * weights["eeat"]
+                + schema * weights["schema"]
             )
-            
+
             return round(overall, 1)
         except Exception as e:
             logger.error(f"Error en _calculate_overall_score: {e}")
@@ -666,10 +708,10 @@ class AuditService:
         content_score = AuditService._extract_content_score(audit_data)
         eeat_score = AuditService._extract_eeat_score(audit_data)
         schema_score = AuditService._extract_schema_score(audit_data)
-        
+
         # Contar issues por severidad
         critical, high, medium, low = AuditService._count_page_issues(audit_data)
-        
+
         page = AuditedPage(
             audit_id=audit_id,
             url=url,
@@ -690,42 +732,50 @@ class AuditService:
         db.commit()
         db.refresh(page)
         return page
-    
+
     @staticmethod
     def _extract_h1_score(audit_data: Dict[str, Any]) -> float:
         try:
             h1_check = audit_data.get("structure", {}).get("h1_check", {})
             return 100.0 if h1_check.get("status") == "pass" else 0.0
-        except:
+        except Exception:
             return 0.0
-    
+
     @staticmethod
     def _extract_structure_score(audit_data: Dict[str, Any]) -> float:
         try:
-            return audit_data.get("structure", {}).get("semantic_html", {}).get("score_percent", 0)
-        except:
+            return (
+                audit_data.get("structure", {})
+                .get("semantic_html", {})
+                .get("score_percent", 0)
+            )
+        except Exception:
             return 0.0
-    
+
     @staticmethod
     def _extract_content_score(audit_data: Dict[str, Any]) -> float:
         try:
-            tone = audit_data.get("content", {}).get("conversational_tone", {}).get("score", 0)
+            tone = (
+                audit_data.get("content", {})
+                .get("conversational_tone", {})
+                .get("score", 0)
+            )
             return tone * 10  # Normalizar a 100
-        except:
+        except Exception:
             return 0.0
-    
+
     @staticmethod
     def _extract_eeat_score(audit_data: Dict[str, Any]) -> float:
         try:
             eeat = audit_data.get("eeat", {})
             scores = []
-            
+
             # 1. Autor (40%)
             if eeat.get("author_presence", {}).get("status") == "pass":
                 scores.append(100)
             else:
                 scores.append(0)
-            
+
             # 2. Citaciones/Fuentes (30%)
             citations = eeat.get("citations_and_sources", {})
             if citations.get("authoritative_links", 0) > 0:
@@ -734,19 +784,21 @@ class AuditService:
                 scores.append(60)
             else:
                 scores.append(20)
-                
+
             # 3. Transparencia (30%)
             transp = eeat.get("transparency_signals", {})
-            transp_score = sum(1 for v in transp.values() if v) / max(1, len(transp)) * 100
+            transp_score = (
+                sum(1 for v in transp.values() if v) / max(1, len(transp)) * 100
+            )
             scores.append(transp_score)
-            
+
             weights = [0.4, 0.3, 0.3]
             weighted_score = sum(s * w for s, w in zip(scores, weights))
-            
+
             return round(weighted_score, 1)
-        except:
+        except Exception:
             return 0.0
-    
+
     @staticmethod
     def _extract_schema_score(audit_data: Dict[str, Any]) -> float:
         try:
@@ -758,13 +810,13 @@ class AuditService:
                 if not types:
                     # Fallback si por alguna razón no está en schema_types pero hay bloques
                     types = schema_data.get("types", [])
-                
+
                 types_count = len(types)
                 return min(100, max(20, types_count * 20))  # Mínimo 20 si está presente
             return 0.0
-        except:
+        except Exception:
             return 0.0
-    
+
     @staticmethod
     def _count_page_issues(audit_data: Dict[str, Any]) -> tuple:
         critical = high = medium = low = 0
@@ -777,7 +829,7 @@ class AuditService:
                 critical += 1
             elif h1_status in ["multiple", "warn"]:
                 high += 1
-            
+
             # Title missing/empty is CRITICAL, too long/short is MEDIUM
             title_status = struct.get("title_check", {}).get("status")
             if title_status == "missing" or title_status == "empty":
@@ -794,21 +846,23 @@ class AuditService:
 
             # 2. Schema (GEO Critical)
             # Missing schema is CRITICAL for GEO
-            schema_status = audit_data.get("schema", {}).get("schema_presence", {}).get("status")
+            schema_status = (
+                audit_data.get("schema", {}).get("schema_presence", {}).get("status")
+            )
             if schema_status != "present":
                 critical += 1
-            
+
             # 3. EEAT (High Impact)
             # Author missing is HIGH
             eeat = audit_data.get("eeat", {})
             if eeat.get("author_presence", {}).get("status") != "pass":
                 high += 1
-            
+
             # 4. Content Quality
             content = audit_data.get("content", {})
             if content.get("conversational_tone", {}).get("score", 10) < 5:
                 medium += 1
-            
+
             # 5. Images
             img_status = struct.get("image_alt_check", {}).get("status")
             if img_status == "missing_alts":
@@ -820,7 +874,7 @@ class AuditService:
 
         except Exception as e:
             logger.error(f"Error contando issues de página: {e}")
-        
+
         return critical, high, medium, low
 
     @staticmethod
@@ -856,18 +910,20 @@ class AuditService:
         running = base_query.filter(Audit.status == AuditStatus.RUNNING).count()
         failed = base_query.filter(Audit.status == AuditStatus.FAILED).count()
         pending = base_query.filter(Audit.status == AuditStatus.PENDING).count()
-        
+
         return {
             "total_audits": total,
             "completed": completed,
             "running": running,
             "failed": failed,
             "pending": pending,
-            "success_rate": round((completed / max(1, total)) * 100, 2)
+            "success_rate": round((completed / max(1, total)) * 100, 2),
         }
-    
+
     @staticmethod
-    def set_pagespeed_data(db: Session, audit_id: int, pagespeed_data: Dict[str, Any]) -> Audit:
+    def set_pagespeed_data(
+        db: Session, audit_id: int, pagespeed_data: Dict[str, Any]
+    ) -> Audit:
         """Store PageSpeed data in audit record"""
         audit = db.query(Audit).filter(Audit.id == audit_id).first()
         if audit:
@@ -878,18 +934,18 @@ class AuditService:
         else:
             logger.warning(f"Audit {audit_id} not found for PageSpeed data storage")
         return audit
-    
+
     @staticmethod
     def get_pagespeed_data(db: Session, audit_id: int) -> Optional[Dict[str, Any]]:
         """Retrieve PageSpeed data from audit record"""
         audit = db.query(Audit).filter(Audit.id == audit_id).first()
         return audit.pagespeed_data if audit else None
-    
+
     @staticmethod
     def get_complete_audit_context(db: Session, audit_id: int) -> Dict[str, Any]:
         """
         Get complete audit context for LLM/GitHub App.
-        
+
         Returns all available data:
         - target_audit
         - external_intelligence
@@ -906,63 +962,73 @@ class AuditService:
         if not audit:
             logger.warning(f"Audit {audit_id} not found for complete context")
             return {}
-        
+
         # Load related data
         keywords = []
         for k in audit.keywords:
-            keywords.append({
-                "term": k.term,
-                "keyword": k.term,
-                "search_volume": k.volume,
-                "volume": k.volume,
-                "difficulty": k.difficulty,
-                "cpc": k.cpc,
-                "intent": k.intent
-            })
-        
+            keywords.append(
+                {
+                    "term": k.term,
+                    "keyword": k.term,
+                    "search_volume": k.volume,
+                    "volume": k.volume,
+                    "difficulty": k.difficulty,
+                    "cpc": k.cpc,
+                    "intent": k.intent,
+                }
+            )
+
         backlinks_list = []
         for b in audit.backlinks:
-            backlinks_list.append({
-                "source_url": b.source_url,
-                "target_url": b.target_url,
-                "anchor_text": b.anchor_text,
-                "domain_authority": b.domain_authority,
-                "authority": b.domain_authority,
-                "da": b.domain_authority,
-                "is_dofollow": b.is_dofollow
-            })
-        
+            backlinks_list.append(
+                {
+                    "source_url": b.source_url,
+                    "target_url": b.target_url,
+                    "anchor_text": b.anchor_text,
+                    "domain_authority": b.domain_authority,
+                    "authority": b.domain_authority,
+                    "da": b.domain_authority,
+                    "is_dofollow": b.is_dofollow,
+                }
+            )
+
         rank_tracking = []
         for r in audit.rank_trackings:
-            rank_tracking.append({
-                "keyword": r.keyword,
-                "position": r.position,
-                "rank": r.position,
-                "url": r.url,
-                "device": r.device,
-                "location": r.location
-            })
-        
+            rank_tracking.append(
+                {
+                    "keyword": r.keyword,
+                    "position": r.position,
+                    "rank": r.position,
+                    "url": r.url,
+                    "device": r.device,
+                    "location": r.location,
+                }
+            )
+
         llm_visibility = []
-        for l in audit.llm_visibilities:
-            llm_visibility.append({
-                "query": l.query,
-                "llm_name": l.llm_name,
-                "is_visible": l.is_visible,
-                "rank": l.rank,
-                "citation_text": l.citation_text
-            })
-        
+        for visibility in audit.llm_visibilities:
+            llm_visibility.append(
+                {
+                    "query": visibility.query,
+                    "llm_name": visibility.llm_name,
+                    "is_visible": visibility.is_visible,
+                    "rank": visibility.rank,
+                    "citation_text": visibility.citation_text,
+                }
+            )
+
         ai_content = []
         for a in audit.ai_content_suggestions:
-            ai_content.append({
-                "topic": a.topic,
-                "suggestion_type": a.suggestion_type,
-                "content_outline": a.content_outline,
-                "priority": a.priority,
-                "page_url": a.page_url
-            })
-        
+            ai_content.append(
+                {
+                    "topic": a.topic,
+                    "suggestion_type": a.suggestion_type,
+                    "content_outline": a.content_outline,
+                    "priority": a.priority,
+                    "page_url": a.page_url,
+                }
+            )
+
         context = {
             "target_audit": audit.target_audit or {},
             "external_intelligence": audit.external_intelligence or {},
@@ -973,9 +1039,9 @@ class AuditService:
             "backlinks": {"items": backlinks_list, "total": len(backlinks_list)},
             "rank_tracking": {"items": rank_tracking, "total": len(rank_tracking)},
             "llm_visibility": {"items": llm_visibility, "total": len(llm_visibility)},
-            "ai_content_suggestions": {"items": ai_content, "total": len(ai_content)}
+            "ai_content_suggestions": {"items": ai_content, "total": len(ai_content)},
         }
-        
+
         logger.info(f"Complete context loaded for audit {audit_id}")
         return context
 
@@ -989,7 +1055,7 @@ class AuditService:
         try:
             parsed = json.loads(cleaned)
             return parsed if isinstance(parsed, dict) else None
-        except Exception:
+        except Exception:  # nosec B110
             pass
         start = cleaned.find("{")
         end = cleaned.rfind("}")
@@ -1003,7 +1069,9 @@ class AuditService:
         return None
 
     @staticmethod
-    def _build_pages_data_for_product_intel(pages: List[AuditedPage]) -> List[Dict[str, Any]]:
+    def _build_pages_data_for_product_intel(
+        pages: List[AuditedPage],
+    ) -> List[Dict[str, Any]]:
         pages_data: List[Dict[str, Any]] = []
         for page in pages:
             try:
@@ -1013,9 +1081,7 @@ class AuditService:
                     else page.audit_data or {}
                 )
                 schema_info = (
-                    page_data.get("schema", {})
-                    if isinstance(page_data, dict)
-                    else {}
+                    page_data.get("schema", {}) if isinstance(page_data, dict) else {}
                 )
                 schemas = []
 
@@ -1042,7 +1108,7 @@ class AuditService:
                                         "properties": parsed,
                                     }
                                 )
-                        except Exception:
+                        except Exception:  # nosec B112
                             continue
 
                 if not schemas:
@@ -1057,9 +1123,7 @@ class AuditService:
                         "title", ""
                     )
 
-                pages_data.append(
-                    {"url": page.url, "title": title, "schemas": schemas}
-                )
+                pages_data.append({"url": page.url, "title": title, "schemas": schemas})
             except Exception:
                 pages_data.append({"url": page.url, "title": "", "schemas": []})
         return pages_data
@@ -1085,9 +1149,10 @@ class AuditService:
         product_intelligence_data: Dict[str, Any] = {}
         try:
             from dataclasses import asdict
+
+            from ..core.llm_kimi import get_llm_function
             from .product_intelligence_service import ProductIntelligenceService
             from .prompt_loader import get_prompt_loader
-            from ..core.llm_kimi import get_llm_function
 
             llm_function = get_llm_function()
             pages = AuditService.get_audited_pages(db, audit_id)
@@ -1137,7 +1202,9 @@ class AuditService:
                 tech_stack="unknown",
             )
 
-            raw = await llm_function(system_prompt=system_prompt, user_prompt=user_prompt)
+            raw = await llm_function(
+                system_prompt=system_prompt, user_prompt=user_prompt
+            )
             parsed = AuditService._safe_json_dict(raw or "")
             if parsed and isinstance(parsed.get("fix_plan"), list):
                 llm_fix_plan = parsed.get("fix_plan") or []
@@ -1308,11 +1375,15 @@ class AuditService:
             logo_url_value = str(schema_value.get("logo_url") or "").strip()
             same_as_value = schema_value.get("same_as") or []
             if isinstance(same_as_value, str):
-                same_as_value = [v.strip() for v in same_as_value.split(",") if v.strip()]
+                same_as_value = [
+                    v.strip() for v in same_as_value.split(",") if v.strip()
+                ]
             same_as_text = ", ".join([v for v in same_as_value if isinstance(v, str)])
 
             missing_required = not org_name_value
-            missing_optional = not org_url_value or not logo_url_value or not same_as_text
+            missing_optional = (
+                not org_url_value or not logo_url_value or not same_as_text
+            )
 
             if missing_required or missing_optional:
                 org_name = audit.domain or "Organization"
@@ -1553,7 +1624,9 @@ class AuditService:
                 if h1_text:
                     h1_inputs[page_path] = h1_text
 
-            if issue_code.startswith("SCHEMA_") or issue_code.startswith("PRODUCT_SCHEMA_"):
+            if issue_code.startswith("SCHEMA_") or issue_code.startswith(
+                "PRODUCT_SCHEMA_"
+            ):
                 same_as = values.get("same_as") or []
                 if isinstance(same_as, str):
                     same_as = [v.strip() for v in same_as.split(",") if v.strip()]
@@ -1587,7 +1660,11 @@ class AuditService:
                                     "answer": answer_text,
                                 }
                             )
-                faq_items = [item for item in faq_items if item.get("question") and item.get("answer")]
+                faq_items = [
+                    item
+                    for item in faq_items
+                    if item.get("question") and item.get("answer")
+                ]
                 if faq_items:
                     faq_value = faq_items
 
@@ -1605,7 +1682,9 @@ class AuditService:
                     new_item["recommended_value"] = h1_inputs[item_path]
                     h1_fallback_used = True
 
-            if item_code.startswith("SCHEMA_") or item_code.startswith("PRODUCT_SCHEMA_"):
+            if item_code.startswith("SCHEMA_") or item_code.startswith(
+                "PRODUCT_SCHEMA_"
+            ):
                 if schema_value:
                     new_item["recommended_value"] = schema_value
 
@@ -1621,7 +1700,12 @@ class AuditService:
 
         if h1_inputs and not h1_fallback_used:
             for item in updated_fix_plan:
-                if (item.get("issue_code") or "").upper().strip().startswith("H1_MISSING"):
+                if (
+                    (item.get("issue_code") or "")
+                    .upper()
+                    .strip()
+                    .startswith("H1_MISSING")
+                ):
                     item["recommended_value"] = next(iter(h1_inputs.values()))
                     break
 
@@ -1730,9 +1814,7 @@ class CompetitorService:
 
             # 1) Schema presence (weight 30)
             schema_status = (
-                audit_data.get("schema", {})
-                .get("schema_presence", {})
-                .get("status")
+                audit_data.get("schema", {}).get("schema_presence", {}).get("status")
             )
             if schema_status is not None:
                 _add_metric(100.0 if schema_status == "present" else 0.0, 30.0)
@@ -1755,9 +1837,7 @@ class CompetitorService:
 
             # 3) E-E-A-T Author presence (weight 20)
             author_status = (
-                audit_data.get("eeat", {})
-                .get("author_presence", {})
-                .get("status")
+                audit_data.get("eeat", {}).get("author_presence", {}).get("status")
             )
             if author_status is not None:
                 _add_metric(100.0 if author_status == "pass" else 0.0, 20.0)
@@ -1780,7 +1860,9 @@ class CompetitorService:
                 return 0.0
 
             total_weight = sum(weight for _, weight in weights)
-            total_score = sum(score * weight for score, weight in weights) / total_weight
+            total_score = (
+                sum(score * weight for score, weight in weights) / total_weight
+            )
             final_score = max(0.0, min(100.0, total_score))
             return round(final_score, 1)
         except Exception as e:
@@ -1788,18 +1870,22 @@ class CompetitorService:
             return 0.0  # Sin datos suficientes para calcular
 
     @staticmethod
-    def _format_competitor_data(audit_data: Dict[str, Any], geo_score: float, url: str = None) -> Dict[str, Any]:
+    def _format_competitor_data(
+        audit_data: Dict[str, Any], geo_score: float, url: str = None
+    ) -> Dict[str, Any]:
         """Formatear datos de competitor para el frontend con todos los campos necesarios"""
         try:
             # Extraer URL
             comp_url = url or audit_data.get("url", "")
-            domain = comp_url.replace("https://", "").replace("http://", "").split("/")[0]
-            
+            domain = (
+                comp_url.replace("https://", "").replace("http://", "").split("/")[0]
+            )
+
             # Extraer datos individuales de schema
             schema_data = audit_data.get("schema", {})
             schema_status = schema_data.get("schema_presence", {}).get("status")
             schema_present = schema_status == "present"
-            
+
             # Extraer semantic HTML score
             structure_data = audit_data.get("structure", {})
             semantic_html = structure_data.get("semantic_html", {})
@@ -1810,23 +1896,31 @@ class CompetitorService:
             # H1 status + header hierarchy health
             h1_status = structure_data.get("h1_check", {}).get("status")
             h1_coverage = 100 if h1_status == "pass" else 0
-            header_issues = structure_data.get("header_hierarchy", {}).get("issues") or []
+            header_issues = (
+                structure_data.get("header_hierarchy", {}).get("issues") or []
+            )
             header_hierarchy_coverage = 100 if not header_issues else 0
 
             # Prefer site_metrics if present (aggregate)
-            site_metrics = audit_data.get("site_metrics", {}) if isinstance(audit_data.get("site_metrics"), dict) else {}
+            site_metrics = (
+                audit_data.get("site_metrics", {})
+                if isinstance(audit_data.get("site_metrics"), dict)
+                else {}
+            )
             structure_score = site_metrics.get("structure_score_percent")
             if not isinstance(structure_score, (int, float)):
-                structure_score = round((semantic_score + h1_coverage + header_hierarchy_coverage) / 3, 1)
-            
+                structure_score = round(
+                    (semantic_score + h1_coverage + header_hierarchy_coverage) / 3, 1
+                )
+
             # Extraer E-E-A-T
             eeat_data = audit_data.get("eeat", {})
             author_status = eeat_data.get("author_presence", {}).get("status")
             eeat_score = 100 if author_status == "pass" else 0
-            
+
             # Extraer H1
             h1_present = h1_status == "pass"
-            
+
             # Extraer conversational tone
             content_data = audit_data.get("content", {})
             conversational_tone = content_data.get("conversational_tone", {})
@@ -1834,7 +1928,7 @@ class CompetitorService:
             if not isinstance(tone_score, (int, float)):
                 tone_score = 0
             tone_score = max(0.0, min(10.0, float(tone_score)))
-            
+
             return {
                 "url": comp_url,
                 "domain": domain,
@@ -1880,29 +1974,37 @@ class CompetitorService:
         # NUEVO: Guardar archivo JSON del competidor
         try:
             from datetime import datetime
-            reports_dir = os.path.join(settings.REPORTS_DIR or "reports", f"audit_{audit_id}")
+
+            reports_dir = os.path.join(
+                settings.REPORTS_DIR or "reports", f"audit_{audit_id}"
+            )
             competitors_dir = os.path.join(reports_dir, "competitors")
             os.makedirs(competitors_dir, exist_ok=True)
-            
+
             # Generar nombre de archivo seguro
             import re
-            safe_domain = re.sub(r'[^\w\-_.]', '_', domain)
-            competitor_json_path = os.path.join(competitors_dir, f"competitor_{safe_domain}.json")
-            
+
+            safe_domain = re.sub(r"[^\w\-_.]", "_", domain)
+            competitor_json_path = os.path.join(
+                competitors_dir, f"competitor_{safe_domain}.json"
+            )
+
             # Preparar datos completos del competidor
             competitor_full_data = {
                 "url": url,
                 "domain": domain,
                 "geo_score": geo_score,
                 "audit_data": safe_audit_data,
-                "analyzed_at": datetime.now().isoformat()
+                "analyzed_at": datetime.now().isoformat(),
             }
-            
+
             # Guardar JSON
-            with open(competitor_json_path, 'w', encoding='utf-8') as f:
+            with open(competitor_json_path, "w", encoding="utf-8") as f:
                 json.dump(competitor_full_data, f, ensure_ascii=False, indent=2)
-            
-            logger.info(f"Competidor guardado: {domain} -> {competitor_json_path} (GEO Score: {geo_score})")
+
+            logger.info(
+                f"Competidor guardado: {domain} -> {competitor_json_path} (GEO Score: {geo_score})"
+            )
         except Exception as e:
             logger.error(f"Error guardando archivo JSON del competidor {domain}: {e}")
 

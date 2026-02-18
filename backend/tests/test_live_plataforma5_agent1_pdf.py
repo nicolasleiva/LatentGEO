@@ -1,12 +1,10 @@
 import os
 import time
-from typing import Dict, Any
+from typing import Any, Dict
 
 import pytest
 import requests
-
 from app.core.auth import create_access_token
-
 
 pytestmark = pytest.mark.skipif(
     os.getenv("RUN_INTEGRATION_TESTS") != "1" or os.getenv("RUN_LIVE_E2E") != "1",
@@ -25,7 +23,9 @@ def _build_auth_headers() -> Dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
 
 
-def _wait_for_audit_completion(audit_id: int, headers: Dict[str, str], timeout_seconds: int = 1800) -> Dict[str, Any]:
+def _wait_for_audit_completion(
+    audit_id: int, headers: Dict[str, str], timeout_seconds: int = 1800
+) -> Dict[str, Any]:
     start = time.monotonic()
     while time.monotonic() - start < timeout_seconds:
         response = requests.get(
@@ -70,7 +70,9 @@ def completed_live_audit(auth_headers: Dict[str, str]) -> Dict[str, Any]:
 
 
 @pytest.fixture(scope="module")
-def first_pdf_generation(completed_live_audit: Dict[str, Any], auth_headers: Dict[str, str]) -> Dict[str, Any]:
+def first_pdf_generation(
+    completed_live_audit: Dict[str, Any], auth_headers: Dict[str, str]
+) -> Dict[str, Any]:
     audit_id = int(completed_live_audit["id"])
     started = time.monotonic()
     response = requests.post(
@@ -129,7 +131,9 @@ def test_live_agent1_generates_competitor_queries_plataforma5(
 @pytest.mark.integration
 @pytest.mark.live
 @pytest.mark.slow
-def test_live_generate_pdf_plataforma5_and_download(first_pdf_generation: Dict[str, Any]):
+def test_live_generate_pdf_plataforma5_and_download(
+    first_pdf_generation: Dict[str, Any]
+):
     payload = first_pdf_generation["payload"]
     assert "report_cache_hit" in payload
     assert "report_regenerated" in payload
@@ -141,7 +145,9 @@ def test_live_generate_pdf_plataforma5_and_download(first_pdf_generation: Dict[s
 @pytest.mark.integration
 @pytest.mark.live
 @pytest.mark.slow
-def test_live_second_pdf_is_cache_hit(first_pdf_generation: Dict[str, Any], auth_headers: Dict[str, str]):
+def test_live_second_pdf_is_cache_hit(
+    first_pdf_generation: Dict[str, Any], auth_headers: Dict[str, str]
+):
     audit_id = int(first_pdf_generation["audit_id"])
     first_elapsed = float(first_pdf_generation["elapsed"])
 

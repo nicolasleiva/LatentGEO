@@ -3,23 +3,18 @@ Production-Ready Integration Tests
 No mocks, using real database and API calls
 """
 import os
-import pytest
 from urllib.parse import urlparse
-from sqlalchemy.orm import Session
 
+import pytest
 from app.core.config import settings
-from app.services.keyword_service import KeywordService
+from app.models import Audit, Backlink, Keyword, RankTracking
 from app.services.backlink_service import BacklinkService
+from app.services.keyword_service import KeywordService
 from app.services.rank_tracker_service import RankTrackerService
-from app.models import Audit, Keyword, Backlink, RankTracking
 
 # Import production fixtures explicitly
-from .conftest_production import (
-    prod_db_session,
-    prod_test_audit,
-    prod_test_user,
-    PROD_TEST_KEYWORDS,
-)
+from conftest_production import PROD_TEST_KEYWORDS
+from sqlalchemy.orm import Session
 
 pytestmark = pytest.mark.skipif(
     os.getenv("RUN_INTEGRATION_TESTS") != "1",
@@ -35,12 +30,14 @@ def _domain_from_url(url: str) -> str:
 
 
 def _require_llm():
-    if not any([
-        settings.NV_API_KEY,
-        settings.NVIDIA_API_KEY,
-        settings.NV_API_KEY_ANALYSIS,
-        settings.NV_API_KEY_CODE,
-    ]):
+    if not any(
+        [
+            settings.NV_API_KEY,
+            settings.NVIDIA_API_KEY,
+            settings.NV_API_KEY_ANALYSIS,
+            settings.NV_API_KEY_CODE,
+        ]
+    ):
         pytest.fail("NVIDIA/NV API key required for keyword integration tests.")
 
 
@@ -57,7 +54,9 @@ class TestKeywordsServiceProduction:
 
     @pytest.mark.integration
     @pytest.mark.asyncio
-    async def test_generate_keywords_from_real_audit(self, prod_db_session: Session, prod_test_audit):
+    async def test_generate_keywords_from_real_audit(
+        self, prod_db_session: Session, prod_test_audit
+    ):
         """
         Test generating keywords from real audit data
         without mocks - uses actual database
@@ -77,9 +76,11 @@ class TestKeywordsServiceProduction:
         assert keywords is not None
         assert len(keywords) > 0
 
-        db_keywords = prod_db_session.query(Keyword).filter(
-            Keyword.audit_id == prod_test_audit.id
-        ).all()
+        db_keywords = (
+            prod_db_session.query(Keyword)
+            .filter(Keyword.audit_id == prod_test_audit.id)
+            .all()
+        )
 
         assert len(db_keywords) > 0
 
@@ -91,14 +92,18 @@ class TestKeywordsServiceProduction:
 
     @pytest.mark.integration
     @pytest.mark.asyncio
-    async def test_keywords_saved_to_database(self, prod_db_session: Session, prod_test_audit):
+    async def test_keywords_saved_to_database(
+        self, prod_db_session: Session, prod_test_audit
+    ):
         """
         Verify keywords are properly persisted to database
         """
         _require_llm()
-        initial_count = prod_db_session.query(Keyword).filter(
-            Keyword.audit_id == prod_test_audit.id
-        ).count()
+        initial_count = (
+            prod_db_session.query(Keyword)
+            .filter(Keyword.audit_id == prod_test_audit.id)
+            .count()
+        )
 
         domain = _domain_from_url(prod_test_audit.url)
         service = KeywordService(prod_db_session)
@@ -108,15 +113,19 @@ class TestKeywordsServiceProduction:
             seed_keywords=PROD_TEST_KEYWORDS or None,
         )
 
-        final_count = prod_db_session.query(Keyword).filter(
-            Keyword.audit_id == prod_test_audit.id
-        ).count()
+        final_count = (
+            prod_db_session.query(Keyword)
+            .filter(Keyword.audit_id == prod_test_audit.id)
+            .count()
+        )
 
         assert final_count > initial_count
 
     @pytest.mark.integration
     @pytest.mark.asyncio
-    async def test_keyword_fields_are_valid(self, prod_db_session: Session, prod_test_audit):
+    async def test_keyword_fields_are_valid(
+        self, prod_db_session: Session, prod_test_audit
+    ):
         """
         Verify all keyword fields contain valid data
         """
@@ -129,9 +138,11 @@ class TestKeywordsServiceProduction:
             seed_keywords=PROD_TEST_KEYWORDS or None,
         )
 
-        db_keywords = prod_db_session.query(Keyword).filter(
-            Keyword.audit_id == prod_test_audit.id
-        ).all()
+        db_keywords = (
+            prod_db_session.query(Keyword)
+            .filter(Keyword.audit_id == prod_test_audit.id)
+            .all()
+        )
 
         for keyword in db_keywords:
             assert keyword.id is not None
@@ -150,7 +161,9 @@ class TestBacklinksServiceProduction:
 
     @pytest.mark.integration
     @pytest.mark.asyncio
-    async def test_generate_backlinks_from_real_audit(self, prod_db_session: Session, prod_test_audit):
+    async def test_generate_backlinks_from_real_audit(
+        self, prod_db_session: Session, prod_test_audit
+    ):
         """
         Test generating backlinks from real audit data
         """
@@ -160,15 +173,19 @@ class TestBacklinksServiceProduction:
 
         assert backlinks is not None
 
-        db_backlinks = prod_db_session.query(Backlink).filter(
-            Backlink.audit_id == prod_test_audit.id
-        ).all()
+        db_backlinks = (
+            prod_db_session.query(Backlink)
+            .filter(Backlink.audit_id == prod_test_audit.id)
+            .all()
+        )
 
         assert len(db_backlinks) >= 0
 
     @pytest.mark.integration
     @pytest.mark.asyncio
-    async def test_backlinks_structure_valid(self, prod_db_session: Session, prod_test_audit):
+    async def test_backlinks_structure_valid(
+        self, prod_db_session: Session, prod_test_audit
+    ):
         """
         Verify backlinks have valid structure
         """
@@ -209,15 +226,19 @@ class TestRankTrackingServiceProduction:
         assert rankings is not None
         assert len(rankings) > 0
 
-        db_rankings = prod_db_session.query(RankTracking).filter(
-            RankTracking.audit_id == prod_test_audit.id
-        ).all()
+        db_rankings = (
+            prod_db_session.query(RankTracking)
+            .filter(RankTracking.audit_id == prod_test_audit.id)
+            .all()
+        )
 
         assert len(db_rankings) > 0
 
     @pytest.mark.integration
     @pytest.mark.asyncio
-    async def test_ranking_fields_valid(self, prod_db_session: Session, prod_test_audit):
+    async def test_ranking_fields_valid(
+        self, prod_db_session: Session, prod_test_audit
+    ):
         """
         Verify ranking fields are valid
         """
@@ -246,9 +267,9 @@ class TestAuditDataPersistence:
         """
         Verify audit is saved in database
         """
-        audit = prod_db_session.query(Audit).filter(
-            Audit.id == prod_test_audit.id
-        ).first()
+        audit = (
+            prod_db_session.query(Audit).filter(Audit.id == prod_test_audit.id).first()
+        )
 
         assert audit is not None
         assert audit.url == prod_test_audit.url
@@ -270,9 +291,9 @@ class TestAuditDataPersistence:
             seed_keywords=PROD_TEST_KEYWORDS or None,
         )
 
-        audit = prod_db_session.query(Audit).filter(
-            Audit.id == prod_test_audit.id
-        ).first()
+        audit = (
+            prod_db_session.query(Audit).filter(Audit.id == prod_test_audit.id).first()
+        )
 
         assert len(audit.keywords) > 0
         for keyword in audit.keywords:
@@ -307,7 +328,8 @@ class TestDatabaseTransactions:
 def pytest_configure(config):
     """Register custom markers"""
     config.addinivalue_line(
-        "markers", "integration: marks tests as integration tests (deselect with '-m \"not integration\"')"
+        "markers",
+        "integration: marks tests as integration tests (deselect with '-m \"not integration\"')",
     )
     config.addinivalue_line(
         "markers", "slow: marks tests as slow (deselect with '-m \"not slow\"')"

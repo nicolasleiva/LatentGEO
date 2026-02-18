@@ -1,19 +1,22 @@
-from fastapi import APIRouter, Depends, HTTPException, Body, Query
-from sqlalchemy.orm import Session
 from typing import List
-from ...core.database import get_db
-from ...core.auth import AuthUser, get_current_user
+
+from fastapi import APIRouter, Body, Depends, HTTPException, Query
+from sqlalchemy.orm import Session
+
 from ...core.access_control import ensure_audit_access
-from ...services.audit_service import AuditService
-from ...services.ai_content_service import AIContentService
-from ...core.llm_kimi import KimiUnavailableError, KimiGenerationError
+from ...core.auth import AuthUser, get_current_user
+from ...core.database import get_db
+from ...core.llm_kimi import KimiGenerationError, KimiUnavailableError
 from ...schemas import AIContentSuggestionResponse
+from ...services.ai_content_service import AIContentService
+from ...services.audit_service import AuditService
 
 router = APIRouter(prefix="/ai-content", tags=["ai-content"])
 
+
 @router.post("/generate/{audit_id}", response_model=List[AIContentSuggestionResponse])
 async def generate_suggestions(
-    audit_id: int, 
+    audit_id: int,
     domain: str = Query(..., description="Domain to generate content for"),
     topics: List[str] = Body(...),
     db: Session = Depends(get_db),
@@ -41,6 +44,7 @@ async def generate_suggestions(
                 "message": str(exc),
             },
         )
+
 
 @router.get("/{audit_id}", response_model=List[AIContentSuggestionResponse])
 def get_suggestions(

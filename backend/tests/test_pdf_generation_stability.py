@@ -5,7 +5,6 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-
 from app.services import create_pdf as create_pdf_module
 from app.services.pdf_service import PDFService
 
@@ -108,7 +107,9 @@ async def test_generate_comprehensive_pdf_cleans_stale_pages_and_competitors(
 ):
     reports_base = tmp_path / "reports"
     reports_base.mkdir()
-    monkeypatch.setattr("app.services.pdf_service.settings.REPORTS_BASE_DIR", str(reports_base))
+    monkeypatch.setattr(
+        "app.services.pdf_service.settings.REPORTS_BASE_DIR", str(reports_base)
+    )
 
     audit_id = 42
     reports_dir = reports_base / f"audit_{audit_id}"
@@ -128,7 +129,9 @@ async def test_generate_comprehensive_pdf_cleans_stale_pages_and_competitors(
         output = Path(folder_path) / "Reporte_Consolidado_audit_42.pdf"
         output.write_bytes(b"%PDF-1.4 new")
 
-    monkeypatch.setattr("app.services.pdf_service.create_comprehensive_pdf", _fake_create_pdf)
+    monkeypatch.setattr(
+        "app.services.pdf_service.create_comprehensive_pdf", _fake_create_pdf
+    )
 
     audit = SimpleNamespace(
         id=audit_id,

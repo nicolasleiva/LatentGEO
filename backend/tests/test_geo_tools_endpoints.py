@@ -21,7 +21,11 @@ def _seed_audit(db_session):
                 "product_page_count": 4,
                 "structure_score_percent": 42.0,
             },
-            "audited_page_paths": ["/", "/products/nike-pegasus", "/products/nike-vomero"],
+            "audited_page_paths": [
+                "/",
+                "/products/nike-pegasus",
+                "/products/nike-vomero",
+            ],
             "benchmark": {"geo_score": 34.2},
         },
         search_results={
@@ -50,8 +54,16 @@ def _seed_audit(db_session):
             },
         },
         competitor_audits=[
-            {"url": "https://www.mercadolibre.com/", "domain": "mercadolibre.com", "geo_score": 62.1},
-            {"url": "https://www.amazon.com/", "domain": "amazon.com", "geo_score": 74.0},
+            {
+                "url": "https://www.mercadolibre.com/",
+                "domain": "mercadolibre.com",
+                "geo_score": 62.1,
+            },
+            {
+                "url": "https://www.amazon.com/",
+                "domain": "amazon.com",
+                "geo_score": 74.0,
+            },
         ],
         competitors=["https://www.mercadolibre.com/", "https://www.amazon.com/"],
     )
@@ -134,7 +146,9 @@ def test_generate_commerce_campaign_and_latest(client, db_session):
 def test_generate_article_engine_batch_and_latest(client, db_session, monkeypatch):
     audit_id = _seed_audit(db_session)
 
-    def fake_create_batch(*, db, audit, article_count, language, tone, include_schema, market=None):
+    def fake_create_batch(
+        *, db, audit, article_count, language, tone, include_schema, market=None
+    ):
         row = GeoArticleBatch(
             audit_id=audit.id,
             requested_count=article_count,
@@ -176,7 +190,12 @@ def test_generate_article_engine_batch_and_latest(client, db_session, monkeypatc
                     "search_intent": "commercial",
                 },
                 "competitor_gap_map": {"schema": [{"gap": "Missing Product schema"}]},
-                "evidence_summary": [{"claim": "Market benchmark", "source_url": "https://www.statista.com/"}],
+                "evidence_summary": [
+                    {
+                        "claim": "Market benchmark",
+                        "source_url": "https://www.statista.com/",
+                    }
+                ],
                 "markdown": "# Articulo 1",
                 "sources": [{"title": "Statista", "url": "https://www.statista.com/"}],
             },
@@ -189,21 +208,35 @@ def test_generate_article_engine_batch_and_latest(client, db_session, monkeypatc
                 "citation_readiness_score": 86,
                 "keyword_strategy": {
                     "primary_keyword": "nike pegasus review",
-                    "secondary_keywords": ["nike pegasus comparison", "nike pegasus pricing"],
+                    "secondary_keywords": [
+                        "nike pegasus comparison",
+                        "nike pegasus pricing",
+                    ],
                     "search_intent": "comparison",
                 },
                 "competitor_gap_map": {"content": [{"gap": "Weak comparison copy"}]},
-                "evidence_summary": [{"claim": "Review benchmark", "source_url": "https://www.runnersworld.com/"}],
+                "evidence_summary": [
+                    {
+                        "claim": "Review benchmark",
+                        "source_url": "https://www.runnersworld.com/",
+                    }
+                ],
                 "markdown": "# Articulo 2",
-                "sources": [{"title": "Runner's World", "url": "https://www.runnersworld.com/"}],
+                "sources": [
+                    {"title": "Runner's World", "url": "https://www.runnersworld.com/"}
+                ],
             },
         ]
         db.commit()
         db.refresh(row)
         return row
 
-    monkeypatch.setattr(GeoArticleEngineService, "create_batch", staticmethod(fake_create_batch))
-    monkeypatch.setattr(GeoArticleEngineService, "process_batch", staticmethod(fake_process_batch))
+    monkeypatch.setattr(
+        GeoArticleEngineService, "create_batch", staticmethod(fake_create_batch)
+    )
+    monkeypatch.setattr(
+        GeoArticleEngineService, "process_batch", staticmethod(fake_process_batch)
+    )
 
     response = client.post(
         "/api/geo/article-engine/generate",
@@ -255,7 +288,10 @@ def test_geo_legacy_endpoints_shapes(client, db_session):
     assert "templates" in templates_json
     assert isinstance(templates_json["templates"], list)
 
-    analyze = client.post("/api/geo/analyze-content", json={"content": "## FAQ\nHow to cite sources?\nUse trusted references."})
+    analyze = client.post(
+        "/api/geo/analyze-content",
+        json={"content": "## FAQ\nHow to cite sources?\nUse trusted references."},
+    )
     assert analyze.status_code == 200
     analyze_json = analyze.json()
     assert "score" in analyze_json

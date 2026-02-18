@@ -3,9 +3,9 @@
 Test completo: auditoría de farmalife con competidores
 """
 
+import asyncio
 import os
 import sys
-import asyncio
 
 # Load .env
 from dotenv import load_dotenv
@@ -26,12 +26,12 @@ import logging
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 
+from app.core.config import settings
 from app.core.database import SessionLocal, init_db
 from app.models import Audit, AuditStatus, Competitor
-from app.services.pipeline_service import PipelineService
 from app.services.audit_local_service import AuditLocalService
 from app.services.audit_service import AuditService
-from app.core.config import settings
+from app.services.pipeline_service import PipelineService
 
 
 async def run_full_audit_with_competitors():

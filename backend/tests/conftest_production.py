@@ -10,7 +10,7 @@ from urllib.parse import urlparse, urlunparse
 import pytest
 from dotenv import load_dotenv
 from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker, Session
+from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 # Load your existing .env file
@@ -32,7 +32,9 @@ def _parse_csv_env(name: str) -> List[str]:
     raw = os.getenv(name, "")
     values = [item.strip() for item in raw.split(",") if item.strip()]
     if RUN_INTEGRATION_TESTS and not values:
-        raise RuntimeError(f"{name} is required when RUN_INTEGRATION_TESTS=1 (comma-separated list).")
+        raise RuntimeError(
+            f"{name} is required when RUN_INTEGRATION_TESTS=1 (comma-separated list)."
+        )
     return values
 
 
@@ -45,7 +47,16 @@ def _redact_url(url: str) -> str:
             netloc = f"{parsed.username}:****@{parsed.hostname}"
             if parsed.port:
                 netloc += f":{parsed.port}"
-            return urlunparse((parsed.scheme, netloc, parsed.path, parsed.params, parsed.query, parsed.fragment))
+            return urlunparse(
+                (
+                    parsed.scheme,
+                    netloc,
+                    parsed.path,
+                    parsed.params,
+                    parsed.query,
+                    parsed.fragment,
+                )
+            )
         return url
     except Exception:
         return "<redacted>"
@@ -57,14 +68,8 @@ PROD_TEST_USER_ID = _require_env("PROD_TEST_USER_ID")
 PROD_TEST_KEYWORDS = _parse_csv_env("PROD_TEST_KEYWORDS")
 
 # Import your models
-from app.core.database import Base, ensure_performance_indexes
-from app.models import (
-    Audit,
-    Report,
-    Keyword,
-    Backlink,
-    RankTracking,
-)
+from app.core.database import Base, ensure_performance_indexes  # noqa: E402
+from app.models import Audit, Keyword  # noqa: E402
 
 
 class DatabaseConfig:

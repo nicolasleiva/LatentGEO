@@ -33,7 +33,9 @@ class KimiGenerationError(RuntimeError):
 
 
 def resolve_kimi_api_key() -> str | None:
-    return settings.NV_API_KEY_ANALYSIS or settings.NVIDIA_API_KEY or settings.NV_API_KEY
+    return (
+        settings.NV_API_KEY_ANALYSIS or settings.NVIDIA_API_KEY or settings.NV_API_KEY
+    )
 
 
 def is_kimi_configured() -> bool:
@@ -64,7 +66,7 @@ def _extract_json_payload(raw_text: str) -> Dict[str, Any] | List[Any]:
 
     try:
         return json.loads(cleaned)
-    except Exception:
+    except Exception:  # nosec B110
         pass
 
     # Try to recover first object or array block from mixed text.
@@ -74,7 +76,7 @@ def _extract_json_payload(raw_text: str) -> Dict[str, Any] | List[Any]:
         candidate = cleaned[first_obj : last_obj + 1]
         try:
             return json.loads(candidate)
-        except Exception:
+        except Exception:  # nosec B110
             pass
 
     first_arr = cleaned.find("[")
@@ -109,7 +111,9 @@ def _extract_response_text(response: Any) -> str:
     return "\n".join(chunks).strip()
 
 
-def _normalize_results(payload: Dict[str, Any] | List[Any], top_k: int) -> List[Dict[str, Any]]:
+def _normalize_results(
+    payload: Dict[str, Any] | List[Any], top_k: int
+) -> List[Dict[str, Any]]:
     items: List[Any]
     if isinstance(payload, dict):
         items = payload.get("results") or payload.get("items") or []
@@ -132,14 +136,13 @@ def _normalize_results(payload: Dict[str, Any] | List[Any], top_k: int) -> List[
             continue
         title = str(raw.get("title") or raw.get("name") or domain).strip()
         snippet = str(
-            raw.get("snippet")
-            or raw.get("description")
-            or raw.get("summary")
-            or ""
+            raw.get("snippet") or raw.get("description") or raw.get("summary") or ""
         ).strip()
         normalized.append(
             {
-                "position": len(normalized) + 1 if not raw.get("position") else int(raw["position"]),
+                "position": len(normalized) + 1
+                if not raw.get("position")
+                else int(raw["position"]),
                 "title": title,
                 "url": url,
                 "domain": domain,
@@ -259,7 +262,9 @@ async def kimi_search_serp(
         gl = (market or "").strip().lower()
         lr = f"lang_{language.strip().lower()}" if language else None
 
-        async with httpx.AsyncClient(timeout=float(settings.NV_KIMI_SEARCH_TIMEOUT)) as client:
+        async with httpx.AsyncClient(
+            timeout=float(settings.NV_KIMI_SEARCH_TIMEOUT)
+        ) as client:
             for page in range(max_pages):
                 start_index = page * 10 + 1
                 current_num = min(10, top_k - len(all_items))
@@ -324,9 +329,7 @@ async def kimi_search_serp(
         "}\n"
         "Rules: include only real web results with valid URLs. Do not invent domains."
     )
-    system_prompt = (
-        "You are Kimi 2.5 Search. Always perform web search and return strict JSON only."
-    )
+    system_prompt = "You are Kimi 2.5 Search. Always perform web search and return strict JSON only."
 
     client = None
     try:

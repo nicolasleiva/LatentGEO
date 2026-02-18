@@ -1,30 +1,32 @@
 """
 GitHub API Routes
 """
-from fastapi import APIRouter, Depends, HTTPException, Request, Header, BackgroundTasks
-from sqlalchemy.orm import Session
-from typing import List, Dict, Any, Optional
-from pydantic import BaseModel
-import json
-from urllib.parse import urlparse
-import hmac
 import hashlib
+import hmac
+import json
 from datetime import datetime
+from typing import Any, Dict, List, Optional
+from urllib.parse import urlparse
 
-from ...core.database import get_db
-from ...core.config import settings
-from ...core.logger import get_logger
-from ...core.auth import AuthUser, get_current_user
+from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Request
+from pydantic import BaseModel
+from sqlalchemy.orm import Session
+
 from ...core.access_control import ensure_audit_access
+from ...core.auth import AuthUser, get_current_user
+from ...core.config import settings
+from ...core.database import get_db
+from ...core.llm_kimi import KimiGenerationError, KimiUnavailableError, get_llm_function
+from ...core.logger import get_logger
 from ...integrations.github.oauth import GitHubOAuth
 from ...integrations.github.service import GitHubService
-from ...models.github import GitHubConnection, GitHubRepository, GitHubPullRequest, PRStatus
-from ...services.audit_service import AuditService
-from ...core.llm_kimi import (
-    get_llm_function,
-    KimiUnavailableError,
-    KimiGenerationError,
+from ...models.github import (
+    GitHubConnection,
+    GitHubPullRequest,
+    GitHubRepository,
+    PRStatus,
 )
+from ...services.audit_service import AuditService
 
 router = APIRouter(prefix="/github", tags=["github"])
 logger = get_logger(__name__)
@@ -37,13 +39,16 @@ def _get_owned_audit(db: Session, audit_id: int, current_user: AuthUser):
 
 # Request/Response Models
 
+
 class ConnectResponse(BaseModel):
     url: str
     state: str
 
+
 class CallbackRequest(BaseModel):
     code: str
     state: Optional[str] = None
+
 
 class RepositoryResponse(BaseModel):
     id: str
@@ -59,11 +64,13 @@ class RepositoryResponse(BaseModel):
     class Config:
         from_attributes = True
 
+
 class CreatePRRequest(BaseModel):
     connection_id: str
     repo_id: str
     audit_id: int
     fixes: List[Dict[str, Any]]
+
 
 class PRResponse(BaseModel):
     id: str
@@ -146,13 +153,16 @@ def _extract_domain(url: Optional[str]) -> str:
 
 def _build_chat_fallback(field_label: str, issue_code: str, placeholder: str) -> str:
     label = field_label or issue_code.replace("_", " ").title()
-    message = f"Please provide {label}. This helps improve SEO/GEO accuracy for your audit."
+    message = (
+        f"Please provide {label}. This helps improve SEO/GEO accuracy for your audit."
+    )
     if placeholder:
         message += f" Example based on audit data: {placeholder}"
     return message
 
 
 # Routes
+
 
 @router.get("/auth-url", response_model=ConnectResponse)
 def get_auth_url():
@@ -169,6 +179,7 @@ def get_auth_url():
 def oauth_authorize():
     """Redirige directamente a GitHub OAuth (para compatibilidad con frontend)"""
     from fastapi.responses import RedirectResponse
+
     try:
         auth_data = GitHubOAuth.get_authorization_url()
         return RedirectResponse(url=auth_data["url"])
@@ -179,31 +190,31 @@ def oauth_authorize():
 
 @router.post("/callback")
 async def oauth_callback(
-    request: CallbackRequest, 
+    request: CallbackRequest,
     background_tasks: BackgroundTasks,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
     """Maneja callback de OAuth"""
     try:
         # 1. Exchange code for token
         token_data = await GitHubOAuth.exchange_code(request.code)
-        
+
         # 2. Get user info
         user_info = await GitHubOAuth.get_user_info(token_data["access_token"])
-        
+
         # 3. Create/update connection
         service = GitHubService(db)
         connection = await service.create_or_update_connection(token_data, user_info)
-        
+
         # 4. Sync repositories in background to avoid blocking the user
         background_tasks.add_task(service.sync_repositories, connection.id)
-        
+
         return {
             "status": "success",
             "connection_id": connection.id,
-            "username": connection.github_username
+            "username": connection.github_username,
         }
-        
+
     except Exception as e:
         logger.error(f"GitHub OAuth callback error: {e}")
         raise HTTPException(status_code=400, detail=str(e))
@@ -212,16 +223,17 @@ async def oauth_callback(
 @router.get("/connections")
 def get_connections(db: Session = Depends(get_db)):
     """Lista conexiones activas de GitHub"""
-    connections = db.query(GitHubConnection).filter(
-        GitHubConnection.is_active == True
-    ).all()
-    
-    return [{
-        "id": c.id,
-        "username": c.github_username,
-        "account_type": c.account_type,
-        "created_at": c.created_at
-    } for c in connections]
+    connections = db.query(GitHubConnection).filter(GitHubConnection.is_active).all()
+
+    return [
+        {
+            "id": c.id,
+            "username": c.github_username,
+            "account_type": c.account_type,
+            "created_at": c.created_at,
+        }
+        for c in connections
+    ]
 
 
 @router.post("/sync/{connection_id}")
@@ -240,16 +252,22 @@ async def sync_repositories(connection_id: str, db: Session = Depends(get_db)):
 @router.get("/repos/{connection_id}", response_model=List[RepositoryResponse])
 def get_repositories(connection_id: str, db: Session = Depends(get_db)):
     """Obtiene repositorios de una conexión"""
-    repos = db.query(GitHubRepository).filter(
-        GitHubRepository.connection_id == connection_id,
-        GitHubRepository.is_active == True
-    ).all()
-    
+    repos = (
+        db.query(GitHubRepository)
+        .filter(
+            GitHubRepository.connection_id == connection_id,
+            GitHubRepository.is_active,
+        )
+        .all()
+    )
+
     return repos
 
 
 @router.post("/analyze/{connection_id}/{repo_id}")
-async def analyze_repository(connection_id: str, repo_id: str, db: Session = Depends(get_db)):
+async def analyze_repository(
+    connection_id: str, repo_id: str, db: Session = Depends(get_db)
+):
     """Analiza un repositorio para detectar tipo de sitio"""
     service = GitHubService(db)
     try:
@@ -259,7 +277,7 @@ async def analyze_repository(connection_id: str, repo_id: str, db: Session = Dep
             "full_name": repo.full_name,
             "site_type": repo.site_type,
             "build_command": repo.build_command,
-            "output_dir": repo.output_dir
+            "output_dir": repo.output_dir,
         }
     except Exception as e:
         logger.error(f"Error analyzing repository: {e}")
@@ -274,18 +292,18 @@ async def create_pull_request(
 ):
     """Crea un Pull Request con fixes SEO/GEO"""
     service = GitHubService(db)
-    
+
     try:
         _get_owned_audit(db, request.audit_id, current_user)
         pr = await service.create_pr_with_fixes(
             connection_id=request.connection_id,
             repo_id=request.repo_id,
             audit_id=request.audit_id,
-            fixes=request.fixes
+            fixes=request.fixes,
         )
-        
+
         return pr
-        
+
     except Exception as e:
         logger.error(f"Error creating PR: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -300,49 +318,51 @@ async def get_pull_requests(repo_id: str, db: Session = Depends(get_db)):
 
 
 @router.post("/audit-blogs/{connection_id}/{repo_id}")
-async def audit_repository_blogs(connection_id: str, repo_id: str, db: Session = Depends(get_db)):
+async def audit_repository_blogs(
+    connection_id: str, repo_id: str, db: Session = Depends(get_db)
+):
     """
     Audita todos los blogs de un repositorio
-    
+
     Encuentra automáticamente todos los archivos de blog según el framework
     y ejecuta una auditoría SEO completa en cada uno.
-    
+
     Args:
         connection_id: ID de la conexión de GitHub
         repo_id: ID del repositorio
-        
+
     Returns:
         Reporte completo con todos los blogs auditados y sus issues
     """
-    from ...models.github import GitHubRepository
     from ...integrations.github.blog_auditor import BlogAuditorService
-    
+    from ...models.github import GitHubRepository
+
     service = GitHubService(db)
-    
+
     try:
         # Obtener repo
         repo = db.query(GitHubRepository).filter(GitHubRepository.id == repo_id).first()
-        
+
         if not repo:
             raise HTTPException(status_code=404, detail="Repository not found")
-        
+
         # Asegurarse que el repo esté analizado
         if not repo.site_type or repo.site_type == "unknown":
             await service.analyze_repository(connection_id, repo_id)
             db.refresh(repo)
-        
+
         # Obtener cliente de GitHub
         client = await service.get_valid_client(connection_id)
-        
+
         # Crear auditor
         auditor = BlogAuditorService(client)
-        
+
         # Auditar todos los blogs
         logger.info(f"Starting blog audit for {repo.full_name}")
         audit_results = await auditor.audit_all_blogs(repo.full_name, repo.site_type)
-        
+
         return audit_results
-        
+
     except Exception as e:
         logger.error(f"Error auditing blogs: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -353,80 +373,83 @@ async def create_blog_fixes_pr(
     connection_id: str,
     repo_id: str,
     blog_paths: List[str],
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
     """
     Crea un PR con fixes para blogs específicos
-    
+
     Toma los resultados de una auditoría de blogs y crea un PR
     aplicando todos los fixes necesarios.
-    
+
     Args:
         connection_id: ID de la conexión
         repo_id: ID del repositorio
         blog_paths: Lista de paths de blogs a aplicar fixes
-        
+
     Returns:
         PR creado con fixes aplicados
     """
-    from ...models.github import GitHubRepository
     from ...integrations.github.blog_auditor import BlogAuditorService
-    
+    from ...models.github import GitHubRepository
+
     service = GitHubService(db)
-    
+
     try:
         # Obtener repo
         repo = db.query(GitHubRepository).filter(GitHubRepository.id == repo_id).first()
-        
+
         if not repo:
             raise HTTPException(status_code=404, detail="Repository not found")
-        
+
         # Obtener cliente
         client = await service.get_valid_client(connection_id)
-        
+
         # Re-auditar blogs seleccionados
         auditor = BlogAuditorService(client)
         gh_repo = client.get_repo(repo.full_name)
-        
+
         all_fixes = []
         for blog_path in blog_paths:
-            blog_audit = await auditor._audit_single_blog(gh_repo, blog_path, repo.site_type)
+            blog_audit = await auditor._audit_single_blog(
+                gh_repo, blog_path, repo.site_type
+            )
             fixes = auditor.generate_fixes_from_audit(blog_audit)
             all_fixes.extend(fixes)
-        
+
         if not all_fixes:
             return {
                 "status": "no_fixes_needed",
-                "message": "No fixes required for selected blogs"
+                "message": "No fixes required for selected blogs",
             }
-        
+
         # Crear un pseudo audit_id o usar el sistema actual
         # Por ahora, creamos un registro temporal para tracking
         from ...models import Audit
+
         temp_audit = Audit(
             url=repo.homepage_url or repo.url,
             status="completed",
-            source="github_blog_audit"
+            source="github_blog_audit",
         )
         db.add(temp_audit)
         db.commit()
         db.refresh(temp_audit)
-        
+
         # Crear PR con fixes
         pr = await service.create_pr_with_fixes(
             connection_id=connection_id,
             repo_id=repo_id,
             audit_id=temp_audit.id,
-            fixes=all_fixes
+            fixes=all_fixes,
         )
-        
+
         return {
             "status": "success",
             "pr": pr,
             "fixes_applied": len(all_fixes),
-            "blogs_fixed": len(blog_paths)
+            "blogs_fixed": len(blog_paths),
         }
-        
+
     except Exception as e:
         logger.error(f"Error creating blog fixes PR: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -440,32 +463,31 @@ async def convert_audit_to_fixes(
 ):
     """
     Convierte el fix_plan de una auditoría en fixes aplicables a código
-    
+
     Este endpoint toma una auditoría existente y genera una lista de fixes
     que pueden ser aplicados directamente al código fuente.
-    
+
     Args:
         audit_id: ID de la auditoría
-        
+
     Returns:
         Dict con audit_id y lista de fixes formateados para aplicar
     """
-    from ...models import Audit
     from ...integrations.github.service import GitHubService
-    
+
     audit = _get_owned_audit(db, audit_id, current_user)
-    
+
     service = GitHubService(db)
     # Ensure fix_plan exists (on-demand generation if needed)
     await AuditService.ensure_fix_plan(db, audit_id)
     fixes = service.prepare_fixes_from_audit(audit)
-    
+
     return {
         "audit_id": audit_id,
         "total_fixes": len(fixes),
         "fixes": fixes,
         "audit_url": audit.url,
-        "audit_date": audit.created_at.isoformat() if audit.created_at else None
+        "audit_date": audit.created_at.isoformat() if audit.created_at else None,
     }
 
 
@@ -564,14 +586,12 @@ async def fix_inputs_chat(
         for msg in payload.history[-6:]:
             if not msg:
                 continue
-            history_items.append(
-                {"role": msg.role, "content": msg.content}
-            )
+            history_items.append({"role": msg.role, "content": msg.content})
 
     system_prompt = (
         "You are a strict SEO/GEO assistant. "
         "Use ONLY the audit evidence provided. Do NOT invent facts. "
-        "If evidence is insufficient, set suggested_value to \"\" and confidence to \"unknown\". "
+        'If evidence is insufficient, set suggested_value to "" and confidence to "unknown". '
         "Return ONLY JSON with keys: assistant_message, suggested_value, confidence. "
         "assistant_message should be 1-3 sentences and explain why the field matters for SEO/GEO."
     )
@@ -606,17 +626,23 @@ async def fix_inputs_chat(
 
     if llm_function is None:
         return {
-            "assistant_message": _build_chat_fallback(field_label, issue_code, placeholder),
+            "assistant_message": _build_chat_fallback(
+                field_label, issue_code, placeholder
+            ),
             "suggested_value": "",
             "confidence": "unknown",
         }
 
     try:
-        raw = await llm_function(system_prompt=system_prompt, user_prompt=user_prompt, max_tokens=512)
+        raw = await llm_function(
+            system_prompt=system_prompt, user_prompt=user_prompt, max_tokens=512
+        )
     except (KimiUnavailableError, KimiGenerationError) as exc:
         logger.warning(f"Kimi chat unavailable for fix inputs: {exc}")
         return {
-            "assistant_message": _build_chat_fallback(field_label, issue_code, placeholder),
+            "assistant_message": _build_chat_fallback(
+                field_label, issue_code, placeholder
+            ),
             "suggested_value": "",
             "confidence": "unknown",
         }
@@ -624,7 +650,9 @@ async def fix_inputs_chat(
     parsed = AuditService._safe_json_dict(raw) if isinstance(raw, str) else None
     if not parsed:
         return {
-            "assistant_message": _build_chat_fallback(field_label, issue_code, placeholder),
+            "assistant_message": _build_chat_fallback(
+                field_label, issue_code, placeholder
+            ),
             "suggested_value": "",
             "confidence": "unknown",
         }
@@ -646,9 +674,8 @@ async def fix_inputs_chat(
     }
 
 
-
-
 # ===== GEO (Generative Engine Optimization) Endpoints =====
+
 
 @router.get("/geo-score/{audit_id}")
 async def get_geo_score(
@@ -658,83 +685,85 @@ async def get_geo_score(
 ):
     """
     Calcula GEO Score de una auditoría
-    
+
     GEO (Generative Engine Optimization) mide qué tan optimizado está
     el contenido para ser detectado y citado por LLMs como ChatGPT, Gemini, Claude.
-    
+
     Args:
         audit_id: ID de la auditoría a evaluar
-        
+
     Returns:
         Score 0-100 con breakdown por categoría y recomendaciones
     """
     from ...services.geo_score_service import GEOScoreService
-    from ...models import Audit
-    
+
     audit = _get_owned_audit(db, audit_id, current_user)
-    
+
     try:
         geo_service = GEOScoreService(db)
         geo_score = await geo_service.calculate_site_geo_score(
-            url=audit.url,
-            audit_id=audit_id
+            url=audit.url, audit_id=audit_id
         )
-        
+
         return geo_score
-        
+
     except Exception as e:
         logger.error(f"Error calculating GEO score: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/audit-blogs-geo/{connection_id}/{repo_id}")
-async def audit_repository_blogs_geo(connection_id: str, repo_id: str, db: Session = Depends(get_db)):
+async def audit_repository_blogs_geo(
+    connection_id: str, repo_id: str, db: Session = Depends(get_db)
+):
     """
     Audita blogs de un repositorio para SEO + GEO
-    
+
     GEO (Generative Engine Optimization) detecta issues adicionales a SEO:
     - Formato Q&A (LLMs prefieren preguntas-respuestas)
     - E-E-A-T signals (Experience, Expertise, Authority, Trust)
     - Estructura de fragmentos (snippet-level clarity)
     - Lenguaje conversacional vs keyword-stuffed
     - Respuestas directas (pirámide invertida)
-    
+
     Args:
         connection_id: ID de la conexión de GitHub
         repo_id: ID del repositorio
-        
+
     Returns:
         Reporte completo con SEO issues + GEO issues + GEO score por blog
     """
-    from ...models.github import GitHubRepository
     from ...integrations.github.geo_blog_auditor import GEOBlogAuditor
-    
+    from ...models.github import GitHubRepository
+
     service = GitHubService(db)
-    
+
     try:
         # Obtener repo
         repo = db.query(GitHubRepository).filter(GitHubRepository.id == repo_id).first()
-        
+
         if not repo:
             raise HTTPException(status_code=404, detail="Repository not found")
-        
+
         # Asegurarse que el repo esté analizado
         if not repo.site_type or repo.site_type == "unknown":
             await service.analyze_repository(connection_id, repo_id)
             db.refresh(repo)
-        
+
         # Obtener cliente de GitHub
         client = await service.get_valid_client(connection_id)
-        
+
         # Crear GEO auditor
         geo_auditor = GEOBlogAuditor(client, db)
-        
+
         # Auditar todos los blogs (SEO + GEO)
         logger.info(f"Starting GEO blog audit for {repo.full_name}")
-        audit_results = await geo_auditor.audit_all_blogs_geo(repo.full_name, repo.site_type)
-        
+        audit_results = await geo_auditor.audit_all_blogs_geo(
+            repo.full_name, repo.site_type
+        )
+
         return audit_results
-        
+
     except Exception as e:
         logger.error(f"Error auditing blogs with GEO: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -744,88 +773,94 @@ class CreateGeoPRRequest(BaseModel):
     blog_paths: List[str]
     include_geo: bool = True
 
+
 @router.post("/create-geo-fixes-pr/{connection_id}/{repo_id}")
 async def create_geo_fixes_pr(
     connection_id: str,
     repo_id: str,
     request: CreateGeoPRRequest,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
     """
     Crea PR con fixes SEO + GEO para blogs
     """
     blog_paths = request.blog_paths
     include_geo = request.include_geo
-    from ...models.github import GitHubRepository
     from ...integrations.github.geo_blog_auditor import GEOBlogAuditor
-    
+    from ...models.github import GitHubRepository
+
     service = GitHubService(db)
-    
+
     try:
         # Obtener repo
         repo = db.query(GitHubRepository).filter(GitHubRepository.id == repo_id).first()
-        
+
         if not repo:
             raise HTTPException(status_code=404, detail="Repository not found")
-        
+
         # Obtener cliente
         client = await service.get_valid_client(connection_id)
-        
+
         # Re-auditar blogs seleccionados con GEO
         geo_auditor = GEOBlogAuditor(client, db)
         gh_repo = client.get_repo(repo.full_name)
-        
+
         all_fixes = []
         geo_fixes_count = 0
         seo_fixes_count = 0
-        
+
         for blog_path in blog_paths:
             # Auditar blog individual
-            blog_audit = await geo_auditor._audit_single_blog(gh_repo, blog_path, repo.site_type)
-            
+            blog_audit = await geo_auditor._audit_single_blog(
+                gh_repo, blog_path, repo.site_type
+            )
+
             # Agregar GEO issues si está habilitado
             if include_geo:
                 geo_issues = await geo_auditor._audit_blog_geo(blog_audit)
                 blog_audit["geo_issues"] = geo_issues
-                blog_audit["geo_score"] = geo_auditor._calculate_blog_geo_score(geo_issues)
-            
+                blog_audit["geo_score"] = geo_auditor._calculate_blog_geo_score(
+                    geo_issues
+                )
+
             # Generar fixes (SEO + GEO)
             fixes = geo_auditor.generate_geo_fixes_from_audit(blog_audit)
-            
+
             # Contar fixes por tipo
             for fix in fixes:
                 if fix.get("category") == "geo":
                     geo_fixes_count += 1
                 else:
                     seo_fixes_count += 1
-            
+
             all_fixes.extend(fixes)
-        
+
         if not all_fixes:
             return {
                 "status": "no_fixes_needed",
-                "message": "No fixes required for selected blogs"
+                "message": "No fixes required for selected blogs",
             }
-        
+
         # Crear auditoría temporal para tracking
         from ...models import Audit
+
         temp_audit = Audit(
             url=repo.homepage_url or repo.url,
             status="completed",
-            source="github_geo_blog_audit"
+            source="github_geo_blog_audit",
         )
         db.add(temp_audit)
         db.commit()
         db.refresh(temp_audit)
-        
+
         # Crear PR con todos los fixes
         pr = await service.create_pr_with_fixes(
             connection_id=connection_id,
             repo_id=repo_id,
             audit_id=temp_audit.id,
-            fixes=all_fixes
+            fixes=all_fixes,
         )
-        
+
         return {
             "status": "success",
             "pr": pr,
@@ -833,9 +868,9 @@ async def create_geo_fixes_pr(
             "seo_fixes": seo_fixes_count,
             "geo_fixes": geo_fixes_count,
             "blogs_fixed": len(blog_paths),
-            "geo_enabled": include_geo
+            "geo_enabled": include_geo,
         }
-        
+
     except Exception as e:
         logger.error(f"Error creating GEO fixes PR: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -850,49 +885,43 @@ async def compare_geo_with_competitors(
 ):
     """
     Compara GEO score con competidores
-    
+
     Útil para ver gaps de optimización vs competencia directa
-    
+
     Args:
         audit_id: ID de la auditoría a comparar
         competitor_urls: Lista de URLs de competidores (opcional)
-        
+
     Returns:
         Análisis comparativo con ranking y gaps
     """
     from ...services.geo_score_service import GEOScoreService
-    from ...models import Audit
-    
+
     audit = _get_owned_audit(db, audit_id, current_user)
-    
+
     # Si no se proveen competidores, usar los de la auditoría
     if not competitor_urls:
         external_intel = audit.external_intelligence or {}
         competitor_urls = [
-            comp.get("url") 
-            for comp in external_intel.get("competitors", [])[:3]
+            comp.get("url") for comp in external_intel.get("competitors", [])[:3]
         ]
-    
+
     if not competitor_urls:
         raise HTTPException(
-            status_code=400,
-            detail="No competitor URLs provided or found in audit"
+            status_code=400, detail="No competitor URLs provided or found in audit"
         )
-    
+
     try:
         geo_service = GEOScoreService(db)
         comparison = await geo_service.compare_with_competitors(
-            url=audit.url,
-            competitor_urls=competitor_urls
+            url=audit.url, competitor_urls=competitor_urls
         )
-        
+
         return comparison
-        
+
     except Exception as e:
         logger.error(f"Error comparing GEO scores: {e}")
         raise HTTPException(status_code=500, detail=str(e))
-
-
 
 
 @router.post("/webhook")
@@ -900,11 +929,11 @@ async def github_webhook(
     request: Request,
     x_github_event: Optional[str] = Header(None),
     x_hub_signature_256: Optional[str] = Header(None),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
     """
     Maneja webhooks de GitHub
-    
+
     Eventos soportados:
     - push: Auto-auditar cuando hay cambios
     - pull_request: Actualizar estado del PR
@@ -912,27 +941,27 @@ async def github_webhook(
     """
     # 1. Verificar firma del webhook
     body = await request.body()
-    
+
     if not _verify_webhook_signature(body, x_hub_signature_256):
         logger.warning("Invalid GitHub webhook signature")
         raise HTTPException(status_code=401, detail="Invalid signature")
-    
+
     # 2. Parsear payload
     payload = await request.json()
-    
+
     # 3. Procesar según tipo de evento
     try:
         from ...models.github import GitHubWebhookEvent
-        
+
         # Guardar evento
         event = GitHubWebhookEvent(
             event_type=x_github_event,
             event_id=request.headers.get("x-github-delivery", ""),
-            payload=payload
+            payload=payload,
         )
         db.add(event)
         db.commit()
-        
+
         # Procesar según tipo
         if x_github_event == "push":
             await _handle_push_event(payload, db)
@@ -940,17 +969,17 @@ async def github_webhook(
             await _handle_pr_event(payload, db)
         elif x_github_event == "installation":
             await _handle_installation_event(payload, db)
-        
+
         # Marcar como procesado
         event.processed = True
         event.processed_at = datetime.utcnow()
         db.commit()
-        
+
         return {"status": "success", "event": x_github_event}
-        
+
     except Exception as e:
         logger.error(f"Error processing webhook: {e}")
-        if 'event' in locals():
+        if "event" in locals():
             event.error_message = str(e)
             db.commit()
         raise HTTPException(status_code=500, detail=str(e))
@@ -958,30 +987,33 @@ async def github_webhook(
 
 # Helper functions
 
+
 def _verify_webhook_signature(payload_body: bytes, signature_header: str) -> bool:
     """Verifica la firma del webhook de GitHub"""
     if not signature_header or not settings.GITHUB_WEBHOOK_SECRET:
         return True  # Skip verification in development
-    
+
     hash_object = hmac.new(
         settings.GITHUB_WEBHOOK_SECRET.encode(),
         msg=payload_body,
-        digestmod=hashlib.sha256
+        digestmod=hashlib.sha256,
     )
     expected_signature = "sha256=" + hash_object.hexdigest()
-    
+
     return hmac.compare_digest(expected_signature, signature_header)
 
 
 async def _handle_push_event(payload: Dict, db: Session):
     """Maneja evento push - potencialmente auto-auditar"""
     repo_full_name = payload["repository"]["full_name"]
-    
+
     # Buscar repo en BD
-    repo = db.query(GitHubRepository).filter(
-        GitHubRepository.full_name == repo_full_name
-    ).first()
-    
+    repo = (
+        db.query(GitHubRepository)
+        .filter(GitHubRepository.full_name == repo_full_name)
+        .first()
+    )
+
     if repo and repo.auto_audit:
         logger.info(f"Auto-audit triggered for {repo_full_name}")
         # TODO: Disparar auditoría en background con Celery
@@ -993,12 +1025,14 @@ async def _handle_pr_event(payload: Dict, db: Session):
     """Maneja evento pull_request - actualizar estado"""
     pr_number = payload["pull_request"]["number"]
     action = payload["action"]  # opened, closed, merged, etc.
-    
+
     # Buscar PR en BD
-    pr = db.query(GitHubPullRequest).filter(
-        GitHubPullRequest.pr_number == pr_number
-    ).first()
-    
+    pr = (
+        db.query(GitHubPullRequest)
+        .filter(GitHubPullRequest.pr_number == pr_number)
+        .first()
+    )
+
     if pr:
         if action == "closed":
             if payload["pull_request"].get("merged"):
@@ -1007,7 +1041,7 @@ async def _handle_pr_event(payload: Dict, db: Session):
             else:
                 pr.status = PRStatus.CLOSED
                 pr.closed_at = datetime.utcnow()
-            
+
             db.commit()
             logger.info(f"PR #{pr_number} status updated to {action}")
 
@@ -1016,19 +1050,21 @@ async def _handle_installation_event(payload: Dict, db: Session):
     """Maneja evento installation"""
     action = payload["action"]
     installation_id = payload["installation"]["id"]
-    
+
     if action == "created":
         # Nueva instalación de la app
         logger.info(f"GitHub App installed: {installation_id}")
         # TODO: Guardar installation_id en GitHubConnection
-    
+
     elif action == "deleted":
         # App desinstalada
         logger.info(f"GitHub App uninstalled: {installation_id}")
         # TODO: Desactivar conexión
 
+
 class CreateAutoFixRequest(BaseModel):
     audit_id: int
+
 
 @router.post("/create-auto-fix-pr/{connection_id}/{repo_id}")
 async def create_auto_fix_pr(
@@ -1040,27 +1076,29 @@ async def create_auto_fix_pr(
 ):
     """
     Crea un PR automático basado en auditoría existente.
-    
+
     Utiliza el método GitHubService.create_pr_with_fixes que ya tiene toda
     la lógica de extracción de contexto enriquecido (PageSpeed, Technical, etc.)
     """
-    from ...models import Audit, AuditStatus
     from ...integrations.github.service import GitHubService
-    
+    from ...models import AuditStatus
+
     service = GitHubService(db)
-    
+
     try:
         # 1. Obtener auditoría
         audit = _get_owned_audit(db, request.audit_id, current_user)
-        
+
         if audit.status != AuditStatus.COMPLETED:
             raise HTTPException(status_code=400, detail="Audit is not completed yet")
-            
+
         # 2. Ensure fix_plan exists (on-demand generation if needed)
         await AuditService.ensure_fix_plan(db, request.audit_id)
 
         # 2.1 Ensure required user inputs are present
-        missing_inputs = await AuditService.get_fix_plan_missing_inputs(db, request.audit_id)
+        missing_inputs = await AuditService.get_fix_plan_missing_inputs(
+            db, request.audit_id
+        )
         missing_required = [g for g in missing_inputs if g.get("required")]
         if missing_required:
             raise HTTPException(
@@ -1073,7 +1111,7 @@ async def create_auto_fix_pr(
 
         # 3. Prepare fixes using centralized logic
         fixes = service.prepare_fixes_from_audit(audit)
-        
+
         # 4. Llamar al método existente que ya tiene toda la lógica
         # Este método extrae automáticamente:
         # - Keywords, Competitors, PageSpeed, Technical Audit, Content Suggestions
@@ -1081,16 +1119,16 @@ async def create_auto_fix_pr(
             connection_id=connection_id,
             repo_id=repo_id,
             audit_id=request.audit_id,
-            fixes=fixes
+            fixes=fixes,
         )
-        
+
         return {
             "success": True,
             "pr_url": pr.html_url,
             "pr_number": pr.pr_number,
-            "title": pr.title
+            "title": pr.title,
         }
-        
+
     except HTTPException:
         raise
     except ValueError as e:

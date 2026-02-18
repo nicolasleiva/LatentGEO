@@ -1,8 +1,16 @@
 """
 GitHub Integration Module
 """
-from .oauth import GitHubOAuth
-from .client import GitHubClient
-from .service import GitHubService
-from .blog_auditor import BlogAuditorService
-from .geo_blog_auditor import GEOBlogAuditor
+from .blog_auditor import BlogAuditorService as BlogAuditorService
+from .client import GitHubClient as GitHubClient
+from .geo_blog_auditor import GEOBlogAuditor as GEOBlogAuditor
+from .oauth import GitHubOAuth as GitHubOAuth
+from .service import GitHubService as GitHubService
+
+__all__ = [
+    "BlogAuditorService",
+    "GitHubClient",
+    "GEOBlogAuditor",
+    "GitHubOAuth",
+    "GitHubService",
+]

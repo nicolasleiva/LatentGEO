@@ -10,7 +10,6 @@ from typing import List
 import pytest
 import requests
 
-
 pytestmark = pytest.mark.skipif(
     os.getenv("RUN_INTEGRATION_TESTS") != "1",
     reason="Requiere servicios corriendo (localhost) y acceso a red/GitHub",
@@ -65,7 +64,9 @@ def test_create_geo_pr(blog_paths: List[str]):
 
     if response.status_code in (400, 404, 409):
         # Not a server crash; typically repository state/permissions/no-op conditions.
-        pytest.skip(f"GEO PR creation not applicable in this environment: {response.status_code}")
+        pytest.skip(
+            f"GEO PR creation not applicable in this environment: {response.status_code}"
+        )
 
     assert response.status_code == 200, response.text
     data = response.json()

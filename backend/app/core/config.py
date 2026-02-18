@@ -4,6 +4,7 @@ Configuración de la aplicación
 
 import os
 from typing import Optional
+
 from pydantic_settings import BaseSettings
 
 
@@ -46,12 +47,20 @@ class Settings(BaseSettings):
     )
     NV_MAX_CONTEXT_TOKENS: int = int(os.getenv("NV_MAX_CONTEXT_TOKENS", "262144"))
     NV_CONTEXT_SAFETY_RATIO: float = float(os.getenv("NV_CONTEXT_SAFETY_RATIO", "0.7"))
-    NV_KIMI_SEARCH_ENABLED: bool = os.getenv("NV_KIMI_SEARCH_ENABLED", "False").lower() == "true"
-    NV_KIMI_SEARCH_MODEL: str = os.getenv("NV_KIMI_SEARCH_MODEL", "moonshotai/kimi-k2.5")
+    NV_KIMI_SEARCH_ENABLED: bool = (
+        os.getenv("NV_KIMI_SEARCH_ENABLED", "False").lower() == "true"
+    )
+    NV_KIMI_SEARCH_MODEL: str = os.getenv(
+        "NV_KIMI_SEARCH_MODEL", "moonshotai/kimi-k2.5"
+    )
     NV_KIMI_SEARCH_TIMEOUT: int = int(os.getenv("NV_KIMI_SEARCH_TIMEOUT", "60"))
     NV_KIMI_SEARCH_PROVIDER: str = os.getenv("NV_KIMI_SEARCH_PROVIDER", "kimi").lower()
-    GEO_ARTICLE_AUDIT_ONLY: bool = os.getenv("GEO_ARTICLE_AUDIT_ONLY", "False").lower() == "true"
-    GEO_ARTICLE_REQUIRE_QA: bool = os.getenv("GEO_ARTICLE_REQUIRE_QA", "True").lower() == "true"
+    GEO_ARTICLE_AUDIT_ONLY: bool = (
+        os.getenv("GEO_ARTICLE_AUDIT_ONLY", "False").lower() == "true"
+    )
+    GEO_ARTICLE_REQUIRE_QA: bool = (
+        os.getenv("GEO_ARTICLE_REQUIRE_QA", "True").lower() == "true"
+    )
     GEO_ARTICLE_REQUIRE_INTERNAL_CITATION: bool = (
         os.getenv("GEO_ARTICLE_REQUIRE_INTERNAL_CITATION", "True").lower() == "true"
     )

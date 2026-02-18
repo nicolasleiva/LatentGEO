@@ -3,12 +3,11 @@ Automated Quality Assurance System - Enterprise Grade
 Comprehensive testing, validation, and quality gates for production-ready audits.
 """
 
-import json
 import logging
-from typing import Dict, List, Any, Optional, Tuple
 from dataclasses import dataclass
-from enum import Enum
 from datetime import datetime
+from enum import Enum
+from typing import Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -467,7 +466,6 @@ class AuditQualityService:
         # Check if we have a mix of priorities
         has_critical = "CRITICAL" in priorities
         has_high = "HIGH" in priorities
-        has_medium = "MEDIUM" in priorities
 
         if not (has_critical or has_high):
             return QualityCheck(

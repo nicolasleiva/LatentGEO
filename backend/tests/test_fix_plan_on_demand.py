@@ -2,14 +2,14 @@ import asyncio
 import json
 import os
 
-import pytest
-
 from app.core.config import settings
-from app.models import Audit, AuditStatus, AuditedPage
+from app.models import Audit, AuditedPage, AuditStatus
 from app.services.audit_service import AuditService
 
 
-def _seed_audit(db_session, *, user_id="test-user", user_email="test@example.com") -> Audit:
+def _seed_audit(
+    db_session, *, user_id="test-user", user_email="test@example.com"
+) -> Audit:
     audit = Audit(
         url="https://example.com",
         domain="example.com",
@@ -171,9 +171,7 @@ def _seed_fix_plan_audit(db_session, tmp_path) -> Audit:
         url="https://example.com/privacy-policy",
         path="/privacy-policy",
         audit_data={
-            "structure": {
-                "h1_check": {"details": {"example": "Privacy Policy"}}
-            }
+            "structure": {"h1_check": {"details": {"example": "Privacy Policy"}}}
         },
     )
     db_session.add(page)
@@ -185,7 +183,9 @@ def test_get_fix_plan_missing_inputs_and_apply(db_session, monkeypatch, tmp_path
     monkeypatch.setattr(settings, "REPORTS_DIR", str(tmp_path), raising=False)
     audit = _seed_fix_plan_audit(db_session, tmp_path)
 
-    missing_inputs = asyncio.run(AuditService.get_fix_plan_missing_inputs(db_session, audit.id))
+    missing_inputs = asyncio.run(
+        AuditService.get_fix_plan_missing_inputs(db_session, audit.id)
+    )
     assert any(group["issue_code"] == "H1_MISSING" for group in missing_inputs)
     assert any(group["issue_code"] == "SCHEMA_MISSING" for group in missing_inputs)
     assert any(group["issue_code"] == "AUTHOR_MISSING" for group in missing_inputs)
@@ -212,7 +212,9 @@ def test_get_fix_plan_missing_inputs_and_apply(db_session, monkeypatch, tmp_path
         },
     ]
 
-    updated = asyncio.run(AuditService.apply_fix_plan_inputs(db_session, audit.id, answers))
+    updated = asyncio.run(
+        AuditService.apply_fix_plan_inputs(db_session, audit.id, answers)
+    )
     assert isinstance(updated, list)
     assert any(item.get("recommended_value") == "Privacy Policy" for item in updated)
 

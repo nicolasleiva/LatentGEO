@@ -3,14 +3,12 @@ API Endpoints para Analytics
 """
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from typing import List
 
-from ...core.database import get_db
-from ...schemas import AuditAnalytics, CompetitorAnalysis
-from ...services.audit_service import AuditService, CompetitorService
-from ...core.logger import get_logger
-from ...core.auth import AuthUser, get_current_user
 from ...core.access_control import ensure_audit_access
+from ...core.auth import AuthUser, get_current_user
+from ...core.database import get_db
+from ...core.logger import get_logger
+from ...services.audit_service import AuditService, CompetitorService
 
 logger = get_logger(__name__)
 

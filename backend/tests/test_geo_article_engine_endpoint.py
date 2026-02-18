@@ -1,5 +1,8 @@
 from app.models import Audit, AuditStatus, GeoArticleBatch
-from app.services.geo_article_engine_service import ArticleDataPackIncompleteError, GeoArticleEngineService
+from app.services.geo_article_engine_service import (
+    ArticleDataPackIncompleteError,
+    GeoArticleEngineService,
+)
 
 
 def _seed_audit(db_session) -> int:
@@ -21,13 +24,19 @@ def _seed_audit(db_session) -> int:
     return audit.id
 
 
-def test_article_engine_generate_returns_422_when_data_pack_incomplete(client, db_session, monkeypatch):
+def test_article_engine_generate_returns_422_when_data_pack_incomplete(
+    client, db_session, monkeypatch
+):
     audit_id = _seed_audit(db_session)
 
     def fake_create_batch(**kwargs):
-        raise ArticleDataPackIncompleteError("ARTICLE_DATA_PACK_INCOMPLETE: missing required fields")
+        raise ArticleDataPackIncompleteError(
+            "ARTICLE_DATA_PACK_INCOMPLETE: missing required fields"
+        )
 
-    monkeypatch.setattr(GeoArticleEngineService, "create_batch", staticmethod(fake_create_batch))
+    monkeypatch.setattr(
+        GeoArticleEngineService, "create_batch", staticmethod(fake_create_batch)
+    )
 
     response = client.post(
         "/api/geo/article-engine/generate",
@@ -45,10 +54,14 @@ def test_article_engine_generate_returns_422_when_data_pack_incomplete(client, d
     assert payload["detail"]["code"] == "ARTICLE_DATA_PACK_INCOMPLETE"
 
 
-def test_article_engine_async_generate_and_status_endpoint(client, db_session, monkeypatch):
+def test_article_engine_async_generate_and_status_endpoint(
+    client, db_session, monkeypatch
+):
     audit_id = _seed_audit(db_session)
 
-    def fake_create_batch(*, db, audit, article_count, language, tone, include_schema, market=None):
+    def fake_create_batch(
+        *, db, audit, article_count, language, tone, include_schema, market=None
+    ):
         row = GeoArticleBatch(
             audit_id=audit.id,
             requested_count=article_count,
@@ -73,8 +86,12 @@ def test_article_engine_async_generate_and_status_endpoint(client, db_session, m
     def fake_delay(_batch_id):
         return DummyResult()
 
-    monkeypatch.setattr(GeoArticleEngineService, "create_batch", staticmethod(fake_create_batch))
-    monkeypatch.setattr("app.workers.tasks.generate_article_batch_task.delay", fake_delay)
+    monkeypatch.setattr(
+        GeoArticleEngineService, "create_batch", staticmethod(fake_create_batch)
+    )
+    monkeypatch.setattr(
+        "app.workers.tasks.generate_article_batch_task.delay", fake_delay
+    )
 
     response = client.post(
         "/api/geo/article-engine/generate",

@@ -1,7 +1,6 @@
 from unittest.mock import AsyncMock, patch
 
 import pytest
-
 from app.services.llm_visibility_service import LLMVisibilityService
 
 
@@ -35,10 +34,15 @@ async def test_generate_llm_visibility_accepts_keyword_dict_shape():
 
 def test_extract_term_supports_keyword_and_query_keys():
     assert LLMVisibilityService._extract_term({"keyword": "nike shoes"}) == "nike shoes"
-    assert LLMVisibilityService._extract_term({"query": "best sneakers"}) == "best sneakers"
+    assert (
+        LLMVisibilityService._extract_term({"query": "best sneakers"})
+        == "best sneakers"
+    )
 
 
 @pytest.mark.asyncio
 async def test_generate_llm_visibility_returns_empty_when_no_keywords():
-    results = await LLMVisibilityService.generate_llm_visibility([], "https://example.com")
+    results = await LLMVisibilityService.generate_llm_visibility(
+        [], "https://example.com"
+    )
     assert results == []

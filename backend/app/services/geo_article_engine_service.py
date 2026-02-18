@@ -18,8 +18,6 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import urlparse
 
-from sqlalchemy.orm import Session
-
 from app.core.config import settings
 from app.core.llm_kimi import (
     KimiGenerationError,
@@ -37,6 +35,7 @@ from app.services.competitor_filters import (
     is_valid_competitor_domain,
     normalize_domain,
 )
+from sqlalchemy.orm import Session
 
 logger = get_logger(__name__)
 
@@ -234,7 +233,14 @@ class GeoArticleEngineService:
     ) -> List[str]:
         if max_queries <= 0:
             return []
-        modifiers_es = ["guia", "faq", "opiniones", "resenas", "caso de estudio", "informe"]
+        modifiers_es = [
+            "guia",
+            "faq",
+            "opiniones",
+            "resenas",
+            "caso de estudio",
+            "informe",
+        ]
         modifiers_en = ["guide", "faq", "review", "case study", "report", "insights"]
         modifiers = modifiers_es if language.lower().startswith("es") else modifiers_en
 
@@ -275,9 +281,9 @@ class GeoArticleEngineService:
     ) -> Dict[str, Any]:
         text = f"{title} {snippet}".lower()
         url_lower = (url or "").lower()
-        article_hit = any(cue in text for cue in GeoArticleEngineService.ARTICLE_CUES) or any(
-            cue in url_lower for cue in GeoArticleEngineService.ARTICLE_URL_CUES
-        )
+        article_hit = any(
+            cue in text for cue in GeoArticleEngineService.ARTICLE_CUES
+        ) or any(cue in url_lower for cue in GeoArticleEngineService.ARTICLE_URL_CUES)
         qa_hit = any(cue in text for cue in GeoArticleEngineService.QA_CUES) or any(
             cue in url_lower for cue in GeoArticleEngineService.QA_URL_CUES
         )
@@ -300,10 +306,9 @@ class GeoArticleEngineService:
         metadata = GeoArticleEngineService._authority_source_metadata(
             title=title, snippet=snippet, url=url, topic_terms=topic_terms
         )
-        if (
-            getattr(settings, "GEO_ARTICLE_REQUIRE_AUTHORITY_ARTICLES", True)
-            and not metadata.get("is_article")
-        ):
+        if getattr(
+            settings, "GEO_ARTICLE_REQUIRE_AUTHORITY_ARTICLES", True
+        ) and not metadata.get("is_article"):
             return False, metadata
         if (
             getattr(settings, "GEO_ARTICLE_REQUIRE_TOPIC_MATCH", True)
@@ -384,7 +389,7 @@ class GeoArticleEngineService:
         try:
             parsed = json.loads(cleaned)
             return parsed if isinstance(parsed, dict) else None
-        except Exception:
+        except Exception:  # nosec B110
             pass
 
         start = cleaned.find("{")
@@ -406,7 +411,7 @@ class GeoArticleEngineService:
         try:
             parsed = json.loads(cleaned)
             return parsed if isinstance(parsed, list) else []
-        except Exception:
+        except Exception:  # nosec B110
             pass
 
         start = cleaned.find("[")
@@ -433,7 +438,9 @@ class GeoArticleEngineService:
             return None
         truncated = raw_text.strip()
         if len(truncated) > 15000:
-            truncated = truncated[:12000] + "\n\n...[truncated]...\n\n" + truncated[-2000:]
+            truncated = (
+                truncated[:12000] + "\n\n...[truncated]...\n\n" + truncated[-2000:]
+            )
 
         system_prompt = (
             "You are a strict JSON repair tool. "
@@ -456,7 +463,9 @@ class GeoArticleEngineService:
             ensure_ascii=False,
         )
 
-        repaired = await llm_function(system_prompt=system_prompt, user_prompt=user_prompt)
+        repaired = await llm_function(
+            system_prompt=system_prompt, user_prompt=user_prompt
+        )
         return GeoArticleEngineService._safe_json_dict(repaired or "")
 
     @staticmethod
@@ -477,7 +486,9 @@ class GeoArticleEngineService:
         external_list = [url for url in required_external_sources if url]
         truncated = markdown.strip()
         if len(truncated) > 12000:
-            truncated = truncated[:10000] + "\n\n...[truncated]...\n\n" + truncated[-1500:]
+            truncated = (
+                truncated[:10000] + "\n\n...[truncated]...\n\n" + truncated[-1500:]
+            )
 
         system_prompt = (
             "You are a strict citation repair assistant. "
@@ -506,7 +517,9 @@ class GeoArticleEngineService:
             ensure_ascii=False,
         )
 
-        repaired = await llm_function(system_prompt=system_prompt, user_prompt=user_prompt)
+        repaired = await llm_function(
+            system_prompt=system_prompt, user_prompt=user_prompt
+        )
         return str(repaired or "").strip()
 
     @staticmethod
@@ -570,8 +583,12 @@ class GeoArticleEngineService:
         return re.sub(r"[-_]+", " ", last).strip().title() or "Page"
 
     @staticmethod
-    def _build_internal_sources(audit: Audit, focus_urls: List[str]) -> List[Dict[str, str]]:
-        domain = GeoArticleEngineService._normalize_domain(audit.url or audit.domain or "")
+    def _build_internal_sources(
+        audit: Audit, focus_urls: List[str]
+    ) -> List[Dict[str, str]]:
+        domain = GeoArticleEngineService._normalize_domain(
+            audit.url or audit.domain or ""
+        )
         seen = set()
         sources: List[Dict[str, str]] = []
 
@@ -600,7 +617,9 @@ class GeoArticleEngineService:
         max_sources: int = 20,
         topic_terms: Optional[List[str]] = None,
     ) -> List[Dict[str, str]]:
-        domain = GeoArticleEngineService._normalize_domain(audit.url or audit.domain or "")
+        domain = GeoArticleEngineService._normalize_domain(
+            audit.url or audit.domain or ""
+        )
         search_results = getattr(audit, "search_results", None) or {}
         if not isinstance(search_results, dict):
             return []
@@ -695,7 +714,9 @@ class GeoArticleEngineService:
                 keywords.append(token)
 
         if not keywords:
-            root = GeoArticleEngineService._normalize_domain(audit.url or audit.domain or "")
+            root = GeoArticleEngineService._normalize_domain(
+                audit.url or audit.domain or ""
+            )
             root_token = root.split(".")[0] if root else "brand"
             keywords = [
                 f"{root_token} buying guide",
@@ -742,24 +763,38 @@ class GeoArticleEngineService:
         )
         parsed: List[Dict[str, Any]] = []
         for row in rows:
-            outline = row.content_outline if isinstance(row.content_outline, dict) else {}
+            outline = (
+                row.content_outline if isinstance(row.content_outline, dict) else {}
+            )
             sections = outline.get("sections") if isinstance(outline, dict) else []
             cleaned_sections = [
-                str(s).strip() for s in (sections if isinstance(sections, list) else []) if str(s).strip()
+                str(s).strip()
+                for s in (sections if isinstance(sections, list) else [])
+                if str(s).strip()
             ]
             parsed.append(
                 {
                     "title": str(row.topic or "").strip(),
-                    "target_keyword": str(outline.get("target_keyword") or "").strip().lower(),
+                    "target_keyword": str(outline.get("target_keyword") or "")
+                    .strip()
+                    .lower(),
                     "sections": cleaned_sections,
                     "priority": str(row.priority or "medium").strip().lower(),
-                    "suggestion_type": str(row.suggestion_type or "guide").strip().lower(),
-                    "business_context": str(outline.get("business_context") or "").strip(),
+                    "suggestion_type": str(row.suggestion_type or "guide")
+                    .strip()
+                    .lower(),
+                    "business_context": str(
+                        outline.get("business_context") or ""
+                    ).strip(),
                     "created_at": row.created_at.isoformat() if row.created_at else "",
                 }
             )
 
-        parsed.sort(key=lambda item: GeoArticleEngineService._priority_weight(item.get("priority", "medium")))
+        parsed.sort(
+            key=lambda item: GeoArticleEngineService._priority_weight(
+                item.get("priority", "medium")
+            )
+        )
         return parsed
 
     @staticmethod
@@ -793,8 +828,12 @@ class GeoArticleEngineService:
         for row in getattr(audit, "competitor_audits", None) or []:
             if not isinstance(row, dict):
                 continue
-            domain = GeoArticleEngineService._normalize_domain(row.get("url") or row.get("domain") or "")
-            if not domain or GeoArticleEngineService._domain_matches(domain, audit_domain):
+            domain = GeoArticleEngineService._normalize_domain(
+                row.get("url") or row.get("domain") or ""
+            )
+            if not domain or GeoArticleEngineService._domain_matches(
+                domain, audit_domain
+            ):
                 continue
             if not is_valid_competitor_domain(domain, vertical_hint):
                 continue
@@ -835,7 +874,9 @@ class GeoArticleEngineService:
         target = getattr(audit, "target_audit", None) or {}
         if not isinstance(target, dict):
             target = {}
-        content = target.get("content", {}) if isinstance(target.get("content"), dict) else {}
+        content = (
+            target.get("content", {}) if isinstance(target.get("content"), dict) else {}
+        )
         return {
             "audited_domain": GeoArticleEngineService._normalize_domain(
                 audit.url or audit.domain or ""
@@ -859,9 +900,7 @@ class GeoArticleEngineService:
         if not markdown:
             return []
         allowed = {
-            GeoArticleEngineService._normalize_url(url)
-            for url in allowed_urls
-            if url
+            GeoArticleEngineService._normalize_url(url) for url in allowed_urls if url
         }
         if not allowed:
             return []
@@ -907,7 +946,9 @@ class GeoArticleEngineService:
         external = [url for url in external_urls if url]
         if not internal and not external:
             return markdown
-        section_title = "## Fuentes" if language.lower().startswith("es") else "## Sources"
+        section_title = (
+            "## Fuentes" if language.lower().startswith("es") else "## Sources"
+        )
         lines = [markdown.rstrip(), "", section_title]
         if internal:
             lines.append(f"- Audited internal reference. [Source: {internal[0]}]")
@@ -926,10 +967,14 @@ class GeoArticleEngineService:
     ) -> str:
         if not markdown:
             return markdown
-        sources = [url for url in internal_urls if url] + [url for url in external_urls if url]
+        sources = [url for url in internal_urls if url] + [
+            url for url in external_urls if url
+        ]
         if not sources or min_pairs <= 0:
             return markdown
-        heading = "## Preguntas frecuentes" if language.lower().startswith("es") else "## FAQ"
+        heading = (
+            "## Preguntas frecuentes" if language.lower().startswith("es") else "## FAQ"
+        )
         questions_en = [
             "What pricing model is most common in the audited sources?",
             "What implementation requirements are noted in the audited sources?",
@@ -946,7 +991,9 @@ class GeoArticleEngineService:
             question = questions[idx % len(questions)]
             source = sources[idx % len(sources)]
             qa_lines.append(f"Q: {question}")
-            qa_lines.append(f"A: Insufficient data in the audited sources. [Source: {source}]")
+            qa_lines.append(
+                f"A: Insufficient data in the audited sources. [Source: {source}]"
+            )
             qa_lines.append("")
         block = "\n".join(qa_lines).rstrip()
         return "\n".join([markdown.rstrip(), "", heading, block])
@@ -956,7 +1003,11 @@ class GeoArticleEngineService:
         if not markdown:
             return 0
         q_prefix = len(
-            re.findall(r"^\s*(q|pregunta)\s*[:\-]", markdown, flags=re.IGNORECASE | re.MULTILINE)
+            re.findall(
+                r"^\s*(q|pregunta)\s*[:\-]",
+                markdown,
+                flags=re.IGNORECASE | re.MULTILINE,
+            )
         )
         heading_questions = len(
             re.findall(r"^#{2,4}\s+[^\\n?]{3,}\\?$", markdown, flags=re.MULTILINE)
@@ -984,31 +1035,47 @@ class GeoArticleEngineService:
     @staticmethod
     def _build_audit_signals(audit: Audit) -> Dict[str, Any]:
         target = getattr(audit, "target_audit", None) or {}
-        site_metrics = target.get("site_metrics", {}) if isinstance(target, dict) else {}
+        site_metrics = (
+            target.get("site_metrics", {}) if isinstance(target, dict) else {}
+        )
         structure = target.get("structure", {}) if isinstance(target, dict) else {}
         eeat = target.get("eeat", {}) if isinstance(target, dict) else {}
 
         h1_check = structure.get("h1_check", {}) if isinstance(structure, dict) else {}
-        author_presence = eeat.get("author_presence", {}) if isinstance(eeat, dict) else {}
+        author_presence = (
+            eeat.get("author_presence", {}) if isinstance(eeat, dict) else {}
+        )
 
         return {
             "geo_score": float(getattr(audit, "geo_score", 0) or 0),
-            "structure_score_percent": float(site_metrics.get("structure_score_percent", 0) or 0),
-            "schema_coverage_percent": float(site_metrics.get("schema_coverage_percent", 0) or 0),
-            "h1_coverage_percent": float(site_metrics.get("h1_coverage_percent", 0) or 0),
+            "structure_score_percent": float(
+                site_metrics.get("structure_score_percent", 0) or 0
+            ),
+            "schema_coverage_percent": float(
+                site_metrics.get("schema_coverage_percent", 0) or 0
+            ),
+            "h1_coverage_percent": float(
+                site_metrics.get("h1_coverage_percent", 0) or 0
+            ),
             "faq_page_count": int(site_metrics.get("faq_page_count", 0) or 0),
             "product_page_count": int(site_metrics.get("product_page_count", 0) or 0),
             "pages_analyzed": int(site_metrics.get("pages_analyzed", 0) or 0),
-            "avg_semantic_score_percent": float(site_metrics.get("avg_semantic_score_percent", 0) or 0),
+            "avg_semantic_score_percent": float(
+                site_metrics.get("avg_semantic_score_percent", 0) or 0
+            ),
             "conversational_tone_score": float(
                 (
-                    target.get("content", {}).get("conversational_tone", {}).get("score", 0)
+                    target.get("content", {})
+                    .get("conversational_tone", {})
+                    .get("score", 0)
                     if isinstance(target, dict)
                     else 0
                 )
                 or 0
             ),
-            "h1_status": str(h1_check.get("status") or site_metrics.get("homepage_h1_status") or "").lower(),
+            "h1_status": str(
+                h1_check.get("status") or site_metrics.get("homepage_h1_status") or ""
+            ).lower(),
             "author_presence_status": str(author_presence.get("status") or "").lower(),
         }
 
@@ -1168,10 +1235,14 @@ class GeoArticleEngineService:
                 }
             )
 
-        return top_competitors, GeoArticleEngineService._rank_authority_sources(external_sources)
+        return top_competitors, GeoArticleEngineService._rank_authority_sources(
+            external_sources
+        )
 
     @staticmethod
-    def _fallback_secondary_keywords(primary_keyword: str, serp_results: List[Dict[str, Any]]) -> List[str]:
+    def _fallback_secondary_keywords(
+        primary_keyword: str, serp_results: List[Dict[str, Any]]
+    ) -> List[str]:
         candidates: List[str] = []
         seen = {primary_keyword.lower()}
         for row in serp_results[:8]:
@@ -1246,9 +1317,14 @@ class GeoArticleEngineService:
         keyword = (primary_keyword or "").lower()
         if any(token in keyword for token in ["vs", "versus", "compar", "alternativ"]):
             return "comparison"
-        if any(token in keyword for token in ["buy", "price", "precio", "shop", "best", "mejor"]):
+        if any(
+            token in keyword
+            for token in ["buy", "price", "precio", "shop", "best", "mejor"]
+        ):
             return "commercial"
-        if any(token in keyword for token in ["how", "como", "guide", "tutorial", "guia"]):
+        if any(
+            token in keyword for token in ["how", "como", "guide", "tutorial", "guia"]
+        ):
             return "informational"
         return "commercial"
 
@@ -1273,7 +1349,9 @@ class GeoArticleEngineService:
                 ordered_internal.append(item)
             seen_internal.add(url)
 
-        selected_internal = ordered_internal[: GeoArticleEngineService.MIN_INTERNAL_SOURCES]
+        selected_internal = ordered_internal[
+            : GeoArticleEngineService.MIN_INTERNAL_SOURCES
+        ]
         if len(selected_internal) < GeoArticleEngineService.MIN_INTERNAL_SOURCES:
             raise InsufficientAuthoritySourcesError(
                 "Need at least 2 internal audited sources per article."
@@ -1343,7 +1421,10 @@ class GeoArticleEngineService:
             external = required_sources.get("external", [])
             if len(internal) < GeoArticleEngineService.MIN_INTERNAL_SOURCES:
                 missing.append("required_sources.internal")
-            if not audit_only and len(external) < GeoArticleEngineService.MIN_EXTERNAL_SOURCES:
+            if (
+                not audit_only
+                and len(external) < GeoArticleEngineService.MIN_EXTERNAL_SOURCES
+            ):
                 missing.append("required_sources.external")
         else:
             missing.append("required_sources")
@@ -1372,7 +1453,9 @@ class GeoArticleEngineService:
         ai_strategy_item: Optional[Dict[str, Any]],
         audit_keywords: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
-        audit_domain = GeoArticleEngineService._normalize_domain(audit.url or audit.domain or "")
+        audit_domain = GeoArticleEngineService._normalize_domain(
+            audit.url or audit.domain or ""
+        )
         if not audit_domain:
             raise ArticleDataPackIncompleteError(
                 "ARTICLE_DATA_PACK_INCOMPLETE: unable to resolve audited domain."
@@ -1397,7 +1480,9 @@ class GeoArticleEngineService:
         )
         serp_results: List[Dict[str, Any]] = []
         external_from_serp: List[Dict[str, Any]] = []
-        top_competitors: List[Dict[str, Any]] = GeoArticleEngineService._extract_competitors_from_audit(
+        top_competitors: List[
+            Dict[str, Any]
+        ] = GeoArticleEngineService._extract_competitors_from_audit(
             audit=audit,
             audit_domain=audit_domain,
             vertical_hint=vertical_hint,
@@ -1406,7 +1491,9 @@ class GeoArticleEngineService:
         secondary_keywords: List[str] = []
 
         if audit_only:
-            audit_keywords = audit_keywords or GeoArticleEngineService._extract_audit_keywords(audit)
+            audit_keywords = (
+                audit_keywords or GeoArticleEngineService._extract_audit_keywords(audit)
+            )
             secondary_keywords = GeoArticleEngineService._secondary_keywords_from_audit(
                 primary_keyword, audit_keywords
             )
@@ -1418,14 +1505,19 @@ class GeoArticleEngineService:
                 language=language,
             )
             serp_results = (
-                search_payload.get("results", []) if isinstance(search_payload, dict) else []
+                search_payload.get("results", [])
+                if isinstance(search_payload, dict)
+                else []
             )
             if not isinstance(serp_results, list) or not serp_results:
                 raise ArticleDataPackIncompleteError(
                     "ARTICLE_DATA_PACK_INCOMPLETE: Kimi Search returned no SERP results."
                 )
 
-            _serp_competitors, external_from_serp = GeoArticleEngineService._extract_serp_sources(
+            (
+                _serp_competitors,
+                external_from_serp,
+            ) = GeoArticleEngineService._extract_serp_sources(
                 audit_domain=audit_domain,
                 serp_results=serp_results,
                 topic_terms=topic_terms,
@@ -1441,7 +1533,9 @@ class GeoArticleEngineService:
                     brand_token=GeoArticleEngineService._extract_brand_token(audit),
                     topic_terms=topic_terms,
                     language=language,
-                    max_queries=int(getattr(settings, "GEO_ARTICLE_EXTRA_SEARCH_QUERIES", 3)),
+                    max_queries=int(
+                        getattr(settings, "GEO_ARTICLE_EXTRA_SEARCH_QUERIES", 3)
+                    ),
                 )
 
             extra_searches: List[Dict[str, Any]] = []
@@ -1457,7 +1551,11 @@ class GeoArticleEngineService:
                             query=query,
                             market=market,
                             top_k=int(
-                                getattr(settings, "GEO_ARTICLE_EXTRA_SEARCH_TOP_K", GeoArticleEngineService.DEFAULT_TOP_K)
+                                getattr(
+                                    settings,
+                                    "GEO_ARTICLE_EXTRA_SEARCH_TOP_K",
+                                    GeoArticleEngineService.DEFAULT_TOP_K,
+                                )
                             ),
                             language=language,
                         )
@@ -1470,7 +1568,9 @@ class GeoArticleEngineService:
                         continue
 
                     extra_results = (
-                        extra_payload.get("results", []) if isinstance(extra_payload, dict) else []
+                        extra_payload.get("results", [])
+                        if isinstance(extra_payload, dict)
+                        else []
                     )
                     if not isinstance(extra_results, list) or not extra_results:
                         continue
@@ -1487,7 +1587,9 @@ class GeoArticleEngineService:
                         {
                             "query": query,
                             "provider": extra_payload.get("provider", ""),
-                            "results": extra_results[: GeoArticleEngineService.DEFAULT_TOP_K],
+                            "results": extra_results[
+                                : GeoArticleEngineService.DEFAULT_TOP_K
+                            ],
                         }
                     )
                     if (
@@ -1498,7 +1600,10 @@ class GeoArticleEngineService:
                     ):
                         break
 
-            secondary_keywords, inferred_intent = await GeoArticleEngineService._expand_keywords_with_llm(
+            (
+                secondary_keywords,
+                inferred_intent,
+            ) = await GeoArticleEngineService._expand_keywords_with_llm(
                 llm_function=llm_function,
                 primary_keyword=primary_keyword,
                 market=market,
@@ -1506,19 +1611,25 @@ class GeoArticleEngineService:
                 serp_results=serp_results,
             )
             if not secondary_keywords:
-                secondary_keywords = GeoArticleEngineService._fallback_secondary_keywords(
-                    primary_keyword, serp_results
+                secondary_keywords = (
+                    GeoArticleEngineService._fallback_secondary_keywords(
+                        primary_keyword, serp_results
+                    )
                 )
 
         secondary_keywords = [
-            kw for kw in secondary_keywords if kw and kw.lower() != primary_keyword.lower()
+            kw
+            for kw in secondary_keywords
+            if kw and kw.lower() != primary_keyword.lower()
         ][:10]
         if len(secondary_keywords) < 2:
             raise ArticleDataPackIncompleteError(
                 "ARTICLE_DATA_PACK_INCOMPLETE: keyword expansion did not produce enough secondary keywords."
             )
 
-        search_intent = inferred_intent or GeoArticleEngineService._infer_intent(primary_keyword)
+        search_intent = inferred_intent or GeoArticleEngineService._infer_intent(
+            primary_keyword
+        )
         audit_signals = GeoArticleEngineService._build_audit_signals(audit)
         competitor_gap_map = GeoArticleEngineService._build_competitor_gap_map(
             audit_signals=audit_signals,
@@ -1541,7 +1652,9 @@ class GeoArticleEngineService:
                 "primary_keyword": primary_keyword,
                 "secondary_keywords": secondary_keywords,
                 "search_intent": search_intent,
-                "strategy_mode": "audit_only" if audit_only else "audit_plus_kimi_search_expansion",
+                "strategy_mode": "audit_only"
+                if audit_only
+                else "audit_plus_kimi_search_expansion",
             },
             "market": market,
             "language": language,
@@ -1552,7 +1665,9 @@ class GeoArticleEngineService:
             "audit_signals": audit_signals,
             "serp_results": serp_results[: GeoArticleEngineService.DEFAULT_TOP_K],
             "evidence": [] if audit_only else search_payload.get("evidence", []),
-            "provider": "audit-only" if audit_only else search_payload.get("provider", "kimi-2.5-search"),
+            "provider": "audit-only"
+            if audit_only
+            else search_payload.get("provider", "kimi-2.5-search"),
             "ai_content_strategy": ai_strategy_item or {},
             "audited_context": audited_context,
             "topic_terms": topic_terms,
@@ -1576,11 +1691,17 @@ class GeoArticleEngineService:
         content_gaps = data_pack.get("competitor_gap_map", {}).get("content", [])
         recommendations: List[str] = []
         if schema_gaps:
-            recommendations.append(f"- Fix schema gap first: {schema_gaps[0].get('recommended_fix', 'Improve schema coverage.')}")
+            recommendations.append(
+                f"- Fix schema gap first: {schema_gaps[0].get('recommended_fix', 'Improve schema coverage.')}"
+            )
         if content_gaps:
-            recommendations.append(f"- Upgrade content structure: {content_gaps[0].get('recommended_fix', 'Improve answer blocks.')}")
+            recommendations.append(
+                f"- Upgrade content structure: {content_gaps[0].get('recommended_fix', 'Improve answer blocks.')}"
+            )
         if not recommendations:
-            recommendations.append("- Publish stronger evidence-led comparison modules and FAQ blocks.")
+            recommendations.append(
+                "- Publish stronger evidence-led comparison modules and FAQ blocks."
+            )
 
         return (
             f"{content}\n\n"
@@ -1593,9 +1714,13 @@ class GeoArticleEngineService:
     @staticmethod
     def _citation_score(markdown: str, include_schema: bool, sources_count: int) -> int:
         text = markdown or ""
-        source_tags = len(re.findall(r"\[source:\s*https?://[^\]]+\]", text, flags=re.IGNORECASE))
+        source_tags = len(
+            re.findall(r"\[source:\s*https?://[^\]]+\]", text, flags=re.IGNORECASE)
+        )
         faq_section = "faq" in text.lower()
-        competitor_section = "how to beat top competitor for this keyword" in text.lower()
+        competitor_section = (
+            "how to beat top competitor for this keyword" in text.lower()
+        )
 
         score = 30
         score += min(30, source_tags * 6)
@@ -1620,7 +1745,9 @@ class GeoArticleEngineService:
         section_hints = [str(s).strip() for s in section_hints if str(s).strip()]
         audit_only = (
             str(data_pack.get("provider") or "").lower() == "audit-only"
-            or str(data_pack.get("keyword_strategy", {}).get("strategy_mode") or "").lower()
+            or str(
+                data_pack.get("keyword_strategy", {}).get("strategy_mode") or ""
+            ).lower()
             == "audit_only"
         )
         require_qa = bool(
@@ -1659,7 +1786,9 @@ class GeoArticleEngineService:
                 "qa_requirements": {
                     "required": require_qa,
                     "min_pairs": min_qa_pairs,
-                    "section_heading": "Preguntas frecuentes" if language.lower().startswith("es") else "FAQ",
+                    "section_heading": "Preguntas frecuentes"
+                    if language.lower().startswith("es")
+                    else "FAQ",
                     "format": "Use question headings or Q:/A: pairs.",
                 },
                 "citation_format": "[Source: https://...]",
@@ -1742,14 +1871,22 @@ class GeoArticleEngineService:
             getattr(settings, "GEO_ARTICLE_REQUIRE_EXTERNAL_CITATION", True)
             and external_urls
         )
-        missing_internal = require_internal and not internal_urls.intersection(citation_urls)
-        missing_external = require_external and not external_urls.intersection(citation_urls)
+        missing_internal = require_internal and not internal_urls.intersection(
+            citation_urls
+        )
+        missing_external = require_external and not external_urls.intersection(
+            citation_urls
+        )
         missing_qa = require_qa and not GeoArticleEngineService._has_required_qa(
             markdown, min_pairs=min_qa_pairs
         )
 
-        needs_repair = invalid_citations or missing_internal or missing_external or missing_qa
-        if needs_repair and getattr(settings, "GEO_ARTICLE_REPAIR_INVALID_CITATIONS", True):
+        needs_repair = (
+            invalid_citations or missing_internal or missing_external or missing_qa
+        )
+        if needs_repair and getattr(
+            settings, "GEO_ARTICLE_REPAIR_INVALID_CITATIONS", True
+        ):
             internal_required = [
                 src.get("url")
                 for src in data_pack.get("required_sources", {}).get("internal", [])
@@ -1781,15 +1918,18 @@ class GeoArticleEngineService:
                 markdown, allowed_sources
             )
             citation_urls = GeoArticleEngineService._extract_citation_urls(markdown)
-            missing_internal = require_internal and not internal_urls.intersection(citation_urls)
-            missing_external = require_external and not external_urls.intersection(citation_urls)
+            missing_internal = require_internal and not internal_urls.intersection(
+                citation_urls
+            )
+            missing_external = require_external and not external_urls.intersection(
+                citation_urls
+            )
             missing_qa = require_qa and not GeoArticleEngineService._has_required_qa(
                 markdown, min_pairs=min_qa_pairs
             )
 
-        if (
-            getattr(settings, "GEO_ARTICLE_REPAIR_INVALID_CITATIONS", True)
-            and (missing_internal or missing_external)
+        if getattr(settings, "GEO_ARTICLE_REPAIR_INVALID_CITATIONS", True) and (
+            missing_internal or missing_external
         ):
             markdown = GeoArticleEngineService._append_required_citations(
                 markdown,
@@ -1798,9 +1938,16 @@ class GeoArticleEngineService:
                 language=language,
             )
             citation_urls = GeoArticleEngineService._extract_citation_urls(markdown)
-            missing_internal = require_internal and not internal_urls.intersection(citation_urls)
-            missing_external = require_external and not external_urls.intersection(citation_urls)
-        if getattr(settings, "GEO_ARTICLE_REPAIR_INVALID_CITATIONS", True) and missing_qa:
+            missing_internal = require_internal and not internal_urls.intersection(
+                citation_urls
+            )
+            missing_external = require_external and not external_urls.intersection(
+                citation_urls
+            )
+        if (
+            getattr(settings, "GEO_ARTICLE_REPAIR_INVALID_CITATIONS", True)
+            and missing_qa
+        ):
             markdown = GeoArticleEngineService._append_required_faq(
                 markdown,
                 min_pairs=min_qa_pairs,
@@ -1817,31 +1964,27 @@ class GeoArticleEngineService:
                 "Article cites sources outside the audited evidence set."
             )
         if missing_internal:
-            raise KimiGenerationError(
-                "Article missing required internal citations."
-            )
+            raise KimiGenerationError("Article missing required internal citations.")
         if missing_external:
-            raise KimiGenerationError(
-                "Article missing required external citations."
-            )
+            raise KimiGenerationError("Article missing required external citations.")
         if missing_qa:
-            raise KimiGenerationError(
-                "Article missing required Q&A/FAQ section."
-            )
+            raise KimiGenerationError("Article missing required Q&A/FAQ section.")
 
-        markdown = GeoArticleEngineService._ensure_competitor_section(markdown, data_pack)
+        markdown = GeoArticleEngineService._ensure_competitor_section(
+            markdown, data_pack
+        )
         title = str(parsed.get("title") or title_hint or "").strip()
         if not title:
-            primary_kw = data_pack.get("keyword_strategy", {}).get("primary_keyword", "keyword")
+            primary_kw = data_pack.get("keyword_strategy", {}).get(
+                "primary_keyword", "keyword"
+            )
             title = f"{primary_kw.title()}: GEO + SEO Playbook"
 
         primary_kw = data_pack.get("keyword_strategy", {}).get("primary_keyword", "")
         meta_title = str(parsed.get("meta_title") or title).strip()
         meta_description = str(parsed.get("meta_description") or "").strip()
         if not meta_description:
-            meta_description = (
-                f"Actionable GEO and SEO strategy for {primary_kw} with competitor gap closure and source-backed recommendations."
-            )
+            meta_description = f"Actionable GEO and SEO strategy for {primary_kw} with competitor gap closure and source-backed recommendations."
         meta_description = meta_description[:160]
 
         citation_urls = GeoArticleEngineService._extract_citation_urls(markdown)
@@ -1856,7 +1999,9 @@ class GeoArticleEngineService:
                     str(item.get("source_url") or "").strip()
                 )
                 if claim and source_url and source_url in citation_urls:
-                    normalized_evidence.append({"claim": claim, "source_url": source_url})
+                    normalized_evidence.append(
+                        {"claim": claim, "source_url": source_url}
+                    )
         if not normalized_evidence:
             for src in data_pack.get("required_sources", {}).get("external", [])[:3]:
                 normalized_evidence.append(
@@ -1941,14 +2086,18 @@ class GeoArticleEngineService:
                 "Kimi provider is not configured. Set NV_API_KEY_ANALYSIS or NVIDIA_API_KEY or NV_API_KEY."
             )
 
-        normalized_count = max(1, min(GeoArticleEngineService.MAX_ARTICLES, int(article_count)))
+        normalized_count = max(
+            1, min(GeoArticleEngineService.MAX_ARTICLES, int(article_count))
+        )
         focus_urls = GeoArticleEngineService._build_focus_urls(audit)
         if len(focus_urls) < GeoArticleEngineService.MIN_INTERNAL_SOURCES:
             raise ArticleDataPackIncompleteError(
                 "ARTICLE_DATA_PACK_INCOMPLETE: not enough audited pages to build internal evidence set."
             )
 
-        internal_sources = GeoArticleEngineService._build_internal_sources(audit, focus_urls)
+        internal_sources = GeoArticleEngineService._build_internal_sources(
+            audit, focus_urls
+        )
         if len(internal_sources) < GeoArticleEngineService.MIN_INTERNAL_SOURCES:
             raise ArticleDataPackIncompleteError(
                 "ARTICLE_DATA_PACK_INCOMPLETE: internal source coverage below minimum (2)."
@@ -2009,19 +2158,28 @@ class GeoArticleEngineService:
         if llm_function is None:
             raise KimiUnavailableError("Kimi provider function is unavailable.")
 
-        market = str((batch.summary or {}).get("market") or GeoArticleEngineService._extract_market(audit))
+        market = str(
+            (batch.summary or {}).get("market")
+            or GeoArticleEngineService._extract_market(audit)
+        )
         language = batch.language or "en"
         tone = batch.tone or "executive"
         include_schema = bool(batch.include_schema)
 
         focus_urls = GeoArticleEngineService._build_focus_urls(audit)
-        internal_sources = GeoArticleEngineService._build_internal_sources(audit, focus_urls)
+        internal_sources = GeoArticleEngineService._build_internal_sources(
+            audit, focus_urls
+        )
         fallback_topic_terms = GeoArticleEngineService._extract_topic_terms(audit, "")
-        fallback_external_sources = GeoArticleEngineService._build_external_sources_from_audit(
-            audit, topic_terms=fallback_topic_terms
+        fallback_external_sources = (
+            GeoArticleEngineService._build_external_sources_from_audit(
+                audit, topic_terms=fallback_topic_terms
+            )
         )
         audit_keywords = GeoArticleEngineService._extract_audit_keywords(audit)
-        ai_strategy_items = GeoArticleEngineService._extract_ai_strategy_items(db, audit.id)
+        ai_strategy_items = GeoArticleEngineService._extract_ai_strategy_items(
+            db, audit.id
+        )
         keyword_pool = GeoArticleEngineService._build_primary_keyword_pool(
             audit_keywords=audit_keywords,
             ai_strategy_items=ai_strategy_items,
@@ -2037,7 +2195,9 @@ class GeoArticleEngineService:
         requested_count = int(batch.requested_count or 1)
 
         for index in range(requested_count):
-            ai_item = ai_strategy_items[index] if index < len(ai_strategy_items) else None
+            ai_item = (
+                ai_strategy_items[index] if index < len(ai_strategy_items) else None
+            )
             primary_keyword = (
                 str((ai_item or {}).get("target_keyword") or "").strip().lower()
                 or keyword_pool[index % len(keyword_pool)]
@@ -2105,10 +2265,16 @@ class GeoArticleEngineService:
                     "generation_status": "completed",
                     "generation_error": None,
                     "keyword_strategy": data_pack.get("keyword_strategy", {}),
-                    "search_intent": data_pack.get("keyword_strategy", {}).get("search_intent"),
-                    "top_competitors_for_keyword": data_pack.get("top_competitors_for_keyword", []),
+                    "search_intent": data_pack.get("keyword_strategy", {}).get(
+                        "search_intent"
+                    ),
+                    "top_competitors_for_keyword": data_pack.get(
+                        "top_competitors_for_keyword", []
+                    ),
                     "competitor_to_beat": (
-                        data_pack.get("top_competitors_for_keyword", [{}])[0].get("domain")
+                        data_pack.get("top_competitors_for_keyword", [{}])[0].get(
+                            "domain"
+                        )
                         if data_pack.get("top_competitors_for_keyword")
                         else None
                     ),
@@ -2152,7 +2318,9 @@ class GeoArticleEngineService:
             "requested_count": requested_count,
             "generated_count": success_count,
             "failed_count": failed_count,
-            "average_citation_readiness_score": round(total_score / max(success_count, 1), 1),
+            "average_citation_readiness_score": round(
+                total_score / max(success_count, 1), 1
+            ),
             "completed_at": datetime.now(timezone.utc).isoformat(),
         }
         db.commit()

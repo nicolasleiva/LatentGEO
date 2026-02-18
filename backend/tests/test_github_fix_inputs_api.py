@@ -1,9 +1,7 @@
 import os
 
-import pytest
-
 from app.core.config import settings
-from app.models import Audit, AuditStatus, AuditedPage
+from app.models import Audit, AuditedPage, AuditStatus
 
 
 def _seed_fix_inputs_audit(db_session) -> Audit:

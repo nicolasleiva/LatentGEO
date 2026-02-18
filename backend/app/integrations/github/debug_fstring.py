@@ -1,9 +1,6 @@
+file_path = r"c:\Users\Dell\auditor_geo\auditor_geo\backend\app\integrations\github\nextjs_modifier.py"
 
-import re
-
-file_path = r'c:\Users\Dell\auditor_geo\auditor_geo\backend\app\integrations\github\nextjs_modifier.py'
-
-with open(file_path, 'r', encoding='utf-8') as f:
+with open(file_path, "r", encoding="utf-8") as f:
     content = f.read()
 
 # Finding the prompt definition
@@ -29,8 +26,8 @@ print(f"Analyzing f-string body of length {len(fstring_body)}")
 i = 0
 length = len(fstring_body)
 while i < length:
-    if fstring_body[i] == '{':
-        if i + 1 < length and fstring_body[i+1] == '{':
+    if fstring_body[i] == "{":
+        if i + 1 < length and fstring_body[i + 1] == "{":
             # Double brace {{ -> skip both
             i += 2
             continue
@@ -40,18 +37,18 @@ while i < length:
             j = i + 1
             depth = 1
             while j < length and depth > 0:
-                if fstring_body[j] == '{':
+                if fstring_body[j] == "{":
                     depth += 1
-                elif fstring_body[j] == '}':
+                elif fstring_body[j] == "}":
                     depth -= 1
                 j += 1
-            
-            expr = fstring_body[i+1:j-1]
+
+            expr = fstring_body[i + 1 : j - 1]
             print(f"Found expression: {{{expr}}}")
-            
-            if 'faq' in expr:
+
+            if "faq" in expr:
                 print(f"!!! PROBLEM CANDIDATE: {{{expr}}}")
-            
+
             i = j
     else:
         i += 1

@@ -15,15 +15,15 @@ Proporciona:
 - Generación de reportes markdown
 """
 
-import asyncio
-import aiohttp
-import logging
 import json
+import logging
 import re
-from urllib.parse import urlparse
-from bs4 import BeautifulSoup
-from typing import Dict, List, Optional, Tuple, Any
 from datetime import datetime
+from typing import Any, Dict, Optional, Tuple
+from urllib.parse import urlparse
+
+import aiohttp
+from bs4 import BeautifulSoup
 
 logger = logging.getLogger(__name__)
 
@@ -75,34 +75,44 @@ class AuditLocalService:
         """
         Descarga el contenido de una URL con reintentos y manejo de redirecciones.
         """
-        import ssl
-        
+
         # Headers más realistas
         USER_AGENTS = [
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
             "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         ]
-        
+
         import random
+
         headers = HEADERS.copy()
-        headers["User-Agent"] = random.choice(USER_AGENTS)
-        headers["Accept"] = "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8"
+        headers["User-Agent"] = random.choice(USER_AGENTS)  # nosec B311
+        headers[
+            "Accept"
+        ] = "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8"
         headers["Accept-Language"] = "es-ES,es;q=0.9,en;q=0.8"
-        
+
         try:
             # Intento 1: Con SSL verificado
-            async with session.get(url, timeout=timeout, headers=headers, allow_redirects=True) as resp:
+            async with session.get(
+                url, timeout=timeout, headers=headers, allow_redirects=True
+            ) as resp:
                 text = await resp.text(errors="ignore")
                 content_type = resp.headers.get("content-type", "")
                 return resp.status, text, content_type
         except Exception as e:
-            logger.warning(f"Primer intento fallido para {url}: {e}. Reintentando con SSL relajado...")
+            logger.warning(
+                f"Primer intento fallido para {url}: {e}. Reintentando con SSL relajado..."
+            )
             try:
                 # Intento 2: Sin verificación SSL (por si es problema de certs en Docker)
                 connector = aiohttp.TCPConnector(ssl=False)
-                async with aiohttp.ClientSession(connector=connector, headers=headers) as backup_session:
-                    async with backup_session.get(url, timeout=timeout, allow_redirects=True) as resp:
+                async with aiohttp.ClientSession(
+                    connector=connector, headers=headers
+                ) as backup_session:
+                    async with backup_session.get(
+                        url, timeout=timeout, allow_redirects=True
+                    ) as resp:
                         text = await resp.text(errors="ignore")
                         content_type = resp.headers.get("content-type", "")
                         return resp.status, text, content_type
@@ -364,7 +374,7 @@ class AuditLocalService:
                 from dateutil import parser as dateparser
 
                 parsed_dates.append(dateparser.parse(d, fuzzy=True).isoformat())
-            except Exception:
+            except Exception:  # nosec B110
                 pass
 
         # Analizar enlaces externos
@@ -430,7 +440,7 @@ class AuditLocalService:
                     jsonld_list.extend(parsed)
                 else:
                     jsonld_list.append(parsed)
-            except Exception:
+            except Exception:  # nosec B112
                 continue
 
         # Extraer tipos de schema
@@ -501,7 +511,7 @@ class AuditLocalService:
         md.append(f"*Generado:* {AuditLocalService.now_iso()} UTC")
 
         if status != 200:
-            md.append(f"\n---\n**ADVERTENCIA: Falló la auditoría local**")
+            md.append("\n---\n**ADVERTENCIA: Falló la auditoría local**")
             md.append(f"**El servidor respondió con el código de estado: {status}**")
             md.append(
                 "El análisis siguiente se basa en una página de error "
