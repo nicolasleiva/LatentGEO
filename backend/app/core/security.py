@@ -2,10 +2,9 @@
 Funciones de seguridad para la aplicación
 """
 
-import os
+import ipaddress
 import re
 from urllib.parse import urlparse
-from typing import Optional
 
 
 def normalize_url(url: str) -> str:
@@ -60,23 +59,40 @@ def validate_url(url: str) -> bool:
         parsed = urlparse(normalized)
         if not parsed.scheme or not parsed.netloc:
             return False
+
+        hostname = (parsed.hostname or "").lower()
+        if not hostname:
+            return False
     except Exception:
         return False
 
-    # Prevenir SSRF
-    blocked_hosts = [
+    # Prevenir SSRF: hostnames sensibles y endpoints metadata
+    blocked_hostnames = {
         "localhost",
-        "127.0.0.1",
-        "0.0.0.0",
-        "192.168",
-        "10.0",
-        "172.16",
         "metadata.google.internal",
         "169.254.169.254",
-    ]
+    }
+    if hostname in blocked_hostnames:
+        return False
+    if hostname.endswith(".internal") or hostname.endswith(".local"):
+        return False
 
-    for blocked in blocked_hosts:
-        if blocked in normalized.lower():
+    # Bloqueo por IP privada/loopback/link-local/unspecified/reserved
+    try:
+        ip = ipaddress.ip_address(hostname.strip("[]"))
+    except ValueError:
+        # Hostname textual: bloquear patrones de redes internas evidentes.
+        if re.match(r"^(127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[0-1])\.)", hostname):
+            return False
+    else:
+        if (
+            ip.is_private
+            or ip.is_loopback
+            or ip.is_link_local
+            or ip.is_unspecified
+            or ip.is_reserved
+            or ip.is_multicast
+        ):
             return False
 
     # Solo HTTP/HTTPS
