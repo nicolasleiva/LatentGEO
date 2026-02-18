@@ -1,4 +1,4 @@
-import { Auth0Client } from '@auth0/nextjs-auth0/server';
+import { Auth0Client } from "@auth0/nextjs-auth0/server";
 
 // Auth0 v4 client - reads configuration from environment variables automatically:
 // - AUTH0_DOMAIN

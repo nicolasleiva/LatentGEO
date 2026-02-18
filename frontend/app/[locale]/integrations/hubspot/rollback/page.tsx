@@ -1,47 +1,50 @@
-"use client"
+"use client";
 
-import { useState } from "react"
-import { Header } from "@/components/header"
-import { AdminGate } from "@/components/auth/AdminGate"
-import { Button } from "@/components/ui/button"
-import { Card } from "@/components/ui/card"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { API_URL } from "@/lib/api"
-import { RefreshCw, RotateCcw } from "lucide-react"
+import { useState } from "react";
+import { Header } from "@/components/header";
+import { AdminGate } from "@/components/auth/AdminGate";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { API_URL } from "@/lib/api";
+import { RefreshCw, RotateCcw } from "lucide-react";
 
 export default function HubSpotRollbackPage() {
-  const [changeId, setChangeId] = useState("")
-  const [loading, setLoading] = useState(false)
-  const [result, setResult] = useState<any>(null)
-  const [error, setError] = useState<string>("")
+  const [changeId, setChangeId] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState<any>(null);
+  const [error, setError] = useState<string>("");
 
   const rollback = async () => {
-    const id = changeId.trim()
+    const id = changeId.trim();
     if (!id) {
-      setError("Please enter a change_id.")
-      return
+      setError("Please enter a change_id.");
+      return;
     }
-    setError("")
-    setLoading(true)
-    setResult(null)
+    setError("");
+    setLoading(true);
+    setResult(null);
     try {
-      const res = await fetch(`${API_URL}/api/hubspot/rollback/${encodeURIComponent(id)}`, {
-        method: "POST",
-      })
-      const data = await res.json().catch(() => ({}))
+      const res = await fetch(
+        `${API_URL}/api/hubspot/rollback/${encodeURIComponent(id)}`,
+        {
+          method: "POST",
+        },
+      );
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        setError(data?.detail || data?.error || `Error ${res.status}`)
-        return
+        setError(data?.detail || data?.error || `Error ${res.status}`);
+        return;
       }
-      setResult(data)
+      setResult(data);
     } catch (e) {
-      console.error(e)
-      setError("Error calling HubSpot rollback.")
+      console.error(e);
+      setError("Error calling HubSpot rollback.");
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
-  }
+  };
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -58,12 +61,20 @@ export default function HubSpotRollbackPage() {
           <Card className="glass-card p-6">
             <div className="space-y-2">
               <Label>change_id</Label>
-              <Input value={changeId} onChange={(e) => setChangeId(e.target.value)} placeholder="e.g. 123e4567..." />
+              <Input
+                value={changeId}
+                onChange={(e) => setChangeId(e.target.value)}
+                placeholder="e.g. 123e4567..."
+              />
             </div>
 
             <div className="flex gap-2 mt-4">
               <Button onClick={rollback} disabled={loading}>
-                {loading ? <RefreshCw className="h-4 w-4 mr-2 animate-spin" /> : <RotateCcw className="h-4 w-4 mr-2" />}
+                {loading ? (
+                  <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                ) : (
+                  <RotateCcw className="h-4 w-4 mr-2" />
+                )}
                 Rollback
               </Button>
             </div>
@@ -79,5 +90,5 @@ export default function HubSpotRollbackPage() {
         </main>
       </AdminGate>
     </div>
-  )
+  );
 }

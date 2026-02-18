@@ -1,17 +1,24 @@
-'use client';
+"use client";
 
-import { useState } from 'react';
-import { FileText, Copy, Check, Sparkles, AlertCircle, List } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
-import { Label } from '@/components/ui/label';
-import { fetchWithBackendAuth } from '@/lib/backend-auth';
+import { useState } from "react";
+import {
+  FileText,
+  Copy,
+  Check,
+  Sparkles,
+  AlertCircle,
+  List,
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
+import { fetchWithBackendAuth } from "@/lib/backend-auth";
 
 interface SchemaSuggestion {
   schema_type: string;
   reason: string;
-  priority: 'high' | 'medium' | 'low';
+  priority: "high" | "medium" | "low";
   schema_json: string;
 }
 
@@ -19,8 +26,10 @@ interface SchemaMultipleGeneratorProps {
   backendUrl: string;
 }
 
-export default function SchemaMultipleGenerator({ backendUrl }: SchemaMultipleGeneratorProps) {
-  const [url, setUrl] = useState('');
+export default function SchemaMultipleGenerator({
+  backendUrl,
+}: SchemaMultipleGeneratorProps) {
+  const [url, setUrl] = useState("");
   const [loading, setLoading] = useState(false);
   const [results, setResults] = useState<SchemaSuggestion[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -28,18 +37,21 @@ export default function SchemaMultipleGenerator({ backendUrl }: SchemaMultipleGe
 
   const generateSchemas = async () => {
     if (!url.trim()) return;
-    
+
     setLoading(true);
     setError(null);
-    
+
     try {
-      const res = await fetchWithBackendAuth(`${backendUrl}/api/geo/schema-multiple`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: url }),
-      });
-      
-      if (!res.ok) throw new Error('Failed to generate schemas');
+      const res = await fetchWithBackendAuth(
+        `${backendUrl}/api/geo/schema-multiple`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ url: url }),
+        },
+      );
+
+      if (!res.ok) throw new Error("Failed to generate schemas");
       const data = await res.json();
       setResults(data.schemas || []);
     } catch (err: any) {
@@ -57,10 +69,14 @@ export default function SchemaMultipleGenerator({ backendUrl }: SchemaMultipleGe
 
   const getPriorityColor = (priority: string) => {
     switch (priority) {
-      case 'high': return 'bg-red-500/20 text-red-400 border-red-500/30';
-      case 'medium': return 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30';
-      case 'low': return 'bg-blue-500/20 text-blue-400 border-blue-500/30';
-      default: return 'bg-muted/40 text-muted-foreground';
+      case "high":
+        return "bg-red-500/20 text-red-400 border-red-500/30";
+      case "medium":
+        return "bg-yellow-500/20 text-yellow-400 border-yellow-500/30";
+      case "low":
+        return "bg-blue-500/20 text-blue-400 border-blue-500/30";
+      default:
+        return "bg-muted/40 text-muted-foreground";
     }
   };
 
@@ -77,9 +93,9 @@ export default function SchemaMultipleGenerator({ backendUrl }: SchemaMultipleGe
               className="mt-2 bg-muted/30 border-border/70 text-foreground placeholder:text-muted-foreground"
             />
           </div>
-          
-          <Button 
-            onClick={generateSchemas} 
+
+          <Button
+            onClick={generateSchemas}
             disabled={loading || !url.trim()}
             className="glass-button-primary w-full"
           >
@@ -105,39 +121,56 @@ export default function SchemaMultipleGenerator({ backendUrl }: SchemaMultipleGe
       {results && results.length === 0 && (
         <div className="text-center py-12 bg-muted/30 rounded-2xl border border-dashed border-border">
           <FileText className="w-12 h-12 text-muted-foreground/60 mx-auto mb-4" />
-          <p className="text-muted-foreground">No schema suggestions found for this page.</p>
+          <p className="text-muted-foreground">
+            No schema suggestions found for this page.
+          </p>
         </div>
       )}
 
       {results && results.length > 0 && (
         <div className="space-y-4">
-          <p className="text-muted-foreground">Found {results.length} schema recommendations:</p>
-          
+          <p className="text-muted-foreground">
+            Found {results.length} schema recommendations:
+          </p>
+
           {results.map((schema, idx) => (
-            <div key={idx} className="bg-muted/30 border border-border rounded-xl p-6">
+            <div
+              key={idx}
+              className="bg-muted/30 border border-border rounded-xl p-6"
+            >
               <div className="flex justify-between items-start mb-4">
                 <div>
                   <div className="flex items-center gap-3 mb-2">
-                    <h4 className="font-semibold text-foreground text-lg">{schema.schema_type}</h4>
-                    <span className={`px-3 py-1 rounded-lg text-sm font-bold border ${getPriorityColor(schema.priority)}`}>
+                    <h4 className="font-semibold text-foreground text-lg">
+                      {schema.schema_type}
+                    </h4>
+                    <span
+                      className={`px-3 py-1 rounded-lg text-sm font-bold border ${getPriorityColor(schema.priority)}`}
+                    >
                       {schema.priority.toUpperCase()}
                     </span>
                   </div>
-                  <p className="text-muted-foreground text-sm">{schema.reason}</p>
+                  <p className="text-muted-foreground text-sm">
+                    {schema.reason}
+                  </p>
                 </div>
-                <Button 
-                  variant="outline" 
+                <Button
+                  variant="outline"
                   onClick={() => copyToClipboard(idx, schema.schema_json)}
                   className="border-border/70 text-foreground"
                 >
                   {copiedIdx === idx ? (
-                    <><Check className="w-4 h-4 mr-2" /> Copied!</>
+                    <>
+                      <Check className="w-4 h-4 mr-2" /> Copied!
+                    </>
                   ) : (
-                    <><Copy className="w-4 h-4 mr-2" /> Copy</>
+                    <>
+                      <Copy className="w-4 h-4 mr-2" /> Copy
+                    </>
                   )}
                 </Button>
               </div>
-              
+
               <Textarea
                 value={schema.schema_json}
                 readOnly

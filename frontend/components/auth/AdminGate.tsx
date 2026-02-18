@@ -1,13 +1,19 @@
-"use client"
+"use client";
 
-import type { ReactNode } from "react"
-import { useUser } from "@auth0/nextjs-auth0/client"
-import { Button } from "@/components/ui/button"
-import { Card } from "@/components/ui/card"
-import { Loader2, Lock } from "lucide-react"
+import type { ReactNode } from "react";
+import { useUser } from "@auth0/nextjs-auth0/client";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { Loader2, Lock } from "lucide-react";
 
-export function AdminGate({ children, title }: { children: ReactNode; title?: string }) {
-  const { user, isLoading } = useUser()
+export function AdminGate({
+  children,
+  title,
+}: {
+  children: ReactNode;
+  title?: string;
+}) {
+  const { user, isLoading } = useUser();
 
   if (isLoading) {
     return (
@@ -17,7 +23,7 @@ export function AdminGate({ children, title }: { children: ReactNode; title?: st
           <div className="text-muted-foreground">Loading session...</div>
         </Card>
       </div>
-    )
+    );
   }
 
   if (!user) {
@@ -25,7 +31,9 @@ export function AdminGate({ children, title }: { children: ReactNode; title?: st
       <div className="max-w-4xl mx-auto px-6 py-12">
         <Card className="glass-card p-10 text-center">
           <Lock className="h-10 w-10 text-muted-foreground/60 mx-auto mb-4" />
-          <div className="text-xl font-semibold">{title || "Restricted access"}</div>
+          <div className="text-xl font-semibold">
+            {title || "Restricted access"}
+          </div>
           <div className="text-muted-foreground mt-2">
             Sign in to access this section.
           </div>
@@ -36,8 +44,8 @@ export function AdminGate({ children, title }: { children: ReactNode; title?: st
           </div>
         </Card>
       </div>
-    )
+    );
   }
 
-  return <>{children}</>
+  return <>{children}</>;
 }

@@ -6,13 +6,13 @@
   "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
   "assets": {
     "directory": ".open-next/assets",
-    "binding": "ASSETS"
+    "binding": "ASSETS",
   },
   "services": [
     {
       "binding": "WORKER_SELF_REFERENCE",
-      "service": "auditor-geo-frontend"
-    }
+      "service": "auditor-geo-frontend",
+    },
   ],
   "vars": {
     "ENVIRONMENT": "production",
@@ -21,6 +21,6 @@
     "API_URL": "https://api.example.com",
     "AUTH0_DOMAIN": "dev-1tje44xertslyavv.us.auth0.com",
     "AUTH0_CLIENT_ID": "PDaM0CxCRvFfdJa1LvRdn5o551QDWY10",
-    "APP_BASE_URL": "https://auditor-geo-frontend.nicolas-leivaok.workers.dev"
-  }
+    "APP_BASE_URL": "https://auditor-geo-frontend.nicolas-leivaok.workers.dev",
+  },
 }

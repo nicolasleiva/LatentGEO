@@ -1,46 +1,47 @@
-import type { Metadata } from 'next'
-import { Manrope, Sora, JetBrains_Mono } from 'next/font/google'
-import { Analytics } from '@vercel/analytics/next'
-import { Auth0Provider } from '@auth0/nextjs-auth0/client'
-import { ThemeProvider } from '@/components/theme-provider'
-import './globals.css'
+import type { Metadata } from "next";
+import { Manrope, Sora, JetBrains_Mono } from "next/font/google";
+import { Analytics } from "@vercel/analytics/next";
+import { Auth0Provider } from "@auth0/nextjs-auth0/client";
+import { ThemeProvider } from "@/components/theme-provider";
+import "./globals.css";
 
 const sora = Sora({
-  subsets: ['latin'],
-  variable: '--font-display',
-  display: 'swap',
-})
+  subsets: ["latin"],
+  variable: "--font-display",
+  display: "swap",
+});
 
 const manrope = Manrope({
-  subsets: ['latin'],
-  variable: '--font-sans',
-  display: 'swap',
-})
+  subsets: ["latin"],
+  variable: "--font-sans",
+  display: "swap",
+});
 
 const jetbrainsMono = JetBrains_Mono({
-  subsets: ['latin'],
-  variable: '--font-mono',
-  display: 'swap',
-})
+  subsets: ["latin"],
+  variable: "--font-mono",
+  display: "swap",
+});
 
 export const metadata: Metadata = {
-  title: 'LatentGEO.ai — AI & Generative Search Readiness',
+  title: "LatentGEO.ai — AI & Generative Search Readiness",
   description:
-    'Autonomous code remediation and AI-native content creation for growth and visibility.',
-}
+    "Autonomous code remediation and AI-native content creation for growth and visibility.",
+};
 
 // Supported locales (used for runtime validation)
-const locales = ['en', 'es']
+const locales = ["en", "es"];
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
   params,
 }: {
-  children: React.ReactNode
-  params?: { locale?: string }
+  children: React.ReactNode;
+  params?: Promise<{ locale?: string }>;
 }) {
-  const locale = params?.locale
-  const validLocale = locale && locales.includes(locale) ? locale : 'en'
+  const resolvedParams = params ? await params : undefined;
+  const locale = resolvedParams?.locale;
+  const validLocale = locale && locales.includes(locale) ? locale : "en";
 
   return (
     <html
@@ -61,5 +62,5 @@ export default function RootLayout({
         <Analytics />
       </body>
     </html>
-  )
+  );
 }
