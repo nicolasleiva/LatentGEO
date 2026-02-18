@@ -45,7 +45,7 @@ export default function LLMVisibilityPage() {
             const newResults = await api.checkLLMVisibility(auditId, brandName, queryList)
             setResults(prev => [...newResults, ...prev])
         } catch (e) {
-            setError('Failed to check visibility. Ensure OpenAI/Gemini keys are set.')
+            setError(e instanceof Error ? e.message : 'Failed to check visibility. Ensure Kimi/NVIDIA key is set.')
         } finally {
             setLoading(false)
         }

@@ -12,12 +12,15 @@ import pytest
 import os
 from typing import Dict, Any
 
+from app.core.auth import create_access_token
+
 pytestmark = pytest.mark.skipif(
     os.getenv("RUN_INTEGRATION_TESTS") != "1",
     reason="Requiere servicios corriendo (localhost) y acceso a red",
 )
 
-BASE_URL = "http://localhost:8000/api"
+ROOT_URL = "http://localhost:8000"
+BASE_URL = f"{ROOT_URL}/api"
 
 class Colors:
     GREEN = '\033[92m'
@@ -38,6 +41,20 @@ def print_info(msg: str):
 def print_warning(msg: str):
     print(f"{Colors.YELLOW}⚠ {msg}{Colors.END}")
 
+
+@pytest.fixture(scope="module")
+def auth_context() -> Dict[str, Any]:
+    """
+    Build auth headers/token for secured production endpoints.
+    """
+    user_id = os.getenv("PROD_TEST_USER_ID", "integration-test-user")
+    email = os.getenv("PROD_TEST_EMAIL", "integration@test.local")
+    token = create_access_token({"sub": user_id, "email": email})
+    return {
+        "token": token,
+        "headers": {"Authorization": f"Bearer {token}"},
+    }
+
 def test_health():
     """Test 1: Health check"""
     print("\n" + "="*60)
@@ -45,20 +62,21 @@ def test_health():
     print("="*60)
     
     try:
-        response = requests.get("http://localhost:8000/health", timeout=5)
+        response = requests.get(f"{ROOT_URL}/health", timeout=5)
         assert response.status_code == 200, f"Expected 200, got {response.status_code}"
 
         health = response.json()
         assert health['status'] == 'healthy', "Backend not healthy"
 
         print_success(f"Backend: {health['status']}")
-        print_success(f"Database: {health['database']}")
-        print_success(f"Redis: {health['redis']}")
+        services = health.get("services", {})
+        print_success(f"Database: {services.get('database', 'unknown')}")
+        print_success(f"Redis: {services.get('redis', 'unknown')}")
     except Exception as e:
         pytest.fail(f"Health check failed: {e}")
 
 @pytest.fixture(scope="module")
-def created_audit_id():
+def created_audit_id(auth_context):
     """Test 2: Create audit without PageSpeed"""
     print("\n" + "="*60)
     print("TEST 2: Create Audit (PageSpeed Disabled)")
@@ -72,7 +90,12 @@ def created_audit_id():
             "market": "latam"
         }
         
-        response = requests.post(f"{BASE_URL}/audits/", json=audit_data, timeout=10)
+        response = requests.post(
+            f"{BASE_URL}/audits/",
+            json=audit_data,
+            headers=auth_context["headers"],
+            timeout=10,
+        )
         assert response.status_code == 202, f"Expected 202, got {response.status_code}"
         
         audit = response.json()
@@ -88,7 +111,7 @@ def created_audit_id():
         print_error(f"Create audit failed: {e}")
         pytest.fail(f"Could not create audit: {e}")
 
-def test_sse_endpoint(created_audit_id):
+def test_sse_endpoint(created_audit_id, auth_context):
     """Test 3: SSE endpoint with heartbeat and timeout"""
     audit_id = created_audit_id
     print("\n" + "="*60)
@@ -96,12 +119,16 @@ def test_sse_endpoint(created_audit_id):
     print("="*60)
     
     try:
-        sse_url = f"{BASE_URL}/sse/audits/{audit_id}/progress"
+        sse_url = f"{BASE_URL}/sse/audits/{audit_id}/progress?token={auth_context['token']}"
         print_info(f"SSE URL: {sse_url}")
 
         # Basic smoke: endpoint exists (GET should not be 500)
-        resp = requests.get(sse_url, timeout=5)
-        assert resp.status_code < 500, f"SSE endpoint returned {resp.status_code}"
+        with requests.get(sse_url, timeout=5, stream=True) as resp:
+            assert resp.status_code < 500, f"SSE endpoint returned {resp.status_code}"
+            content_type = resp.headers.get("content-type", "")
+            assert "text/event-stream" in content_type.lower(), (
+                f"Unexpected SSE content-type: {content_type}"
+            )
 
         print_success("SSE endpoint configured")
         print_success("✓ Fresh DB session per query")
@@ -113,7 +140,7 @@ def test_sse_endpoint(created_audit_id):
     except Exception as e:
         pytest.fail(f"SSE test failed: {e}")
 
-def test_audit_status(created_audit_id):
+def test_audit_status(created_audit_id, auth_context):
     """Test 4: Get audit status (lightweight endpoint)"""
     audit_id = created_audit_id
     print("\n" + "="*60)
@@ -121,7 +148,11 @@ def test_audit_status(created_audit_id):
     print("="*60)
     
     try:
-        response = requests.get(f"{BASE_URL}/audits/{audit_id}/status", timeout=5)
+        response = requests.get(
+            f"{BASE_URL}/audits/{audit_id}/status",
+            headers=auth_context["headers"],
+            timeout=5,
+        )
         assert response.status_code == 200, f"Expected 200, got {response.status_code}"
         
         status = response.json()
@@ -130,7 +161,7 @@ def test_audit_status(created_audit_id):
     except Exception as e:
         pytest.fail(f"Status check failed: {e}")
 
-def test_pagespeed_not_automatic(created_audit_id):
+def test_pagespeed_not_automatic(created_audit_id, auth_context):
     """Test 5: Verify PageSpeed is NOT run automatically"""
     audit_id = created_audit_id
     print("\n" + "="*60)
@@ -141,7 +172,11 @@ def test_pagespeed_not_automatic(created_audit_id):
         # Wait a bit for audit to start
         time.sleep(3)
         
-        response = requests.get(f"{BASE_URL}/audits/{audit_id}", timeout=5)
+        response = requests.get(
+            f"{BASE_URL}/audits/{audit_id}",
+            headers=auth_context["headers"],
+            timeout=5,
+        )
         audit = response.json()
         
         # PageSpeed should be None or empty
@@ -154,7 +189,7 @@ def test_pagespeed_not_automatic(created_audit_id):
     except Exception as e:
         pytest.fail(f"PageSpeed check failed: {e}")
 
-def test_manual_pagespeed(created_audit_id):
+def test_manual_pagespeed(created_audit_id, auth_context):
     """Test 6: Manual PageSpeed trigger"""
     audit_id = created_audit_id
     print("\n" + "="*60)
@@ -165,6 +200,7 @@ def test_manual_pagespeed(created_audit_id):
         print_info("Triggering PageSpeed manually...")
         response = requests.post(
             f"{BASE_URL}/audits/{audit_id}/pagespeed",
+            headers=auth_context["headers"],
             timeout=60
         )
         
@@ -189,7 +225,7 @@ def test_no_openai_references():
     
     try:
         # Check health endpoint doesn't mention OpenAI
-        response = requests.get("http://localhost:8000/health", timeout=5)
+        response = requests.get(f"{ROOT_URL}/health", timeout=5)
         health_text = response.text.lower()
         
         if 'openai' not in health_text:
@@ -202,27 +238,28 @@ def test_no_openai_references():
     except Exception as e:
         pytest.fail(f"OpenAI check failed: {e}")
 
-def test_endpoints_structure():
+def test_endpoints_structure(auth_context):
     """Test 8: Verify all endpoints are correctly structured"""
     print("\n" + "="*60)
     print("TEST 8: Endpoints Structure")
     print("="*60)
     
     endpoints = [
-        ("GET", "/health", "Health check"),
-        ("GET", f"{BASE_URL}/audits/", "List audits"),
-        ("POST", f"{BASE_URL}/audits/", "Create audit"),
-        ("GET", f"{BASE_URL}/audits/1/status", "Audit status"),
-        ("GET", f"{BASE_URL}/audits/1", "Audit details"),
+        ("GET", f"{ROOT_URL}/health", "Health check", False),
+        ("GET", f"{BASE_URL}/audits/", "List audits", True),
+        ("POST", f"{BASE_URL}/audits/", "Create audit", True),
+        ("GET", f"{BASE_URL}/audits/1/status", "Audit status", True),
+        ("GET", f"{BASE_URL}/audits/1", "Audit details", True),
     ]
-    
-    for method, endpoint, description in endpoints:
+
+    for method, endpoint, description, requires_auth in endpoints:
         try:
+            headers = auth_context["headers"] if requires_auth else None
             if method == "GET":
-                response = requests.get(endpoint, timeout=5)
+                response = requests.get(endpoint, headers=headers, timeout=5)
             else:
                 # For POST, we just check if endpoint exists (will fail validation but that's OK)
-                response = requests.post(endpoint, json={}, timeout=5)
+                response = requests.post(endpoint, json={}, headers=headers, timeout=5)
 
             # Any response (even 422 validation error) means endpoint exists
             assert response.status_code < 500, f"{description}: {endpoint} returned {response.status_code}"

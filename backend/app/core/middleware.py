@@ -4,6 +4,7 @@ Incluye rate limiting, security headers, trusted hosts, y HTTPS redirect.
 """
 import time
 import hashlib
+import re
 from collections import defaultdict
 from datetime import datetime, timedelta
 from typing import Callable, Dict, Optional, Tuple
@@ -109,8 +110,8 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         return (True, remaining, reset_time)
     
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
-        # Skip rate limiting for health checks, SSE, and audit endpoints
-        if request.url.path in ["/health", "/api/health", "/"] or "/sse/" in request.url.path or "/api/audits" in request.url.path:
+        # Skip rate limiting for health checks and SSE only
+        if request.url.path in ["/health", "/api/health", "/"] or "/sse/" in request.url.path:
             return await call_next(request)
         
         # Skip for trusted IPs
@@ -123,11 +124,24 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         
         client_key = self._get_client_key(request)
         
-        # Use more permissive rate limit for GET requests to audit detail pages (polling)
+        # Use more permissive rate limit only for polling-style audit GET endpoints.
         path_for_limit = request.url.path
-        if request.method == "GET" and "/api/audits" in request.url.path:
-            # All GET requests to /api/audits/* use the higher limit for polling
+        is_polling_get = bool(
+            request.method == "GET"
+            and re.fullmatch(
+                r"/api/audits/\d+(?:/(?:pages|competitors|report|fix_plan|status))?",
+                request.url.path,
+            )
+        )
+        if is_polling_get:
             path_for_limit = "/api/audits"
+        elif request.method == "POST" and request.url.path.endswith("/generate-pdf"):
+            path_for_limit = "/api/audits/generate-pdf"
+        elif request.method == "POST" and (
+            request.url.path.endswith("/run-pagespeed")
+            or request.url.path.endswith("/pagespeed")
+        ):
+            path_for_limit = "/api/audits/run-pagespeed"
         
         is_allowed, remaining, reset_time = self._check_rate_limit(
             client_key, path_for_limit, current_time
@@ -139,7 +153,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                 status_code=429,
                 content={"detail": "Too many requests. Please slow down."},
                 headers={
-                    "X-RateLimit-Limit": str(self._get_limit_for_path(request.url.path)[0]),
+                    "X-RateLimit-Limit": str(self._get_limit_for_path(path_for_limit)[0]),
                     "X-RateLimit-Remaining": "0",
                     "X-RateLimit-Reset": str(reset_time),
                     "Retry-After": str(reset_time - int(current_time))

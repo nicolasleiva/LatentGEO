@@ -23,10 +23,29 @@ class GitHubService:
     def __init__(self, db: Session):
         self.db = db
 
-    def _map_issue_to_fix_type(self, issue: str) -> str:
+    def _map_issue_to_fix_type(self, issue: str, issue_code: str = "") -> str:
         """
         Mapea issues detectados en auditoría a tipos de fixes aplicables en código
         """
+        issue_code_upper = (issue_code or "").upper().strip()
+        if issue_code_upper:
+            if issue_code_upper.startswith("H1_HIERARCHY"):
+                return "structure"
+            if issue_code_upper.startswith("H1_"):
+                return "h1"
+            if issue_code_upper.startswith("SCHEMA_") or issue_code_upper.startswith(
+                "PRODUCT_SCHEMA_"
+            ):
+                return "schema"
+            if issue_code_upper.startswith("AUTHOR_"):
+                return "add_author_metadata"
+            if issue_code_upper.startswith("FAQ_"):
+                return "add_faq_section"
+            if issue_code_upper.startswith("LONG_PARAGRAPH"):
+                return "add_lists_tables"
+            if issue_code_upper.startswith("PRODUCT_CONTENT_"):
+                return "content_enhancement"
+
         if not issue:
             return "other"
         
@@ -80,40 +99,97 @@ class GitHubService:
         Soporta múltiples formatos de fix_plan (legacy y V11).
         """
         raw_fixes = audit.fix_plan or []
-        
+
+        default_fixes = [
+            {
+                "type": "title",
+                "priority": "HIGH",
+                "description": "Optimize page title for SEO and Click-Through Rate",
+            },
+            {
+                "type": "meta_description",
+                "priority": "HIGH",
+                "description": "Add compelling meta description with keywords",
+            },
+            {
+                "type": "schema",
+                "priority": "MEDIUM",
+                "description": "Add Schema.org structured data for rich snippets",
+            },
+            {
+                "type": "add_faq_section",
+                "priority": "MEDIUM",
+                "description": "Add FAQ section to capture PAA (People Also Ask)",
+            },
+        ]
+
         # 1. Try to map existing fixes
         fixes = []
         if raw_fixes:
             for item in raw_fixes:
                 # Soporte para múltiples formatos de campo (issue, description, issue_code)
-                issue_text = item.get("issue") or item.get("description") or item.get("issue_code") or ""
-                recommended_value = item.get("recommended_value") or item.get("suggestion") or item.get("value") or ""
-                page_url = item.get("page") or item.get("page_url") or item.get("page_path") or ""
-                
-                fix_type = self._map_issue_to_fix_type(issue_text)
-                
+                issue_text = (
+                    item.get("issue")
+                    or item.get("description")
+                    or item.get("issue_code")
+                    or ""
+                )
+                issue_code = item.get("issue_code") or ""
+                recommended_value = item.get("recommended_value")
+                fallback_value = item.get("value") or item.get("suggestion") or ""
+                page_url = (
+                    item.get("page")
+                    or item.get("page_url")
+                    or item.get("page_path")
+                    or ""
+                )
+
+                fix_type = self._map_issue_to_fix_type(issue_text, issue_code)
+
                 # Only include specific fix types, ignore 'other' to allow fallback to defaults if no specific fixes found
-                if fix_type != "other": 
-                    fixes.append({
-                        "type": fix_type,
-                        "priority": item.get("priority", "MEDIUM"),
-                        "value": recommended_value,
-                        "page_url": page_url,
-                        "description": issue_text,
-                        "current_value": item.get("current_value"),
-                        "impact": item.get("impact", "")
-                    })
-        
+                if fix_type != "other":
+                    sensitive_types = {
+                        "schema",
+                        "add_author_metadata",
+                        "add_faq_section",
+                    }
+
+                    value = recommended_value
+                    if value in [None, "", {}]:
+                        value = fallback_value
+
+                    if fix_type in sensitive_types:
+                        if fix_type == "schema":
+                            if not isinstance(value, dict) or not value.get("org_name"):
+                                continue
+                        elif fix_type == "add_author_metadata":
+                            if not isinstance(value, dict) or not value.get("author_name"):
+                                continue
+                        elif fix_type == "add_faq_section":
+                            if not isinstance(value, list) or not value:
+                                continue
+                        else:
+                            if value is None or (isinstance(value, str) and not value.strip()):
+                                continue
+
+                    fixes.append(
+                        {
+                            "type": fix_type,
+                            "priority": item.get("priority", "MEDIUM"),
+                            "value": value,
+                            "page_url": page_url,
+                            "description": issue_text,
+                            "current_value": item.get("current_value"),
+                            "impact": item.get("impact", ""),
+                        }
+                    )
+
         # 2. Check if we have valid fixes
         if not fixes:
-            logger.info(f"No mappeable fixes found for audit {audit.id}, using default SEO/GEO fixes")
-            # Default fixes pack
-            fixes = [
-                {"type": "title", "priority": "HIGH", "description": "Optimize page title for SEO and Click-Through Rate"},
-                {"type": "meta_description", "priority": "HIGH", "description": "Add compelling meta description with keywords"},
-                {"type": "schema", "priority": "MEDIUM", "description": "Add Schema.org structured data for rich snippets"},
-                {"type": "add_faq_section", "priority": "MEDIUM", "description": "Add FAQ section to capture PAA (People Also Ask)"},
-            ]
+            logger.info(
+                f"No eligible fixes found for audit {audit.id}; using default SEO/GEO fixes"
+            )
+            fixes = default_fixes
         else:
             logger.info(f"Mapped {len(fixes)} fixes from fix_plan for audit {audit.id}")
 
@@ -439,7 +515,7 @@ class GitHubService:
             "keywords": [],
             "competitors": [],
             "issues": [],
-            "topic": "Growth Hacking, SEO, Analytics",
+            "topic": "",
             "pagespeed": {},
             "technical_audit": {},
             "content_suggestions": [],
@@ -455,6 +531,22 @@ class GitHubService:
                 # 2. Competitors (from JSON column)
                 if audit.competitors:
                     audit_context["competitors"] = audit.competitors
+
+                # 2.1 Topic (prefer audited content title, then category/domain)
+                topic = ""
+                if audit.target_audit and isinstance(audit.target_audit, dict):
+                    content = audit.target_audit.get("content") or {}
+                    title = content.get("title") or content.get("meta_title") or ""
+                    topic = str(title).strip()
+                if not topic:
+                    if audit.category:
+                        topic = str(audit.category).strip()
+                if not topic:
+                    if audit.domain:
+                        topic = str(audit.domain).strip()
+                if not topic and audit.url:
+                    topic = str(audit.url).strip()
+                audit_context["topic"] = topic or "Website"
                 
                 # 3. Issues (from fix_plan or calculated)
                 if audit.fix_plan:

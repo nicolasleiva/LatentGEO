@@ -31,6 +31,12 @@
 frontend/node_modules
 frontend/.pnpm-store
 frontend/.next
+frontend/.open-next
+frontend/.next_old
+frontend/.wrangler
+frontend/.cache
+frontend/.swc
+frontend/.turbo
 frontend/out
 frontend/dist
 frontend/build

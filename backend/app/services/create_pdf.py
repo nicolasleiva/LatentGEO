@@ -87,10 +87,11 @@ PAGE_MARGIN_MM = 16
 HEADER_HEIGHT_MM = 14
 CONTENT_PADDING_TOP = 6
 
-TOC_TITLE = "\u00cdndice / Table of Contents"
-REPORT_TITLE_PREFIX = "Informe de Auditor\u00eda GEO"
-FOOTER_LEFT = "https://www.linkedin.com/in/nicolasleiva/"
-FOOTER_RIGHT = "Nicolas Leiva"
+TOC_TITLE = "Table of Contents"
+REPORT_TITLE_PREFIX = "GEO Audit Report"
+FOOTER_LEFT = ""
+FOOTER_RIGHT = "Audit"
+PREPARED_BY_LABEL = "Prepared by"
 
 # Colores sobrios
 ACCENT_COLOR = (60, 60, 60)
@@ -202,7 +203,7 @@ def summarize_fix_plan(fix_plan_data, top_n=3):
 class PDFReport(FPDF):
     """Clase PDF con utilidades para el reporte profesional y minimalista."""
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, metadata=None, **kwargs):
         super().__init__(*args, **kwargs)
         self._fonts_added = set()
         self.setup_fonts()
@@ -210,8 +211,14 @@ class PDFReport(FPDF):
         self.alias_nb_pages()
         self._toc_entries = []
         self._toc_page_no = None
-        self.footer_left = FOOTER_LEFT
-        self.footer_right = FOOTER_RIGHT
+        self._toc_page_count = 0
+        self.metadata = metadata if isinstance(metadata, dict) else {}
+        self.footer_left = str(self.metadata.get("footer_left") or FOOTER_LEFT)
+        self.footer_right = str(self.metadata.get("footer_right") or FOOTER_RIGHT)
+        self.report_title_prefix = str(
+            self.metadata.get("report_title_prefix") or REPORT_TITLE_PREFIX
+        )
+        self.prepared_by = str(self.metadata.get("prepared_by") or "Auditor GEO")
 
         # Ajustes de márgenes consistentes
         self.set_margins(PAGE_MARGIN_MM, PAGE_MARGIN_MM, PAGE_MARGIN_MM)
@@ -241,13 +248,13 @@ class PDFReport(FPDF):
     def header(self):
         """Encabezado sobrio: título corto en una línea y una regla."""
         # No mostrar encabezado en portada ni página TOC para mantener limpieza
-        if self.page_no() in (1, self._toc_page_no):
+        if self.page_no() == 1 or self._is_toc_page():
             return
 
         fam = "Roboto" if "Roboto" in self._fonts_added else "helvetica"
         self.set_y(PAGE_MARGIN_MM - 6)
         self.set_font(fam, "B" if ("Roboto-B" in self._fonts_added) else "", 10)
-        title_short = REPORT_TITLE_PREFIX
+        title_short = self.report_title_prefix
         width = self.w - self.l_margin - self.r_margin
         self.set_text_color(*ACCENT_COLOR)
         # FIX: Reemplazado 'ln=1' por 'new_x/new_y'
@@ -283,7 +290,7 @@ class PDFReport(FPDF):
         self.cell(
             0,
             6,
-            f"{self.footer_right}   |   Página {self.page_no()} / {{nb}}",
+            f"{self.footer_right}   |   Page {self.page_no()} / {{nb}}",
             0,
             new_x=XPos.RIGHT,
             new_y=YPos.TOP,
@@ -326,7 +333,7 @@ class PDFReport(FPDF):
         - si estamos en la página del TOC, crea nueva página;
         """
         need_new_page = False
-        if self.page_no() == self._toc_page_no:
+        if self._is_toc_page():
             need_new_page = True
 
         # (Lógica de salto automático eliminada para permitir el salto manual en create_comprehensive_pdf)
@@ -380,9 +387,9 @@ class PDFReport(FPDF):
         if url:
             self.multi_cell(usable_w, 7, f"{url}", 0, "C")
         if date_str:
-            self.multi_cell(usable_w, 7, f"Fecha de auditoría: {date_str}", 0, "C")
+            self.multi_cell(usable_w, 7, f"Audit Date: {date_str}", 0, "C")
         if version:
-            self.multi_cell(usable_w, 7, f"Versión script: {version}", 0, "C")
+            self.multi_cell(usable_w, 7, f"Script Version: {version}", 0, "C")
 
         self.ln(16)
 
@@ -390,14 +397,17 @@ class PDFReport(FPDF):
         try:
             self.set_xy(left, footer_block_y)
             self.set_font(fam, "B" if ("Roboto-B" in self._fonts_added) else "", 11)
-            self.multi_cell(usable_w, 7, "Preparado por: Nicolas Leiva", 0, "C")
+            self.multi_cell(
+                usable_w, 7, f"{PREPARED_BY_LABEL}: {self.prepared_by}", 0, "C"
+            )
             self.set_font(fam, "", 9)
-            self.multi_cell(usable_w, 6, FOOTER_LEFT, 0, "C")
+            if self.footer_left:
+                self.multi_cell(usable_w, 6, self.footer_left, 0, "C")
         except Exception:
             pass
 
         try:
-            self._register_section("Portada", 0, link_id=None)
+            self._register_section("Cover", 0, link_id=None)
         except Exception:
             pass
 
@@ -432,15 +442,50 @@ class PDFReport(FPDF):
             # Reemplazar caracteres restantes por '?' o similar
             return text.encode("latin-1", "replace").decode("latin-1")
 
+    def _sanitize_for_current_font(self, text):
+        """
+        Sanitiza texto para el backend de fuente activo.
+        - Siempre limpia caracteres problemáticos comunes.
+        - Si se usa helvetica (sin Roboto Unicode), fuerza latin-1 safe.
+        """
+        cleaned = clean_string_for_pdf(text or "")
+        if "Roboto" not in self._fonts_added:
+            cleaned = self.clean_latin1(cleaned)
+        return cleaned
+
+    def _strip_markdown_bold(self, text):
+        """Elimina marcadores de negrita markdown (**texto** / __texto__)."""
+        if not text:
+            return text
+        cleaned = re.sub(r"\*\*(.*?)\*\*", r"\1", text)
+        cleaned = re.sub(r"__(.*?)__", r"\1", cleaned)
+        cleaned = cleaned.replace("**", "").replace("__", "")
+        return cleaned
+
+    def _is_toc_page(self, page_no=None):
+        if self._toc_page_no is None or self._toc_page_count <= 0:
+            return False
+        current = page_no if page_no is not None else self.page_no()
+        return self._toc_page_no <= current <= (self._toc_page_no + self._toc_page_count - 1)
+
+    def _toc_header_start_y(self):
+        return self.t_margin + HEADER_HEIGHT_MM + 10
+
+    def _toc_entries_start_y(self):
+        return self._toc_header_start_y() + (LINE_HEIGHT * 1.6) + 6
+
+    def estimate_toc_pages(self, entry_count: int) -> int:
+        if entry_count <= 0:
+            return 1
+        available = self.h - self.b_margin - self._toc_entries_start_y()
+        lines_per_page = max(1, int(available // LINE_HEIGHT))
+        return max(1, int(math.ceil(entry_count / lines_per_page)))
+
     def write_markdown_text(self, text):
         """Render simple de markdown básico y tablas estilo markdown.
         Mantiene sangrías y márgenes consistentes con la portada y TOC.
         """
-        text = clean_string_for_pdf(text or "")
-
-        # --- FIX: Sanitizar si no hay fuentes Unicode ---
-        if "Roboto" not in self._fonts_added:
-            text = self.clean_latin1(text)
+        text = self._sanitize_for_current_font(text)
 
         fam = "Roboto" if "Roboto" in self._fonts_added else "helvetica"
         self.set_font(fam, "", BASE_FONT_SIZE)
@@ -455,7 +500,7 @@ class PDFReport(FPDF):
 
         # Si estamos todavía en la página del TOC, decidir si crear page de contenido.
         try:
-            current_is_toc = self.page_no() == self._toc_page_no
+            current_is_toc = self._is_toc_page()
         except Exception:
             current_is_toc = False
 
@@ -474,11 +519,15 @@ class PDFReport(FPDF):
                 return
 
         for line in text.splitlines():
-            line_stripped = line.strip()
+            cleaned_line = self._strip_markdown_bold(line)
+            line_stripped = cleaned_line.strip()
 
             # Tablas markdown simples
             if line_stripped.startswith("|") and line_stripped.endswith("|"):
-                cells = [c.strip() for c in line_stripped[1:-1].split("|")]
+                cells = [
+                    self._strip_markdown_bold(c.strip())
+                    for c in line_stripped[1:-1].split("|")
+                ]
                 num_cols = len(cells)
 
                 if all(bool(re.match(r"^:?-+:?$", c.strip())) for c in cells):
@@ -629,7 +678,7 @@ class PDFReport(FPDF):
                 m = re.match(r"^\s*(#{1,4})\s+(.*)", line)
                 if m:
                     hashes = len(m.group(1))
-                    title = m.group(2).strip()
+                    title = self._strip_markdown_bold(m.group(2).strip())
                     level = min(hashes, 4)
                     try:
                         if level == 1:
@@ -674,7 +723,7 @@ class PDFReport(FPDF):
 
                 # texto plano
                 self.set_x(self.l_margin)
-                self.multi_cell(0, LINE_HEIGHT, line, 0, "L")
+                self.multi_cell(0, LINE_HEIGHT, cleaned_line, 0, "L")
 
     # -------------------- JSON rendering (mejorada) --------------------
     def write_json_raw(self, data):
@@ -828,6 +877,7 @@ class PDFReport(FPDF):
         est_lines = max(3, len(snippet.splitlines()))
         est_h = est_lines * JSON_LINE_HEIGHT + JSON_PADDING
         self.ensure_space(est_h + 6)
+        snippet = self._sanitize_for_current_font(snippet)
         self.multi_cell(0, JSON_LINE_HEIGHT, snippet, border=1, fill=True)
         if filename_hint:
             self.set_font(
@@ -843,8 +893,15 @@ class PDFReport(FPDF):
             # --- FIN FIX (v2) ---
 
             # (Se usa multi_cell para word-wrap, como en v1)
+            hint_text = self._sanitize_for_current_font(
+                f"Ver anexo completo: {filename_hint}"
+            )
             self.multi_cell(
-                0, JSON_LINE_HEIGHT, f"Ver anexo completo: {filename_hint}", 0, "L"
+                0,
+                JSON_LINE_HEIGHT,
+                hint_text,
+                0,
+                "L",
             )
         self.ln(4)
 
@@ -883,7 +940,7 @@ class PDFReport(FPDF):
                 self.multi_cell(
                     0,
                     LINE_HEIGHT,
-                    "No se generó índice (no hay secciones detectadas).",
+                    "No table of contents was generated (no sections detected).",
                     0,
                     "L",
                 )
@@ -894,41 +951,57 @@ class PDFReport(FPDF):
 
         try:
             last_page = self.page_no()
-            self.page = int(self._toc_page_no)
-            # mayor separación vertical respecto del encabezado
-            self.set_xy(self.l_margin, self.t_margin + HEADER_HEIGHT_MM + 10)
-            self.set_font(
-                "Roboto" if "Roboto" in self._fonts_added else "helvetica", "B", 14
-            )
-            # FIX: Reemplazado 'ln=1' por 'new_x/new_y'
-            self.cell(
-                0,
-                LINE_HEIGHT * 1.6,
-                TOC_TITLE,
-                0,
-                new_x=XPos.LMARGIN,
-                new_y=YPos.NEXT,
-                align="L",
-            )
-            # separación extra para que no quede pegado a la línea superior
-            self.ln(6)
-            self.set_font(
-                "Roboto" if "Roboto" in self._fonts_added else "helvetica",
-                "",
-                BASE_FONT_SIZE,
-            )
+            toc_page = int(self._toc_page_no)
+            toc_last_page = int(self._toc_page_no + max(1, self._toc_page_count) - 1)
+
+            def render_toc_header(title_text):
+                self.set_xy(self.l_margin, self._toc_header_start_y())
+                self.set_font(
+                    "Roboto" if "Roboto" in self._fonts_added else "helvetica",
+                    "B",
+                    14,
+                )
+                self.cell(
+                    0,
+                    LINE_HEIGHT * 1.6,
+                    title_text,
+                    0,
+                    new_x=XPos.LMARGIN,
+                    new_y=YPos.NEXT,
+                    align="L",
+                )
+                self.ln(6)
+                self.set_font(
+                    "Roboto" if "Roboto" in self._fonts_added else "helvetica",
+                    "",
+                    BASE_FONT_SIZE,
+                )
+
+            self.page = toc_page
+            render_toc_header(TOC_TITLE)
+
+            bottom_limit = self.h - self.b_margin
 
             for entry in self._toc_entries:
                 if not isinstance(entry, dict):
                     continue
+                if (self.get_y() + LINE_HEIGHT) > bottom_limit:
+                    toc_page += 1
+                    if toc_page <= toc_last_page:
+                        self.page = toc_page
+                    else:
+                        self.add_page()
+                        toc_last_page = self.page_no()
+                        toc_page = toc_last_page
+                    render_toc_header(f"{TOC_TITLE} (cont.)")
+
                 level = int(entry.get("level", 0) or 0)
-                title = entry.get("title", "") or ""
+                title = self._strip_markdown_bold(entry.get("title", "") or "")
                 link = entry.get("link")
                 indent_x = self.l_margin + (level * 6)
                 self.set_x(indent_x)
                 line_text = title
                 try:
-                    # FIX: Reemplazado 'ln=1' por 'new_x/new_y'
                     if link is not None:
                         self.cell(
                             0,
@@ -951,7 +1024,6 @@ class PDFReport(FPDF):
                             align="L",
                         )
                 except Exception:
-                    # FIX: Reemplazado 'ln=1' por 'new_x/new_y'
                     self.cell(
                         0,
                         LINE_HEIGHT,
@@ -962,9 +1034,7 @@ class PDFReport(FPDF):
                         align="L",
                     )
 
-            # restaurar página activa al final
             self.page = int(last_page)
-            self.set_xy(self.l_margin, self.get_y())
         except Exception:
             logger.exception("Error al renderizar TOC manual")
 
@@ -994,7 +1064,7 @@ class PDFReport(FPDF):
 
 
 # ---------------- Main generator (mejorado y minimalista) ----------------
-def create_comprehensive_pdf(report_folder_path):
+def create_comprehensive_pdf(report_folder_path, metadata=None):
     """Genera el PDF consolidado a partir de la carpeta de reporte."""
     try:
         if not os.path.isdir(report_folder_path):
@@ -1021,7 +1091,12 @@ def create_comprehensive_pdf(report_folder_path):
 
         # DEBUG: Logs para páginas
         pages_dir = os.path.join(report_folder_path, "pages")
-        page_json_files = sorted(glob.glob(os.path.join(pages_dir, "*.json")))
+        page_json_files = sorted(glob.glob(os.path.join(pages_dir, "page_*.json")))
+        if not page_json_files:
+            # Legacy fallback: report_*.json
+            page_json_files = sorted(
+                glob.glob(os.path.join(pages_dir, "report_*.json"))
+            )
         logger.info(f"DEBUG: Buscando reportes de páginas en: {pages_dir}")
         logger.info(
             f"DEBUG: Encontrados {len(page_json_files)} archivos: {[os.path.basename(f) for f in page_json_files]}"
@@ -1095,7 +1170,7 @@ def create_comprehensive_pdf(report_folder_path):
             agg_summary_data = {}
 
         # Inicializar PDF
-        pdf = PDFReport()
+        pdf = PDFReport(metadata=metadata)
 
         # Datos para portada
         url_base = "N/A"
@@ -1110,24 +1185,68 @@ def create_comprehensive_pdf(report_folder_path):
             url_base = "N/A"
         fecha_str = datetime.now().strftime("%Y-%m-%d")
 
-        # --- Portada ---
+        report_title_prefix = (
+            str(metadata.get("report_title_prefix"))
+            if isinstance(metadata, dict) and metadata.get("report_title_prefix")
+            else REPORT_TITLE_PREFIX
+        )
+
+        # --- Cover ---
         pdf.create_cover_page(
-            f"{REPORT_TITLE_PREFIX}\n{os.path.basename(report_folder_path)}",
+            f"{report_title_prefix}\n{os.path.basename(report_folder_path)}",
             url_base,
             fecha_str,
             version="v9.2",
         )
 
-        # --- Página del Índice (placeholder) ---
-        pdf.add_page()
-        pdf._toc_page_no = pdf.page_no()
+        # --- Table of contents pages (placeholder, multi-page safe) ---
+        def _estimate_markdown_toc_entries(markdown: str) -> int:
+            if not markdown:
+                return 0
+            count = 0
+            for line in markdown.splitlines():
+                if re.match(r"^\s*#{1,4}\s+", line):
+                    count += 1
+            return count
+
+        static_toc_entries = 0
+        if not markdown_text:
+            static_toc_entries += 1  # Executive Summary (Fallback)
+        pagespeed_analysis_file = os.path.join(
+            report_folder_path, "pagespeed_analysis.md"
+        )
+        if os.path.exists(pagespeed_analysis_file):
+            static_toc_entries += 1
+
+        # Appendices and data sections
+        static_toc_entries += 1  # Appendix C
+        static_toc_entries += 1  # Appendix D
+        if pagespeed_data:
+            static_toc_entries += 1  # D.1
+        if keywords_data:
+            static_toc_entries += 1  # D.2
+        if backlinks_data:
+            static_toc_entries += 1  # D.3
+        if rankings_data:
+            static_toc_entries += 1  # D.4
+        if llm_visibility_data:
+            static_toc_entries += 1  # D.5
+        static_toc_entries += 1  # Appendix E
+        static_toc_entries += 1  # Appendix F
+
+        toc_entry_estimate = _estimate_markdown_toc_entries(markdown_text) + static_toc_entries
+        toc_pages = pdf.estimate_toc_pages(toc_entry_estimate)
+        for _ in range(max(1, toc_pages)):
+            pdf.add_page()
+        pdf._toc_page_no = pdf.page_no() - max(1, toc_pages) + 1
+        pdf._toc_page_count = max(1, toc_pages)
 
         # --- Renderizar Markdown ---
         if markdown_text:
             pdf.write_markdown_text(markdown_text)
         else:
-            # Fallback (Resumen Ejecutivo)
-            pdf.begin_section("Resumen Ejecutivo (Fallback)", level=1)
+            # Fallback (executive summary)
+            pdf.begin_section("Executive Summary (Fallback)", level=1)
             try:
                 pages_audited = (
                     agg_summary_data.get("audited_pages_count", "N/A")
@@ -1144,7 +1263,7 @@ def create_comprehensive_pdf(report_folder_path):
             pdf.cell(
                 0,
                 LINE_HEIGHT * 1.8,
-                "Resumen Ejecutivo de Hallazgos",
+                "Executive Summary of Findings",
                 0,
                 new_x=XPos.LMARGIN,
                 new_y=YPos.NEXT,
@@ -1157,10 +1276,10 @@ def create_comprehensive_pdf(report_folder_path):
                 "",
                 BASE_FONT_SIZE,
             )
-            pdf.multi_cell(0, LINE_HEIGHT, f"Total Páginas Auditadas: {pages_audited}")
+            pdf.multi_cell(0, LINE_HEIGHT, f"Total Audited Pages: {pages_audited}")
             pdf.ln(4)
 
-        # --- Análisis PageSpeed ---
+        # --- PageSpeed analysis ---
         pagespeed_analysis_file = os.path.join(
             report_folder_path, "pagespeed_analysis.md"
         )
@@ -1170,15 +1289,15 @@ def create_comprehensive_pdf(report_folder_path):
                     ps_analysis = f.read()
                 pdf.add_page()
                 pdf.begin_section(
-                    "Análisis de Rendimiento (PageSpeed Insights)", level=1
+                    "Performance Analysis (PageSpeed Insights)", level=1
                 )
                 pdf.write_markdown_text(ps_analysis)
             except Exception as e:
                 logger.warning(f"Error leyendo análisis PageSpeed: {e}")
 
-        # --- Anexo C: Plan de Acción ---
+        # --- Appendix C: Action Plan ---
         pdf.add_page()
-        pdf.begin_section("Anexo C: Plan de Acción (fix_plan.json)", level=1)
+        pdf.begin_section("Appendix C: Action Plan (fix_plan.json)", level=1)
         if not fix_plan_data:
             pdf.set_font(
                 "Roboto" if "Roboto" in pdf._fonts_added else "helvetica", "I", 10
@@ -1186,15 +1305,15 @@ def create_comprehensive_pdf(report_folder_path):
             pdf.multi_cell(
                 0,
                 5,
-                "(No se generaron tareas automáticas en el Plan de Acción. Esto puede ocurrir si la auditoría no encontró problemas críticos o si el análisis por IA falló.)",
+                "(No automated tasks were generated in the Action Plan. This may happen when no critical issues were detected or AI analysis failed.)",
             )
         else:
             pdf.write_json_raw(fix_plan_data)
 
-        # --- Anexo D: Resumen Agregado ---
+        # --- Appendix D: Aggregated summary ---
         pdf.add_page()
         pdf.begin_section(
-            "Anexo D: Resumen Agregado de Datos (aggregated_summary.json)", level=1
+            "Appendix D: Aggregated Data Summary (aggregated_summary.json)", level=1
         )
         pdf.write_json_summary_box(
             agg_summary_data, top_n=4, filename_hint="aggregated_summary.json"
@@ -1241,7 +1360,7 @@ def create_comprehensive_pdf(report_folder_path):
 
                 pdf.add_page()
                 pdf.begin_section(
-                    "Anexo D.1: PageSpeed Insights (pagespeed.json)", level=1
+                    "Appendix D.1: PageSpeed Insights (pagespeed.json)", level=1
                 )
                 # Renderizar resumen de PageSpeed
                 ps_summary = {
@@ -1274,48 +1393,48 @@ def create_comprehensive_pdf(report_folder_path):
                     ps_summary, top_n=5, filename_hint="pagespeed.json"
                 )
 
-        # --- Anexo D.2 (Keywords) ---
+        # --- Appendix D.2 (Keywords) ---
         if keywords_data:
             pdf.add_page()
             pdf.begin_section(
-                "Anexo D.2: Análisis de Palabras Clave (keywords.json)", level=1
+                "Appendix D.2: Keyword Analysis (keywords.json)", level=1
             )
             pdf.write_json_summary_box(
                 keywords_data, top_n=10, filename_hint="keywords.json"
             )
 
-        # --- Anexo D.3 (Backlinks) ---
+        # --- Appendix D.3 (Backlinks) ---
         if backlinks_data:
             pdf.add_page()
-            pdf.begin_section("Anexo D.3: Perfil de Enlaces (backlinks.json)", level=1)
+            pdf.begin_section("Appendix D.3: Backlink Profile (backlinks.json)", level=1)
             pdf.write_json_summary_box(
                 backlinks_data, top_n=10, filename_hint="backlinks.json"
             )
 
-        # --- Anexo D.4 (Rankings) ---
+        # --- Appendix D.4 (Rankings) ---
         if rankings_data:
             pdf.add_page()
             pdf.begin_section(
-                "Anexo D.4: Monitoreo de Posiciones (rankings.json)", level=1
+                "Appendix D.4: Ranking Monitoring (rankings.json)", level=1
             )
             pdf.write_json_summary_box(
                 rankings_data, top_n=10, filename_hint="rankings.json"
             )
 
-        # --- Anexo D.5 (LLM Visibility) ---
+        # --- Appendix D.5 (LLM Visibility) ---
         if llm_visibility_data:
             pdf.add_page()
             pdf.begin_section(
-                "Anexo D.5: Visibilidad en LLMs (llm_visibility.json)", level=1
+                "Appendix D.5: LLM Visibility (llm_visibility.json)", level=1
             )
             pdf.write_json_summary_box(
                 llm_visibility_data, top_n=5, filename_hint="llm_visibility.json"
             )
 
-        # --- Anexo E ---
+        # --- Appendix E ---
         pdf.add_page()
         pdf.begin_section(
-            "Anexo E: Reportes de Páginas Individuales (resumen)", level=1
+            "Appendix E: Individual Page Reports (Summary)", level=1
         )
 
         if not page_json_files:
@@ -1323,11 +1442,13 @@ def create_comprehensive_pdf(report_folder_path):
                 "Roboto" if "Roboto" in pdf._fonts_added else "helvetica", "", 10
             )
             pdf.multi_cell(
-                0, 5, "(No se encontraron reportes individuales en la carpeta 'pages')"
+                0, 5, "(No individual page reports found in 'pages' folder)"
             )
 
         for i, page_file in enumerate(page_json_files):
-            page_title = f"Archivo: {os.path.basename(page_file)}"
+            page_title = pdf._sanitize_for_current_font(
+                f"File: {os.path.basename(page_file)}"
+            )
             if i > 0:
                 pdf.ln(4)
                 pdf.set_draw_color(200, 200, 200)
@@ -1364,9 +1485,9 @@ def create_comprehensive_pdf(report_folder_path):
                 filename_hint=os.path.join("pages", os.path.basename(page_file)),
             )
 
-        # --- Anexo F: Competidores ---
+        # --- Appendix F: Competitors ---
         pdf.add_page()
-        pdf.begin_section("Anexo F: Análisis Detallado de Competidores", level=1)
+        pdf.begin_section("Appendix F: Detailed Competitor Analysis", level=1)
 
         # Buscar archivos JSON de competidores
         competitors_dir = os.path.join(report_folder_path, "competitors")
@@ -1389,14 +1510,18 @@ def create_comprehensive_pdf(report_folder_path):
             pdf.multi_cell(
                 0,
                 5,
-                "(No se encontraron reportes de competidores en la carpeta 'competitors')",
+                "(No competitor reports found in 'competitors' folder)",
             )
         else:
             # Introducción del anexo
             pdf.set_font(
                 "Roboto" if "Roboto" in pdf._fonts_added else "helvetica", "", 10
             )
-            intro_text = f"Se analizaron {len(competitor_json_files)} competidores identificados durante la auditoría. A continuación se presenta un análisis detallado de cada uno, incluyendo su GEO Score y comparación con el sitio objetivo."
+            intro_text = (
+                f"{len(competitor_json_files)} competitors identified during the audit "
+                "were analyzed. The following section provides a detailed breakdown "
+                "of each competitor, including GEO Score and comparison with the target site."
+            )
             pdf.multi_cell(0, 5, intro_text)
             pdf.ln(6)
 
@@ -1407,7 +1532,7 @@ def create_comprehensive_pdf(report_folder_path):
             pdf.cell(
                 0,
                 LINE_HEIGHT * 1.3,
-                "Tabla Comparativa de GEO Scores",
+                "Comparative GEO Score Table",
                 new_x=XPos.LMARGIN,
                 new_y=YPos.NEXT,
             )
@@ -1486,19 +1611,19 @@ def create_comprehensive_pdf(report_folder_path):
                             }
 
                 except Exception as e:
-                    logger.error(f"Error cargando competidor {comp_file}: {e}")
+                    logger.error(f"Error loading competitor {comp_file}: {e}")
 
             competitor_scores = list(competitor_map.values())
 
             # Ordenar por GEO Score descendente
             competitor_scores.sort(key=lambda x: x["geo_score"], reverse=True)
 
-            # Mostrar tabla
+            # Render table
             pdf.set_font(
                 "Roboto" if "Roboto" in pdf._fonts_added else "helvetica", "B", 9
             )
             col_widths = [100, 40, 40]
-            pdf.cell(col_widths[0], 6, "Competidor", border=1)
+            pdf.cell(col_widths[0], 6, "Competitor", border=1)
             pdf.cell(col_widths[1], 6, "GEO Score (%)", border=1, align="C")
             pdf.cell(
                 col_widths[2],
@@ -1533,7 +1658,7 @@ def create_comprehensive_pdf(report_folder_path):
 
             pdf.ln(8)
 
-            # Reportes individuales de cada competidor
+            # Individual competitor reports
             for i, comp_file in enumerate(competitor_json_files):
                 try:
                     with open(comp_file, "r", encoding="utf-8") as f:
@@ -1564,13 +1689,13 @@ def create_comprehensive_pdf(report_folder_path):
                         )
                         pdf.ln(6)
 
-                    # Título del competidor
+                    # Competitor title
                     pdf.set_font(
                         "Roboto" if "Roboto" in pdf._fonts_added else "helvetica",
                         "B",
                         12,
                     )
-                    comp_title = pdf.clean_latin1(f"Competidor: {domain}")
+                    comp_title = pdf.clean_latin1(f"Competitor: {domain}")
                     pdf.cell(
                         0,
                         LINE_HEIGHT * 1.5,
@@ -1580,24 +1705,24 @@ def create_comprehensive_pdf(report_folder_path):
                     )
                     pdf.ln(2)
 
-                    # URL y GEO Score
+                    # URL and GEO Score
                     pdf.set_font(
                         "Roboto" if "Roboto" in pdf._fonts_added else "helvetica", "", 9
                     )
                     url_text = pdf.clean_latin1(f"URL: {url}")
                     pdf.cell(0, 5, url_text, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
 
-                    # GEO Score con color
+                    # GEO Score with color coding
                     score_text = f"GEO Score: {geo_score:.1f}%"
                     if geo_score >= 85:
-                        pdf.set_text_color(0, 128, 0)  # Verde
-                        interpretation = "(Excelente optimización para IA)"
+                        pdf.set_text_color(0, 128, 0)  # Green
+                        interpretation = "(Excellent AI optimization)"
                     elif geo_score >= 70:
-                        pdf.set_text_color(255, 140, 0)  # Naranja
-                        interpretation = "(Optimización moderada)"
+                        pdf.set_text_color(255, 140, 0)  # Orange
+                        interpretation = "(Moderate optimization)"
                     else:
-                        pdf.set_text_color(255, 0, 0)  # Rojo
-                        interpretation = "(Optimización deficiente)"
+                        pdf.set_text_color(255, 0, 0)  # Red
+                        interpretation = "(Low optimization)"
 
                     pdf.set_font(
                         "Roboto" if "Roboto" in pdf._fonts_added else "helvetica",
@@ -1614,13 +1739,13 @@ def create_comprehensive_pdf(report_folder_path):
                     pdf.set_text_color(0, 0, 0)  # Reset color
                     pdf.ln(4)
 
-                    # Análisis de fortalezas y debilidades
+                    # Strengths and weaknesses analysis
                     pdf.set_font(
                         "Roboto" if "Roboto" in pdf._fonts_added else "helvetica",
                         "B",
                         10,
                     )
-                    pdf.cell(0, 5, "Fortalezas:", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+                    pdf.cell(0, 5, "Strengths:", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
                     pdf.set_font(
                         "Roboto" if "Roboto" in pdf._fonts_added else "helvetica", "", 9
                     )
@@ -1628,18 +1753,18 @@ def create_comprehensive_pdf(report_folder_path):
                     strengths = []
                     weaknesses = []
 
-                    # Analizar estructura
+                    # Analyze structure
                     if (
                         audit_data.get("structure", {})
                         .get("h1_check", {})
                         .get("status")
                         == "pass"
                     ):
-                        strengths.append("✓ H1 correctamente implementado")
+                        strengths.append("✓ H1 properly implemented")
                     else:
-                        weaknesses.append("✗ Falta H1 o está mal implementado")
+                        weaknesses.append("✗ Missing or incorrect H1")
 
-                    # Analizar Schema
+                    # Analyze schema
                     schema_status = (
                         audit_data.get("schema", {})
                         .get("schema_presence", {})
@@ -1650,23 +1775,23 @@ def create_comprehensive_pdf(report_folder_path):
                             "schema_types", []
                         )
                         strengths.append(
-                            f"✓ Schema.org implementado ({len(schema_types)} tipos)"
+                            f"✓ Schema.org implemented ({len(schema_types)} types)"
                         )
                     else:
-                        weaknesses.append("✗ Sin Schema.org")
+                        weaknesses.append("✗ No Schema.org")
 
-                    # Analizar E-E-A-T
+                    # Analyze E-E-A-T
                     author_status = (
                         audit_data.get("eeat", {})
                         .get("author_presence", {})
                         .get("status")
                     )
                     if author_status == "pass":
-                        strengths.append("✓ Información de autor presente")
+                        strengths.append("✓ Author information present")
                     else:
-                        weaknesses.append("✗ Sin información de autor")
+                        weaknesses.append("✗ No author information")
 
-                    # Analizar HTML semántico
+                    # Analyze semantic HTML
                     semantic_score = (
                         audit_data.get("structure", {})
                         .get("semantic_html", {})
@@ -1674,18 +1799,18 @@ def create_comprehensive_pdf(report_folder_path):
                     )
                     if semantic_score >= 70:
                         strengths.append(
-                            f"✓ HTML semántico bien implementado ({semantic_score}%)"
+                            f"✓ Semantic HTML well implemented ({semantic_score}%)"
                         )
                     elif semantic_score >= 50:
                         weaknesses.append(
-                            f"⚠ HTML semántico moderado ({semantic_score}%)"
+                            f"⚠ Semantic HTML is moderate ({semantic_score}%)"
                         )
                     else:
                         weaknesses.append(
-                            f"✗ HTML semántico deficiente ({semantic_score}%)"
+                            f"✗ Semantic HTML is weak ({semantic_score}%)"
                         )
 
-                    # Mostrar fortalezas
+                    # Render strengths
                     for strength in strengths:
                         strength_text = pdf.clean_latin1(f"  {strength}")
                         pdf.cell(
@@ -1696,20 +1821,20 @@ def create_comprehensive_pdf(report_folder_path):
                         pdf.cell(
                             0,
                             5,
-                            "  (No se identificaron fortalezas significativas)",
+                            "  (No significant strengths identified)",
                             new_x=XPos.LMARGIN,
                             new_y=YPos.NEXT,
                         )
 
                     pdf.ln(3)
 
-                    # Mostrar debilidades
+                    # Render weaknesses
                     pdf.set_font(
                         "Roboto" if "Roboto" in pdf._fonts_added else "helvetica",
                         "B",
                         10,
                     )
-                    pdf.cell(0, 5, "Debilidades:", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+                    pdf.cell(0, 5, "Weaknesses:", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
                     pdf.set_font(
                         "Roboto" if "Roboto" in pdf._fonts_added else "helvetica", "", 9
                     )
@@ -1724,14 +1849,14 @@ def create_comprehensive_pdf(report_folder_path):
                         pdf.cell(
                             0,
                             5,
-                            "  (No se identificaron debilidades significativas)",
+                            "  (No significant weaknesses identified)",
                             new_x=XPos.LMARGIN,
                             new_y=YPos.NEXT,
                         )
 
                     pdf.ln(4)
 
-                    # Oportunidades de aprendizaje
+                    # Learning opportunities
                     if strengths:
                         pdf.set_font(
                             "Roboto" if "Roboto" in pdf._fonts_added else "helvetica",
@@ -1741,7 +1866,7 @@ def create_comprehensive_pdf(report_folder_path):
                         pdf.cell(
                             0,
                             5,
-                            "Oportunidades de Aprendizaje:",
+                            "Learning Opportunities:",
                             new_x=XPos.LMARGIN,
                             new_y=YPos.NEXT,
                         )
@@ -1751,19 +1876,19 @@ def create_comprehensive_pdf(report_folder_path):
                             9,
                         )
                         opp_text = pdf.clean_latin1(
-                            f"Este competidor destaca en {len(strengths)} área(s). Considere implementar prácticas similares para mejorar su GEO Score."
+                            f"This competitor stands out in {len(strengths)} area(s). Consider adopting similar practices to improve your GEO Score."
                         )
                         pdf.multi_cell(0, 5, opp_text)
 
                 except Exception as e:
-                    logger.error(f"Error procesando competidor {comp_file}: {e}")
+                    logger.error(f"Error processing competitor {comp_file}: {e}")
                     pdf.set_font(
                         "Roboto" if "Roboto" in pdf._fonts_added else "helvetica", "", 9
                     )
                     pdf.cell(
                         0,
                         5,
-                        f"Error cargando datos del competidor: {os.path.basename(comp_file)}",
+                        f"Error loading competitor data: {os.path.basename(comp_file)}",
                         new_x=XPos.LMARGIN,
                         new_y=YPos.NEXT,
                     )

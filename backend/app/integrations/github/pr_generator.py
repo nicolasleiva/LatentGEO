@@ -1,6 +1,7 @@
 """
 PR Generator Service - Creates professional Pull Requests with SEO/GEO fixes
 """
+import json
 from datetime import datetime
 from typing import List, Dict, Any
 from ...core.logger import get_logger
@@ -10,6 +11,22 @@ logger = get_logger(__name__)
 
 class PRGeneratorService:
     """Genera Pull Requests profesionales con fixes SEO/GEO"""
+
+    @staticmethod
+    def _stringify_change_value(value: Any) -> str:
+        """Safely stringify change values for PR previews."""
+        if isinstance(value, (dict, list)):
+            text = json.dumps(value, ensure_ascii=False)
+        else:
+            text = str(value)
+        return text.replace("\r", " ").replace("\n", " ")
+
+    @staticmethod
+    def _truncate(text: str, limit: int) -> str:
+        """Truncate long preview strings."""
+        if len(text) > limit:
+            return f"{text[:limit]}…"
+        return text
     
     @staticmethod
     def generate_pr_title(audit_data: Dict, fixes_count: int) -> str:
@@ -117,16 +134,32 @@ class PRGeneratorService:
             body += f"#### `{file_path}`\n\n"
             for change in changes:
                 change_type = change.get('type', 'modification')
-                before = change.get('before') or ''
-                after = change.get('after') or ''
+                before = change.get('before')
+                after = change.get('after')
                 
                 body += f"- **{change_type}**: "
                 if before and after:
-                    body += f"Changed from `{before[:50]}...` to `{after[:50]}...`\n"
+                    before_preview = PRGeneratorService._truncate(
+                        PRGeneratorService._stringify_change_value(before),
+                        50,
+                    )
+                    after_preview = PRGeneratorService._truncate(
+                        PRGeneratorService._stringify_change_value(after),
+                        50,
+                    )
+                    body += f"Changed from `{before_preview}` to `{after_preview}`\n"
                 elif after:
-                    body += f"Added: `{after[:100]}...`\n"
+                    after_preview = PRGeneratorService._truncate(
+                        PRGeneratorService._stringify_change_value(after),
+                        100,
+                    )
+                    body += f"Added: `{after_preview}`\n"
                 elif before:
-                    body += f"Removed: `{before[:100]}...`\n"
+                    before_preview = PRGeneratorService._truncate(
+                        PRGeneratorService._stringify_change_value(before),
+                        100,
+                    )
+                    body += f"Removed: `{before_preview}`\n"
                 else:
                     body += "Modified content\n"
             body += "\n"

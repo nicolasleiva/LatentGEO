@@ -35,8 +35,48 @@ class Settings(BaseSettings):
     NV_MODEL_ANALYSIS: str = "moonshotai/kimi-k2.5"
     NV_API_KEY_ANALYSIS: Optional[str] = None  # Puede ser diferente
     NV_MAX_TOKENS: int = 16384
+    AGENT1_LLM_TIMEOUT_SECONDS: float = float(
+        os.getenv("AGENT1_LLM_TIMEOUT_SECONDS", "60")
+    )
+    AGENT1_RELAXED_QUERY_FILTER: bool = (
+        os.getenv("AGENT1_RELAXED_QUERY_FILTER", "False").lower() == "true"
+    )
+    AGENT1_QUERY_DIAGNOSTICS: bool = (
+        os.getenv("AGENT1_QUERY_DIAGNOSTICS", "False").lower() == "true"
+    )
     NV_MAX_CONTEXT_TOKENS: int = int(os.getenv("NV_MAX_CONTEXT_TOKENS", "262144"))
     NV_CONTEXT_SAFETY_RATIO: float = float(os.getenv("NV_CONTEXT_SAFETY_RATIO", "0.7"))
+    NV_KIMI_SEARCH_ENABLED: bool = os.getenv("NV_KIMI_SEARCH_ENABLED", "False").lower() == "true"
+    NV_KIMI_SEARCH_MODEL: str = os.getenv("NV_KIMI_SEARCH_MODEL", "moonshotai/kimi-k2.5")
+    NV_KIMI_SEARCH_TIMEOUT: int = int(os.getenv("NV_KIMI_SEARCH_TIMEOUT", "60"))
+    NV_KIMI_SEARCH_PROVIDER: str = os.getenv("NV_KIMI_SEARCH_PROVIDER", "kimi").lower()
+    GEO_ARTICLE_AUDIT_ONLY: bool = os.getenv("GEO_ARTICLE_AUDIT_ONLY", "False").lower() == "true"
+    GEO_ARTICLE_REQUIRE_QA: bool = os.getenv("GEO_ARTICLE_REQUIRE_QA", "True").lower() == "true"
+    GEO_ARTICLE_REQUIRE_INTERNAL_CITATION: bool = (
+        os.getenv("GEO_ARTICLE_REQUIRE_INTERNAL_CITATION", "True").lower() == "true"
+    )
+    GEO_ARTICLE_REQUIRE_EXTERNAL_CITATION: bool = (
+        os.getenv("GEO_ARTICLE_REQUIRE_EXTERNAL_CITATION", "True").lower() == "true"
+    )
+    GEO_ARTICLE_REQUIRE_AUTHORITY_ARTICLES: bool = (
+        os.getenv("GEO_ARTICLE_REQUIRE_AUTHORITY_ARTICLES", "True").lower() == "true"
+    )
+    GEO_ARTICLE_REQUIRE_TOPIC_MATCH: bool = (
+        os.getenv("GEO_ARTICLE_REQUIRE_TOPIC_MATCH", "True").lower() == "true"
+    )
+    GEO_ARTICLE_MIN_QA_PAIRS: int = int(os.getenv("GEO_ARTICLE_MIN_QA_PAIRS", "3"))
+    GEO_ARTICLE_ALLOWED_EXTERNAL_SOURCES: int = int(
+        os.getenv("GEO_ARTICLE_ALLOWED_EXTERNAL_SOURCES", "8")
+    )
+    GEO_ARTICLE_REPAIR_INVALID_CITATIONS: bool = (
+        os.getenv("GEO_ARTICLE_REPAIR_INVALID_CITATIONS", "True").lower() == "true"
+    )
+    GEO_ARTICLE_EXTRA_SEARCH_QUERIES: int = int(
+        os.getenv("GEO_ARTICLE_EXTRA_SEARCH_QUERIES", "3")
+    )
+    GEO_ARTICLE_EXTRA_SEARCH_TOP_K: int = int(
+        os.getenv("GEO_ARTICLE_EXTRA_SEARCH_TOP_K", "10")
+    )
 
     # Devstral - Para modificación de código (optimizado para programación)
     NV_MODEL_CODE: str = "moonshotai/kimi-k2-instruct-0905"
@@ -93,6 +133,14 @@ class Settings(BaseSettings):
 
     # LLM output limits (report generation)
     NV_MAX_TOKENS_REPORT: int = int(os.getenv("NV_MAX_TOKENS_REPORT", "8192"))
+    REPORT_LENGTH_STRICT: bool = (
+        os.getenv("REPORT_LENGTH_STRICT", "True").lower() == "true"
+    )
+    REPORT_MIN_WORDS: int = int(os.getenv("REPORT_MIN_WORDS", "8000"))
+    REPORT_MIN_SECTION_WORDS: int = int(os.getenv("REPORT_MIN_SECTION_WORDS", "400"))
+    REPORT_MIN_EXEC_SUMMARY_WORDS: int = int(
+        os.getenv("REPORT_MIN_EXEC_SUMMARY_WORDS", "800")
+    )
 
     # Configuración general
     APP_NAME: str = "Auditor"
@@ -255,6 +303,13 @@ def validate_environment():
         warnings.append("No LLM API keys found (NVIDIA). AI analysis will fail.")
     else:
         logger.info("OK: NVIDIA API key configured")
+
+    if settings.NV_KIMI_SEARCH_ENABLED and not any(
+        [settings.NV_API_KEY, settings.NVIDIA_API_KEY, settings.NV_API_KEY_ANALYSIS]
+    ):
+        warnings.append(
+            "NV_KIMI_SEARCH_ENABLED=true but no NVIDIA API key is configured. Search endpoints will fail."
+        )
 
     if settings.ENABLE_PAGESPEED and not settings.GOOGLE_PAGESPEED_API_KEY:
         warnings.append(

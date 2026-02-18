@@ -109,12 +109,29 @@ export const fetchWithBackendAuth = async (
     headers.set('Authorization', `Bearer ${token}`)
   }
 
-  const request = new Request(baseRequest, {
-    ...init,
-    headers,
-    credentials: init?.credentials ?? baseRequest.credentials ?? 'include',
-  })
-  return fetch(request)
+  const credentials = init?.credentials ?? baseRequest.credentials ?? 'include'
+
+  const buildRequest = (authHeaders: Headers) =>
+    new Request(baseRequest, {
+      ...init,
+      headers: authHeaders,
+      credentials,
+    })
+
+  let response = await fetch(buildRequest(headers))
+
+  // Token may be expired/rotated; refresh once and retry transparently.
+  if (response.status === 401 && token) {
+    clearBackendTokenCache()
+    const refreshedToken = await getBackendAccessToken(true)
+    if (refreshedToken) {
+      const retryHeaders = new Headers(headers)
+      retryHeaders.set('Authorization', `Bearer ${refreshedToken}`)
+      response = await fetch(buildRequest(retryHeaders))
+    }
+  }
+
+  return response
 }
 
 export const buildAuthenticatedSseUrl = async (

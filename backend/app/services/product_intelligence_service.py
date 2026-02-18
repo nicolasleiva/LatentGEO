@@ -341,6 +341,63 @@ class ProductIntelligenceService:
 
         return min(100.0, critical_score + recommended_score)
 
+    def _extract_offers(self, properties: Dict[str, Any]) -> List[Dict[str, Any]]:
+        offers = properties.get("offers")
+        if isinstance(offers, dict):
+            return [offers]
+        if isinstance(offers, list):
+            return [offer for offer in offers if isinstance(offer, dict)]
+        return []
+
+    def _analyze_offer_fields(self, product_pages: List[ProductPage]) -> Dict[str, int]:
+        stats = {
+            "offers_missing": 0,
+            "availability_missing": 0,
+            "price_missing": 0,
+            "currency_missing": 0,
+            "shipping_missing": 0,
+            "returns_missing": 0,
+        }
+
+        for page in product_pages:
+            if not page.schema_markup:
+                stats["offers_missing"] += 1
+                stats["availability_missing"] += 1
+                stats["price_missing"] += 1
+                stats["currency_missing"] += 1
+                stats["shipping_missing"] += 1
+                stats["returns_missing"] += 1
+                continue
+
+            props = page.schema_markup.get("properties", {})
+            offers_list = self._extract_offers(props)
+            if not offers_list:
+                stats["offers_missing"] += 1
+                stats["availability_missing"] += 1
+                stats["price_missing"] += 1
+                stats["currency_missing"] += 1
+                stats["shipping_missing"] += 1
+                stats["returns_missing"] += 1
+                continue
+
+            if all(not offer.get("availability") for offer in offers_list):
+                stats["availability_missing"] += 1
+            if all(not offer.get("price") for offer in offers_list):
+                stats["price_missing"] += 1
+            if all(not offer.get("priceCurrency") for offer in offers_list):
+                stats["currency_missing"] += 1
+            if all(
+                not offer.get("shippingDetails")
+                and not offer.get("shippingRate")
+                and not offer.get("deliveryTime")
+                for offer in offers_list
+            ):
+                stats["shipping_missing"] += 1
+            if all(not offer.get("hasMerchantReturnPolicy") for offer in offers_list):
+                stats["returns_missing"] += 1
+
+        return stats
+
     def _analyze_product_schemas(self, product_pages: List[ProductPage]) -> Dict:
         """Analyze schema markup across all product pages."""
         total_pages = len(product_pages)
@@ -382,6 +439,53 @@ class ProductIntelligenceService:
                 }
             )
 
+        offer_stats = self._analyze_offer_fields(product_pages)
+        if offer_stats["offers_missing"] > 0:
+            issues.append(
+                {
+                    "type": "missing_offers",
+                    "severity": "critical",
+                    "description": f"{offer_stats['offers_missing']} product pages missing Offer data",
+                    "impact": "Products may be excluded from shopping and generative commerce answers",
+                }
+            )
+        if offer_stats["availability_missing"] > 0:
+            issues.append(
+                {
+                    "type": "missing_availability",
+                    "severity": "high",
+                    "description": f"{offer_stats['availability_missing']} product pages missing availability (stock) signals",
+                    "impact": "LLMs cannot confirm in-stock status",
+                }
+            )
+        if offer_stats["price_missing"] > 0 or offer_stats["currency_missing"] > 0:
+            issues.append(
+                {
+                    "type": "missing_price",
+                    "severity": "high",
+                    "description": "Product offers missing price or currency data",
+                    "impact": "Pricing cannot be surfaced in shopping answers",
+                }
+            )
+        if offer_stats["shipping_missing"] > 0:
+            issues.append(
+                {
+                    "type": "missing_shipping_details",
+                    "severity": "medium",
+                    "description": f"{offer_stats['shipping_missing']} product pages missing shipping/delivery details",
+                    "impact": "Shipping speed/coverage absent in generative search answers",
+                }
+            )
+        if offer_stats["returns_missing"] > 0:
+            issues.append(
+                {
+                    "type": "missing_return_policy",
+                    "severity": "medium",
+                    "description": f"{offer_stats['returns_missing']} product pages missing return policy details",
+                    "impact": "Return terms may be omitted in AI summaries",
+                }
+            )
+
         return {
             "overall_score": min(
                 100,
@@ -395,6 +499,7 @@ class ProductIntelligenceService:
             "critical_fields_missing": self._identify_missing_critical_fields(
                 product_pages
             ),
+            "offer_field_issues": offer_stats,
             "recommendations": self._generate_schema_recommendations(product_pages),
         }
 
@@ -433,6 +538,7 @@ class ProductIntelligenceService:
     ) -> List[Dict]:
         """Generate specific schema optimization recommendations."""
         recommendations = []
+        offer_stats = self._analyze_offer_fields(product_pages)
 
         # Check for missing aggregateRating
         pages_without_ratings = sum(
@@ -462,6 +568,61 @@ class ProductIntelligenceService:
                         indent=2,
                     ),
                     "impact": "Required for star ratings in search results; increases CTR by 20-35%",
+                }
+            )
+
+        if offer_stats.get("offers_missing", 0) > 0:
+            recommendations.append(
+                {
+                    "priority": "critical",
+                    "field": "offers",
+                    "issue": "Product pages missing Offer data",
+                    "recommendation": "Add Offer schema with price, currency, availability, and seller",
+                    "impact": "Required for shopping results and AI commerce answers",
+                }
+            )
+
+        if offer_stats.get("availability_missing", 0) > 0:
+            recommendations.append(
+                {
+                    "priority": "high",
+                    "field": "offers.availability",
+                    "issue": "Stock availability missing in Offer schema",
+                    "recommendation": "Include availability (InStock/OutOfStock/PreOrder) for each product",
+                    "impact": "LLMs can confirm stock status in generative results",
+                }
+            )
+
+        if offer_stats.get("price_missing", 0) > 0 or offer_stats.get("currency_missing", 0) > 0:
+            recommendations.append(
+                {
+                    "priority": "high",
+                    "field": "offers.price",
+                    "issue": "Offer price or currency missing",
+                    "recommendation": "Add price and priceCurrency to Offer schema",
+                    "impact": "Price transparency improves ranking and CTR",
+                }
+            )
+
+        if offer_stats.get("shipping_missing", 0) > 0:
+            recommendations.append(
+                {
+                    "priority": "medium",
+                    "field": "offers.shippingDetails",
+                    "issue": "Shipping/delivery details missing",
+                    "recommendation": "Add OfferShippingDetails (delivery time, shipping rate, areas served)",
+                    "impact": "Generative search can surface shipping speed/coverage",
+                }
+            )
+
+        if offer_stats.get("returns_missing", 0) > 0:
+            recommendations.append(
+                {
+                    "priority": "medium",
+                    "field": "offers.hasMerchantReturnPolicy",
+                    "issue": "Return policy missing in Offer schema",
+                    "recommendation": "Add MerchantReturnPolicy (return window, conditions)",
+                    "impact": "Improves trust and conversion in AI summaries",
                 }
             )
 
@@ -506,6 +667,7 @@ class ProductIntelligenceService:
     ) -> List[Dict]:
         """Identify content gaps compared to competitors."""
         gaps = []
+        offer_stats = self._analyze_offer_fields(product_pages)
 
         # Common e-commerce content gaps
         if product_pages:
@@ -533,6 +695,36 @@ class ProductIntelligenceService:
                     "description": "Product-specific FAQs missing",
                     "priority": "medium",
                     "example": "Add FAQPage schema with common questions",
+                }
+            )
+
+        if offer_stats.get("availability_missing", 0) > 0:
+            gaps.append(
+                {
+                    "type": "stock_availability",
+                    "description": "Stock availability information is missing or unclear",
+                    "priority": "high",
+                    "example": "Display and markup availability (In stock / Out of stock / Preorder) on product pages",
+                }
+            )
+
+        if offer_stats.get("shipping_missing", 0) > 0:
+            gaps.append(
+                {
+                    "type": "shipping_details",
+                    "description": "Shipping and delivery details are missing",
+                    "priority": "high",
+                    "example": "Add shipping cost, delivery time, and coverage areas on product pages",
+                }
+            )
+
+        if offer_stats.get("returns_missing", 0) > 0:
+            gaps.append(
+                {
+                    "type": "return_policy",
+                    "description": "Return policy details are missing",
+                    "priority": "medium",
+                    "example": "Include return window, conditions, and refund method on product pages",
                 }
             )
 

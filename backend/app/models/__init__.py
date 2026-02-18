@@ -100,6 +100,12 @@ class Audit(Base):
     ai_content_suggestions = relationship(
         "AIContentSuggestion", back_populates="audit", cascade="all, delete-orphan"
     )
+    geo_commerce_campaigns = relationship(
+        "GeoCommerceCampaign", back_populates="audit", cascade="all, delete-orphan"
+    )
+    geo_article_batches = relationship(
+        "GeoArticleBatch", back_populates="audit", cascade="all, delete-orphan"
+    )
 
     # Task ID de Celery
     task_id = Column(String(255), nullable=True, unique=True, index=True)
@@ -297,6 +303,41 @@ class AIContentSuggestion(Base):
     audit = relationship("Audit", back_populates="ai_content_suggestions")
 
 
+class GeoCommerceCampaign(Base):
+    """Campaign payload for ecommerce GEO growth playbooks."""
+
+    __tablename__ = "geo_commerce_campaigns"
+
+    id = Column(Integer, primary_key=True, index=True)
+    audit_id = Column(Integer, ForeignKey("audits.id"), nullable=False, index=True)
+    market = Column(String(50), nullable=True)
+    channels = Column(JSON, nullable=True)
+    objective = Column(String(500), nullable=True)
+    payload = Column(JSON, nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
+
+    audit = relationship("Audit", back_populates="geo_commerce_campaigns")
+
+
+class GeoArticleBatch(Base):
+    """Batch of generated GEO articles for a given audit."""
+
+    __tablename__ = "geo_article_batches"
+
+    id = Column(Integer, primary_key=True, index=True)
+    audit_id = Column(Integer, ForeignKey("audits.id"), nullable=False, index=True)
+    requested_count = Column(Integer, default=1)
+    language = Column(String(10), default="en")
+    tone = Column(String(30), default="executive")
+    include_schema = Column(Boolean, default=True)
+    status = Column(String(20), default="completed")
+    summary = Column(JSON, nullable=True)
+    articles = Column(JSON, nullable=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
+
+    audit = relationship("Audit", back_populates="geo_article_batches")
+
+
 class CitationTracking(Base):
     """Modelo para tracking de citaciones en LLMs"""
     __tablename__ = "citation_tracking"
@@ -387,4 +428,3 @@ from .hubspot import HubSpotConnection, HubSpotPage, HubSpotChange
 
 # Importar modelos de GitHub
 from .github import GitHubConnection, GitHubRepository, GitHubPullRequest, GitHubWebhookEvent
-

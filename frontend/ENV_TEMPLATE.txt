@@ -20,3 +20,8 @@ NEXT_PUBLIC_API_URL=http://localhost:8000
 
 # For Docker internal communication (used in server-side rendering)
 API_URL=http://backend:8000
+
+# Internal backend JWT signing key (must match backend SECRET_KEY or BACKEND_INTERNAL_JWT_SECRET)
+BACKEND_INTERNAL_JWT_SECRET=your-shared-internal-jwt-secret
+# Optional legacy fallback (same value as backend SECRET_KEY)
+SECRET_KEY=your-shared-internal-jwt-secret

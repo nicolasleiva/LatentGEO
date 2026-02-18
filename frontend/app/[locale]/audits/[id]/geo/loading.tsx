@@ -4,7 +4,7 @@ import { ArrowLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import Link from 'next/link';
 
-export function GEOSkeleton({ auditId }: { auditId: string }) {
+export function GEOSkeleton({ auditId = '' }: { auditId?: string }) {
   return (
     <div className="min-h-screen bg-background text-foreground pb-20 animate-in fade-in duration-300">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -74,4 +74,8 @@ export function GEOSkeleton({ auditId }: { auditId: string }) {
       </div>
     </div>
   );
+}
+
+export default function Loading() {
+  return <GEOSkeleton />;
 }

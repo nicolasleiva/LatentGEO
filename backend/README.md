@@ -122,6 +122,24 @@ celery -A app.workers.tasks beat --loglevel=info
 ## Testing
 
 ```bash
-pytest tests/
-pytest tests/ -v --cov=app
+cd backend
+pytest -q tests/
+pytest -q tests/ -v --cov=app
+```
+
+### Docker (recommended)
+
+Inside the backend container, the project root is `/app`, so tests must use `tests/...` paths:
+
+```bash
+docker compose up -d db redis backend worker
+docker compose exec backend pytest -q tests/test_competitor_queries.py tests/test_pdf_fast_mode.py
+```
+
+### Live manual tests (opt-in)
+
+These tests are disabled by default and only run when explicitly enabled:
+
+```bash
+docker compose exec backend sh -lc 'RUN_INTEGRATION_TESTS=1 RUN_LIVE_E2E=1 LIVE_TARGET_URL=https://plataforma5.la/ pytest -q tests/test_live_plataforma5_agent1_pdf.py -s'
 ```

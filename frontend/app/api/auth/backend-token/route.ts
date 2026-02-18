@@ -44,11 +44,15 @@ export async function GET() {
     return NextResponse.json({ error: 'Invalid user session' }, { status: 401 })
   }
 
-  const secret =
-    process.env.BACKEND_INTERNAL_JWT_SECRET || process.env.SECRET_KEY || process.env.AUTH0_SECRET
+  // Must match backend/app/core/auth.py (BACKEND_INTERNAL_JWT_SECRET || SECRET_KEY)
+  // Do not fallback to AUTH0_SECRET: that key is unrelated to backend JWT validation.
+  const secret = process.env.BACKEND_INTERNAL_JWT_SECRET || process.env.SECRET_KEY
   if (!secret) {
     return NextResponse.json(
-      { error: 'Server misconfiguration: missing signing secret' },
+      {
+        error:
+          'Server misconfiguration: missing BACKEND_INTERNAL_JWT_SECRET or SECRET_KEY for internal backend token signing',
+      },
       { status: 500 }
     )
   }

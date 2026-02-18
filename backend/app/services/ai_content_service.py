@@ -3,11 +3,17 @@ Servicio para sugerencias de contenido AI.
 Genera recomendaciones de contenido basadas en keywords y gaps.
 """
 import logging
+import json
 from typing import List, Dict, Any
 from urllib.parse import urlparse
 from sqlalchemy.orm import Session
 from ..models import AIContentSuggestion
-from ..core.llm_kimi import get_llm_function
+from ..core.llm_kimi import (
+    get_llm_function,
+    is_kimi_configured,
+    KimiUnavailableError,
+    KimiGenerationError,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -42,86 +48,105 @@ class AIContentService:
         
         suggestions = []
         brand = domain.replace("www.", "").split(".")[0]
-        
-        # Generar sugerencias con IA si disponible
-        if self.llm_function:
-            try:
-                prompt = f"""
-                Actúa como experto en Content Marketing y SEO.
-                
-                **CONTEXTO DEL NEGOCIO:**
-                - Sitio web: {domain}
-                - Marca: {brand}
-                - Categoría de negocio: {business_context['category']}
-                - Descripción: {business_context['description']}
-                - Público objetivo: {business_context['audience']}
-                - Competidores: {', '.join(business_context['competitors'][:3]) if business_context['competitors'] else 'No identificados'}
-                - Keywords principales: {', '.join(business_context['top_keywords'][:5]) if business_context['top_keywords'] else 'No disponibles'}
-                
-                **TOPICS ADICIONALES A INCLUIR:** {', '.join(topics) if topics else 'Ninguno especificado'}
-                
-                **TU TAREA:**
-                Genera 5 ideas de contenido que:
-                1. Sean RELEVANTES para el negocio real ({business_context['category']})
-                2. Combinen el core del negocio con los topics adicionales si los hay
-                3. Ayuden a posicionar la marca como autoridad en su nicho
-                4. Sean atractivas para el público objetivo
-                
-                Para cada idea incluye:
-                - title: Título atractivo y específico
-                - content_type: guide, comparison, tutorial, case_study, faq, listicle
-                - target_keyword: Keyword principal (relevante al negocio)
-                - priority: high, medium, low
-                - outline: Array con 5 secciones
 
-                Responde SOLO con JSON:
-                [
-                    {{
-                        "title": "...",
-                        "content_type": "guide",
-                        "target_keyword": "...",
-                        "priority": "high",
-                        "outline": ["Sección 1", "Sección 2", ...]
-                    }}
-                ]
-                """
-                
-                response = await self.llm_function(
-                    system_prompt="Eres un experto en SEO y Content Marketing. Responde solo con JSON válido.",
-                    user_prompt=prompt
+        if not is_kimi_configured() or not self.llm_function:
+            logger.error("Kimi provider is not configured for AI content suggestions.")
+            raise KimiUnavailableError(
+                "Kimi provider is not configured. Set NV_API_KEY_ANALYSIS or NVIDIA_API_KEY or NV_API_KEY."
+            )
+
+        try:
+            prompt = f"""
+            Actúa como experto en Content Marketing y SEO.
+            
+            **CONTEXTO DEL NEGOCIO:**
+            - Sitio web: {domain}
+            - Marca: {brand}
+            - Categoría de negocio: {business_context['category']}
+            - Descripción: {business_context['description']}
+            - Público objetivo: {business_context['audience']}
+            - Competidores: {', '.join(business_context['competitors'][:3]) if business_context['competitors'] else 'No identificados'}
+            - Keywords principales: {', '.join(business_context['top_keywords'][:5]) if business_context['top_keywords'] else 'No disponibles'}
+            
+            **TOPICS ADICIONALES A INCLUIR:** {', '.join(topics) if topics else 'Ninguno especificado'}
+            
+            **TU TAREA:**
+            Genera 5 ideas de contenido que:
+            1. Sean RELEVANTES para el negocio real ({business_context['category']})
+            2. Combinen el core del negocio con los topics adicionales si los hay
+            3. Ayuden a posicionar la marca como autoridad en su nicho
+            4. Sean atractivas para el público objetivo
+            
+            Para cada idea incluye:
+            - title: Título atractivo y específico
+            - content_type: guide, comparison, tutorial, case_study, faq, listicle
+            - target_keyword: Keyword principal (relevante al negocio)
+            - priority: high, medium, low
+            - outline: Array con 5 secciones
+
+            Responde SOLO con JSON:
+            [
+                {{
+                    "title": "...",
+                    "content_type": "guide",
+                    "target_keyword": "...",
+                    "priority": "high",
+                    "outline": ["Sección 1", "Sección 2", ...]
+                }}
+            ]
+            """
+
+            response = await self.llm_function(
+                system_prompt="Eres un experto en SEO y Content Marketing. Responde solo con JSON válido.",
+                user_prompt=prompt
+            )
+
+            # Parsear respuesta
+            if "```json" in response:
+                response = response.split("```json")[1].split("```")[0]
+            elif "```" in response:
+                response = response.split("```")[1].split("```")[0]
+
+            ai_suggestions = json.loads(response.strip())
+            if not isinstance(ai_suggestions, list):
+                raise KimiGenerationError(
+                    "Kimi returned invalid JSON payload for AI content suggestions."
                 )
-                
-                # Parsear respuesta
-                import json
-                if "```json" in response:
-                    response = response.split("```json")[1].split("```")[0]
-                elif "```" in response:
-                    response = response.split("```")[1].split("```")[0]
-                
-                ai_suggestions = json.loads(response.strip())
-                
-                for idx, sugg in enumerate(ai_suggestions[:5]):
-                    suggestion = AIContentSuggestion(
-                        audit_id=audit_id,
-                        topic=sugg.get("title", f"Content Idea {idx+1}"),
-                        suggestion_type=sugg.get("content_type", "guide"),
-                        content_outline={
-                            "target_keyword": sugg.get("target_keyword", ""),
-                            "sections": sugg.get("outline", []),
-                            "business_context": business_context['category']
-                        },
-                        priority=sugg.get("priority", "medium")
-                    )
-                    self.db.add(suggestion)
-                    suggestions.append(suggestion)
-                    
-            except Exception as e:
-                logger.error(f"Error generating AI suggestions: {e}")
-                return []
-        else:
-            logger.error("No LLM function available for AI content suggestions")
-            return []
-        
+
+            for idx, sugg in enumerate(ai_suggestions[:5]):
+                suggestion = AIContentSuggestion(
+                    audit_id=audit_id,
+                    topic=sugg.get("title", f"Content Idea {idx+1}"),
+                    suggestion_type=sugg.get("content_type", "guide"),
+                    content_outline={
+                        "target_keyword": sugg.get("target_keyword", ""),
+                        "sections": sugg.get("outline", []),
+                        "business_context": business_context['category']
+                    },
+                    priority=sugg.get("priority", "medium")
+                )
+                self.db.add(suggestion)
+                suggestions.append(suggestion)
+
+        except KimiUnavailableError:
+            self.db.rollback()
+            raise
+        except KimiGenerationError:
+            self.db.rollback()
+            raise
+        except json.JSONDecodeError as e:
+            self.db.rollback()
+            logger.error(f"Invalid JSON from Kimi for AI suggestions: {e}")
+            raise KimiGenerationError(
+                "Kimi returned invalid JSON payload for AI content suggestions."
+            ) from e
+        except Exception as e:
+            self.db.rollback()
+            logger.error(f"Error generating AI suggestions: {e}")
+            raise KimiGenerationError(
+                f"AI content suggestion generation failed: {e}"
+            ) from e
+
         self.db.commit()
         for s in suggestions:
             self.db.refresh(s)
@@ -192,4 +217,3 @@ class AIContentService:
         Returns empty list if no real data available.
         """
         return []
-
