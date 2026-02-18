@@ -14,16 +14,16 @@ Proporciona:
 """
 
 import asyncio
-import aiohttp
 import gzip
 import logging
-import sys
-import xml.etree.ElementTree as ET
-from urllib.parse import urljoin, urlparse, ParseResult
-from bs4 import BeautifulSoup
-import urllib.robotparser
 import re
-from typing import Optional, Set, List, Tuple
+import urllib.robotparser
+from typing import Callable, List, Optional, Set, Tuple
+from urllib.parse import ParseResult, urljoin, urlparse
+
+import aiohttp
+from bs4 import BeautifulSoup
+from defusedxml import ElementTree as DefusedET
 
 logger = logging.getLogger(__name__)
 
@@ -214,7 +214,9 @@ class CrawlerService:
             return set()
 
     @staticmethod
-    async def fetch_robots(base_url: str, mobile: bool = True) -> urllib.robotparser.RobotFileParser:
+    async def fetch_robots(
+        base_url: str, mobile: bool = True
+    ) -> urllib.robotparser.RobotFileParser:
         """
         Descarga y parsea robots.txt del sitio.
 
@@ -234,18 +236,26 @@ class CrawlerService:
                 # Intento 1: SSL verificado
                 async with aiohttp.ClientSession(headers=headers) as s:
                     async with s.get(
-                        robots_url, timeout=aiohttp.ClientTimeout(total=5), allow_redirects=True
+                        robots_url,
+                        timeout=aiohttp.ClientTimeout(total=5),
+                        allow_redirects=True,
                     ) as r:
                         if r.status == 200:
                             text = await r.text()
                             rp.parse(text.splitlines())
             except Exception as e:
-                logger.warning(f"Error descargando robots.txt para {base_url}: {e}. Reintentando sin SSL...")
+                logger.warning(
+                    f"Error descargando robots.txt para {base_url}: {e}. Reintentando sin SSL..."
+                )
                 # Intento 2: SSL relajado
                 connector = aiohttp.TCPConnector(ssl=False)
-                async with aiohttp.ClientSession(headers=headers, connector=connector) as s:
+                async with aiohttp.ClientSession(
+                    headers=headers, connector=connector
+                ) as s:
                     async with s.get(
-                        robots_url, timeout=aiohttp.ClientTimeout(total=5), allow_redirects=True
+                        robots_url,
+                        timeout=aiohttp.ClientTimeout(total=5),
+                        allow_redirects=True,
                     ) as r:
                         if r.status == 200:
                             text = await r.text()
@@ -268,7 +278,7 @@ class CrawlerService:
         if not xml_text:
             return [], False
         try:
-            root = ET.fromstring(xml_text)
+            root = DefusedET.fromstring(xml_text)
         except Exception:
             return [], False
 
@@ -288,7 +298,9 @@ class CrawlerService:
         allow_insecure_fallback: bool = True,
     ) -> Optional[str]:
         try:
-            async with session.get(url, timeout=aiohttp.ClientTimeout(total=timeout)) as resp:
+            async with session.get(
+                url, timeout=aiohttp.ClientTimeout(total=timeout)
+            ) as resp:
                 if resp.status != 200:
                     return None
                 raw = await resp.read()
@@ -296,10 +308,14 @@ class CrawlerService:
                     return None
                 encoding = resp.headers.get("Content-Encoding", "").lower()
                 content_type = resp.headers.get("Content-Type", "").lower()
-                if "gzip" in encoding or url.endswith(".gz") or "application/x-gzip" in content_type:
+                if (
+                    "gzip" in encoding
+                    or url.endswith(".gz")
+                    or "application/x-gzip" in content_type
+                ):
                     try:
                         raw = gzip.decompress(raw)
-                    except Exception:
+                    except Exception:  # nosec B110
                         pass
                 try:
                     return raw.decode(errors="ignore")
@@ -311,7 +327,9 @@ class CrawlerService:
             try:
                 connector = aiohttp.TCPConnector(ssl=False)
                 headers = session.headers if hasattr(session, "headers") else None
-                async with aiohttp.ClientSession(headers=headers, connector=connector) as insecure_session:
+                async with aiohttp.ClientSession(
+                    headers=headers, connector=connector
+                ) as insecure_session:
                     async with insecure_session.get(
                         url, timeout=aiohttp.ClientTimeout(total=timeout)
                     ) as resp:
@@ -322,10 +340,14 @@ class CrawlerService:
                             return None
                         encoding = resp.headers.get("Content-Encoding", "").lower()
                         content_type = resp.headers.get("Content-Type", "").lower()
-                        if "gzip" in encoding or url.endswith(".gz") or "application/x-gzip" in content_type:
+                        if (
+                            "gzip" in encoding
+                            or url.endswith(".gz")
+                            or "application/x-gzip" in content_type
+                        ):
                             try:
                                 raw = gzip.decompress(raw)
-                            except Exception:
+                            except Exception:  # nosec B110
                                 pass
                         try:
                             return raw.decode(errors="ignore")
@@ -361,9 +383,15 @@ class CrawlerService:
         candidate_sitemaps.add(f"{parsed.scheme}://{parsed.hostname}/sitemap.xml")
         candidate_sitemaps.add(f"{parsed.scheme}://{parsed.hostname}/sitemap.xml.gz")
         candidate_sitemaps.add(f"{parsed.scheme}://{parsed.hostname}/sitemap_index.xml")
-        candidate_sitemaps.add(f"{parsed.scheme}://{parsed.hostname}/sitemap_index.xml.gz")
-        candidate_sitemaps.add(f"{parsed.scheme}://{parsed.hostname}/sitemap/sitemap.xml")
-        candidate_sitemaps.add(f"{parsed.scheme}://{parsed.hostname}/sitemap/sitemap-index.xml")
+        candidate_sitemaps.add(
+            f"{parsed.scheme}://{parsed.hostname}/sitemap_index.xml.gz"
+        )
+        candidate_sitemaps.add(
+            f"{parsed.scheme}://{parsed.hostname}/sitemap/sitemap.xml"
+        )
+        candidate_sitemaps.add(
+            f"{parsed.scheme}://{parsed.hostname}/sitemap/sitemap-index.xml"
+        )
 
         headers = HEADERS_MOBILE if mobile_first else HEADERS_DESKTOP
 
@@ -414,7 +442,7 @@ class CrawlerService:
         base_url: str,
         max_pages: int = 1000,
         allow_subdomains: bool = False,
-        callback: Optional[callable] = None,
+        callback: Optional[Callable[[Optional[str], str], None]] = None,
         mobile_first: bool = True,
     ) -> List[str]:
         """
@@ -437,8 +465,8 @@ class CrawlerService:
             >>> len(urls)
             35
         """
-        queue = asyncio.Queue()
-        visited = set()
+        queue: asyncio.Queue[str] = asyncio.Queue()
+        visited: Set[str] = set()
 
         try:
             # Validar URL base
@@ -510,7 +538,7 @@ class CrawlerService:
                 while True:
                     try:
                         url = await queue.get()
-                        html = None # Initialize html to None
+                        html = None  # Initialize html to None
                         try:
                             # Intento normal
                             try:
@@ -521,29 +549,48 @@ class CrawlerService:
                                             callback(url, "blocked")
                                         continue
 
-                                async with session.get(url, allow_redirects=True) as resp:
-                                    if resp.status == 200 and "text/html" in resp.headers.get("content-type", ""):
+                                async with session.get(
+                                    url, allow_redirects=True
+                                ) as resp:
+                                    if (
+                                        resp.status == 200
+                                        and "text/html"
+                                        in resp.headers.get("content-type", "")
+                                    ):
                                         try:
                                             html = await resp.text()
                                         except Exception:
                                             raw = await resp.read()
                                             html = raw.decode(errors="ignore")
                                     else:
-                                        logger.debug(f"Ignorado [status {resp.status}] {url}")
-                                        if callback: callback(url, "skipped")
+                                        logger.debug(
+                                            f"Ignorado [status {resp.status}] {url}"
+                                        )
+                                        if callback:
+                                            callback(url, "skipped")
                             except Exception as e:
-                                logger.warning(f"Error inicial en crawler para {url}: {e}. Reintentando sin SSL...")
+                                logger.warning(
+                                    f"Error inicial en crawler para {url}: {e}. Reintentando sin SSL..."
+                                )
                                 # Reintento sin SSL
                                 connector_no_ssl = aiohttp.TCPConnector(ssl=False)
-                                async with aiohttp.ClientSession(connector=connector_no_ssl, headers=headers) as secure_session:
-                                    async with secure_session.get(url, allow_redirects=True) as resp:
-                                        if resp.status == 200 and "text/html" in resp.headers.get("content-type", ""):
+                                async with aiohttp.ClientSession(
+                                    connector=connector_no_ssl, headers=headers
+                                ) as secure_session:
+                                    async with secure_session.get(
+                                        url, allow_redirects=True
+                                    ) as resp:
+                                        if (
+                                            resp.status == 200
+                                            and "text/html"
+                                            in resp.headers.get("content-type", "")
+                                        ):
                                             try:
                                                 html = await resp.text()
                                             except Exception:
                                                 raw = await resp.read()
                                                 html = raw.decode(errors="ignore")
-                            
+
                             if html:
                                 # Procesar página
                                 new_links = await CrawlerService.process_page(
@@ -562,11 +609,13 @@ class CrawlerService:
                                         visited.add(link)
                                         await queue.put(link)
                                         logger.info(f"Encontrado: {link}")
-                                        if callback: callback(link, "found")
+                                        if callback:
+                                            callback(link, "found")
 
                         except Exception as e:
                             logger.error(f"Error procesando {url}: {e}")
-                            if callback: callback(url, "error")
+                            if callback:
+                                callback(url, "error")
 
                         finally:
                             queue.task_done()
@@ -595,7 +644,9 @@ class CrawlerService:
         return sorted(visited)
 
     @staticmethod
-    async def get_page_content(url: str, timeout: int = 10, mobile: bool = True) -> Optional[str]:
+    async def get_page_content(
+        url: str, timeout: int = 10, mobile: bool = True
+    ) -> Optional[str]:
         """
         Obtiene el contenido HTML de una página.
 
