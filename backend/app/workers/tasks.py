@@ -165,7 +165,9 @@ def run_audit_task(self, audit_id: int):
             audit_local_service=audit_local_service_func,
             progress_callback=update_progress,
             generate_report=False,
-            enable_llm_external_intel=False,
+            enable_llm_external_intel=True,
+            external_intel_mode="full",
+            external_intel_timeout_seconds=30.0,
         ))
         
 
@@ -607,6 +609,29 @@ def run_pagespeed_task(self, audit_id: int):
         raise
 
 
+@celery_app.task(
+    name="generate_article_batch_task",
+    bind=True,
+    autoretry_for=(Exception,),
+    retry_kwargs={"max_retries": 2, "countdown": 20},
+    soft_time_limit=2400,
+    time_limit=2700,
+)
+def generate_article_batch_task(self, batch_id: int):
+    """Background processing for GEO Article Engine batches."""
+    logger.info(f"Starting article batch task for batch_id={batch_id}")
+    try:
+        from app.services.geo_article_engine_service import GeoArticleEngineService
+
+        with get_db_session() as db:
+            asyncio.run(GeoArticleEngineService.process_batch(db, batch_id))
+            logger.info(f"Article batch {batch_id} processed successfully.")
+            return {"batch_id": batch_id, "status": "completed"}
+    except Exception as e:
+        logger.error(f"Error in article batch task {batch_id}: {e}", exc_info=True)
+        raise
+
+
 @celery_app.task(name="generate_full_report_task")
 def generate_full_report_task(audit_id: int):
     """
@@ -718,7 +743,13 @@ def generate_full_report_task(audit_id: int):
                 try:
                     external_intelligence, _ = asyncio.run(
                         PipelineService.analyze_external_intelligence(
-                            target_audit, llm_function=llm_function
+                            target_audit,
+                            llm_function=llm_function,
+                            mode="full",
+                            retry_policy={
+                                "max_retries": 1,
+                                "timeout_seconds": settings.AGENT1_LLM_TIMEOUT_SECONDS,
+                            },
                         )
                     )
                     audit.external_intelligence = external_intelligence or {}

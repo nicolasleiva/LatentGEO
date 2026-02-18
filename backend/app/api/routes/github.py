@@ -5,6 +5,8 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Header, Backgrou
 from sqlalchemy.orm import Session
 from typing import List, Dict, Any, Optional
 from pydantic import BaseModel
+import json
+from urllib.parse import urlparse
 import hmac
 import hashlib
 from datetime import datetime
@@ -18,6 +20,11 @@ from ...integrations.github.oauth import GitHubOAuth
 from ...integrations.github.service import GitHubService
 from ...models.github import GitHubConnection, GitHubRepository, GitHubPullRequest, PRStatus
 from ...services.audit_service import AuditService
+from ...core.llm_kimi import (
+    get_llm_function,
+    KimiUnavailableError,
+    KimiGenerationError,
+)
 
 router = APIRouter(prefix="/github", tags=["github"])
 logger = get_logger(__name__)
@@ -69,6 +76,80 @@ class PRResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class FixInputField(BaseModel):
+    key: str
+    label: str
+    value: Optional[str] = ""
+    placeholder: Optional[str] = ""
+    required: bool = False
+    input_type: Optional[str] = "text"
+
+
+class FixInputGroup(BaseModel):
+    id: str
+    issue_code: str
+    page_path: str
+    required: bool = False
+    prompt: Optional[str] = ""
+    fields: List[FixInputField]
+
+
+class FixInputsResponse(BaseModel):
+    audit_id: int
+    missing_inputs: List[FixInputGroup]
+    missing_required: int
+
+
+class FixInputAnswer(BaseModel):
+    id: str
+    issue_code: str
+    page_path: str
+    values: Dict[str, Any]
+
+
+class FixInputsSubmit(BaseModel):
+    inputs: List[FixInputAnswer]
+
+
+class FixInputChatMessage(BaseModel):
+    role: str
+    content: str
+
+
+class FixInputChatRequest(BaseModel):
+    issue_code: str
+    field_key: str
+    field_label: Optional[str] = ""
+    placeholder: Optional[str] = ""
+    current_values: Optional[Dict[str, Any]] = None
+    language: Optional[str] = "en"
+    history: Optional[List[FixInputChatMessage]] = None
+
+
+class FixInputChatResponse(BaseModel):
+    assistant_message: str
+    suggested_value: str = ""
+    confidence: str = "unknown"
+
+
+def _extract_domain(url: Optional[str]) -> str:
+    if not url:
+        return ""
+    try:
+        return urlparse(url).netloc.replace("www.", "")
+    except Exception:
+        cleaned = str(url).replace("https://", "").replace("http://", "")
+        return cleaned.split("/")[0]
+
+
+def _build_chat_fallback(field_label: str, issue_code: str, placeholder: str) -> str:
+    label = field_label or issue_code.replace("_", " ").title()
+    message = f"Please provide {label}. This helps improve SEO/GEO accuracy for your audit."
+    if placeholder:
+        message += f" Example based on audit data: {placeholder}"
+    return message
 
 
 # Routes
@@ -352,8 +433,7 @@ async def create_blog_fixes_pr(
 
 
 @router.get("/audit-to-fixes/{audit_id}")
-
-def convert_audit_to_fixes(
+async def convert_audit_to_fixes(
     audit_id: int,
     db: Session = Depends(get_db),
     current_user: AuthUser = Depends(get_current_user),
@@ -376,6 +456,8 @@ def convert_audit_to_fixes(
     audit = _get_owned_audit(db, audit_id, current_user)
     
     service = GitHubService(db)
+    # Ensure fix_plan exists (on-demand generation if needed)
+    await AuditService.ensure_fix_plan(db, audit_id)
     fixes = service.prepare_fixes_from_audit(audit)
     
     return {
@@ -386,6 +468,182 @@ def convert_audit_to_fixes(
         "audit_date": audit.created_at.isoformat() if audit.created_at else None
     }
 
+
+@router.get("/fix-inputs/{audit_id}", response_model=FixInputsResponse)
+async def get_fix_inputs(
+    audit_id: int,
+    db: Session = Depends(get_db),
+    current_user: AuthUser = Depends(get_current_user),
+):
+    """
+    Returns missing inputs required to safely apply fixes (user-provided, no fabrication).
+    """
+    audit = _get_owned_audit(db, audit_id, current_user)
+    missing_inputs = await AuditService.get_fix_plan_missing_inputs(db, audit_id)
+    missing_required = len([g for g in missing_inputs if g.get("required")])
+    return {
+        "audit_id": audit.id,
+        "missing_inputs": missing_inputs,
+        "missing_required": missing_required,
+    }
+
+
+@router.post("/fix-inputs/{audit_id}", response_model=FixInputsResponse)
+async def submit_fix_inputs(
+    audit_id: int,
+    payload: FixInputsSubmit,
+    db: Session = Depends(get_db),
+    current_user: AuthUser = Depends(get_current_user),
+):
+    """
+    Persist user-provided inputs into fix_plan and return remaining missing inputs.
+    """
+    _get_owned_audit(db, audit_id, current_user)
+    await AuditService.apply_fix_plan_inputs(db, audit_id, payload.inputs)
+    missing_inputs = await AuditService.get_fix_plan_missing_inputs(db, audit_id)
+    missing_required = len([g for g in missing_inputs if g.get("required")])
+    return {
+        "audit_id": audit_id,
+        "missing_inputs": missing_inputs,
+        "missing_required": missing_required,
+    }
+
+
+@router.post("/fix-inputs/chat/{audit_id}", response_model=FixInputChatResponse)
+async def fix_inputs_chat(
+    audit_id: int,
+    payload: FixInputChatRequest,
+    db: Session = Depends(get_db),
+    current_user: AuthUser = Depends(get_current_user),
+):
+    """
+    Returns LLM-guided suggestions for missing inputs using audit evidence only.
+    """
+    audit = _get_owned_audit(db, audit_id, current_user)
+    await AuditService.ensure_fix_plan(db, audit_id, min_items=1)
+    db.refresh(audit)
+
+    issue_code = (payload.issue_code or "").upper().strip()
+    field_label = (payload.field_label or "").strip()
+    placeholder = (payload.placeholder or "").strip()
+
+    # Ensure FAQ suggestions are only provided when FAQ_MISSING exists in fix_plan
+    if issue_code.startswith("FAQ_"):
+        fix_plan = audit.fix_plan if isinstance(audit.fix_plan, list) else []
+        has_faq = any(
+            str(item.get("issue_code") or "").upper().startswith("FAQ_")
+            for item in fix_plan
+        )
+        if not has_faq:
+            return {
+                "assistant_message": "FAQ inputs are not required for this audit.",
+                "suggested_value": "",
+                "confidence": "unknown",
+            }
+
+    audit_context = AuditService.get_complete_audit_context(db, audit_id) or {}
+    target_audit = audit_context.get("target_audit") or {}
+    content = target_audit.get("content") or {}
+    title = content.get("title") or ""
+    meta_description = content.get("meta_description") or ""
+    text_sample = content.get("text_sample") or ""
+    if isinstance(text_sample, str) and len(text_sample) > 700:
+        text_sample = text_sample[:700] + "..."
+
+    keywords = audit_context.get("keywords", {}).get("items") or []
+    keyword_terms = []
+    for item in keywords:
+        if isinstance(item, dict):
+            term = item.get("term") or item.get("keyword")
+            if term:
+                keyword_terms.append(str(term))
+    keyword_terms = keyword_terms[:8]
+
+    history_items = []
+    if payload.history:
+        for msg in payload.history[-6:]:
+            if not msg:
+                continue
+            history_items.append(
+                {"role": msg.role, "content": msg.content}
+            )
+
+    system_prompt = (
+        "You are a strict SEO/GEO assistant. "
+        "Use ONLY the audit evidence provided. Do NOT invent facts. "
+        "If evidence is insufficient, set suggested_value to \"\" and confidence to \"unknown\". "
+        "Return ONLY JSON with keys: assistant_message, suggested_value, confidence. "
+        "assistant_message should be 1-3 sentences and explain why the field matters for SEO/GEO."
+    )
+
+    user_prompt = (
+        "AUDIT EVIDENCE (ONLY SOURCE OF TRUTH):\n"
+        f"- url: {audit.url or ''}\n"
+        f"- domain: {audit.domain or _extract_domain(audit.url)}\n"
+        f"- title: {title}\n"
+        f"- meta_description: {meta_description}\n"
+        f"- text_sample: {text_sample}\n"
+        f"- keywords: {', '.join(keyword_terms)}\n"
+        "\nFIELD REQUEST:\n"
+        f"- issue_code: {payload.issue_code}\n"
+        f"- field_key: {payload.field_key}\n"
+        f"- field_label: {field_label}\n"
+        f"- placeholder: {placeholder}\n"
+        f"- current_values: {json.dumps(payload.current_values or {}, ensure_ascii=False)}\n"
+    )
+
+    if history_items:
+        history_lines = "\n".join(
+            [f"{m['role']}: {m['content']}" for m in history_items]
+        )
+        user_prompt += f"\nCHAT HISTORY:\n{history_lines}\n"
+
+    llm_function = None
+    try:
+        llm_function = get_llm_function()
+    except Exception:
+        llm_function = None
+
+    if llm_function is None:
+        return {
+            "assistant_message": _build_chat_fallback(field_label, issue_code, placeholder),
+            "suggested_value": "",
+            "confidence": "unknown",
+        }
+
+    try:
+        raw = await llm_function(system_prompt=system_prompt, user_prompt=user_prompt, max_tokens=512)
+    except (KimiUnavailableError, KimiGenerationError) as exc:
+        logger.warning(f"Kimi chat unavailable for fix inputs: {exc}")
+        return {
+            "assistant_message": _build_chat_fallback(field_label, issue_code, placeholder),
+            "suggested_value": "",
+            "confidence": "unknown",
+        }
+
+    parsed = AuditService._safe_json_dict(raw) if isinstance(raw, str) else None
+    if not parsed:
+        return {
+            "assistant_message": _build_chat_fallback(field_label, issue_code, placeholder),
+            "suggested_value": "",
+            "confidence": "unknown",
+        }
+
+    assistant_message = str(parsed.get("assistant_message") or "").strip()
+    suggested_value = str(parsed.get("suggested_value") or "").strip()
+    confidence = str(parsed.get("confidence") or "unknown").strip().lower()
+    if confidence not in {"evidence", "unknown"}:
+        confidence = "unknown"
+    if not assistant_message:
+        assistant_message = _build_chat_fallback(field_label, issue_code, placeholder)
+    if not suggested_value:
+        confidence = "unknown"
+
+    return {
+        "assistant_message": assistant_message,
+        "suggested_value": suggested_value,
+        "confidence": confidence,
+    }
 
 
 
@@ -798,10 +1056,25 @@ async def create_auto_fix_pr(
         if audit.status != AuditStatus.COMPLETED:
             raise HTTPException(status_code=400, detail="Audit is not completed yet")
             
-        # 2. Prepare fixes using centralized logic
+        # 2. Ensure fix_plan exists (on-demand generation if needed)
+        await AuditService.ensure_fix_plan(db, request.audit_id)
+
+        # 2.1 Ensure required user inputs are present
+        missing_inputs = await AuditService.get_fix_plan_missing_inputs(db, request.audit_id)
+        missing_required = [g for g in missing_inputs if g.get("required")]
+        if missing_required:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "message": "Missing required inputs to generate safe fixes",
+                    "missing_inputs": missing_inputs,
+                },
+            )
+
+        # 3. Prepare fixes using centralized logic
         fixes = service.prepare_fixes_from_audit(audit)
         
-        # 3. Llamar al método existente que ya tiene toda la lógica
+        # 4. Llamar al método existente que ya tiene toda la lógica
         # Este método extrae automáticamente:
         # - Keywords, Competitors, PageSpeed, Technical Audit, Content Suggestions
         pr = await service.create_pr_with_fixes(
@@ -818,6 +1091,8 @@ async def create_auto_fix_pr(
             "title": pr.title
         }
         
+    except HTTPException:
+        raise
     except ValueError as e:
         logger.error(f"Validation error: {e}")
         raise HTTPException(status_code=400, detail=str(e))

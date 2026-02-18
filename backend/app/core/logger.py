@@ -20,6 +20,10 @@ def setup_logging():
         level=logging.DEBUG if settings.DEBUG else logging.INFO,
     )
 
+    # Silence very noisy transport/client debug logs even in DEBUG mode.
+    for noisy_logger in ("openai", "httpx", "httpcore"):
+        logging.getLogger(noisy_logger).setLevel(logging.WARNING)
+
     processors = [
         structlog.stdlib.add_log_level,
         structlog.stdlib.add_logger_name,

@@ -60,7 +60,12 @@ class NextJsModifier:
         
         # Phase 1: Apply metadata with Kimi (fast, high-value) - App Router specific
         if metadata_fixes and is_app_router:
-            modified_content = self._update_metadata_with_kimi(modified_content, file_path, audit_context)
+            modified_content = self._update_metadata_with_kimi(
+                modified_content,
+                file_path,
+                audit_context,
+                metadata_fixes=metadata_fixes,
+            )
             # Remove from further processing if handled by _update_metadata_with_kimi
             metadata_fixes = []
         
@@ -74,23 +79,45 @@ class NextJsModifier:
             )
         
         if modified_content != content:
-            logger.info(f"✅ Successfully modified {file_path} ({len(fixes)} fixes applied)")
+            logger.info(
+                f"Successfully modified {file_path} ({len(fixes)} fixes applied)"
+            )
         else:
             logger.warning(f"No changes made to {file_path}")
         
         return modified_content
     
-    def _update_metadata_with_kimi(self, content: str, file_path: str, audit_context: Dict = None) -> str:
-        """Generate and insert smart metadata using Kimi AI"""
+    def _update_metadata_with_kimi(
+        self,
+        content: str,
+        file_path: str,
+        audit_context: Dict = None,
+        metadata_fixes: Optional[List[Dict]] = None,
+    ) -> str:
+        """Generate and insert smart metadata using Kimi AI (or user-provided overrides)."""
         has_metadata = re.search(r'export\s+const\s+metadata\s*=', content)
         context = self._extract_file_context(content, file_path)
-        metadata = self._generate_metadata_with_kimi(context, audit_context)
-        
+
+        override_title = None
+        override_desc = None
+        if metadata_fixes:
+            for fix in metadata_fixes:
+                if fix.get("type") == "title" and fix.get("value"):
+                    override_title = str(fix.get("value")).strip()
+                if fix.get("type") == "meta_description" and fix.get("value"):
+                    override_desc = str(fix.get("value")).strip()
+
+        metadata = None
+        if not override_title or not override_desc:
+            metadata = self._generate_metadata_with_kimi(context, audit_context)
+        title_value = override_title or (metadata.get("title") if metadata else "")
+        desc_value = override_desc or (metadata.get("description") if metadata else "")
+
         if has_metadata:
             pattern = r'export\s+const\s+metadata\s*=\s*\{[^}]+\}'
             replacement = f'''export const metadata = {{
-  title: "{metadata['title']}",
-  description: "{metadata['description']}"
+  title: {json.dumps(title_value)},
+  description: {json.dumps(desc_value)}
 }}'''
             return re.sub(pattern, replacement, content, flags=re.DOTALL)
         else:
@@ -100,8 +127,8 @@ class NextJsModifier:
             
             metadata_block = f'''\n
 export const metadata = {{
-  title: "{metadata['title']}",
-  description: "{metadata['description']}"
+  title: {json.dumps(title_value)},
+  description: {json.dumps(desc_value)}
 }}
 '''
             if last_import > 0:
@@ -157,11 +184,65 @@ AUDIT CONTEXT (Use this to generate highly relevant and optimized content):
 - Industry/Topic: {audit_context.get('topic', 'Growth Hacking & SEO')}
 """
 
+        user_data_lines = []
+        for fix in fixes:
+            if fix.get("value") is None:
+                continue
+            fix_type = fix.get("type")
+            value = fix.get("value")
+            try:
+                value_dump = json.dumps(value, ensure_ascii=False)
+            except Exception:
+                value_dump = str(value)
+            if fix_type == "h1":
+                user_data_lines.append(f"- H1: {value_dump}")
+            elif fix_type == "schema":
+                user_data_lines.append(f"- Schema org data: {value_dump}")
+            elif fix_type == "add_author_metadata":
+                user_data_lines.append(f"- Author data: {value_dump}")
+            elif fix_type == "add_faq_section":
+                user_data_lines.append(f"- FAQ data: {value_dump}")
+            elif fix_type == "title":
+                user_data_lines.append(f"- Title: {value_dump}")
+            elif fix_type == "meta_description":
+                user_data_lines.append(f"- Meta description: {value_dump}")
+
+        user_data_block = ""
+        if user_data_lines:
+            user_data_block = (
+                "USER-PROVIDED DATA (MUST USE VERBATIM; DO NOT INVENT):\n"
+                + "\n".join(user_data_lines)
+                + "\n"
+            )
+
+        has_faq_fix = any(
+            fix.get("type") == "add_faq_section" and fix.get("value") for fix in fixes
+        )
+        has_author_fix = any(
+            fix.get("type") == "add_author_metadata" and fix.get("value") for fix in fixes
+        )
+
+        content_rules = [
+            f"- Use current year: {datetime.now().strftime('%Y')}",
+            "- All image URLs must be relative paths (e.g., /og-image.jpg, /logo.jpg)",
+            "- Dates must be realistic (not placeholder dates)",
+            "- Verify all referenced images exist in public/ directory",
+        ]
+        if has_faq_fix:
+            content_rules.append("- Add FAQ section ONLY with the user-provided Q&A pairs.")
+        else:
+            content_rules.append("- Do NOT add FAQ content unless explicitly requested in transformations.")
+        if has_author_fix:
+            content_rules.append("- Add author section ONLY with user-provided author data.")
+        else:
+            content_rules.append("- Do NOT add author sections unless explicitly requested in transformations.")
+
         prompt = f"""You are a senior React/Next.js and SEO expert. Transform this TSX file to improve SEO/GEO performance.
 
 FILE: {file_path}
 CONTEXT: {context['file_name']} - Headings: {', '.join(context['headings'][:3]) if context['headings'] else 'None'}
 {audit_info}
+{user_data_block}
 
 CURRENT CODE:
 ```tsx
@@ -258,12 +339,7 @@ REQUIRED TRANSFORMATIONS ({len(fixes)} total):
    ❌ Don't include explanatory text like "Here's the complete modified TSX file..."
 
 7. CONTENT RULES:
-   - Generate 3-4 relevant FAQ Q&A pairs based on page topic
-   - Use "Our Team", "Industry Experts" for author, not fake names
-   - Use current year: {datetime.now().strftime('%Y')}
-   - All image URLs must be relative paths (e.g., /og-image.jpg, /logo.jpg)
-   - Dates must be realistic (not placeholder dates)
-   - Verify all referenced images exist in public/ directory
+   {chr(10).join(content_rules)}
 
 IMPORTANT: Return the ENTIRE modified file. Do not truncate.
 """
@@ -276,7 +352,9 @@ IMPORTANT: Return the ENTIRE modified file. Do not truncate.
                 base_url=settings.NV_BASE_URL
             )
             
-            logger.info(f"🤖 Calling Devstral (code-optimized) for JSX transformation of {file_path}")
+            logger.info(
+                f"Calling Devstral (code-optimized) for JSX transformation of {file_path}"
+            )
             
             response = client.chat.completions.create(
                 model=settings.NV_MODEL_CODE,  # mistralai/devstral-2-123b-instruct-2512
@@ -297,14 +375,16 @@ IMPORTANT: Return the ENTIRE modified file. Do not truncate.
             
             # Validate the result
             if self._validate_jsx_code(modified_code, content):
-                logger.info(f"✅ Kimi successfully transformed JSX for {file_path}")
+                logger.info(f"Kimi successfully transformed JSX for {file_path}")
                 return modified_code
             else:
-                logger.warning(f"⚠️ Kimi response failed validation for {file_path}, keeping original")
+                logger.warning(
+                    f"Kimi response failed validation for {file_path}, keeping original"
+                )
                 return content
         
         except Exception as e:
-            logger.error(f"❌ Error in Kimi JSX transformation for {file_path}: {e}")
+            logger.error(f"Error in Kimi JSX transformation for {file_path}: {e}")
             return content
     
     def _build_transformation_instructions(self, fixes: List[Dict]) -> str:
@@ -313,42 +393,63 @@ IMPORTANT: Return the ENTIRE modified file. Do not truncate.
         
         for fix in fixes:
             fix_type = fix.get("type")
+            fix_value = fix.get("value")
+            fix_value_dump = None
+            if fix_value is not None:
+                try:
+                    fix_value_dump = json.dumps(fix_value, ensure_ascii=False)
+                except Exception:
+                    fix_value_dump = str(fix_value)
             
             if fix_type == "title":
-                instructions.append("- Set page title (for Pages Router, use <title> in <Head> or JSX)")
+                if fix_value_dump:
+                    instructions.append(f"- Set page title exactly to: {fix_value_dump}")
+                else:
+                    continue
             
             elif fix_type == "meta_description":
-                instructions.append("- Set meta description (for Pages Router, use <meta name=\"description\"> in <Head> or JSX)")
+                if fix_value_dump:
+                    instructions.append(f"- Set meta description exactly to: {fix_value_dump}")
+                else:
+                    continue
 
             elif fix_type == "h1":
-                instructions.append("- Ensure exactly ONE <h1> tag with the main keyword/topic")
+                if fix_value_dump:
+                    instructions.append(f"- Set the single <h1> exactly to: {fix_value_dump}")
+                else:
+                    continue
             
             elif fix_type == "structure":
                 instructions.append("- Fix heading hierarchy: H1→H2→H3 (no skipping levels)")
             
             elif fix_type == "schema":
-                instructions.append("""- Add Schema.org JSON-LD structured data:
+                if isinstance(fix_value, dict) and fix_value_dump:
+                    instructions.append(f"""- Add Schema.org JSON-LD structured data using ONLY this org data (verbatim; do not invent): {fix_value_dump}
   * Use Article or WebPage schema type
-  * Include: headline, description, author, datePublished, image
+  * Include only fields provided; omit missing optional fields
   * Wrap in <script type="application/ld+json"> tag
   * Use actual content from the page""")
+                else:
+                    continue
             
             elif fix_type == "alt_text":
                 instructions.append("- Add descriptive alt text to ALL images (contextual, not generic)")
             
             elif fix_type == "add_faq_section":
-                instructions.append("""- Add FAQ section with 3-5 Q&A pairs:
-  * Questions based on page content
-  * Clear, actionable answers
+                if isinstance(fix_value, list) and fix_value_dump:
+                    instructions.append(f"""- Add FAQ section using ONLY these Q&A pairs (verbatim; do not invent): {fix_value_dump}
   * Use proper semantic HTML or components
   * Add FAQPage Schema.org if possible""")
+                else:
+                    continue
             
             elif fix_type == "add_author_metadata":
-                instructions.append("""- Add author information section:
-  * Name, bio, expertise
-  * Avatar/profile image
-  * Social links (optional)
+                if isinstance(fix_value, dict) and fix_value_dump:
+                    instructions.append(f"""- Add author information section using ONLY this data (verbatim; do not invent): {fix_value_dump}
+  * Omit fields that are empty or missing
   * Place after main content""")
+                else:
+                    continue
             
             elif fix_type == "add_citations":
                 instructions.append("- Add credible external citations/references (2-3 sources)")
@@ -396,7 +497,7 @@ IMPORTANT: Return the ENTIRE modified file. Do not truncate.
             logger.warning(f"Validation failed: Unbalanced tags ({open_tags} open, {close_tags} close)")
             return False
         
-        logger.info("✅ Validation passed")
+        logger.info("Validation passed")
         return True
     
     def _generate_metadata_with_kimi(self, context: Dict, audit_context: Dict = None) -> Dict[str, str]:
@@ -446,7 +547,9 @@ Respond ONLY with valid JSON, no markdown:
             response_content = re.sub(r'```json\s*|\s*```', '', response_content)
             
             metadata = json.loads(response_content)
-            logger.info(f"📝 Kimi generated metadata: {metadata.get('title', '')[:50]}...")
+            logger.info(
+                f"Kimi generated metadata: {metadata.get('title', '')[:50]}..."
+            )
             return metadata
         
         except Exception as e:

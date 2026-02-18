@@ -1,5 +1,11 @@
 node_modules
 .next
+.open-next
+.next_old
+.wrangler
+.cache
+.swc
+.turbo
 .git
 .env
 .env.local

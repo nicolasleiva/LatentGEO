@@ -17,11 +17,8 @@ import {
   BarChart3,
   Target,
   Link as LinkIcon,
-  Gauge,
-  Bot,
   Rocket,
   GitPullRequest,
-  ScrollText,
   FileText,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -40,66 +37,95 @@ interface Audit {
 
 const featureCards = [
   {
-    title: 'Keyword Discovery',
-    description: 'Map high-intent keyword clusters and topic gaps before your competitors.',
-    icon: Search,
-    tag: 'Keywords',
-  },
-  {
-    title: 'AI Ranking Visibility',
-    description: 'Track how your brand appears in AI answers and monitor ranking drift.',
-    icon: BarChart3,
-    tag: 'AI Ranking',
-  },
-  {
-    title: 'GEO Priority Score',
-    description: 'Prioritize fixes by impact with a single GEO score tied to real outcomes.',
-    icon: Target,
-    tag: 'GEO',
-  },
-  {
-    title: 'Competitor Radar',
-    description: 'Benchmark competitor coverage, citations, and strategy in one workspace.',
+    title: 'Product Visibility Intelligence',
+    description: 'Improve how product pages surface in AI answers across generative search.',
     icon: Globe,
+    tag: 'Visibility',
+  },
+  {
+    title: 'Citation Opportunity Mapping',
+    description: 'Find missing proof points so models can cite your pages as trusted sources.',
+    icon: LinkIcon,
+    tag: 'Citations',
+  },
+  {
+    title: 'Conversion Friction Scanner',
+    description: 'Spot copy, UX, and technical blockers that reduce qualified clicks and pipeline.',
+    icon: Activity,
+    tag: 'Conversion',
+  },
+  {
+    title: 'Experiment Prioritization',
+    description: 'Rank growth bets by expected impact and execution effort.',
+    icon: Target,
+    tag: 'Priorities',
+  },
+  {
+    title: 'Autonomous PR Shipping',
+    description: 'Turn fixes into GitHub pull requests with implementation-ready changes and tests.',
+    icon: GitPullRequest,
+    tag: 'Execution',
+  },
+  {
+    title: 'Competitive Signal Radar',
+    description: 'Track where competitors win citations and where your product can overtake.',
+    icon: BarChart3,
     tag: 'Competitive',
   },
   {
-    title: 'Backlink Intelligence',
-    description: 'Find backlink opportunities and authority gaps worth immediate action.',
-    icon: LinkIcon,
-    tag: 'Backlinks',
+    title: 'Revenue Expansion Opportunities',
+    description: 'Surface high-intent pages and prompts that can compound clicks and sales.',
+    icon: Rocket,
+    tag: 'Growth',
   },
   {
-    title: 'PageSpeed Diagnostics',
-    description: 'Surface technical bottlenecks with lab + field data and guided remediation.',
-    icon: Gauge,
-    tag: 'Performance',
-  },
-  {
-    title: 'AI Content Blueprint',
-    description: 'Generate outlines, FAQs, and structure templates aligned with search intent.',
-    icon: ScrollText,
-    tag: 'Content',
-  },
-  {
-    title: 'GitHub Auto-Fix',
-    description: 'Turn findings into pull requests with proposed fixes, tests, and guardrails.',
-    icon: GitPullRequest,
-    tag: 'Dev Workflow',
-  },
-  {
-    title: 'Live Agent Chat',
-    description: 'Drive each audit through a guided AI flow tailored to your market goals.',
-    icon: Bot,
-    tag: 'Assistant',
-  },
-  {
-    title: 'PDF & Exports',
-    description: 'Share executive-ready reports and raw exports for faster execution.',
+    title: 'Executive Reporting',
+    description: 'Share concise growth updates on visibility, citations, and execution progress.',
     icon: FileText,
     tag: 'Reporting',
   },
 ]
+
+const proofChips = [
+  'Rank products in AI answers',
+  'Get cited as a trusted source',
+  'Turn citations into qualified clicks and sales',
+]
+
+const loopCards = [
+  {
+    title: 'Acquire',
+    summary: 'Find demand and win AI answers for your highest-value product pages.',
+    detail: 'Run URL audit -> get prioritized opportunities',
+    icon: Target,
+  },
+  {
+    title: 'Activate',
+    summary: 'Convert insights into executable fixes with shipping-ready implementation paths.',
+    detail: 'Approve fixes -> generate GitHub PRs + tests',
+    icon: Zap,
+  },
+  {
+    title: 'Expand',
+    summary: 'Track compound impact from citations to qualified visits and revenue signals.',
+    detail: 'Measure outcomes -> iterate on top opportunities',
+    icon: BarChart3,
+  },
+]
+
+function normalizeAuditUrl(input: string): string {
+  const raw = input.trim()
+  if (!raw) return ''
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(raw)) return raw
+  return `https://${raw}`
+}
+
+function isLikelyPublicHost(hostname: string): boolean {
+  if (!hostname) return false
+  if (hostname === 'localhost') return true
+  if (/^\d{1,3}(?:\.\d{1,3}){3}$/.test(hostname)) return true
+  return hostname.includes('.')
+}
 
 export default function HomePage() {
   const router = useRouter()
@@ -129,7 +155,7 @@ export default function HomePage() {
   useEffect(() => {
     const timer = window.setInterval(() => {
       setVisibleFeatures(prev => (prev >= featureCards.length ? featureCards.length : prev + 1))
-    }, 100)
+    }, 120)
     return () => window.clearInterval(timer)
   }, [])
 
@@ -167,15 +193,20 @@ export default function HomePage() {
       return
     }
 
+    const normalizedUrl = normalizeAuditUrl(url)
+    let parsedUrl: URL
     try {
-      new URL(url)
+      parsedUrl = new URL(normalizedUrl)
+      if (!isLikelyPublicHost(parsedUrl.hostname)) {
+        throw new Error('Invalid host')
+      }
     } catch {
-      setError('Please enter a valid URL (e.g., https://example.com)')
+      setError('Please enter a valid domain or URL (e.g., ceibo.digital)')
       return
     }
 
     if (!user) {
-      sessionStorage.setItem('pendingAuditUrl', url)
+      sessionStorage.setItem('pendingAuditUrl', url.trim())
       window.location.href = '/auth/login'
       return
     }
@@ -184,7 +215,7 @@ export default function HomePage() {
     try {
       const endpoint = `${backendUrl}/api/audits/`.replace(/\/+$/, '/')
       const requestBody = {
-        url: url.trim(),
+        url: normalizedUrl,
       }
 
       const res = await fetchWithBackendAuth(endpoint, {
@@ -266,18 +297,23 @@ export default function HomePage() {
             <div className="space-y-8">
               <div className="inline-flex items-center gap-2 px-4 py-2 bg-foreground/5 border border-foreground/10 rounded-full text-foreground/80 text-sm">
                 <Sparkles className="w-4 h-4 text-brand" />
-                Production-ready GEO operating system
+                The real growth hacking
               </div>
 
               <h1 className="text-4xl md:text-6xl lg:text-7xl font-semibold tracking-tight leading-[0.95]">
-                Minimal design.
-                <br />
-                Maximum growth signal.
+                Make your products discoverable in AI answers.
               </h1>
 
               <p className="text-lg text-muted-foreground max-w-2xl leading-relaxed">
-                LatentGEO.ai unifies keyword intelligence, AI ranking visibility, technical SEO diagnostics,
-                and automated execution so teams can ship measurable outcomes faster.
+                Turn product pages into AI-citable sources.
+              </p>
+
+              <p className="text-sm text-foreground/80 max-w-2xl">
+                From URL -&gt; prioritized fixes -&gt; GitHub PRs + tests.
+              </p>
+
+              <p className="text-sm text-muted-foreground max-w-2xl">
+                Built for ChatGPT, Perplexity &amp; generative search.
               </p>
 
               <form onSubmit={handleAudit} className="max-w-2xl relative" id="start-audit">
@@ -285,8 +321,8 @@ export default function HomePage() {
                   <div className="relative flex items-center glass-panel border border-border rounded-2xl p-2 shadow-2xl">
                     <Search className="w-5 h-5 text-muted-foreground ml-4" />
                     <input
-                      type="url"
-                      placeholder="Paste your website URL (e.g., https://example.com)"
+                      type="text"
+                      placeholder="Paste your website URL (e.g., ceibo.digital)"
                       className="flex-1 bg-transparent border-none text-foreground placeholder:text-muted-foreground focus:ring-0 px-4 py-4 outline-none text-base"
                       value={url}
                       onChange={(e) => {
@@ -318,7 +354,7 @@ export default function HomePage() {
                         </>
                       ) : (
                         <>
-                          Start audit <ArrowRight className="w-5 h-5" />
+                          Start free audit <ArrowRight className="w-5 h-5" />
                         </>
                       )}
                     </button>
@@ -338,66 +374,46 @@ export default function HomePage() {
                 </p>
               )}
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <div className="rounded-xl border border-border/70 bg-background/70 px-4 py-3">
-                  <p className="text-xs uppercase tracking-wider text-muted-foreground">Coverage</p>
-                  <p className="text-sm font-semibold mt-1">Keywords + AI + GEO</p>
-                </div>
-                <div className="rounded-xl border border-border/70 bg-background/70 px-4 py-3">
-                  <p className="text-xs uppercase tracking-wider text-muted-foreground">Execution</p>
-                  <p className="text-sm font-semibold mt-1">Auto PRs & Fix Plans</p>
-                </div>
-                <div className="rounded-xl border border-border/70 bg-background/70 px-4 py-3">
-                  <p className="text-xs uppercase tracking-wider text-muted-foreground">Signal</p>
-                  <p className="text-sm font-semibold mt-1">Live audit telemetry</p>
-                </div>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3" aria-label="Proof chips">
+                {proofChips.map((chip) => (
+                  <div key={chip} className="rounded-xl border border-border/70 bg-background/70 px-4 py-3">
+                    <p className="text-sm font-semibold">{chip}</p>
+                  </div>
+                ))}
               </div>
             </div>
 
-            <div className="space-y-5">
-              <div className="glass-card p-6 sm:p-7 relative overflow-hidden">
-                <div className="absolute -top-16 -right-14 h-40 w-40 rounded-full bg-brand/20 blur-2xl" />
-                <div className="relative z-10">
-                  <p className="text-sm uppercase tracking-widest text-muted-foreground">Autonomous pipeline</p>
-                  <h3 className="text-2xl font-semibold mt-2">Insights that execute themselves</h3>
-                  <p className="text-sm text-muted-foreground mt-3">
-                    Move from diagnosis to shipped improvements with a single workflow.
+            <aside aria-label="Growth loop highlights" className="space-y-4">
+              {loopCards.map((item) => {
+                const Icon = item.icon
+                return (
+                  <article key={item.title} className="glass-card p-6 sm:p-7 relative overflow-hidden">
+                    <div className="absolute -top-16 -right-14 h-40 w-40 rounded-full bg-brand/20 blur-2xl" />
+                    <div className="relative z-10 space-y-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <p className="text-xs uppercase tracking-widest text-muted-foreground">{item.title}</p>
+                        <Icon className="h-4 w-4 text-brand" />
+                      </div>
+                      <p className="text-base sm:text-lg font-semibold leading-tight">{item.summary}</p>
+                      <div className="rounded-xl border border-border/70 bg-background/70 px-4 py-3">
+                        <p className="text-[11px] uppercase tracking-widest text-muted-foreground">How it works</p>
+                        <p className="text-sm text-foreground/85 mt-1">{item.detail}</p>
+                      </div>
+                    </div>
+                  </article>
+                )
+              })}
+
+              <div className="rounded-2xl border border-border/70 bg-background/75 p-5 flex items-start gap-3">
+                <Shield className="h-5 w-5 text-brand mt-0.5" />
+                <div>
+                  <p className="text-sm font-semibold">Secure by design</p>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    Scoped access, approval points, and audit trails keep automation controlled.
                   </p>
                 </div>
-
-                <div className="mt-5 space-y-3">
-                  {[
-                    'Keyword + intent clustering',
-                    'AI ranking and citation visibility',
-                    'Code-level remediation via GitHub PRs',
-                  ].map((item) => (
-                    <div key={item} className="flex items-center gap-3 text-sm text-foreground/85">
-                      <div className="h-2 w-2 rounded-full bg-brand" />
-                      {item}
-                    </div>
-                  ))}
-                </div>
               </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div className="rounded-2xl border border-border/70 bg-background/75 p-5">
-                  <div className="flex items-center justify-between">
-                    <p className="text-xs uppercase tracking-wider text-muted-foreground">Live status</p>
-                    <Activity className="h-4 w-4 text-brand" />
-                  </div>
-                  <p className="mt-3 text-2xl font-semibold">Realtime</p>
-                  <p className="text-sm text-muted-foreground mt-1">SSE updates across the audit lifecycle.</p>
-                </div>
-                <div className="rounded-2xl border border-border/70 bg-background/75 p-5">
-                  <div className="flex items-center justify-between">
-                    <p className="text-xs uppercase tracking-wider text-muted-foreground">Secure workflow</p>
-                    <Shield className="h-4 w-4 text-brand" />
-                  </div>
-                  <p className="mt-3 text-2xl font-semibold">Governed</p>
-                  <p className="text-sm text-muted-foreground mt-1">Controlled rollout with approval points.</p>
-                </div>
-              </div>
-            </div>
+            </aside>
           </div>
         </section>
 
@@ -406,11 +422,11 @@ export default function HomePage() {
             <div>
               <p className="text-sm uppercase tracking-widest text-muted-foreground">Feature stack</p>
               <h2 className="text-3xl md:text-4xl font-semibold tracking-tight mt-2">
-                From keywords to AI ranking control.
+                From discoverability to citable product growth.
               </h2>
             </div>
             <p className="text-muted-foreground max-w-xl">
-              Cards load progressively to highlight each capability: research, diagnostics, automation, and reporting.
+              Progressive cards show how teams capture visibility, ship fixes, and measure growth outcomes.
             </p>
           </div>
 
@@ -449,27 +465,27 @@ export default function HomePage() {
               <div className="w-12 h-12 bg-brand/10 rounded-xl flex items-center justify-center mb-4 text-brand">
                 <Globe className="w-6 h-6" />
               </div>
-              <h3 className="text-lg font-semibold mb-2">Generative search coverage</h3>
+              <h3 className="text-lg font-semibold mb-2">Product discoverability</h3>
               <p className="text-muted-foreground text-sm">
-                Understand how your brand appears in AI answers and conversational search.
+                Improve how product pages appear across AI answers and generative search journeys.
               </p>
             </div>
             <div className="p-6 glass-card border-border/70">
               <div className="w-12 h-12 bg-brand/10 rounded-xl flex items-center justify-center mb-4 text-brand">
                 <Zap className="w-6 h-6" />
               </div>
-              <h3 className="text-lg font-semibold mb-2">Autonomous remediation</h3>
+              <h3 className="text-lg font-semibold mb-2">AI-citable source readiness</h3>
               <p className="text-muted-foreground text-sm">
-                Turn insights into GitHub PRs with automated fixes and guardrails.
+                Turn product pages into stronger citation candidates with concrete implementation paths.
               </p>
             </div>
             <div className="p-6 glass-card border-border/70">
               <div className="w-12 h-12 bg-brand/10 rounded-xl flex items-center justify-center mb-4 text-brand">
                 <Rocket className="w-6 h-6" />
               </div>
-              <h3 className="text-lg font-semibold mb-2">Ready to launch fast</h3>
+              <h3 className="text-lg font-semibold mb-2">Clicks and sales impact</h3>
               <p className="text-muted-foreground text-sm">
-                Start with one URL and get a full execution roadmap in minutes.
+                Connect citation gains to qualified clicks and growth-ready revenue opportunities.
               </p>
             </div>
           </section>
@@ -559,7 +575,7 @@ export default function HomePage() {
 
       <footer className="border-t border-border mt-20 py-8">
         <div className="max-w-6xl mx-auto px-6 text-center text-muted-foreground text-sm">
-          © 2026 LatentGEO.ai. Built for Nicolas Leiva.
+          © 2026 LatentGEO.ai. Nicolas Leiva.
         </div>
       </footer>
     </div>

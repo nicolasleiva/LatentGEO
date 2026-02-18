@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from typing import List, Optional, Dict, Any
 import json
 import os
+from urllib.parse import urlparse
 
 from ..models import Audit, AuditedPage, Report, Competitor, AuditStatus, CrawlJob
 from ..schemas import AuditCreate, AuditSummary, AuditDetail
@@ -56,12 +57,11 @@ class AuditService:
             logger.info(f"Audit already active for {url}: {active_audit.id}")
             return active_audit
 
-        domain = (
-            url.replace("https://", "")
-            .replace("http://", "")
-            .split("/")[0]
-            .lstrip("www.")
-        )
+        parsed_url = urlparse(url if "://" in url else f"https://{url}")
+        host = (parsed_url.hostname or parsed_url.netloc or "").strip().lower().strip(".")
+        if host.startswith("www."):
+            host = host[4:]
+        domain = host
 
         audit = Audit(
             url=url,
@@ -338,6 +338,10 @@ class AuditService:
         # Actualizar metadata
         audit.is_ymyl = external_intelligence.get("is_ymyl", False)
         category_value = external_intelligence.get("category")
+
+        category_value = PipelineService._sanitize_context_label(
+            category_value, fallback=None
+        )
         if not category_value or str(category_value).strip().lower() in {
             "",
             "unclassified",
@@ -345,8 +349,6 @@ class AuditService:
             "none",
         }:
             try:
-                from app.services.pipeline_service import PipelineService
-
                 core_terms = PipelineService._extract_core_terms_from_target(
                     target_audit, max_terms=3, include_generic=False
                 )
@@ -368,7 +370,12 @@ class AuditService:
 
         # Persist inferred market when missing (avoid empty Market Context)
         try:
-            market_value = external_intelligence.get("market") or target_audit.get("market")
+            market_value = (
+                PipelineService._normalize_market_value(
+                    external_intelligence.get("market")
+                )
+                or PipelineService._normalize_market_value(target_audit.get("market"))
+            )
             if not market_value:
                 market_value = PipelineService._infer_market_from_url(audit.url)
             if market_value and not audit.market:
@@ -971,6 +978,671 @@ class AuditService:
         
         logger.info(f"Complete context loaded for audit {audit_id}")
         return context
+
+    @staticmethod
+    def _safe_json_dict(raw_text: str) -> Optional[Dict[str, Any]]:
+        if not raw_text:
+            return None
+        cleaned = str(raw_text).strip()
+        if cleaned.startswith("```"):
+            cleaned = cleaned.replace("```json", "```").replace("```", "").strip()
+        try:
+            parsed = json.loads(cleaned)
+            return parsed if isinstance(parsed, dict) else None
+        except Exception:
+            pass
+        start = cleaned.find("{")
+        end = cleaned.rfind("}")
+        if start != -1 and end > start:
+            candidate = cleaned[start : end + 1]
+            try:
+                parsed = json.loads(candidate)
+                return parsed if isinstance(parsed, dict) else None
+            except Exception:
+                return None
+        return None
+
+    @staticmethod
+    def _build_pages_data_for_product_intel(pages: List[AuditedPage]) -> List[Dict[str, Any]]:
+        pages_data: List[Dict[str, Any]] = []
+        for page in pages:
+            try:
+                page_data = (
+                    json.loads(page.audit_data)
+                    if isinstance(page.audit_data, str)
+                    else page.audit_data or {}
+                )
+                schema_info = (
+                    page_data.get("schema", {})
+                    if isinstance(page_data, dict)
+                    else {}
+                )
+                schemas = []
+
+                raw_jsonld_blocks = schema_info.get("raw_jsonld", [])
+                if isinstance(raw_jsonld_blocks, list):
+                    for raw in raw_jsonld_blocks:
+                        try:
+                            parsed = json.loads(raw) if isinstance(raw, str) else raw
+                            if isinstance(parsed, list):
+                                for item in parsed:
+                                    if isinstance(item, dict):
+                                        schemas.append(
+                                            {
+                                                "type": item.get("@type")
+                                                or item.get("type"),
+                                                "properties": item,
+                                            }
+                                        )
+                            elif isinstance(parsed, dict):
+                                schemas.append(
+                                    {
+                                        "type": parsed.get("@type")
+                                        or parsed.get("type"),
+                                        "properties": parsed,
+                                    }
+                                )
+                        except Exception:
+                            continue
+
+                if not schemas:
+                    schema_types = schema_info.get("schema_types", [])
+                    if isinstance(schema_types, list):
+                        for t in schema_types:
+                            schemas.append({"type": t, "properties": {}})
+
+                title = ""
+                if isinstance(page_data, dict):
+                    title = page_data.get("content", {}).get("title") or page_data.get(
+                        "title", ""
+                    )
+
+                pages_data.append(
+                    {"url": page.url, "title": title, "schemas": schemas}
+                )
+            except Exception:
+                pages_data.append({"url": page.url, "title": "", "schemas": []})
+        return pages_data
+
+    @staticmethod
+    async def ensure_fix_plan(
+        db: Session, audit_id: int, min_items: int = 5
+    ) -> List[Dict[str, Any]]:
+        """
+        Ensure fix_plan exists for audit. Generates and persists one if missing/short.
+        """
+        audit = db.query(Audit).filter(Audit.id == audit_id).first()
+        if not audit:
+            raise ValueError("Audit not found")
+
+        existing = audit.fix_plan if isinstance(audit.fix_plan, list) else []
+        if len(existing) >= min_items:
+            return existing
+
+        target_audit = audit.target_audit or {}
+        pagespeed_data = audit.pagespeed_data or {}
+
+        product_intelligence_data: Dict[str, Any] = {}
+        try:
+            from dataclasses import asdict
+            from .product_intelligence_service import ProductIntelligenceService
+            from .prompt_loader import get_prompt_loader
+            from ..core.llm_kimi import get_llm_function
+
+            llm_function = get_llm_function()
+            pages = AuditService.get_audited_pages(db, audit_id)
+            pages_data = AuditService._build_pages_data_for_product_intel(pages)
+            product_service = ProductIntelligenceService(llm_function=llm_function)
+            product_result = await product_service.analyze(
+                audit_data=target_audit,
+                pages_data=pages_data,
+                llm_visibility_data=None,
+                competitor_data=audit.competitor_audits or None,
+            )
+            product_intelligence_data = asdict(product_result)
+        except Exception as e:
+            logger.warning(f"Product intelligence generation failed: {e}")
+
+        base_fix_plan = PipelineService._enrich_fix_plan_with_audit_issues(
+            fix_plan=[],
+            target_audit=target_audit,
+            pagespeed_data=pagespeed_data,
+            product_intelligence_data=product_intelligence_data,
+        )
+
+        llm_fix_plan: List[Dict[str, Any]] = []
+        try:
+            from ..core.llm_kimi import get_llm_function
+            from .prompt_loader import get_prompt_loader
+
+            llm_function = get_llm_function()
+            if llm_function is None:
+                raise ValueError("LLM function unavailable")
+
+            prompt_data = get_prompt_loader().load_prompt("fix_plan_generation")
+            system_prompt = prompt_data.get("system_prompt", "")
+            user_template = prompt_data.get("user_template", "")
+
+            audit_context = AuditService.get_complete_audit_context(db, audit_id)
+            audit_context["product_intelligence"] = product_intelligence_data
+            safe_context = AuditService._sanitize_json_value(audit_context)
+
+            user_prompt = user_template.format(
+                audit_data=json.dumps(safe_context, ensure_ascii=False),
+                existing_fixes=json.dumps(
+                    AuditService._sanitize_json_value(base_fix_plan), ensure_ascii=False
+                ),
+                team_size="4-6",
+                sprint_duration="2 weeks",
+                tech_stack="unknown",
+            )
+
+            raw = await llm_function(system_prompt=system_prompt, user_prompt=user_prompt)
+            parsed = AuditService._safe_json_dict(raw or "")
+            if parsed and isinstance(parsed.get("fix_plan"), list):
+                llm_fix_plan = parsed.get("fix_plan") or []
+        except Exception as e:
+            logger.warning(f"Fix plan LLM generation failed: {e}")
+
+        if llm_fix_plan and len(llm_fix_plan) >= min_items:
+            final_fix_plan = PipelineService._enrich_fix_plan_with_audit_issues(
+                fix_plan=llm_fix_plan,
+                target_audit=target_audit,
+                pagespeed_data=pagespeed_data,
+                product_intelligence_data=product_intelligence_data,
+            )
+        else:
+            final_fix_plan = base_fix_plan
+
+        audit.fix_plan = AuditService._sanitize_json_value(final_fix_plan)
+        db.commit()
+        db.refresh(audit)
+
+        try:
+            reports_dir = os.path.join(
+                settings.REPORTS_DIR or "reports", f"audit_{audit_id}"
+            )
+            os.makedirs(reports_dir, exist_ok=True)
+            fix_plan_path = os.path.join(reports_dir, "fix_plan.json")
+            with open(fix_plan_path, "w", encoding="utf-8") as f:
+                json.dump(audit.fix_plan or [], f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            logger.warning(f"Failed to persist fix_plan.json: {e}")
+
+        return audit.fix_plan or []
+
+    @staticmethod
+    def _path_from_value(raw_path: str) -> str:
+        if not raw_path:
+            return "/"
+        path = str(raw_path).strip()
+        if path.startswith("http://") or path.startswith("https://"):
+            try:
+                parsed = urlparse(path)
+                return parsed.path or "/"
+            except Exception:
+                return "/"
+        if not path.startswith("/"):
+            path = f"/{path}"
+        return path
+
+    @staticmethod
+    def _title_from_path(path: str) -> str:
+        if not path or path == "/":
+            return "Home"
+        slug = path.strip("/").replace("-", " ").replace("_", " ")
+        return " ".join([p.capitalize() for p in slug.split()]) or "Page"
+
+    @staticmethod
+    def _extract_page_data(page: AuditedPage) -> Dict[str, Any]:
+        data = page.audit_data if isinstance(page.audit_data, dict) else {}
+        if isinstance(page.audit_data, str):
+            try:
+                data = json.loads(page.audit_data)
+            except Exception:
+                data = {}
+        if isinstance(data, dict) and isinstance(data.get("audit_data"), dict):
+            return data.get("audit_data") or {}
+        return data or {}
+
+    @staticmethod
+    def _build_page_map(pages: List[AuditedPage]) -> Dict[str, Dict[str, Any]]:
+        page_map: Dict[str, Dict[str, Any]] = {}
+        for page in pages:
+            path = page.path or AuditService._path_from_value(page.url)
+            page_map[path] = AuditService._extract_page_data(page)
+        return page_map
+
+    @staticmethod
+    def _get_item_value(item: Dict[str, Any]) -> Any:
+        return item.get("recommended_value") or item.get("value")
+
+    @staticmethod
+    async def get_fix_plan_missing_inputs(
+        db: Session, audit_id: int
+    ) -> List[Dict[str, Any]]:
+        audit = db.query(Audit).filter(Audit.id == audit_id).first()
+        if not audit:
+            raise ValueError("Audit not found")
+
+        await AuditService.ensure_fix_plan(db, audit_id)
+        db.refresh(audit)
+        fix_plan = audit.fix_plan if isinstance(audit.fix_plan, list) else []
+        fix_plan = AuditService._sanitize_json_value(fix_plan)
+        if not isinstance(fix_plan, list):
+            fix_plan = []
+
+        pages = AuditService.get_audited_pages(db, audit_id)
+        page_map = AuditService._build_page_map(pages)
+
+        missing_inputs: List[Dict[str, Any]] = []
+
+        def _suggest_h1(path: str) -> str:
+            data = page_map.get(path) or {}
+            example = (
+                data.get("structure", {})
+                .get("h1_check", {})
+                .get("details", {})
+                .get("example")
+            )
+            if example:
+                return str(example)
+            title = data.get("content", {}).get("title")
+            if title:
+                return str(title)
+            return AuditService._title_from_path(path)
+
+        # H1 missing (per page)
+        seen_h1_paths = set()
+        for item in fix_plan:
+            issue_code = (item.get("issue_code") or "").upper().strip()
+            if not issue_code.startswith("H1_MISSING"):
+                continue
+            page_path = AuditService._path_from_value(
+                item.get("page_path") or item.get("page") or item.get("page_url")
+            )
+            if page_path in seen_h1_paths:
+                continue
+            seen_h1_paths.add(page_path)
+            existing_value = AuditService._get_item_value(item)
+            if isinstance(existing_value, str) and existing_value.strip():
+                continue
+            suggestion = _suggest_h1(page_path)
+            missing_inputs.append(
+                {
+                    "id": f"h1:{page_path}",
+                    "issue_code": "H1_MISSING",
+                    "page_path": page_path,
+                    "required": True,
+                    "prompt": f"Provide the exact H1 text for {page_path}.",
+                    "fields": [
+                        {
+                            "key": "h1_text",
+                            "label": "H1 text",
+                            "value": "",
+                            "placeholder": suggestion,
+                            "required": True,
+                            "input_type": "text",
+                        }
+                    ],
+                }
+            )
+
+        # Schema missing (global)
+        schema_items = [
+            item
+            for item in fix_plan
+            if (item.get("issue_code") or "").upper().startswith("SCHEMA_")
+            or (item.get("issue_code") or "").upper().startswith("PRODUCT_SCHEMA_")
+        ]
+        if schema_items:
+            existing_schema = None
+            for item in schema_items:
+                value = AuditService._get_item_value(item)
+                if isinstance(value, dict) and value.get("org_name"):
+                    existing_schema = value
+                    break
+            schema_value = existing_schema or {}
+            org_name_value = str(schema_value.get("org_name") or "").strip()
+            org_url_value = str(schema_value.get("org_url") or "").strip()
+            logo_url_value = str(schema_value.get("logo_url") or "").strip()
+            same_as_value = schema_value.get("same_as") or []
+            if isinstance(same_as_value, str):
+                same_as_value = [v.strip() for v in same_as_value.split(",") if v.strip()]
+            same_as_text = ", ".join([v for v in same_as_value if isinstance(v, str)])
+
+            missing_required = not org_name_value
+            missing_optional = not org_url_value or not logo_url_value or not same_as_text
+
+            if missing_required or missing_optional:
+                org_name = audit.domain or "Organization"
+                missing_inputs.append(
+                    {
+                        "id": "schema:org",
+                        "issue_code": "SCHEMA_MISSING",
+                        "page_path": "ALL_PAGES",
+                        "required": missing_required,
+                        "prompt": "Provide your organization details for Schema.org JSON-LD.",
+                        "fields": [
+                            {
+                                "key": "org_name",
+                                "label": "Organization name",
+                                "value": org_name_value,
+                                "placeholder": org_name,
+                                "required": True,
+                                "input_type": "text",
+                            },
+                            {
+                                "key": "org_url",
+                                "label": "Organization URL",
+                                "value": org_url_value,
+                                "placeholder": audit.url or "",
+                                "required": False,
+                                "input_type": "text",
+                            },
+                            {
+                                "key": "logo_url",
+                                "label": "Logo URL",
+                                "value": logo_url_value,
+                                "placeholder": "",
+                                "required": False,
+                                "input_type": "text",
+                            },
+                            {
+                                "key": "same_as",
+                                "label": "SameAs profiles (comma-separated)",
+                                "value": same_as_text,
+                                "placeholder": "",
+                                "required": False,
+                                "input_type": "textarea",
+                            },
+                        ],
+                    }
+                )
+
+        # Author missing (global)
+        author_items = [
+            item
+            for item in fix_plan
+            if (item.get("issue_code") or "").upper().startswith("AUTHOR_")
+        ]
+        if author_items:
+            existing_author = None
+            for item in author_items:
+                value = AuditService._get_item_value(item)
+                if isinstance(value, dict) and value.get("author_name"):
+                    existing_author = value
+                    break
+            author_value = existing_author or {}
+            author_name_value = str(author_value.get("author_name") or "").strip()
+            author_title_value = str(author_value.get("author_title") or "").strip()
+            author_bio_value = str(author_value.get("author_bio") or "").strip()
+            author_url_value = str(author_value.get("author_url") or "").strip()
+            author_image_value = str(author_value.get("author_image") or "").strip()
+
+            missing_required = not author_name_value
+            missing_optional = (
+                not author_title_value
+                or not author_bio_value
+                or not author_url_value
+                or not author_image_value
+            )
+
+            if missing_required or missing_optional:
+                missing_inputs.append(
+                    {
+                        "id": "author:global",
+                        "issue_code": "AUTHOR_MISSING",
+                        "page_path": "ALL_PAGES",
+                        "required": missing_required,
+                        "prompt": "Provide author details to include on content pages.",
+                        "fields": [
+                            {
+                                "key": "author_name",
+                                "label": "Author name",
+                                "value": author_name_value,
+                                "placeholder": "",
+                                "required": True,
+                                "input_type": "text",
+                            },
+                            {
+                                "key": "author_title",
+                                "label": "Author title",
+                                "value": author_title_value,
+                                "placeholder": "",
+                                "required": False,
+                                "input_type": "text",
+                            },
+                            {
+                                "key": "author_bio",
+                                "label": "Author bio",
+                                "value": author_bio_value,
+                                "placeholder": "",
+                                "required": False,
+                                "input_type": "textarea",
+                            },
+                            {
+                                "key": "author_url",
+                                "label": "Author profile URL",
+                                "value": author_url_value,
+                                "placeholder": "",
+                                "required": False,
+                                "input_type": "text",
+                            },
+                            {
+                                "key": "author_image",
+                                "label": "Author image URL",
+                                "value": author_image_value,
+                                "placeholder": "",
+                                "required": False,
+                                "input_type": "text",
+                            },
+                        ],
+                    }
+                )
+
+        # FAQ missing (global, optional)
+        faq_items = [
+            item
+            for item in fix_plan
+            if (item.get("issue_code") or "").upper().startswith("FAQ_")
+        ]
+        if faq_items:
+            existing_faq = None
+            for item in faq_items:
+                value = AuditService._get_item_value(item)
+                if isinstance(value, list) and value:
+                    existing_faq = value
+                    break
+            if not existing_faq:
+                missing_inputs.append(
+                    {
+                        "id": "faq:global",
+                        "issue_code": "FAQ_MISSING",
+                        "page_path": "ALL_PAGES",
+                        "required": False,
+                        "prompt": "Optional: add 2–3 FAQ Q&A pairs grounded in your audited content.",
+                        "fields": [
+                            {
+                                "key": "faq_q1",
+                                "label": "FAQ Question 1",
+                                "value": "",
+                                "placeholder": "",
+                                "required": False,
+                                "input_type": "text",
+                            },
+                            {
+                                "key": "faq_a1",
+                                "label": "FAQ Answer 1",
+                                "value": "",
+                                "placeholder": "",
+                                "required": False,
+                                "input_type": "textarea",
+                            },
+                            {
+                                "key": "faq_q2",
+                                "label": "FAQ Question 2",
+                                "value": "",
+                                "placeholder": "",
+                                "required": False,
+                                "input_type": "text",
+                            },
+                            {
+                                "key": "faq_a2",
+                                "label": "FAQ Answer 2",
+                                "value": "",
+                                "placeholder": "",
+                                "required": False,
+                                "input_type": "textarea",
+                            },
+                            {
+                                "key": "faq_q3",
+                                "label": "FAQ Question 3",
+                                "value": "",
+                                "placeholder": "",
+                                "required": False,
+                                "input_type": "text",
+                            },
+                            {
+                                "key": "faq_a3",
+                                "label": "FAQ Answer 3",
+                                "value": "",
+                                "placeholder": "",
+                                "required": False,
+                                "input_type": "textarea",
+                            },
+                        ],
+                    }
+                )
+
+        return missing_inputs
+
+    @staticmethod
+    async def apply_fix_plan_inputs(
+        db: Session, audit_id: int, answers: List[Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
+        audit = db.query(Audit).filter(Audit.id == audit_id).first()
+        if not audit:
+            raise ValueError("Audit not found")
+
+        await AuditService.ensure_fix_plan(db, audit_id, min_items=1)
+        db.refresh(audit)
+        fix_plan = audit.fix_plan if isinstance(audit.fix_plan, list) else []
+
+        def _clean_str(value: Any) -> str:
+            if value is None:
+                return ""
+            return str(value).strip()
+
+        normalized_answers = AuditService._sanitize_json_value(answers or [])
+        if not isinstance(normalized_answers, list):
+            normalized_answers = []
+
+        h1_inputs: Dict[str, str] = {}
+        schema_value: Optional[Dict[str, Any]] = None
+        author_value: Optional[Dict[str, Any]] = None
+        faq_value: Optional[List[Dict[str, str]]] = None
+
+        for answer in normalized_answers:
+            issue_code = (answer.get("issue_code") or "").upper().strip()
+            page_path = AuditService._path_from_value(answer.get("page_path"))
+            values = answer.get("values") or {}
+
+            if issue_code.startswith("H1_MISSING"):
+                h1_text = _clean_str(values.get("h1_text"))
+                if h1_text:
+                    h1_inputs[page_path] = h1_text
+
+            if issue_code.startswith("SCHEMA_") or issue_code.startswith("PRODUCT_SCHEMA_"):
+                same_as = values.get("same_as") or []
+                if isinstance(same_as, str):
+                    same_as = [v.strip() for v in same_as.split(",") if v.strip()]
+                schema_value = {
+                    "org_name": _clean_str(values.get("org_name")),
+                    "org_url": _clean_str(values.get("org_url")),
+                    "logo_url": _clean_str(values.get("logo_url")),
+                    "same_as": same_as,
+                }
+
+            if issue_code.startswith("AUTHOR_"):
+                author_value = {
+                    "author_name": _clean_str(values.get("author_name")),
+                    "author_title": _clean_str(values.get("author_title")),
+                    "author_bio": _clean_str(values.get("author_bio")),
+                    "author_url": _clean_str(values.get("author_url")),
+                    "author_image": _clean_str(values.get("author_image")),
+                }
+
+            if issue_code.startswith("FAQ_"):
+                faq_items = values.get("faq_items")
+                if not isinstance(faq_items, list):
+                    faq_items = []
+                    for idx in range(1, 4):
+                        question = _clean_str(values.get(f"faq_q{idx}"))
+                        answer_text = _clean_str(values.get(f"faq_a{idx}"))
+                        if question and answer_text:
+                            faq_items.append(
+                                {
+                                    "question": question,
+                                    "answer": answer_text,
+                                }
+                            )
+                faq_items = [item for item in faq_items if item.get("question") and item.get("answer")]
+                if faq_items:
+                    faq_value = faq_items
+
+        updated_fix_plan: List[Dict[str, Any]] = []
+        h1_fallback_used = False
+        for item in fix_plan:
+            new_item = dict(item)
+            item_code = (item.get("issue_code") or "").upper().strip()
+            item_path = AuditService._path_from_value(
+                item.get("page_path") or item.get("page") or item.get("page_url")
+            )
+
+            if item_code.startswith("H1_MISSING") and h1_inputs:
+                if item_path in h1_inputs:
+                    new_item["recommended_value"] = h1_inputs[item_path]
+                    h1_fallback_used = True
+
+            if item_code.startswith("SCHEMA_") or item_code.startswith("PRODUCT_SCHEMA_"):
+                if schema_value:
+                    new_item["recommended_value"] = schema_value
+
+            if item_code.startswith("AUTHOR_"):
+                if author_value:
+                    new_item["recommended_value"] = author_value
+
+            if item_code.startswith("FAQ_"):
+                if faq_value:
+                    new_item["recommended_value"] = faq_value
+
+            updated_fix_plan.append(new_item)
+
+        if h1_inputs and not h1_fallback_used:
+            for item in updated_fix_plan:
+                if (item.get("issue_code") or "").upper().strip().startswith("H1_MISSING"):
+                    item["recommended_value"] = next(iter(h1_inputs.values()))
+                    break
+
+        fix_plan = updated_fix_plan
+
+        audit.fix_plan = AuditService._sanitize_json_value(fix_plan)
+        db.commit()
+        db.refresh(audit)
+
+        try:
+            reports_dir = os.path.join(
+                settings.REPORTS_DIR or "reports", f"audit_{audit_id}"
+            )
+            os.makedirs(reports_dir, exist_ok=True)
+            fix_plan_path = os.path.join(reports_dir, "fix_plan.json")
+            with open(fix_plan_path, "w", encoding="utf-8") as f:
+                json.dump(audit.fix_plan or [], f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            logger.warning(f"Failed to persist fix_plan.json: {e}")
+
+        return audit.fix_plan or []
 
 
 class ReportService:

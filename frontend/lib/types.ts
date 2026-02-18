@@ -183,3 +183,57 @@ export interface GitHubPullRequest {
   html_url?: string
   created_at?: string
 }
+
+export interface FixInputField {
+  key: string
+  label: string
+  value?: string
+  placeholder?: string
+  required?: boolean
+  input_type?: 'text' | 'textarea'
+}
+
+export interface FixInputGroup {
+  id: string
+  issue_code: string
+  page_path: string
+  required?: boolean
+  prompt?: string
+  fields: FixInputField[]
+}
+
+export interface FixInputsResponse {
+  audit_id: number
+  missing_inputs: FixInputGroup[]
+  missing_required: number
+}
+
+export interface FixInputsSubmit {
+  inputs: Array<{
+    id: string
+    issue_code: string
+    page_path: string
+    values: Record<string, any>
+  }>
+}
+
+export interface FixInputChatMessage {
+  role: 'user' | 'assistant'
+  content: string
+}
+
+export interface FixInputChatRequest {
+  issue_code: string
+  field_key: string
+  field_label?: string
+  placeholder?: string
+  current_values?: Record<string, any>
+  language?: string
+  history?: FixInputChatMessage[]
+}
+
+export interface FixInputChatResponse {
+  assistant_message: string
+  suggested_value: string
+  confidence: 'evidence' | 'unknown'
+}

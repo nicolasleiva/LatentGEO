@@ -8,7 +8,7 @@ Rastrea diariamente dónde y cómo tu marca es mencionada en respuestas de LLMs.
 
 import logging
 from typing import List, Dict, Optional, Any
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
 
@@ -138,7 +138,7 @@ class CitationTrackerService:
                         'query': query,
                         'llm_name': llm_name,
                         'is_mentioned': False,
-                        'timestamp': datetime.utcnow().isoformat()
+                        'timestamp': datetime.now(timezone.utc).isoformat()
                     })
                     logger.info(f"✗ No mencionado en query: '{query[:50]}...'")
                     

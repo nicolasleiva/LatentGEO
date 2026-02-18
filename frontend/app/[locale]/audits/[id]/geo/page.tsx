@@ -1,16 +1,24 @@
 'use client';
 
 import { useEffect, useState, useRef } from 'react';
-import { useParams } from 'next/navigation';
+import { useParams, usePathname, useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import dynamic from 'next/dynamic';
-import { ArrowLeft, TrendingUp, Target, Award, FileText, Sparkles, BarChart3, Search } from 'lucide-react';
+import { ArrowLeft, TrendingUp, Target, Award, FileText, Sparkles, BarChart3, Search, ShoppingBag, PenSquare } from 'lucide-react';
 import { Header } from '@/components/header';
 import { Button } from '@/components/ui/button';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Tabs, TabsContent } from '@/components/ui/tabs';
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectLabel,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { API_URL } from '@/lib/api';
 import { fetchWithBackendAuth } from '@/lib/backend-auth';
-import { GEOSkeleton } from './loading';
 import {
   CitationsTableSkeleton,
   HistorySkeleton,
@@ -54,6 +62,14 @@ const ContentAnalyze = dynamic(() => import('./components/ContentAnalyze'), {
   ssr: false,
   loading: () => <ContentAnalyzeSkeleton />
 });
+const CommerceCampaign = dynamic(() => import('./components/CommerceCampaign'), {
+  ssr: false,
+  loading: () => <ContentTemplatesSkeleton />
+});
+const ArticleEngine = dynamic(() => import('./components/ArticleEngine'), {
+  ssr: false,
+  loading: () => <ContentTemplatesSkeleton />
+});
 
 interface GEODashboardData {
     audit_id: number;
@@ -83,17 +99,46 @@ interface GEODashboardData {
 
 // Cache key helper
 const getCacheKey = (auditId: string) => `geo-dashboard-${auditId}`;
+const DEFAULT_TAB = 'opportunities';
+
+const TAB_OPTIONS = [
+    { value: 'opportunities', label: 'Top Opportunities', group: 'Visibility' },
+    { value: 'citations', label: 'Recent Citations', group: 'Visibility' },
+    { value: 'history', label: 'Citation History', group: 'Visibility' },
+    { value: 'query', label: 'Query Discovery', group: 'Intelligence' },
+    { value: 'competitors', label: 'Competitors', group: 'Intelligence' },
+    { value: 'commerce', label: 'Ecommerce Query Analyzer', group: 'Growth' },
+    { value: 'article-engine', label: 'Article Engine', group: 'Growth' },
+    { value: 'schema', label: 'Schema Generator', group: 'Structured Data' },
+    { value: 'schema-multiple', label: 'Schema Multiple', group: 'Structured Data' },
+    { value: 'templates', label: 'Content Templates', group: 'Content' },
+    { value: 'content-analyze', label: 'Analyze Content', group: 'Content' },
+] as const;
+
+const TAB_SET: ReadonlySet<string> = new Set(TAB_OPTIONS.map((option) => option.value));
+const getSafeTab = (tab: string | null) => (tab && TAB_SET.has(tab) ? tab : DEFAULT_TAB);
 
 export default function GEODashboardPage() {
     const params = useParams();
+    const router = useRouter();
+    const pathname = usePathname();
+    const searchParams = useSearchParams();
     const auditId = params.id as string;
 
     const [loading, setLoading] = useState(true);
     const [data, setData] = useState<GEODashboardData | null>(null);
     const [error, setError] = useState<string | null>(null);
+    const [activeTab, setActiveTab] = useState(() => getSafeTab(searchParams.get('tab')));
     const hasPreloaded = useRef(false);
+    const requestIdRef = useRef(0);
 
     const backendUrl = API_URL;
+
+    // A) Sync active tab with URL param.
+    useEffect(() => {
+        const nextTab = getSafeTab(searchParams.get('tab'));
+        setActiveTab((prev) => (prev === nextTab ? prev : nextTab));
+    }, [searchParams]);
 
     // Pre-load components after initial render for instant tab switching
     useEffect(() => {
@@ -111,6 +156,8 @@ export default function GEODashboardPage() {
                 import('./components/SchemaMultipleGenerator');
                 import('./components/ContentTemplates');
                 import('./components/ContentAnalyze');
+                import('./components/CommerceCampaign');
+                import('./components/ArticleEngine');
             };
 
             if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
@@ -123,42 +170,77 @@ export default function GEODashboardPage() {
         return () => clearTimeout(preloadTimer);
     }, []);
 
+    // B) Hydrate from local cache once per audit.
     useEffect(() => {
-        // Try to get cached data first (stale-while-revalidate pattern)
+        if (!auditId || typeof window === 'undefined') return;
+
+        setError(null);
+        setLoading(true);
+
         const cacheKey = getCacheKey(auditId);
         const cached = localStorage.getItem(cacheKey);
         if (cached) {
             try {
                 const parsed = JSON.parse(cached);
                 setData(parsed);
-                setLoading(false); // Show cached data immediately
-            } catch (e) {
-                // Invalid cache, continue to fetch
+                setLoading(false);
+            } catch {
+                // Ignore invalid cache and continue with remote fetch.
             }
         }
+    }, [auditId]);
+
+    // C) Fetch dashboard once per audit/backend with cancellation + stale response guard.
+    useEffect(() => {
+        if (!auditId) return;
+
+        const cacheKey = getCacheKey(auditId);
+        const requestId = ++requestIdRef.current;
+        const controller = new AbortController();
 
         const fetchData = async () => {
             try {
-                const res = await fetchWithBackendAuth(`${backendUrl}/api/geo/dashboard/${auditId}`);
+                const res = await fetchWithBackendAuth(`${backendUrl}/api/geo/dashboard/${auditId}`, {
+                    signal: controller.signal,
+                });
                 if (!res.ok) throw new Error('Failed to fetch GEO data');
                 const geoData = await res.json();
+                if (controller.signal.aborted || requestId !== requestIdRef.current) {
+                    return;
+                }
                 setData(geoData);
-                // Cache the fresh data
-                localStorage.setItem(cacheKey, JSON.stringify(geoData));
+                setError(null);
+                if (typeof window !== 'undefined') {
+                    localStorage.setItem(cacheKey, JSON.stringify(geoData));
+                }
             } catch (err: any) {
-                // Only show error if we don't have cached data
-                if (!data) {
-                    setError(err.message);
+                if (controller.signal.aborted || requestId !== requestIdRef.current) {
+                    return;
+                }
+                const hasCachedData = typeof window !== 'undefined' && Boolean(localStorage.getItem(cacheKey));
+                if (!hasCachedData) {
+                    setError(err?.message || 'Failed to fetch GEO data');
                 }
             } finally {
-                setLoading(false);
+                if (!controller.signal.aborted && requestId === requestIdRef.current) {
+                    setLoading(false);
+                }
             }
         };
 
-        if (auditId) {
-            fetchData();
-        }
-    }, [auditId, backendUrl, data]);
+        fetchData();
+
+        return () => controller.abort();
+    }, [auditId, backendUrl]);
+
+    const handleTabChange = (nextTab: string) => {
+        const safeTab = TAB_SET.has(nextTab) ? nextTab : DEFAULT_TAB;
+        setActiveTab(safeTab);
+
+        const params = new URLSearchParams(searchParams.toString());
+        params.set('tab', safeTab);
+        router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+    };
 
     const startCitationTracking = async () => {
         try {
@@ -179,25 +261,6 @@ export default function GEODashboardPage() {
             console.error(err);
         }
     };
-
-    // Show skeleton while loading - instant visual feedback
-    if (loading && !data) {
-        return <GEOSkeleton auditId={auditId} />;
-    }
-
-    if (error || !data) {
-        return (
-            <div className="min-h-screen p-8 flex items-center justify-center bg-background text-foreground">
-                <div className="glass-card p-8 max-w-lg w-full border-red-500/30">
-                    <h2 className="text-2xl font-bold text-red-600 mb-2">Error Loading Data</h2>
-                    <p className="text-muted-foreground mb-6">{error || 'Unable to load GEO dashboard data'}</p>
-                    <Button onClick={() => window.location.reload()} className="glass-button w-full">
-                        Try Again
-                    </Button>
-                </div>
-            </div>
-        );
-    }
 
     const citationTracking = data?.citation_tracking ?? {
         citation_rate: 0,
@@ -239,6 +302,12 @@ export default function GEODashboardPage() {
                         </Button>
                     </div>
                 </div>
+
+                {error && (
+                    <div className="mb-6 rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-700 dark:text-amber-300">
+                        Dashboard summary is still loading. You can use all GEO tools while we retry.
+                    </div>
+                )}
 
                 {/* Key Metrics Grid */}
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-12">
@@ -298,18 +367,27 @@ export default function GEODashboardPage() {
                 </div>
 
                 {/* Main Content Tabs */}
-                <Tabs defaultValue="opportunities" className="space-y-8">
-                    <TabsList className="bg-muted/40 p-1 rounded-2xl border border-border w-full md:w-auto inline-flex">
-                        <TabsTrigger value="opportunities" className="rounded-xl data-[state=active]:bg-background data-[state=active]:text-foreground text-muted-foreground px-6 py-3">Top Opportunities</TabsTrigger>
-                        <TabsTrigger value="citations" className="rounded-xl data-[state=active]:bg-background data-[state=active]:text-foreground text-muted-foreground px-6 py-3">Recent Citations</TabsTrigger>
-                        <TabsTrigger value="history" className="rounded-xl data-[state=active]:bg-background data-[state=active]:text-foreground text-muted-foreground px-6 py-3">Citation History</TabsTrigger>
-                        <TabsTrigger value="query" className="rounded-xl data-[state=active]:bg-background data-[state=active]:text-foreground text-muted-foreground px-6 py-3">Query Discovery</TabsTrigger>
-                        <TabsTrigger value="competitors" className="rounded-xl data-[state=active]:bg-background data-[state=active]:text-foreground text-muted-foreground px-6 py-3">Competitors</TabsTrigger>
-                        <TabsTrigger value="schema" className="rounded-xl data-[state=active]:bg-background data-[state=active]:text-foreground text-muted-foreground px-6 py-3">Schema Generator</TabsTrigger>
-                        <TabsTrigger value="schema-multiple" className="rounded-xl data-[state=active]:bg-background data-[state=active]:text-foreground text-muted-foreground px-6 py-3">Schema Multiple</TabsTrigger>
-                        <TabsTrigger value="templates" className="rounded-xl data-[state=active]:bg-background data-[state=active]:text-foreground text-muted-foreground px-6 py-3">Content Templates</TabsTrigger>
-                        <TabsTrigger value="content-analyze" className="rounded-xl data-[state=active]:bg-background data-[state=active]:text-foreground text-muted-foreground px-6 py-3">Analyze Content</TabsTrigger>
-                    </TabsList>
+                <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-8">
+                    <div className="w-full md:max-w-md">
+                        <p className="text-xs text-muted-foreground uppercase tracking-wider mb-2">Tool menu</p>
+                        <Select value={activeTab} onValueChange={handleTabChange}>
+                            <SelectTrigger className="w-full bg-muted/40 border-border rounded-xl">
+                                <SelectValue placeholder="Select a GEO tool" />
+                            </SelectTrigger>
+                            <SelectContent className="bg-popover border-border/70">
+                                {['Visibility', 'Intelligence', 'Growth', 'Structured Data', 'Content'].map((group) => (
+                                    <SelectGroup key={group}>
+                                        <SelectLabel>{group}</SelectLabel>
+                                        {TAB_OPTIONS.filter((option) => option.group === group).map((option) => (
+                                            <SelectItem key={option.value} value={option.value}>
+                                                {option.label}
+                                            </SelectItem>
+                                        ))}
+                                    </SelectGroup>
+                                ))}
+                            </SelectContent>
+                        </Select>
+                    </div>
 
                     <TabsContent value="opportunities" className="transition-all duration-300 ease-out data-[state=inactive]:opacity-0 data-[state=active]:opacity-100">
                         <div className="glass-card p-8">
@@ -323,7 +401,11 @@ export default function GEODashboardPage() {
                                 </div>
                             </div>
 
-                            {opportunities.length === 0 ? (
+                            {loading && !data ? (
+                                <div className="text-center py-12 bg-muted/30 rounded-2xl border border-dashed border-border">
+                                    <p className="text-muted-foreground">Loading opportunities...</p>
+                                </div>
+                            ) : opportunities.length === 0 ? (
                                 <div className="text-center py-12 bg-muted/30 rounded-2xl border border-dashed border-border">
                                     <p className="text-muted-foreground">No opportunities discovered yet. Run Query Discovery to find them.</p>
                                 </div>
@@ -416,6 +498,36 @@ export default function GEODashboardPage() {
                                 </div>
                             </div>
                             <CompetitorAnalysis auditId={Number(auditId)} backendUrl={backendUrl} />
+                        </div>
+                    </TabsContent>
+
+                    <TabsContent value="commerce" className="transition-all duration-300 ease-out data-[state=inactive]:opacity-0 data-[state=active]:opacity-100">
+                        <div className="glass-card p-8">
+                            <div className="flex items-center gap-3 mb-6">
+                                <div className="p-3 bg-emerald-500/20 rounded-xl">
+                                    <ShoppingBag className="w-6 h-6 text-emerald-400" />
+                                </div>
+                                <div>
+                                    <h2 className="text-2xl font-bold text-foreground">Ecommerce Query Analyzer</h2>
+                                    <p className="text-muted-foreground">Analyze one query at a time and learn how to beat the current #1 result.</p>
+                                </div>
+                            </div>
+                            <CommerceCampaign auditId={Number(auditId)} backendUrl={backendUrl} />
+                        </div>
+                    </TabsContent>
+
+                    <TabsContent value="article-engine" className="transition-all duration-300 ease-out data-[state=inactive]:opacity-0 data-[state=active]:opacity-100">
+                        <div className="glass-card p-8">
+                            <div className="flex items-center gap-3 mb-6">
+                                <div className="p-3 bg-indigo-500/20 rounded-xl">
+                                    <PenSquare className="w-6 h-6 text-indigo-400" />
+                                </div>
+                                <div>
+                                    <h2 className="text-2xl font-bold text-foreground">Article Engine</h2>
+                                    <p className="text-muted-foreground">Generate X GEO/SEO articles grounded in your audit and competitor gaps.</p>
+                                </div>
+                            </div>
+                            <ArticleEngine auditId={Number(auditId)} backendUrl={backendUrl} />
                         </div>
                     </TabsContent>
 

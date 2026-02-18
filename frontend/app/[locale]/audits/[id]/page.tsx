@@ -3,13 +3,14 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
 
 import dynamic from 'next/dynamic';
+import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import Image from 'next/image';
 import logger from '@/lib/logger';
 import { Header } from '@/components/header';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { ArrowLeft, Download, RefreshCw, ExternalLink, Globe, AlertTriangle, CheckCircle, Clock, FileText, Target, Search, Link as LinkIcon, TrendingUp, Edit, Sparkles, Github, GitPullRequest } from 'lucide-react';
+import { ArrowLeft, Download, RefreshCw, ExternalLink, Globe, AlertTriangle, CheckCircle, Clock, FileText, Target, Search, Link as LinkIcon, TrendingUp, Edit, Sparkles, Github, GitPullRequest, ShoppingBag, PenSquare } from 'lucide-react';
 import { Dialog, DialogContent, DialogTrigger, DialogTitle } from '@/components/ui/dialog';
 import { useAuditSSE } from '@/hooks/useAuditSSE';
 import { API_URL } from '@/lib/api';
@@ -19,7 +20,6 @@ import { fetchWithBackendAuth } from '@/lib/backend-auth';
 const CoreWebVitalsChart = dynamic(() => import('@/components/core-web-vitals-chart').then(mod => mod.CoreWebVitalsChart), { ssr: false });
 const KeywordGapChart = dynamic(() => import('@/components/keyword-gap-chart').then(mod => mod.KeywordGapChart), { ssr: false });
 const IssuesHeatmap = dynamic(() => import('@/components/issues-heatmap').then(mod => mod.IssuesHeatmap), { ssr: false });
-const GitHubIntegration = dynamic(() => import('@/components/github-integration').then(mod => mod.GitHubIntegration), { ssr: false });
 const HubSpotIntegration = dynamic(() => import('@/components/hubspot-integration').then(mod => mod.HubSpotIntegration), { ssr: false });
 const AuditChatFlow = dynamic(() => import('@/components/audit-chat-flow').then(mod => mod.AuditChatFlow), { ssr: false });
 const AIProcessingScreen = dynamic(() => import('@/components/ai-processing-screen').then(mod => mod.AIProcessingScreen), { ssr: false });
@@ -46,13 +46,18 @@ const normalizeCategory = (value?: string) => {
   if (lowered.includes('unknown category') || lowered.includes('unknown') || lowered.includes('desconocida')) {
     return 'Unclassified';
   }
-  return value;
+  const removable = new Set(['nuestro', 'nuestra', 'nuestros', 'nuestras', 'our', 'my', 'your']);
+  const tokens = value.match(/[A-Za-zÀ-ÿ0-9&+\-]+/g) || [];
+  const cleaned = tokens.filter((t) => !removable.has(t.toLowerCase())).join(' ').trim();
+  return cleaned || 'Unclassified';
 };
 
 export default function AuditDetailPage() {
   const params = useParams();
   const router = useRouter();
   const auditId = params.id as string;
+  const locale = typeof params.locale === 'string' ? params.locale : 'en';
+  const localePrefix = `/${locale}`;
 
   const [audit, setAudit] = useState<any>(null);
   const [pages, setPages] = useState<any[]>([]);
@@ -77,6 +82,20 @@ export default function AuditDetailPage() {
     [audit]
   );
   const languageDisplay = audit?.language || 'en';
+  const geoRoutes = useMemo(() => {
+    const toolsBase = `${localePrefix}/audits/${auditId}`;
+    return {
+      geoDashboard: `${toolsBase}/geo`,
+      keywords: `${toolsBase}/keywords`,
+      backlinks: `${toolsBase}/backlinks`,
+      rankTracking: `${toolsBase}/rank-tracking`,
+      contentEditor: `${localePrefix}/tools/content-editor`,
+      aiContent: `${toolsBase}/ai-content`,
+      geoCommerce: `${toolsBase}/geo?tab=commerce`,
+      geoArticleEngine: `${toolsBase}/geo?tab=article-engine`,
+      githubAutoFix: `${toolsBase}/github-auto-fix`,
+    };
+  }, [auditId, localePrefix]);
 
   const loadReport = useCallback(async () => {
     if (reportLoading || reportMarkdown) return;
@@ -149,15 +168,21 @@ export default function AuditDetailPage() {
     }
   }, [auditId, backendUrl, fixPlanLoading, fixPlan]);
 
-  const fetchData = useCallback(async () => {
+  const MAX_RETRIES = 4;
+
+  const fetchData = useCallback(async (attempt = 0) => {
     try {
       // Fetch audit first
       const auditRes = await fetchWithBackendAuth(`${backendUrl}/api/audits/${auditId}`);
       if (!auditRes.ok) {
         if (auditRes.status === 429) {
-          logger.log('Rate limited, retrying in 2s...');
-          await new Promise(resolve => setTimeout(resolve, 2000));
-          return fetchData();
+          if (attempt >= MAX_RETRIES) {
+            throw new Error(`Rate limited after ${MAX_RETRIES + 1} attempts`);
+          }
+          const backoffMs = Math.min(2000 * (attempt + 1), 10000);
+          logger.log(`Rate limited, retrying in ${backoffMs}ms... (attempt ${attempt + 1}/${MAX_RETRIES + 1})`);
+          await new Promise(resolve => setTimeout(resolve, backoffMs));
+          return fetchData(attempt + 1);
         }
         throw new Error(`Failed to fetch audit: ${auditRes.status}`);
       }
@@ -202,12 +227,35 @@ export default function AuditDetailPage() {
       console.error(err);
       setLoading(false);
     }
-  }, [auditId, backendUrl]);
+  }, [auditId, backendUrl, MAX_RETRIES]);
 
   // Initial load
   useEffect(() => {
     fetchData();
   }, [fetchData]);
+
+  useEffect(() => {
+    const prefetch = router.prefetch;
+    if (typeof prefetch !== 'function') return;
+    const routes = [
+      geoRoutes.geoDashboard,
+      geoRoutes.keywords,
+      geoRoutes.backlinks,
+      geoRoutes.rankTracking,
+      geoRoutes.contentEditor,
+      geoRoutes.aiContent,
+      geoRoutes.geoCommerce,
+      geoRoutes.geoArticleEngine,
+      geoRoutes.githubAutoFix,
+    ];
+    routes.forEach((route) => {
+      try {
+        prefetch(route);
+      } catch {
+        // no-op in environments where prefetch is unavailable
+      }
+    });
+  }, [geoRoutes, router]);
 
   // Limpiar PageSpeed cuando status cambia a 'running'
   useEffect(() => {
@@ -217,6 +265,9 @@ export default function AuditDetailPage() {
   }, [audit?.status]);
 
   // SSE for real-time status updates (replaces polling)
+  const shouldSubscribeSSE =
+    Boolean(audit) && audit.status !== 'completed' && audit.status !== 'failed';
+
   useAuditSSE(auditId, {
     onMessage: (statusData) => {
       setAudit((prev: any) => ({
@@ -229,7 +280,8 @@ export default function AuditDetailPage() {
     },
     onError: (error) => {
       console.error('SSE error:', error);
-    }
+    },
+    enabled: shouldSubscribeSSE,
   });
 
   // Memoized helper functions - MUST be before any conditional returns
@@ -322,34 +374,43 @@ export default function AuditDetailPage() {
   };
 
   const generatePDF = async () => {
+    if (pdfGenerating) return;
     setPdfGenerating(true);
     try {
       const generateRes = await fetchWithBackendAuth(`${backendUrl}/api/audits/${auditId}/generate-pdf`, {
         method: 'POST',
       });
-      if (generateRes.ok) {
-        await new Promise(resolve => setTimeout(resolve, 500));
-        const downloadRes = await fetchWithBackendAuth(`${backendUrl}/api/audits/${auditId}/download-pdf`);
-        if (!downloadRes.ok) {
-          const errorPayload = await downloadRes.json().catch(() => ({ detail: 'Download failed' }));
-          throw new Error(errorPayload.detail || 'Download failed');
-        }
-        const pdfBlob = await downloadRes.blob();
-        const objectUrl = URL.createObjectURL(pdfBlob);
-        const link = document.createElement('a');
-        link.href = objectUrl;
-        link.download = `audit_${auditId}_report.pdf`;
-        document.body.appendChild(link);
-        link.click();
-        link.remove();
-        URL.revokeObjectURL(objectUrl);
-      } else {
-        const error = await generateRes.json();
-        alert(`Error: ${error.detail || 'Unknown error'}`);
+
+      if (generateRes.status === 409) {
+        const payload = await generateRes.json().catch(() => ({}));
+        const retryAfter = Number(payload?.retry_after_seconds || 10);
+        alert(`PDF generation already in progress. Retry in ~${retryAfter}s.`);
+        return;
       }
+
+      if (!generateRes.ok) {
+        const error = await generateRes.json().catch(() => ({}));
+        throw new Error(error?.detail || 'Unknown error');
+      }
+
+      await new Promise(resolve => setTimeout(resolve, 500));
+      const downloadRes = await fetchWithBackendAuth(`${backendUrl}/api/audits/${auditId}/download-pdf`);
+      if (!downloadRes.ok) {
+        const errorPayload = await downloadRes.json().catch(() => ({ detail: 'Download failed' }));
+        throw new Error(errorPayload.detail || 'Download failed');
+      }
+      const pdfBlob = await downloadRes.blob();
+      const objectUrl = URL.createObjectURL(pdfBlob);
+      const link = document.createElement('a');
+      link.href = objectUrl;
+      link.download = `audit_${auditId}_report.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(objectUrl);
     } catch (err) {
       console.error(err);
-      alert('Error generating PDF');
+      alert(`Error generating PDF: ${err instanceof Error ? err.message : 'Unknown error'}`);
     } finally {
       setPdfGenerating(false);
     }
@@ -398,7 +459,7 @@ export default function AuditDetailPage() {
 
       <main className="flex-1 container mx-auto px-6 py-8">
         {/* Back button */}
-        <Button variant="ghost" onClick={() => router.push('/audits')} className="mb-8 text-muted-foreground hover:text-foreground pl-0">
+        <Button variant="ghost" onClick={() => router.push(`${localePrefix}/audits`)} className="mb-8 text-muted-foreground hover:text-foreground pl-0">
           <ArrowLeft className="h-4 w-4 mr-2" />
           Back to Audits
         </Button>
@@ -913,10 +974,7 @@ export default function AuditDetailPage() {
                 <h2 className="text-2xl font-bold text-foreground mb-6">SEO & GEO Tools</h2>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   {/* GEO Dashboard */}
-                  <button
-                    onClick={() => router.push(`/audits/${auditId}/geo`)}
-                    className="group glass-panel p-6 rounded-2xl transition-all text-left hover:-translate-y-1"
-                  >
+                  <Link href={geoRoutes.geoDashboard} className="group glass-panel p-6 rounded-2xl transition-all text-left hover:-translate-y-1 block">
                     <div className="flex items-start justify-between mb-3">
                       <div className="p-3 bg-brand/10 rounded-xl">
                         <Target className="w-6 h-6 text-brand" />
@@ -927,13 +985,10 @@ export default function AuditDetailPage() {
                     <p className="text-sm text-muted-foreground">
                       Citation tracking, query discovery, and LLM optimization
                     </p>
-                  </button>
+                  </Link>
 
                   {/* Keywords Research */}
-                  <button
-                    onClick={() => router.push(`/audits/${auditId}/keywords`)}
-                    className="group glass-panel p-6 rounded-2xl transition-all text-left hover:-translate-y-1"
-                  >
+                  <Link href={geoRoutes.keywords} className="group glass-panel p-6 rounded-2xl transition-all text-left hover:-translate-y-1 block">
                     <div className="flex items-start justify-between mb-3">
                       <div className="p-3 bg-brand/10 rounded-xl">
                         <Search className="w-6 h-6 text-brand" />
@@ -944,13 +999,10 @@ export default function AuditDetailPage() {
                     <p className="text-sm text-muted-foreground">
                       Discover and track relevant keywords for your niche
                     </p>
-                  </button>
+                  </Link>
 
                   {/* Backlinks Analysis */}
-                  <button
-                    onClick={() => router.push(`/audits/${auditId}/backlinks`)}
-                    className="group glass-panel p-6 rounded-2xl transition-all text-left hover:-translate-y-1"
-                  >
+                  <Link href={geoRoutes.backlinks} className="group glass-panel p-6 rounded-2xl transition-all text-left hover:-translate-y-1 block">
                     <div className="flex items-start justify-between mb-3">
                       <div className="p-3 bg-green-500/20 rounded-xl">
                         <LinkIcon className="w-6 h-6 text-emerald-600" />
@@ -961,13 +1013,10 @@ export default function AuditDetailPage() {
                     <p className="text-sm text-muted-foreground">
                       Analyze your backlink profile and opportunities
                     </p>
-                  </button>
+                  </Link>
 
                   {/* Rank Tracking */}
-                  <button
-                    onClick={() => router.push(`/audits/${auditId}/rank-tracking`)}
-                    className="group glass-panel p-6 rounded-2xl transition-all text-left hover:-translate-y-1"
-                  >
+                  <Link href={geoRoutes.rankTracking} className="group glass-panel p-6 rounded-2xl transition-all text-left hover:-translate-y-1 block">
                     <div className="flex items-start justify-between mb-3">
                       <div className="p-3 bg-orange-500/20 rounded-xl">
                         <TrendingUp className="w-6 h-6 text-amber-600" />
@@ -978,12 +1027,12 @@ export default function AuditDetailPage() {
                     <p className="text-sm text-muted-foreground">
                       Monitor your rankings across search engines
                     </p>
-                  </button>
+                  </Link>
 
                   {/* Content Editor */}
-                  <button
-                    onClick={() => router.push(`/tools/content-editor?url=${encodeURIComponent(audit?.url || '')}`)}
-                    className="group glass-panel p-6 rounded-2xl transition-all text-left hover:-translate-y-1"
+                  <Link
+                    href={`${geoRoutes.contentEditor}?url=${encodeURIComponent(audit?.url || '')}`}
+                    className="group glass-panel p-6 rounded-2xl transition-all text-left hover:-translate-y-1 block"
                   >
                     <div className="flex items-start justify-between mb-3">
                       <div className="p-3 bg-pink-500/20 rounded-xl">
@@ -995,13 +1044,10 @@ export default function AuditDetailPage() {
                     <p className="text-sm text-muted-foreground">
                       AI-powered content optimization for better visibility
                     </p>
-                  </button>
+                  </Link>
 
                   {/* AI Content Suggestions */}
-                  <button
-                    onClick={() => router.push(`/audits/${auditId}/ai-content`)}
-                    className="group glass-panel p-6 rounded-2xl transition-all text-left hover:-translate-y-1"
-                  >
+                  <Link href={geoRoutes.aiContent} className="group glass-panel p-6 rounded-2xl transition-all text-left hover:-translate-y-1 block">
                     <div className="flex items-start justify-between mb-3">
                       <div className="p-3 bg-cyan-500/20 rounded-xl">
                         <Sparkles className="w-6 h-6 text-sky-600" />
@@ -1012,29 +1058,49 @@ export default function AuditDetailPage() {
                     <p className="text-sm text-muted-foreground">
                       Generate content suggestions based on your audit
                     </p>
-                  </button>
+                  </Link>
+
+                  {/* Commerce LLM */}
+                  <Link href={geoRoutes.geoCommerce} className="group glass-panel p-6 rounded-2xl transition-all text-left hover:-translate-y-1 block">
+                    <div className="flex items-start justify-between mb-3">
+                      <div className="p-3 bg-indigo-500/20 rounded-xl">
+                        <ShoppingBag className="w-6 h-6 text-indigo-600" />
+                      </div>
+                      <ExternalLink className="w-5 h-5 text-muted-foreground group-hover:text-foreground transition-colors" />
+                    </div>
+                    <h3 className="text-lg font-semibold text-foreground mb-2">Ecommerce LLM</h3>
+                    <p className="text-sm text-muted-foreground">
+                      Optimize product pages to win AI citations, qualified clicks, and sales
+                    </p>
+                  </Link>
+
+                  {/* Article Engine */}
+                  <Link href={geoRoutes.geoArticleEngine} className="group glass-panel p-6 rounded-2xl transition-all text-left hover:-translate-y-1 block">
+                    <div className="flex items-start justify-between mb-3">
+                      <div className="p-3 bg-violet-500/20 rounded-xl">
+                        <PenSquare className="w-6 h-6 text-violet-600" />
+                      </div>
+                      <ExternalLink className="w-5 h-5 text-muted-foreground group-hover:text-foreground transition-colors" />
+                    </div>
+                    <h3 className="text-lg font-semibold text-foreground mb-2">Article Engine</h3>
+                    <p className="text-sm text-muted-foreground">
+                      Generate audit-driven GEO/SEO articles to outrank competitors in AI answers
+                    </p>
+                  </Link>
 
                   {/* GitHub Auto-Fix */}
-                  <Dialog>
-                    <DialogTrigger asChild>
-                      <button className="group glass-panel p-6 rounded-2xl transition-all text-left hover:-translate-y-1">
-                        <div className="flex items-start justify-between mb-3">
-                          <div className="p-3 bg-brand/10 rounded-xl">
-                            <GitPullRequest className="w-6 h-6 text-brand" />
-                          </div>
-                          <ExternalLink className="w-5 h-5 text-muted-foreground group-hover:text-foreground transition-colors" />
-                        </div>
-                        <h3 className="text-lg font-semibold text-foreground mb-2">GitHub Auto-Fix</h3>
-                        <p className="text-sm text-muted-foreground">
-                          Create Pull Requests with AI-powered SEO/GEO fixes
-                        </p>
-                      </button>
-                    </DialogTrigger>
-                    <DialogContent className="glass-card border-border sm:max-w-2xl">
-                      <DialogTitle className="text-xl font-bold text-foreground">GitHub Auto-Fix Integration</DialogTitle>
-                      <GitHubIntegration auditId={auditId} auditUrl={audit?.url || ''} />
-                    </DialogContent>
-                  </Dialog>
+                  <Link href={geoRoutes.githubAutoFix} className="group glass-panel p-6 rounded-2xl transition-all text-left hover:-translate-y-1 block">
+                    <div className="flex items-start justify-between mb-3">
+                      <div className="p-3 bg-brand/10 rounded-xl">
+                        <GitPullRequest className="w-6 h-6 text-brand" />
+                      </div>
+                      <ExternalLink className="w-5 h-5 text-muted-foreground group-hover:text-foreground transition-colors" />
+                    </div>
+                    <h3 className="text-lg font-semibold text-foreground mb-2">GitHub Auto-Fix</h3>
+                    <p className="text-sm text-muted-foreground">
+                      Create Pull Requests with AI-powered SEO/GEO fixes
+                    </p>
+                  </Link>
 
                   {/* HubSpot Auto-Apply */}
                   <Dialog>

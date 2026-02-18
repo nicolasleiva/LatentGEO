@@ -7,12 +7,14 @@ from fastapi import (
     BackgroundTasks,
     Request,
 )
+from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from typing import List
 import asyncio
 import os
 from datetime import datetime
 from pydantic import BaseModel
+from urllib.parse import urlparse
 
 from app.core.database import get_db
 from app.core.config import settings
@@ -27,6 +29,11 @@ from app.schemas import (
 from app.services.audit_service import AuditService
 from app.services.pipeline_service import PipelineService
 from app.services.audit_local_service import AuditLocalService
+from app.services.competitor_filters import (
+    infer_vertical_hint,
+    is_valid_competitor_domain,
+    normalize_domain,
+)
 from app.core.logger import get_logger
 from app.core.auth import AuthUser, get_current_user
 from app.core.access_control import ensure_audit_access
@@ -43,6 +50,8 @@ router = APIRouter(
     tags=["audits"],
     responses={404: {"description": "No encontrado"}},
 )
+
+_pdf_generation_in_progress: set[int] = set()
 
 
 def _get_owned_audit(db: Session, audit_id: int, current_user: AuthUser) -> Audit:
@@ -93,6 +102,7 @@ async def run_audit_sync(audit_id: int):
                 target_audit_result["domain"] = audit.domain
 
         from app.services.pipeline_service import run_initial_audit
+        from app.services.crawler_service import CrawlerService
 
         result = await run_initial_audit(
             url=str(audit.url),
@@ -104,7 +114,9 @@ async def run_audit_sync(audit_id: int):
             crawler_service=CrawlerService.crawl_site,
             audit_local_service=AuditLocalService.run_local_audit,
             generate_report=False,
-            enable_llm_external_intel=False,
+            enable_llm_external_intel=True,
+            external_intel_mode="full",
+            external_intel_timeout_seconds=30.0,
         )
 
         # Guardar resultados
@@ -460,7 +472,7 @@ def get_page_details(
 @router.get("/{audit_id}/competitors", response_model=list)
 def get_competitors(
     audit_id: int,
-    limit: int = 10,
+    limit: int = 5,
     db: Session = Depends(get_db),
     current_user: AuthUser = Depends(get_current_user),
 ):
@@ -476,15 +488,34 @@ def get_competitors(
         # Avoid 400s during long-running audits; return empty list until completed.
         return []
 
+    safe_limit = max(1, min(int(limit), 10))
+    target_audit = audit.target_audit if isinstance(audit.target_audit, dict) else {}
+    external_intelligence = (
+        audit.external_intelligence if isinstance(audit.external_intelligence, dict) else {}
+    )
+    vertical_hint = infer_vertical_hint(
+        external_intelligence.get("category"),
+        external_intelligence.get("subcategory"),
+        target_audit.get("category"),
+        target_audit.get("subcategory"),
+        audit.category,
+    )
+
+    def _is_valid_domain(url_or_domain: str) -> bool:
+        domain = normalize_domain(url_or_domain)
+        return bool(domain) and is_valid_competitor_domain(domain, vertical_hint)
+
     # Obtener competidores de la base de datos (con límite)
     competitors_db = (
-        db.query(Competitor).filter(Competitor.audit_id == audit_id).limit(limit).all()
+        db.query(Competitor).filter(Competitor.audit_id == audit_id).limit(safe_limit).all()
     )
 
     # Si hay competidores en la BD, usarlos
     if competitors_db:
         result = []
         for comp in competitors_db:
+            if not _is_valid_domain(comp.url or comp.domain or ""):
+                continue
             audit_data = comp.audit_data or {}
             geo_score = CompetitorService._calculate_geo_score(audit_data) if audit_data else (comp.geo_score or 0)
             if geo_score == 0 and comp.geo_score:
@@ -493,18 +524,65 @@ def get_competitors(
                 audit_data, geo_score, comp.url
             )
             result.append(formatted)
-        return result
+            if len(result) >= safe_limit:
+                break
+        if result:
+            return result
 
     # Fallback: usar competitor_audits del JSON (con límite)
-    competitors = (audit.competitor_audits or [])[:limit]
+    competitors = (audit.competitor_audits or [])[:safe_limit]
     result = []
     for comp in competitors:
         if isinstance(comp, dict):
+            if not _is_valid_domain(comp.get("url") or comp.get("domain") or ""):
+                continue
             geo_score = CompetitorService._calculate_geo_score(comp)
             if geo_score == 0:
                 geo_score = comp.get("geo_score", 0) or 0
             formatted = CompetitorService._format_competitor_data(comp, geo_score)
             result.append(formatted)
+            if len(result) >= safe_limit:
+                break
+
+    if result:
+        return result
+
+    # Último fallback: derivar competidores desde search_results existentes.
+    # Útil para auditorías históricas que quedaron sin competitor_audits por filtros previos.
+    try:
+        search_results = audit.search_results if isinstance(audit.search_results, dict) else {}
+
+        target_domain = (audit.domain or "").replace("www.", "").strip().lower()
+        if not target_domain:
+            target_domain = urlparse(str(audit.url or "")).netloc.replace("www.", "").lower()
+
+        core_profile = PipelineService._build_core_business_profile(target_audit, max_terms=6)
+        inferred_urls = PipelineService._extract_competitor_urls_from_search(
+            search_results=search_results,
+            target_domain=target_domain,
+            target_audit=target_audit,
+            external_intelligence=external_intelligence,
+            core_profile=core_profile,
+            limit=safe_limit,
+        )
+
+        for comp_url in inferred_urls:
+            if not _is_valid_domain(comp_url):
+                continue
+            inferred_domain = urlparse(comp_url).netloc.replace("www.", "")
+            formatted = CompetitorService._format_competitor_data(
+                {"url": comp_url, "domain": inferred_domain, "status": "inferred"},
+                0.0,
+                comp_url,
+            )
+            formatted["source"] = "derived_from_search_results"
+            result.append(formatted)
+            if len(result) >= safe_limit:
+                break
+    except Exception as e:
+        logger.warning(
+            f"Could not derive competitors from search_results for audit {audit_id}: {e}"
+        )
 
     return result
 
@@ -607,7 +685,9 @@ async def run_pagespeed_analysis(
 @router.post("/{audit_id}/generate-pdf")
 async def generate_audit_pdf(
     audit_id: int,
-    force_pagespeed_refresh: bool = False,
+    force_pagespeed_refresh: bool = True,
+    force_report_refresh: bool = False,
+    force_external_intel_refresh: bool = False,
     background_tasks: BackgroundTasks = None,
     db: Session = Depends(get_db),
     current_user: AuthUser = Depends(get_current_user),
@@ -619,6 +699,8 @@ async def generate_audit_pdf(
     - No PageSpeed data exists
     - Cached PageSpeed data is stale (>24 hours old)
     - force_pagespeed_refresh is True
+    - force_report_refresh is True (forces report markdown regeneration)
+    - force_external_intel_refresh is True (forces Agent 1 external intelligence refresh)
 
     The PDF includes complete context from ALL features:
     - PageSpeed (mobile + desktop)
@@ -639,15 +721,33 @@ async def generate_audit_pdf(
             detail=f"La auditoría debe estar completada. Estado actual: {audit.status.value}",
         )
 
+    if audit_id in _pdf_generation_in_progress:
+        return JSONResponse(
+            status_code=409,
+            content={
+                "success": False,
+                "generation_in_progress": True,
+                "retry_after_seconds": 10,
+                "message": "PDF generation is already in progress for this audit.",
+            },
+        )
+
     try:
+        _pdf_generation_in_progress.add(audit_id)
         logger.info(
             f"=== Starting PDF generation with auto-PageSpeed for audit {audit_id} ==="
         )
 
         # Generate PDF with complete context (includes auto-PageSpeed trigger)
-        pdf_path = await PDFService.generate_pdf_with_complete_context(
-            db=db, audit_id=audit_id, force_pagespeed_refresh=force_pagespeed_refresh
+        generation_result = await PDFService.generate_pdf_with_complete_context(
+            db=db,
+            audit_id=audit_id,
+            force_pagespeed_refresh=force_pagespeed_refresh,
+            force_report_refresh=force_report_refresh,
+            force_external_intel_refresh=force_external_intel_refresh,
+            return_details=True,
         )
+        pdf_path = generation_result.get("pdf_path")
 
         if not pdf_path or not os.path.exists(pdf_path):
             raise Exception(f"PDF generation failed - file not created at {pdf_path}")
@@ -694,12 +794,23 @@ async def generate_audit_pdf(
             "message": "PDF generated successfully with PageSpeed data",
             "pagespeed_included": bool(audit.pagespeed_data),
             "file_size": file_size,
+            "report_cache_hit": bool(generation_result.get("report_cache_hit")),
+            "report_regenerated": bool(generation_result.get("report_regenerated")),
+            "generation_mode": generation_result.get("generation_mode", "unknown"),
+            "external_intel_refreshed": bool(
+                generation_result.get("external_intel_refreshed")
+            ),
+            "external_intel_refresh_reason": generation_result.get(
+                "external_intel_refresh_reason", "not_needed"
+            ),
         }
 
     except Exception as e:
         logger.error(f"=== Error generating PDF for audit {audit_id} ===")
         logger.error(f"Error: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Error generating PDF: {str(e)}")
+    finally:
+        _pdf_generation_in_progress.discard(audit_id)
 
 
 @router.get("/{audit_id}/download-pdf")

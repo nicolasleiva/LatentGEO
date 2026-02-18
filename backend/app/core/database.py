@@ -74,6 +74,8 @@ def ensure_performance_indexes(engine_ref=None) -> None:
         ("idx_rank_tracking_audit", "rank_trackings", ["audit_id"]),
         ("idx_llm_visibility_audit", "llm_visibilities", ["audit_id"]),
         ("idx_score_history_domain_date", "score_history", ["domain", "recorded_at DESC"]),
+        ("idx_geo_commerce_campaigns_audit", "geo_commerce_campaigns", ["audit_id", "created_at DESC"]),
+        ("idx_geo_article_batches_audit", "geo_article_batches", ["audit_id", "created_at DESC"]),
     ]
 
     dialect = engine_to_use.dialect.name

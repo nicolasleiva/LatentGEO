@@ -7,25 +7,40 @@ import time
 import pytest
 import os
 
+from app.core.auth import create_access_token
+
 pytestmark = pytest.mark.skipif(
     os.getenv("RUN_INTEGRATION_TESTS") != "1",
     reason="Requiere servicios corriendo (localhost) y acceso a red",
 )
 
-BASE_URL = "http://localhost:8000/api" # Corregido: Añadir prefijo /api
+ROOT_URL = "http://localhost:8000"
+BASE_URL = f"{ROOT_URL}/api"
+
+
+def _auth_headers():
+    token = create_access_token(
+        {
+            "sub": os.getenv("PROD_TEST_USER_ID", "integration-test-user"),
+            "email": os.getenv("PROD_TEST_EMAIL", "integration@test.local"),
+        }
+    )
+    return {"Authorization": f"Bearer {token}"}
 
 def test_chat_flow():
     print("🧪 Testing Chat Flow Implementation\n")
     print("=" * 50)
+    headers = _auth_headers()
     
     # Test 1: Health check
     print("\n1️⃣ Testing backend health...")
-    response = requests.get("http://localhost:8000/health") # Corregido: Health no tiene prefijo /api
+    response = requests.get(f"{ROOT_URL}/health")
     assert response.status_code == 200
     health = response.json()
     print(f"✅ Backend: {health['status']}")
-    print(f"✅ Database: {health['database']}")
-    print(f"✅ Redis: {health['redis']}")
+    services = health.get("services", {})
+    print(f"✅ Database: {services.get('database', 'unknown')}")
+    print(f"✅ Redis: {services.get('redis', 'unknown')}")
     
     # Test 2: Create audit with new fields
     print("\n2️⃣ Creating audit with language, competitors, market...")
@@ -35,7 +50,7 @@ def test_chat_flow():
         "competitors": ["https://competitor1.com", "https://competitor2.com"],
         "market": "latam"
     }
-    response = requests.post(f"{BASE_URL}/audits/", json=audit_data) # Corregido: Añadir slash al final
+    response = requests.post(f"{BASE_URL}/audits/", json=audit_data, headers=headers)
     assert response.status_code == 202
     audit = response.json()
     audit_id = audit['id']
@@ -46,7 +61,7 @@ def test_chat_flow():
     # Test 3: Verify fields in database
     print("\n3️⃣ Verifying new fields were saved...")
     time.sleep(1)
-    response = requests.get(f"{BASE_URL}/audits/{audit_id}/") # Corregido: Añadir slash al final
+    response = requests.get(f"{BASE_URL}/audits/{audit_id}", headers=headers)
     assert response.status_code == 200
     audit_detail = response.json()
     print(f"✅ Language: {audit_detail.get('language', 'NOT FOUND')}")
@@ -61,7 +76,7 @@ def test_chat_flow():
         "competitors": ["https://newcompetitor.com"],
         "market": "us"
     }
-    response = requests.post(f"{BASE_URL}/audits/chat/config/", json=config_data) # Corregido: Añadir slash al final
+    response = requests.post(f"{BASE_URL}/audits/chat/config", json=config_data, headers=headers)
     if response.status_code == 200:
         chat_response = response.json()
         print(f"✅ Chat endpoint working")
@@ -86,7 +101,7 @@ def test_chat_flow():
     
     # Test 6: List audits
     print("\n6️⃣ Listing recent audits...")
-    response = requests.get(f"{BASE_URL}/audits/?limit=5") # Corregido: Añadir slash al final
+    response = requests.get(f"{BASE_URL}/audits/?limit=5", headers=headers)
     assert response.status_code == 200
     audits = response.json()
     print(f"✅ Found {len(audits)} audits")

@@ -1,12 +1,17 @@
 from sqlalchemy.orm import Session
 from ..models import Keyword
 from ..core.config import settings
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Any
 import logging
 import json
-import random
+import re
 from openai import AsyncOpenAI
 from .google_ads_service import GoogleAdsService
+from ..core.llm_kimi import (
+    resolve_kimi_api_key,
+    KimiUnavailableError,
+    KimiGenerationError,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -16,16 +21,16 @@ class KeywordService:
         self.db = db
 
         # Primary: Usar Kimi vía NVIDIA
-        self.nvidia_api_key = settings.NVIDIA_API_KEY or settings.NV_API_KEY
+        self.nvidia_api_key = resolve_kimi_api_key()
         if self.nvidia_api_key:
             self.client = AsyncOpenAI(
                 api_key=self.nvidia_api_key, base_url=settings.NV_BASE_URL
             )
-            logger.info("✅ Kimi/NVIDIA API configurada para keywords")
+            logger.info("Kimi/NVIDIA API configurada para keywords")
         else:
             self.client = None
             logger.error(
-                "❌ No se encontró NVIDIA_API_KEY. El servicio de keywords fallará."
+                "No se encontró NVIDIA_API_KEY. El servicio de keywords fallará."
             )
 
     async def research_keywords(
@@ -39,7 +44,9 @@ class KeywordService:
             return await self._research_kimi(audit_id, domain, seed_keywords)
 
         logger.error("No AI keys set. Cannot generate keywords without NVIDIA API.")
-        return []
+        raise KimiUnavailableError(
+            "Kimi provider is not configured. Set NV_API_KEY_ANALYSIS or NVIDIA_API_KEY or NV_API_KEY."
+        )
 
     async def _research_kimi(
         self, audit_id: int, domain: str, seeds: List[str]
@@ -62,28 +69,37 @@ class KeywordService:
             if "```" in content:
                 content = content.replace("```json", "").replace("```", "")
 
-            logger.info(f"✅ Kimi generó {len(content)} keywords para {domain}")
+            logger.info(f"Kimi generó {len(content)} keywords para {domain}")
             return self._process_ai_response(audit_id, content)
 
         except Exception as e:
             logger.error(f"Kimi API error: {e}")
-            return []
+            raise KimiGenerationError(f"Keyword generation failed: {e}") from e
 
     def _get_prompt(self, domain: str, seeds: List[str]) -> str:
+        seed_text = ", ".join([s for s in (seeds or []) if isinstance(s, str) and s.strip()])
         return f"""
-        Actúa como un experto en SEO. Genera 10 keywords de alto potencial para el dominio: {domain}.
-        
-        Contexto/Nicho semillas: {", ".join(seeds) if seeds else "Análisis general"}
-        
-        Para cada keyword, estima:
-        1. Volumen de búsqueda (mensual)
-        2. Dificultad (0-100)
-        3. CPC (en USD)
-        4. Intención de búsqueda (Informational, Commercial, Transactional, Navigational)
+        You are a senior SEO strategist.
+        Generate exactly 10 keyword ideas for the target business domain: {domain}.
 
-        Retorna SOLO un array JSON válido de objetos con keys: "term", "volume", "difficulty", "cpc", "intent".
-        
-        Responde únicamente con el JSON, sin texto adicional.
+        Business context seeds: {seed_text if seed_text else "General business context"}
+
+        Requirements:
+        - Keep keywords tightly aligned with the business model, audience, and services inferred from the seeds.
+        - Do NOT include unrelated verticals or random industries.
+        - Mix intents (Informational, Commercial, Transactional, Navigational) while preserving business relevance.
+        - Prefer query forms that buyers and high-intent learners/customers use.
+        - If reliable metrics are not available, do NOT invent them. Use null.
+
+        For each keyword include:
+        1. "term" (string)
+        2. "volume" (monthly search volume, integer or null)
+        3. "difficulty" (0-100 integer or null)
+        4. "cpc" (USD float or null)
+        5. "intent" (Informational | Commercial | Transactional | Navigational)
+
+        Return only valid JSON as an array of objects with keys:
+        "term", "volume", "difficulty", "cpc", "intent".
         """
 
     def _process_ai_response(self, audit_id: int, content: str) -> List[Keyword]:
@@ -92,8 +108,13 @@ class KeywordService:
             keywords_list = (
                 data.get("keywords", data) if isinstance(data, dict) else data
             )
+            if not isinstance(keywords_list, list):
+                raise KimiGenerationError(
+                    "Kimi returned invalid JSON payload for keyword research."
+                )
 
             # Enriquecer con datos reales de Google Ads si está disponible
+            real_metrics_lookup: Dict[str, Dict[str, Any]] = {}
             try:
                 terms = [
                     kw.get("term")
@@ -106,38 +127,106 @@ class KeywordService:
                         logger.info(
                             f"Enriqueciendo {len(real_metrics)} keywords con datos de Google Ads"
                         )
-                        for kw in keywords_list:
-                            term = kw.get("term")
-                            if term in real_metrics:
-                                metrics = real_metrics[term]
-                                kw["volume"] = metrics["volume"]
-                                kw["difficulty"] = metrics["difficulty"]
-                                kw["cpc"] = metrics["cpc"]
+                        for key, value in real_metrics.items():
+                            normalized_key = re.sub(
+                                r"\s+", " ", str(key or "").strip().lower()
+                            )
+                            if not normalized_key:
+                                continue
+                            real_metrics_lookup[normalized_key] = value or {}
             except Exception as e:
                 logger.error(f"Fallo al enriquecer con Google Ads data: {e}")
 
             results = []
             if isinstance(keywords_list, list):
+                existing_keywords = (
+                    self.db.query(Keyword).filter(Keyword.audit_id == audit_id).all()
+                )
+                existing_by_term = {
+                    re.sub(r"\s+", " ", (kw.term or "").strip().lower()): kw
+                    for kw in existing_keywords
+                    if getattr(kw, "term", None)
+                }
+                seen_terms = set()
+
                 for kw in keywords_list:
-                    keyword = Keyword(
-                        audit_id=audit_id,
-                        term=kw.get("term"),
-                        volume=kw.get("volume", 0),
-                        difficulty=kw.get("difficulty", 50),
-                        cpc=kw.get("cpc", 0.0),
-                        intent=kw.get("intent", "Informational"),
+                    if not isinstance(kw, dict):
+                        continue
+                    term = kw.get("term")
+                    normalized_term = re.sub(
+                        r"\s+", " ", str(term or "").strip().lower()
                     )
-                    self.db.add(keyword)
+                    if not normalized_term or normalized_term in seen_terms:
+                        continue
+                    seen_terms.add(normalized_term)
+
+                    metrics = real_metrics_lookup.get(normalized_term, {})
+                    has_real_metrics = bool(metrics)
+
+                    if has_real_metrics:
+                        volume_value = metrics.get("volume", 0)
+                        difficulty_value = metrics.get("difficulty", 0)
+                        cpc_value = metrics.get("cpc", 0.0)
+                        metrics_source = "google_ads"
+                    else:
+                        # Política estricta: sin inventar métricas cuando no hay fuente real
+                        volume_value = 0
+                        difficulty_value = 0
+                        cpc_value = 0.0
+                        metrics_source = "not_available"
+
+                    try:
+                        volume_value = int(volume_value or 0)
+                    except Exception:
+                        volume_value = 0
+                    try:
+                        difficulty_value = int(difficulty_value or 0)
+                    except Exception:
+                        difficulty_value = 0
+                    try:
+                        cpc_value = float(cpc_value or 0.0)
+                    except Exception:
+                        cpc_value = 0.0
+
+                    existing = existing_by_term.get(normalized_term)
+                    if existing:
+                        existing.volume = volume_value
+                        existing.difficulty = difficulty_value
+                        existing.cpc = cpc_value
+                        existing.intent = kw.get(
+                            "intent", existing.intent or "Informational"
+                        )
+                        keyword = existing
+                    else:
+                        keyword = Keyword(
+                            audit_id=audit_id,
+                            term=str(term).strip(),
+                            volume=volume_value,
+                            difficulty=difficulty_value,
+                            cpc=cpc_value,
+                            intent=kw.get("intent", "Informational"),
+                        )
+                        self.db.add(keyword)
+                        existing_by_term[normalized_term] = keyword
+
+                    setattr(keyword, "metrics_source", metrics_source)
                     results.append(keyword)
 
                 self.db.commit()
                 for kw in results:
                     self.db.refresh(kw)
                 return results  # Return SQLAlchemy objects, Pydantic will serialize
-            return []
+            raise KimiGenerationError(
+                "Kimi returned invalid JSON payload for keyword research."
+            )
         except Exception as e:
             logger.error(f"Error processing Kimi response: {e}")
-            return []
+            self.db.rollback()
+            if isinstance(e, KimiGenerationError):
+                raise
+            raise KimiGenerationError(
+                "Kimi returned invalid JSON payload for keyword research."
+            ) from e
 
     def get_keywords(self, audit_id: int) -> List[Keyword]:
         keywords = self.db.query(Keyword).filter(Keyword.audit_id == audit_id).all()
