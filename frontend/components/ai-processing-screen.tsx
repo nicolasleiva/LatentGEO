@@ -1,43 +1,43 @@
-'use client'
+"use client";
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect } from "react";
 
 interface AIProcessingScreenProps {
-  isProcessing: boolean
+  isProcessing: boolean;
 }
 
 const processingMessages = [
-  'Initializing analysis engine',
-  'Scanning your website',
-  'Mapping technical signals',
-  'Evaluating GEO readiness',
-  'Running AI visibility checks',
-  'Generating recommendations',
-  'Preparing final report',
-]
+  "Initializing analysis engine",
+  "Scanning your website",
+  "Mapping technical signals",
+  "Evaluating GEO readiness",
+  "Running AI visibility checks",
+  "Generating recommendations",
+  "Preparing final report",
+];
 
 export function AIProcessingScreen({ isProcessing }: AIProcessingScreenProps) {
-  const [currentMessageIndex, setCurrentMessageIndex] = useState(0)
-  const [isVisible, setIsVisible] = useState(true)
+  const [currentMessageIndex, setCurrentMessageIndex] = useState(0);
+  const [isVisible, setIsVisible] = useState(true);
 
   useEffect(() => {
-    if (!isProcessing) return
+    if (!isProcessing) return;
 
     const interval = setInterval(() => {
-      setIsVisible(false)
+      setIsVisible(false);
 
       setTimeout(() => {
         setCurrentMessageIndex((prev) =>
-          prev >= processingMessages.length - 1 ? prev : prev + 1
-        )
-        setIsVisible(true)
-      }, 250)
-    }, 3200)
+          prev >= processingMessages.length - 1 ? prev : prev + 1,
+        );
+        setIsVisible(true);
+      }, 250);
+    }, 3200);
 
-    return () => clearInterval(interval)
-  }, [isProcessing])
+    return () => clearInterval(interval);
+  }, [isProcessing]);
 
-  if (!isProcessing) return null
+  if (!isProcessing) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-background/95 backdrop-blur-xl">
@@ -59,7 +59,9 @@ export function AIProcessingScreen({ isProcessing }: AIProcessingScreenProps) {
         <div className="h-8 flex items-center justify-center">
           <p
             className={`text-base font-medium text-foreground/80 transition-all duration-300 ${
-              isVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-2'
+              isVisible
+                ? "opacity-100 translate-y-0"
+                : "opacity-0 translate-y-2"
             }`}
           >
             {processingMessages[currentMessageIndex]}
@@ -71,5 +73,5 @@ export function AIProcessingScreen({ isProcessing }: AIProcessingScreenProps) {
         </p>
       </div>
     </div>
-  )
+  );
 }

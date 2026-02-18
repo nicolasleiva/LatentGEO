@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from "react";
 
 interface UseSmartPollingOptions {
   isComplete: boolean;
@@ -9,7 +9,7 @@ interface UseSmartPollingOptions {
 
 export function useSmartPolling(
   callback: () => void,
-  options: UseSmartPollingOptions
+  options: UseSmartPollingOptions,
 ) {
   const {
     isComplete,
@@ -45,7 +45,15 @@ export function useSmartPolling(
     }, getBackoffDelay(pollCount));
 
     return () => clearTimeout(pollTimer);
-  }, [isComplete, hasTimedOut, pollCount, callback, maxPollTime, maxPolls, onTimeout]);
+  }, [
+    isComplete,
+    hasTimedOut,
+    pollCount,
+    callback,
+    maxPollTime,
+    maxPolls,
+    onTimeout,
+  ]);
 
   return { pollCount, hasTimedOut };
 }

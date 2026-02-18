@@ -1,11 +1,14 @@
-'use client';
+"use client";
 
 // Skeleton específico para RecentCitationsTable
 export function CitationsTableSkeleton() {
   return (
     <div className="space-y-4 animate-pulse">
       {[1, 2, 3].map((i) => (
-        <div key={i} className="bg-muted/30 border border-border rounded-xl p-4">
+        <div
+          key={i}
+          className="bg-muted/30 border border-border rounded-xl p-4"
+        >
           <div className="flex justify-between items-start mb-2">
             <div className="h-4 bg-muted/50 rounded w-1/3"></div>
             <div className="h-3 bg-muted/40 rounded w-16"></div>
@@ -27,7 +30,10 @@ export function HistorySkeleton() {
   return (
     <div className="space-y-6 animate-pulse">
       {[1, 2, 3].map((i) => (
-        <div key={i} className="bg-muted/30 border border-border rounded-xl p-6">
+        <div
+          key={i}
+          className="bg-muted/30 border border-border rounded-xl p-6"
+        >
           <div className="flex justify-between items-start mb-4">
             <div>
               <div className="h-5 bg-muted/50 rounded w-32 mb-2"></div>
@@ -60,7 +66,10 @@ export function QueryDiscoverySkeleton() {
       </div>
       <div className="space-y-4">
         {[1, 2].map((i) => (
-          <div key={i} className="bg-muted/30 border border-border rounded-xl p-6">
+          <div
+            key={i}
+            className="bg-muted/30 border border-border rounded-xl p-6"
+          >
             <div className="flex justify-between items-start mb-3">
               <div className="h-5 bg-muted/50 rounded w-1/2"></div>
               <div className="flex gap-2">
@@ -131,7 +140,10 @@ export function ContentTemplatesSkeleton() {
       </div>
       <div className="space-y-3">
         {[1, 2, 3].map((i) => (
-          <div key={i} className="bg-muted/30 border border-border rounded-xl p-4">
+          <div
+            key={i}
+            className="bg-muted/30 border border-border rounded-xl p-4"
+          >
             <div className="flex justify-between items-start">
               <div className="w-full">
                 <div className="h-5 bg-muted/50 rounded w-1/3 mb-2"></div>

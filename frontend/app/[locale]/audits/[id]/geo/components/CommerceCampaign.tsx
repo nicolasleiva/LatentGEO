@@ -1,6 +1,6 @@
-'use client';
+"use client";
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from "react";
 import {
   AlertCircle,
   ExternalLink,
@@ -8,13 +8,19 @@ import {
   Sparkles,
   Target,
   Trophy,
-} from 'lucide-react';
+} from "lucide-react";
 
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { fetchWithBackendAuth } from '@/lib/backend-auth';
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { fetchWithBackendAuth } from "@/lib/backend-auth";
 
 interface CommerceResultItem {
   position: number;
@@ -64,22 +70,25 @@ interface CommerceCampaignProps {
 
 const DEFAULT_TOP_K = 10;
 
-const toNonEmptyString = (value: unknown, fallback = ''): string => {
-  if (typeof value === 'string' && value.trim()) return value.trim();
+const toNonEmptyString = (value: unknown, fallback = ""): string => {
+  if (typeof value === "string" && value.trim()) return value.trim();
   return fallback;
 };
 
 const toNumberOrNull = (value: unknown): number | null => {
-  if (typeof value === 'number' && Number.isFinite(value)) return value;
-  if (typeof value === 'string' && value.trim()) {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim()) {
     const parsed = Number(value);
     if (Number.isFinite(parsed)) return parsed;
   }
   return null;
 };
 
-const normalizeResultItem = (item: any, index: number): CommerceResultItem | null => {
-  if (!item || typeof item !== 'object') return null;
+const normalizeResultItem = (
+  item: any,
+  index: number,
+): CommerceResultItem | null => {
+  if (!item || typeof item !== "object") return null;
   const url = toNonEmptyString(item.url);
   const domain = toNonEmptyString(item.domain);
   if (!url || !domain) return null;
@@ -94,12 +103,14 @@ const normalizeResultItem = (item: any, index: number): CommerceResultItem | nul
 };
 
 const normalizeAnalysis = (payload: any): CommerceQueryAnalysis | null => {
-  if (!payload || typeof payload !== 'object') return null;
+  if (!payload || typeof payload !== "object") return null;
 
   const results = Array.isArray(payload.results)
     ? payload.results
         .map((item: any, index: number) => normalizeResultItem(item, index))
-        .filter((item: CommerceResultItem | null): item is CommerceResultItem => Boolean(item))
+        .filter((item: CommerceResultItem | null): item is CommerceResultItem =>
+          Boolean(item),
+        )
     : [];
 
   const topResult = normalizeResultItem(payload.top_result, 0);
@@ -113,12 +124,14 @@ const normalizeAnalysis = (payload: any): CommerceQueryAnalysis | null => {
     top_result: topResult,
     results,
     why_not_first: Array.isArray(payload.why_not_first)
-      ? payload.why_not_first.map((item: any) => toNonEmptyString(item)).filter(Boolean)
+      ? payload.why_not_first
+          .map((item: any) => toNonEmptyString(item))
+          .filter(Boolean)
       : [],
     disadvantages_vs_top1: Array.isArray(payload.disadvantages_vs_top1)
       ? payload.disadvantages_vs_top1
           .map((item: any) => ({
-            area: toNonEmptyString(item?.area, 'Gap'),
+            area: toNonEmptyString(item?.area, "Gap"),
             gap: toNonEmptyString(item?.gap),
             impact: toNonEmptyString(item?.impact),
           }))
@@ -127,9 +140,9 @@ const normalizeAnalysis = (payload: any): CommerceQueryAnalysis | null => {
     action_plan: Array.isArray(payload.action_plan)
       ? payload.action_plan
           .map((item: any) => ({
-            priority: toNonEmptyString(item?.priority, 'P2'),
+            priority: toNonEmptyString(item?.priority, "P2"),
             action: toNonEmptyString(item?.action),
-            expected_impact: toNonEmptyString(item?.expected_impact, 'Medium'),
+            expected_impact: toNonEmptyString(item?.expected_impact, "Medium"),
             evidence: toNonEmptyString(item?.evidence),
           }))
           .filter((item: CommerceActionItem) => item.action.length > 0)
@@ -137,7 +150,10 @@ const normalizeAnalysis = (payload: any): CommerceQueryAnalysis | null => {
     evidence: Array.isArray(payload.evidence)
       ? payload.evidence
           .map((item: any) => ({
-            title: toNonEmptyString(item?.title, toNonEmptyString(item?.url, 'Source')),
+            title: toNonEmptyString(
+              item?.title,
+              toNonEmptyString(item?.url, "Source"),
+            ),
             url: toNonEmptyString(item?.url),
           }))
           .filter((item: CommerceEvidenceItem) => item.url.length > 0)
@@ -146,10 +162,13 @@ const normalizeAnalysis = (payload: any): CommerceQueryAnalysis | null => {
   };
 };
 
-export default function CommerceCampaign({ auditId, backendUrl }: CommerceCampaignProps) {
-  const [query, setQuery] = useState('');
-  const [market, setMarket] = useState('AR');
-  const [language, setLanguage] = useState('es');
+export default function CommerceCampaign({
+  auditId,
+  backendUrl,
+}: CommerceCampaignProps) {
+  const [query, setQuery] = useState("");
+  const [market, setMarket] = useState("AR");
+  const [language, setLanguage] = useState("es");
   const [topK, setTopK] = useState(DEFAULT_TOP_K);
   const [result, setResult] = useState<CommerceQueryAnalysis | null>(null);
   const [loading, setLoading] = useState(false);
@@ -160,7 +179,9 @@ export default function CommerceCampaign({ auditId, backendUrl }: CommerceCampai
     const loadLatest = async () => {
       setLoadingLatest(true);
       try {
-        const res = await fetchWithBackendAuth(`${backendUrl}/api/geo/commerce-query/latest/${auditId}`);
+        const res = await fetchWithBackendAuth(
+          `${backendUrl}/api/geo/commerce-query/latest/${auditId}`,
+        );
         if (!res.ok) {
           throw new Error(`Failed to fetch latest analysis (${res.status})`);
         }
@@ -174,7 +195,7 @@ export default function CommerceCampaign({ auditId, backendUrl }: CommerceCampai
           }
         }
       } catch (err: any) {
-        setError(err?.message || 'Failed to load latest analysis');
+        setError(err?.message || "Failed to load latest analysis");
       } finally {
         setLoadingLatest(false);
       }
@@ -183,9 +204,9 @@ export default function CommerceCampaign({ auditId, backendUrl }: CommerceCampai
   }, [auditId, backendUrl]);
 
   const rankMessage = useMemo(() => {
-    if (!result) return '';
+    if (!result) return "";
     if (result.target_position === null) return `Not ranking in top ${topK}`;
-    if (result.target_position === 1) return 'Ranking #1';
+    if (result.target_position === 1) return "Ranking #1";
     return `Ranking #${result.target_position}`;
   }, [result, topK]);
 
@@ -193,24 +214,27 @@ export default function CommerceCampaign({ auditId, backendUrl }: CommerceCampai
     const safeQuery = query.trim();
     const safeMarket = market.trim().toUpperCase();
     if (!safeQuery || !safeMarket) {
-      setError('Query and market are required.');
+      setError("Query and market are required.");
       return;
     }
 
     setLoading(true);
     setError(null);
     try {
-      const res = await fetchWithBackendAuth(`${backendUrl}/api/geo/commerce-query/analyze`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          audit_id: auditId,
-          query: safeQuery,
-          market: safeMarket,
-          top_k: topK,
-          language,
-        }),
-      });
+      const res = await fetchWithBackendAuth(
+        `${backendUrl}/api/geo/commerce-query/analyze`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            audit_id: auditId,
+            query: safeQuery,
+            market: safeMarket,
+            top_k: topK,
+            language,
+          }),
+        },
+      );
 
       const responseText = await res.text();
       let parsed: any = {};
@@ -225,12 +249,12 @@ export default function CommerceCampaign({ auditId, backendUrl }: CommerceCampai
 
       const normalized = normalizeAnalysis(parsed);
       if (!normalized) {
-        throw new Error('Invalid analysis payload');
+        throw new Error("Invalid analysis payload");
       }
 
       setResult(normalized);
     } catch (err: any) {
-      setError(err?.message || 'Failed to analyze query');
+      setError(err?.message || "Failed to analyze query");
     } finally {
       setLoading(false);
     }
@@ -280,13 +304,24 @@ export default function CommerceCampaign({ auditId, backendUrl }: CommerceCampai
               min={1}
               max={20}
               value={topK}
-              onChange={(e) => setTopK(Math.max(1, Math.min(20, Number(e.target.value) || DEFAULT_TOP_K)))}
+              onChange={(e) =>
+                setTopK(
+                  Math.max(
+                    1,
+                    Math.min(20, Number(e.target.value) || DEFAULT_TOP_K),
+                  ),
+                )
+              }
               className="mt-2 bg-muted/30 border-border/70 text-foreground"
             />
           </div>
         </div>
 
-        <Button onClick={analyzeQuery} disabled={loading} className="glass-button-primary w-full">
+        <Button
+          onClick={analyzeQuery}
+          disabled={loading}
+          className="glass-button-primary w-full"
+        >
           {loading ? (
             <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-foreground" />
           ) : (
@@ -306,7 +341,9 @@ export default function CommerceCampaign({ auditId, backendUrl }: CommerceCampai
       )}
 
       {loadingLatest && !result && (
-        <div className="text-center py-10 text-muted-foreground">Loading latest query analysis...</div>
+        <div className="text-center py-10 text-muted-foreground">
+          Loading latest query analysis...
+        </div>
       )}
 
       {result && (
@@ -314,19 +351,29 @@ export default function CommerceCampaign({ auditId, backendUrl }: CommerceCampai
           <div className="grid md:grid-cols-4 gap-4">
             <div className="bg-muted/30 border border-border rounded-xl p-4">
               <p className="text-sm text-muted-foreground mb-1">Query</p>
-              <p className="text-lg font-semibold text-foreground">{result.query || '-'}</p>
+              <p className="text-lg font-semibold text-foreground">
+                {result.query || "-"}
+              </p>
             </div>
             <div className="bg-muted/30 border border-border rounded-xl p-4">
               <p className="text-sm text-muted-foreground mb-1">Market</p>
-              <p className="text-2xl font-bold text-foreground">{result.market || '-'}</p>
+              <p className="text-2xl font-bold text-foreground">
+                {result.market || "-"}
+              </p>
             </div>
             <div className="bg-muted/30 border border-border rounded-xl p-4">
-              <p className="text-sm text-muted-foreground mb-1">Audited Domain</p>
-              <p className="text-lg font-semibold text-foreground break-all">{result.audited_domain || '-'}</p>
+              <p className="text-sm text-muted-foreground mb-1">
+                Audited Domain
+              </p>
+              <p className="text-lg font-semibold text-foreground break-all">
+                {result.audited_domain || "-"}
+              </p>
             </div>
             <div className="bg-muted/30 border border-border rounded-xl p-4">
               <p className="text-sm text-muted-foreground mb-1">Position</p>
-              <p className="text-2xl font-bold text-foreground">{rankMessage}</p>
+              <p className="text-2xl font-bold text-foreground">
+                {rankMessage}
+              </p>
             </div>
           </div>
 
@@ -345,7 +392,9 @@ export default function CommerceCampaign({ auditId, backendUrl }: CommerceCampai
                 {result.top_result.title}
                 <ExternalLink className="w-4 h-4" />
               </a>
-              <p className="text-sm text-muted-foreground mt-2">{result.top_result.snippet}</p>
+              <p className="text-sm text-muted-foreground mt-2">
+                {result.top_result.snippet}
+              </p>
             </div>
           )}
 
@@ -357,30 +406,50 @@ export default function CommerceCampaign({ auditId, backendUrl }: CommerceCampai
             {result.why_not_first.length > 0 ? (
               <ul className="space-y-2">
                 {result.why_not_first.map((item, idx) => (
-                  <li key={`why-${idx}`} className="text-muted-foreground text-sm">
+                  <li
+                    key={`why-${idx}`}
+                    className="text-muted-foreground text-sm"
+                  >
                     • {item}
                   </li>
                 ))}
               </ul>
             ) : (
-              <p className="text-sm text-muted-foreground">No diagnostics generated yet.</p>
+              <p className="text-sm text-muted-foreground">
+                No diagnostics generated yet.
+              </p>
             )}
           </div>
 
           <div className="bg-muted/30 border border-border rounded-xl p-6">
-            <h3 className="font-semibold text-foreground text-xl mb-3">Disadvantages vs #1</h3>
+            <h3 className="font-semibold text-foreground text-xl mb-3">
+              Disadvantages vs #1
+            </h3>
             {result.disadvantages_vs_top1.length > 0 ? (
               <div className="space-y-3">
                 {result.disadvantages_vs_top1.map((gap, idx) => (
-                  <div key={`gap-${idx}`} className="border border-border rounded-lg p-4 bg-muted/40">
-                    <p className="text-sm font-semibold text-foreground">{gap.area}</p>
-                    <p className="text-sm text-muted-foreground mt-1">{gap.gap}</p>
-                    {gap.impact ? <p className="text-xs text-muted-foreground mt-2">Impact: {gap.impact}</p> : null}
+                  <div
+                    key={`gap-${idx}`}
+                    className="border border-border rounded-lg p-4 bg-muted/40"
+                  >
+                    <p className="text-sm font-semibold text-foreground">
+                      {gap.area}
+                    </p>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      {gap.gap}
+                    </p>
+                    {gap.impact ? (
+                      <p className="text-xs text-muted-foreground mt-2">
+                        Impact: {gap.impact}
+                      </p>
+                    ) : null}
                   </div>
                 ))}
               </div>
             ) : (
-              <p className="text-sm text-muted-foreground">No gap details available.</p>
+              <p className="text-sm text-muted-foreground">
+                No gap details available.
+              </p>
             )}
           </div>
 
@@ -392,32 +461,50 @@ export default function CommerceCampaign({ auditId, backendUrl }: CommerceCampai
             {result.action_plan.length > 0 ? (
               <div className="space-y-3">
                 {result.action_plan.map((step, idx) => (
-                  <div key={`plan-${idx}`} className="border border-border rounded-lg p-4 bg-muted/40">
+                  <div
+                    key={`plan-${idx}`}
+                    className="border border-border rounded-lg p-4 bg-muted/40"
+                  >
                     <div className="flex items-center gap-2">
                       <span className="px-2 py-1 rounded-md text-xs border border-brand/30 bg-brand/10 text-foreground">
                         {step.priority}
                       </span>
-                      <span className="text-xs text-muted-foreground">Expected impact: {step.expected_impact}</span>
+                      <span className="text-xs text-muted-foreground">
+                        Expected impact: {step.expected_impact}
+                      </span>
                     </div>
-                    <p className="text-sm text-foreground mt-2">{step.action}</p>
+                    <p className="text-sm text-foreground mt-2">
+                      {step.action}
+                    </p>
                     {step.evidence ? (
-                      <p className="text-xs text-muted-foreground mt-2">Evidence: {step.evidence}</p>
+                      <p className="text-xs text-muted-foreground mt-2">
+                        Evidence: {step.evidence}
+                      </p>
                     ) : null}
                   </div>
                 ))}
               </div>
             ) : (
-              <p className="text-sm text-muted-foreground">No action plan generated yet.</p>
+              <p className="text-sm text-muted-foreground">
+                No action plan generated yet.
+              </p>
             )}
           </div>
 
           <div className="bg-muted/30 border border-border rounded-xl p-6">
-            <h3 className="font-semibold text-foreground text-xl mb-3">SERP Snapshot</h3>
+            <h3 className="font-semibold text-foreground text-xl mb-3">
+              SERP Snapshot
+            </h3>
             {result.results.length > 0 ? (
               <div className="space-y-3">
                 {result.results.map((item) => (
-                  <div key={`${item.url}-${item.position}`} className="border border-border rounded-lg p-4 bg-muted/40">
-                    <p className="text-xs text-muted-foreground mb-1">#{item.position} · {item.domain}</p>
+                  <div
+                    key={`${item.url}-${item.position}`}
+                    className="border border-border rounded-lg p-4 bg-muted/40"
+                  >
+                    <p className="text-xs text-muted-foreground mb-1">
+                      #{item.position} · {item.domain}
+                    </p>
                     <a
                       href={item.url}
                       target="_blank"
@@ -427,12 +514,18 @@ export default function CommerceCampaign({ auditId, backendUrl }: CommerceCampai
                       {item.title}
                       <ExternalLink className="w-3 h-3" />
                     </a>
-                    {item.snippet ? <p className="text-sm text-muted-foreground mt-1">{item.snippet}</p> : null}
+                    {item.snippet ? (
+                      <p className="text-sm text-muted-foreground mt-1">
+                        {item.snippet}
+                      </p>
+                    ) : null}
                   </div>
                 ))}
               </div>
             ) : (
-              <p className="text-sm text-muted-foreground">No SERP results available.</p>
+              <p className="text-sm text-muted-foreground">
+                No SERP results available.
+              </p>
             )}
           </div>
         </div>
