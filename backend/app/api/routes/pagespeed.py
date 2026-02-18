@@ -1,24 +1,31 @@
 from fastapi import APIRouter, Query
-from typing import Optional
-from ...services.pagespeed_service import PageSpeedService
+
 from ...core.config import settings
+from ...services.pagespeed_service import PageSpeedService
 
 router = APIRouter(prefix="/pagespeed", tags=["pagespeed"])
+
 
 @router.get("/analyze")
 async def analyze_pagespeed(
     url: str = Query(..., description="URL to analyze"),
-    strategy: str = Query("mobile", description="mobile or desktop")
+    strategy: str = Query("mobile", description="mobile or desktop"),
 ):
-    return await PageSpeedService.analyze_url(url, settings.GOOGLE_PAGESPEED_API_KEY, strategy)
+    return await PageSpeedService.analyze_url(
+        url, settings.GOOGLE_PAGESPEED_API_KEY, strategy
+    )
+
 
 @router.get("/compare")
-async def compare_strategies(
-    url: str = Query(..., description="URL to analyze")
-):
+async def compare_strategies(url: str = Query(..., description="URL to analyze")):
     import asyncio
-    mobile = await PageSpeedService.analyze_url(url, settings.GOOGLE_PAGESPEED_API_KEY, "mobile")
+
+    mobile = await PageSpeedService.analyze_url(
+        url, settings.GOOGLE_PAGESPEED_API_KEY, "mobile"
+    )
     sleep_time = 0.5 if settings.GOOGLE_PAGESPEED_API_KEY else 3
     await asyncio.sleep(sleep_time)
-    desktop = await PageSpeedService.analyze_url(url, settings.GOOGLE_PAGESPEED_API_KEY, "desktop")
+    desktop = await PageSpeedService.analyze_url(
+        url, settings.GOOGLE_PAGESPEED_API_KEY, "desktop"
+    )
     return {"mobile": mobile, "desktop": desktop}

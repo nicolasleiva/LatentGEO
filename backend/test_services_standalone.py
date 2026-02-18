@@ -137,10 +137,10 @@ async def test_keyword_service():
     print("TEST: Keyword Service")
     print("=" * 60)
 
+    from app.models import Base
     from app.services.keyword_service import KeywordService
     from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
-    from app.models import Base
 
     # Crear DB en memoria
     engine = create_engine("sqlite:///:memory:")

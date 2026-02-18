@@ -1,9 +1,9 @@
 """Test directo de PageSpeed API"""
 import os
-import pytest
 
-from app.services.pagespeed_service import PageSpeedService
+import pytest
 from app.core.config import settings
+from app.services.pagespeed_service import PageSpeedService
 
 
 @pytest.mark.integration

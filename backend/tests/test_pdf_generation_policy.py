@@ -4,7 +4,6 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-
 from app.api.routes.audits import generate_audit_pdf
 from app.services.pdf_service import PDFService
 

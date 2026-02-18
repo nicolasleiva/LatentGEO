@@ -2,8 +2,9 @@
 Script para generar secrets seguros para producción
 Ejecutar: python generate_secrets.py
 """
-import secrets
 import base64
+import secrets
+
 from cryptography.fernet import Fernet
 
 print("=" * 60)

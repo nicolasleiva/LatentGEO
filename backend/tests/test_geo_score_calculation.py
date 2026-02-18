@@ -4,7 +4,10 @@ from app.services.audit_service import CompetitorService
 def test_geo_score_with_full_signals():
     audit_data = {
         "schema": {"schema_presence": {"status": "present"}},
-        "structure": {"semantic_html": {"score_percent": 60}, "h1_check": {"status": "pass"}},
+        "structure": {
+            "semantic_html": {"score_percent": 60},
+            "h1_check": {"status": "pass"},
+        },
         "eeat": {"author_presence": {"status": "pass"}},
         "content": {"conversational_tone": {"score": 6}},
     }

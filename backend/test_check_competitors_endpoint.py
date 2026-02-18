@@ -3,9 +3,9 @@
 Test para verificar el endpoint de competidores y el estado de auditoría
 """
 
+import asyncio
 import os
 import sys
-import asyncio
 
 # Load .env
 from dotenv import load_dotenv
@@ -21,6 +21,7 @@ os.environ["DATABASE_URL"] = "sqlite:///./test_farmalife.db"
 sys.path.append(current_dir)
 
 import json
+
 from app.core.database import SessionLocal
 from app.models import Audit, AuditStatus, Competitor
 

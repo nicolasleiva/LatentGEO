@@ -1,5 +1,3 @@
-import pytest
-
 from app.services.backlink_service import BacklinkService
 from app.services.pipeline_service import PipelineService
 

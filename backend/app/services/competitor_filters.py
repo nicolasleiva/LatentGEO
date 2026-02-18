@@ -9,7 +9,6 @@ from __future__ import annotations
 from typing import Optional
 from urllib.parse import urlparse
 
-
 BLOCKED_COMPETITOR_DOMAINS = {
     "instagram.com",
     "facebook.com",
@@ -69,7 +68,9 @@ def is_blocked_competitor_domain(domain: str) -> bool:
     return False
 
 
-def is_valid_competitor_domain(domain: str, vertical_hint: Optional[str] = None) -> bool:
+def is_valid_competitor_domain(
+    domain: str, vertical_hint: Optional[str] = None
+) -> bool:
     normalized = normalize_domain(domain)
     if not normalized:
         return False

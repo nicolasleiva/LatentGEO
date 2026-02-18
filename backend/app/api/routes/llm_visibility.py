@@ -1,19 +1,22 @@
-from fastapi import APIRouter, Depends, HTTPException, Body, Query
-from sqlalchemy.orm import Session
 from typing import List
-from ...core.database import get_db
-from ...core.auth import AuthUser, get_current_user
+
+from fastapi import APIRouter, Body, Depends, HTTPException, Query
+from sqlalchemy.orm import Session
+
 from ...core.access_control import ensure_audit_access
+from ...core.auth import AuthUser, get_current_user
+from ...core.database import get_db
+from ...core.llm_kimi import KimiGenerationError, KimiUnavailableError
+from ...schemas import LLMVisibilityResponse
 from ...services.audit_service import AuditService
 from ...services.llm_visibility_service import LLMVisibilityService
-from ...core.llm_kimi import KimiUnavailableError, KimiGenerationError
-from ...schemas import LLMVisibilityResponse
 
 router = APIRouter(prefix="/llm-visibility", tags=["llm-visibility"])
 
+
 @router.post("/check/{audit_id}", response_model=List[LLMVisibilityResponse])
 async def check_visibility(
-    audit_id: int, 
+    audit_id: int,
     brand_name: str = Query(..., description="Brand name to check visibility for"),
     queries: List[str] = Body(...),
     db: Session = Depends(get_db),
@@ -41,6 +44,7 @@ async def check_visibility(
                 "message": str(exc),
             },
         )
+
 
 @router.get("/{audit_id}", response_model=List[LLMVisibilityResponse])
 def get_visibility(

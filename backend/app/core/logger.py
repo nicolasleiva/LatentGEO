@@ -2,7 +2,9 @@ import logging
 import logging.handlers
 import os
 import sys
+
 import structlog
+
 from .config import settings
 
 # Crear directorio de logs
@@ -10,9 +12,10 @@ LOG_DIR = os.path.join(os.getcwd(), "logs")
 os.makedirs(LOG_DIR, exist_ok=True)
 LOG_FILE = os.path.join(LOG_DIR, "app.log")
 
+
 def setup_logging():
     """Configure structured logging for the entire app."""
-    
+
     # Standard library logging config
     logging.basicConfig(
         format="%(message)s",
@@ -45,9 +48,11 @@ def setup_logging():
         cache_logger_on_first_use=True,
     )
 
+
 def get_logger(name: str):
     """Obtener logger estructurado."""
     return structlog.get_logger(name)
+
 
 # Auto-setup on import
 setup_logging()

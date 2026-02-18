@@ -3,7 +3,6 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-
 from app.services.pdf_service import PDFService
 
 
@@ -22,7 +21,11 @@ async def test_pdf_generation_uses_cached_geo_data_when_fresh_mode_disabled():
     }
     mock_audit.keywords = [
         SimpleNamespace(
-            term="nike running shoes", volume=1200, difficulty=40, cpc=1.2, intent="commercial"
+            term="nike running shoes",
+            volume=1200,
+            difficulty=40,
+            cpc=1.2,
+            intent="commercial",
         )
     ]
     mock_audit.backlinks = [
@@ -35,7 +38,9 @@ async def test_pdf_generation_uses_cached_geo_data_when_fresh_mode_disabled():
         )
     ]
     mock_audit.rank_trackings = [
-        SimpleNamespace(keyword="nike running shoes", position=8, url="https://example.com/product")
+        SimpleNamespace(
+            keyword="nike running shoes", position=8, url="https://example.com/product"
+        )
     ]
     mock_audit.llm_visibilities = [
         SimpleNamespace(
@@ -77,13 +82,13 @@ async def test_pdf_generation_uses_cached_geo_data_when_fresh_mode_disabled():
     ) as mock_fresh_keywords, patch(
         "app.services.backlink_service.BacklinkService.analyze_backlinks",
         new_callable=AsyncMock,
-    ) as mock_fresh_backlinks, patch(
+    ), patch(
         "app.services.rank_tracker_service.RankTrackerService.track_rankings",
         new_callable=AsyncMock,
-    ) as mock_fresh_rankings, patch(
+    ), patch(
         "app.services.llm_visibility_service.LLMVisibilityService.generate_llm_visibility",
         new_callable=AsyncMock,
-    ) as mock_fresh_visibility, patch(
+    ), patch(
         "app.services.pipeline_service.PipelineService.generate_report",
         new_callable=AsyncMock,
         return_value=("Regenerated report content. " * 20, []),
@@ -138,7 +143,11 @@ async def test_pdf_generation_handles_null_cached_opportunity_scores():
                 "opportunity_score": None,
             },
         ],
-        "backlinks": {"top_backlinks": [], "total_backlinks": 0, "referring_domains": 0},
+        "backlinks": {
+            "top_backlinks": [],
+            "total_backlinks": 0,
+            "referring_domains": 0,
+        },
         "rank_tracking": [],
         "llm_visibility": [],
         "ai_content_suggestions": [],
@@ -166,13 +175,13 @@ async def test_pdf_generation_handles_null_cached_opportunity_scores():
     ) as mock_fresh_keywords, patch(
         "app.services.backlink_service.BacklinkService.analyze_backlinks",
         new_callable=AsyncMock,
-    ) as mock_fresh_backlinks, patch(
+    ), patch(
         "app.services.rank_tracker_service.RankTrackerService.track_rankings",
         new_callable=AsyncMock,
-    ) as mock_fresh_rankings, patch(
+    ), patch(
         "app.services.llm_visibility_service.LLMVisibilityService.generate_llm_visibility",
         new_callable=AsyncMock,
-    ) as mock_fresh_visibility, patch(
+    ), patch(
         "app.services.pipeline_service.PipelineService.generate_report",
         new_callable=AsyncMock,
         return_value=("Regenerated report content. " * 20, []),

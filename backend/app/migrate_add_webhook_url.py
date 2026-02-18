@@ -1,8 +1,9 @@
 """
 Script de migración para agregar columna webhook_url
 """
-from sqlalchemy import create_engine, text
 from app.core.config import settings
+from sqlalchemy import create_engine, text
+
 
 def migrate():
     engine = create_engine(settings.DATABASE_URL)
@@ -17,6 +18,7 @@ def migrate():
 
         conn.commit()
         print("\n✅ Migración completada")
+
 
 if __name__ == "__main__":
     migrate()

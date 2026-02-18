@@ -1,18 +1,21 @@
-import psycopg2
 import os
+
+import psycopg2
 
 conn = psycopg2.connect(
     host="localhost",
     port=5432,
     database="auditor_db",
     user="auditor",
-    password="auditor123"
+    password="auditor123",
 )
 
 cur = conn.cursor()
 
 try:
-    cur.execute("ALTER TABLE audits ADD COLUMN IF NOT EXISTS language VARCHAR(10) DEFAULT 'es'")
+    cur.execute(
+        "ALTER TABLE audits ADD COLUMN IF NOT EXISTS language VARCHAR(10) DEFAULT 'es'"
+    )
     print("✓ language column added")
 except Exception as e:
     print(f"language: {e}")

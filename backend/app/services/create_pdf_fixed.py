@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
+
 def clean_string_for_pdf(text):
     """Asegura que el string esté en formato amigable para PDF."""
     if not isinstance(text, str):
@@ -10,7 +11,6 @@ def clean_string_for_pdf(text):
         "•": "-",
         "–": "-",
         "—": "-",
-        "'": "'",
         "'": "'",
         """: '"',
         """: '"',
@@ -39,8 +39,9 @@ def clean_string_for_pdf(text):
     for old, new in replacements.items():
         text = text.replace(old, new)
     import re
-    text = re.sub(r'[\U0001F300-\U0001F9FF]', '', text)
-    
+
+    text = re.sub(r"[\U0001F300-\U0001F9FF]", "", text)
+
     return (
         text.replace("\r", "")
         .replace("\\r", "")

@@ -2,9 +2,8 @@ import asyncio
 import json
 
 import pytest
-
 from app.core.config import settings
-from app.models import AIContentSuggestion, Audit, AuditStatus, GeoArticleBatch, Keyword
+from app.models import AIContentSuggestion, Audit, AuditStatus, Keyword
 from app.services.geo_article_engine_service import (
     ArticleDataPackIncompleteError,
     GeoArticleEngineService,
@@ -64,7 +63,13 @@ def _seed_audit(db_session, *, minimal_paths: bool = False) -> Audit:
                 ]
             }
         },
-        competitor_audits=[{"url": "https://www.mercadolibre.com.ar/", "domain": "mercadolibre.com.ar", "geo_score": 66.0}],
+        competitor_audits=[
+            {
+                "url": "https://www.mercadolibre.com.ar/",
+                "domain": "mercadolibre.com.ar",
+                "geo_score": 66.0,
+            }
+        ],
     )
     db_session.add(audit)
     db_session.flush()
@@ -95,9 +100,13 @@ def _seed_audit(db_session, *, minimal_paths: bool = False) -> Audit:
     return audit
 
 
-def test_create_batch_fails_when_article_data_pack_prerequisites_missing(db_session, monkeypatch):
+def test_create_batch_fails_when_article_data_pack_prerequisites_missing(
+    db_session, monkeypatch
+):
     audit = _seed_audit(db_session, minimal_paths=True)
-    monkeypatch.setattr("app.services.geo_article_engine_service.is_kimi_configured", lambda: True)
+    monkeypatch.setattr(
+        "app.services.geo_article_engine_service.is_kimi_configured", lambda: True
+    )
 
     with pytest.raises(ArticleDataPackIncompleteError) as exc:
         GeoArticleEngineService.create_batch(
@@ -111,11 +120,15 @@ def test_create_batch_fails_when_article_data_pack_prerequisites_missing(db_sess
     assert "ARTICLE_DATA_PACK_INCOMPLETE" in str(exc.value)
 
 
-def test_process_batch_rejects_when_authority_sources_insufficient(db_session, monkeypatch):
+def test_process_batch_rejects_when_authority_sources_insufficient(
+    db_session, monkeypatch
+):
     audit = _seed_audit(db_session)
     audit.search_results = {}
     db_session.commit()
-    monkeypatch.setattr("app.services.geo_article_engine_service.is_kimi_configured", lambda: True)
+    monkeypatch.setattr(
+        "app.services.geo_article_engine_service.is_kimi_configured", lambda: True
+    )
     monkeypatch.setattr(settings, "GEO_ARTICLE_AUDIT_ONLY", False, raising=False)
 
     batch = GeoArticleEngineService.create_batch(
@@ -146,7 +159,9 @@ def test_process_batch_rejects_when_authority_sources_insufficient(db_session, m
                     "snippet": "Only one external source",
                 },
             ],
-            "evidence": [{"title": "Single external", "url": "https://example.org/nike"}],
+            "evidence": [
+                {"title": "Single external", "url": "https://example.org/nike"}
+            ],
         }
 
     async def fake_llm(*, system_prompt, user_prompt):
@@ -166,18 +181,29 @@ def test_process_batch_rejects_when_authority_sources_insufficient(db_session, m
             }
         )
 
-    monkeypatch.setattr("app.services.geo_article_engine_service.kimi_search_serp", fake_search)
-    monkeypatch.setattr("app.services.geo_article_engine_service.get_llm_function", lambda: fake_llm)
+    monkeypatch.setattr(
+        "app.services.geo_article_engine_service.kimi_search_serp", fake_search
+    )
+    monkeypatch.setattr(
+        "app.services.geo_article_engine_service.get_llm_function", lambda: fake_llm
+    )
 
     processed = asyncio.run(GeoArticleEngineService.process_batch(db_session, batch.id))
     assert processed.status == "failed"
     assert processed.articles[0]["generation_status"] == "failed"
-    assert processed.articles[0]["generation_error"]["code"] == "INSUFFICIENT_AUTHORITY_SOURCES"
+    assert (
+        processed.articles[0]["generation_error"]["code"]
+        == "INSUFFICIENT_AUTHORITY_SOURCES"
+    )
 
 
-def test_process_batch_builds_hybrid_keyword_strategy_and_uses_gap_prompt(db_session, monkeypatch):
+def test_process_batch_builds_hybrid_keyword_strategy_and_uses_gap_prompt(
+    db_session, monkeypatch
+):
     audit = _seed_audit(db_session)
-    monkeypatch.setattr("app.services.geo_article_engine_service.is_kimi_configured", lambda: True)
+    monkeypatch.setattr(
+        "app.services.geo_article_engine_service.is_kimi_configured", lambda: True
+    )
     monkeypatch.setattr(settings, "GEO_ARTICLE_AUDIT_ONLY", False, raising=False)
 
     batch = GeoArticleEngineService.create_batch(
@@ -230,9 +256,15 @@ def test_process_batch_builds_hybrid_keyword_strategy_and_uses_gap_prompt(db_ses
                 },
             ],
             "evidence": [
-                {"title": "Mercado Libre", "url": "https://www.mercadolibre.com.ar/zapatillas-nike"},
+                {
+                    "title": "Mercado Libre",
+                    "url": "https://www.mercadolibre.com.ar/zapatillas-nike",
+                },
                 {"title": "Nike", "url": "https://www.nike.com/ar/"},
-                {"title": "Runner's World", "url": "https://www.runnersworld.com/gear/a20865766/best-running-shoes/"},
+                {
+                    "title": "Runner's World",
+                    "url": "https://www.runnersworld.com/gear/a20865766/best-running-shoes/",
+                },
             ],
         }
 
@@ -279,8 +311,12 @@ def test_process_batch_builds_hybrid_keyword_strategy_and_uses_gap_prompt(db_ses
             }
         )
 
-    monkeypatch.setattr("app.services.geo_article_engine_service.kimi_search_serp", fake_search)
-    monkeypatch.setattr("app.services.geo_article_engine_service.get_llm_function", lambda: fake_llm)
+    monkeypatch.setattr(
+        "app.services.geo_article_engine_service.kimi_search_serp", fake_search
+    )
+    monkeypatch.setattr(
+        "app.services.geo_article_engine_service.get_llm_function", lambda: fake_llm
+    )
 
     processed = asyncio.run(GeoArticleEngineService.process_batch(db_session, batch.id))
     assert processed.status == "completed"
@@ -289,13 +325,20 @@ def test_process_batch_builds_hybrid_keyword_strategy_and_uses_gap_prompt(db_ses
     article = processed.articles[0]
     assert article["generation_status"] == "completed"
     assert article["title"] == "AI Strategy Suggested Title"
-    assert article["keyword_strategy"]["strategy_mode"] == "audit_plus_kimi_search_expansion"
+    assert (
+        article["keyword_strategy"]["strategy_mode"]
+        == "audit_plus_kimi_search_expansion"
+    )
     assert len(article["keyword_strategy"]["secondary_keywords"]) >= 2
     assert "schema" in article["competitor_gap_map"]
     assert article["evidence_summary"]
     assert "How to beat top competitor for this keyword" in article["markdown"]
 
-    generation_prompts = [prompt for prompt in prompts if "Generate a complete GEO/SEO article ready to publish." in prompt]
+    generation_prompts = [
+        prompt
+        for prompt in prompts
+        if "Generate a complete GEO/SEO article ready to publish." in prompt
+    ]
     assert generation_prompts, "Expected generation prompt to be captured"
     assert "competitor_gap_map" in generation_prompts[0]
     assert "article_data_pack" in generation_prompts[0]
@@ -303,9 +346,13 @@ def test_process_batch_builds_hybrid_keyword_strategy_and_uses_gap_prompt(db_ses
 
 def test_process_batch_repairs_invalid_citations_when_enabled(db_session, monkeypatch):
     audit = _seed_audit(db_session)
-    monkeypatch.setattr("app.services.geo_article_engine_service.is_kimi_configured", lambda: True)
+    monkeypatch.setattr(
+        "app.services.geo_article_engine_service.is_kimi_configured", lambda: True
+    )
     monkeypatch.setattr(settings, "GEO_ARTICLE_AUDIT_ONLY", False, raising=False)
-    monkeypatch.setattr(settings, "GEO_ARTICLE_REPAIR_INVALID_CITATIONS", True, raising=False)
+    monkeypatch.setattr(
+        settings, "GEO_ARTICLE_REPAIR_INVALID_CITATIONS", True, raising=False
+    )
 
     batch = GeoArticleEngineService.create_batch(
         db=db_session,
@@ -343,9 +390,18 @@ def test_process_batch_repairs_invalid_citations_when_enabled(db_session, monkey
                 },
             ],
             "evidence": [
-                {"title": "Mercado Libre", "url": "https://www.mercadolibre.com.ar/zapatillas-nike"},
-                {"title": "Runner's World", "url": "https://www.runnersworld.com/gear/a20865766/best-running-shoes/"},
-                {"title": "Statista", "url": "https://www.statista.com/topics/123/footwear/"},
+                {
+                    "title": "Mercado Libre",
+                    "url": "https://www.mercadolibre.com.ar/zapatillas-nike",
+                },
+                {
+                    "title": "Runner's World",
+                    "url": "https://www.runnersworld.com/gear/a20865766/best-running-shoes/",
+                },
+                {
+                    "title": "Statista",
+                    "url": "https://www.statista.com/topics/123/footwear/",
+                },
             ],
         }
 
@@ -382,8 +438,12 @@ def test_process_batch_repairs_invalid_citations_when_enabled(db_session, monkey
             }
         )
 
-    monkeypatch.setattr("app.services.geo_article_engine_service.kimi_search_serp", fake_search)
-    monkeypatch.setattr("app.services.geo_article_engine_service.get_llm_function", lambda: fake_llm)
+    monkeypatch.setattr(
+        "app.services.geo_article_engine_service.kimi_search_serp", fake_search
+    )
+    monkeypatch.setattr(
+        "app.services.geo_article_engine_service.get_llm_function", lambda: fake_llm
+    )
 
     processed = asyncio.run(GeoArticleEngineService.process_batch(db_session, batch.id))
     assert processed.status == "completed"
@@ -394,9 +454,13 @@ def test_process_batch_repairs_invalid_citations_when_enabled(db_session, monkey
 
 def test_process_batch_fails_when_repair_disabled(db_session, monkeypatch):
     audit = _seed_audit(db_session)
-    monkeypatch.setattr("app.services.geo_article_engine_service.is_kimi_configured", lambda: True)
+    monkeypatch.setattr(
+        "app.services.geo_article_engine_service.is_kimi_configured", lambda: True
+    )
     monkeypatch.setattr(settings, "GEO_ARTICLE_AUDIT_ONLY", False, raising=False)
-    monkeypatch.setattr(settings, "GEO_ARTICLE_REPAIR_INVALID_CITATIONS", False, raising=False)
+    monkeypatch.setattr(
+        settings, "GEO_ARTICLE_REPAIR_INVALID_CITATIONS", False, raising=False
+    )
 
     batch = GeoArticleEngineService.create_batch(
         db=db_session,
@@ -434,9 +498,18 @@ def test_process_batch_fails_when_repair_disabled(db_session, monkeypatch):
                 },
             ],
             "evidence": [
-                {"title": "Mercado Libre", "url": "https://www.mercadolibre.com.ar/zapatillas-nike"},
-                {"title": "Runner's World", "url": "https://www.runnersworld.com/gear/a20865766/best-running-shoes/"},
-                {"title": "Statista", "url": "https://www.statista.com/topics/123/footwear/"},
+                {
+                    "title": "Mercado Libre",
+                    "url": "https://www.mercadolibre.com.ar/zapatillas-nike",
+                },
+                {
+                    "title": "Runner's World",
+                    "url": "https://www.runnersworld.com/gear/a20865766/best-running-shoes/",
+                },
+                {
+                    "title": "Statista",
+                    "url": "https://www.statista.com/topics/123/footwear/",
+                },
             ],
         }
 
@@ -461,8 +534,12 @@ def test_process_batch_fails_when_repair_disabled(db_session, monkeypatch):
             }
         )
 
-    monkeypatch.setattr("app.services.geo_article_engine_service.kimi_search_serp", fake_search)
-    monkeypatch.setattr("app.services.geo_article_engine_service.get_llm_function", lambda: fake_llm)
+    monkeypatch.setattr(
+        "app.services.geo_article_engine_service.kimi_search_serp", fake_search
+    )
+    monkeypatch.setattr(
+        "app.services.geo_article_engine_service.get_llm_function", lambda: fake_llm
+    )
 
     processed = asyncio.run(GeoArticleEngineService.process_batch(db_session, batch.id))
     assert processed.status == "failed"
@@ -472,9 +549,13 @@ def test_process_batch_fails_when_repair_disabled(db_session, monkeypatch):
 
 def test_citation_url_normalization_allows_www_and_http(db_session, monkeypatch):
     audit = _seed_audit(db_session)
-    monkeypatch.setattr("app.services.geo_article_engine_service.is_kimi_configured", lambda: True)
+    monkeypatch.setattr(
+        "app.services.geo_article_engine_service.is_kimi_configured", lambda: True
+    )
     monkeypatch.setattr(settings, "GEO_ARTICLE_AUDIT_ONLY", False, raising=False)
-    monkeypatch.setattr(settings, "GEO_ARTICLE_REPAIR_INVALID_CITATIONS", False, raising=False)
+    monkeypatch.setattr(
+        settings, "GEO_ARTICLE_REPAIR_INVALID_CITATIONS", False, raising=False
+    )
 
     batch = GeoArticleEngineService.create_batch(
         db=db_session,
@@ -512,9 +593,18 @@ def test_citation_url_normalization_allows_www_and_http(db_session, monkeypatch)
                 },
             ],
             "evidence": [
-                {"title": "Mercado Libre", "url": "https://www.mercadolibre.com.ar/zapatillas-nike"},
-                {"title": "Runner's World", "url": "https://www.runnersworld.com/gear/a20865766/best-running-shoes/"},
-                {"title": "Statista", "url": "https://www.statista.com/topics/123/footwear/"},
+                {
+                    "title": "Mercado Libre",
+                    "url": "https://www.mercadolibre.com.ar/zapatillas-nike",
+                },
+                {
+                    "title": "Runner's World",
+                    "url": "https://www.runnersworld.com/gear/a20865766/best-running-shoes/",
+                },
+                {
+                    "title": "Statista",
+                    "url": "https://www.statista.com/topics/123/footwear/",
+                },
             ],
         }
 
@@ -544,8 +634,12 @@ def test_citation_url_normalization_allows_www_and_http(db_session, monkeypatch)
             }
         )
 
-    monkeypatch.setattr("app.services.geo_article_engine_service.kimi_search_serp", fake_search)
-    monkeypatch.setattr("app.services.geo_article_engine_service.get_llm_function", lambda: fake_llm)
+    monkeypatch.setattr(
+        "app.services.geo_article_engine_service.kimi_search_serp", fake_search
+    )
+    monkeypatch.setattr(
+        "app.services.geo_article_engine_service.get_llm_function", lambda: fake_llm
+    )
 
     processed = asyncio.run(GeoArticleEngineService.process_batch(db_session, batch.id))
     assert processed.status == "completed"
