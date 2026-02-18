@@ -1,10 +1,10 @@
-'use client';
+"use client";
 
-import { useState } from 'react';
-import { Search, Sparkles, AlertCircle, CheckCircle } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { fetchWithBackendAuth } from '@/lib/backend-auth';
+import { useState } from "react";
+import { Search, Sparkles, AlertCircle, CheckCircle } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { fetchWithBackendAuth } from "@/lib/backend-auth";
 
 interface QueryOpportunity {
   query: string;
@@ -20,29 +20,35 @@ interface QueryDiscoveryProps {
   backendUrl: string;
 }
 
-export default function QueryDiscovery({ auditId, backendUrl }: QueryDiscoveryProps) {
-  const [seedQuery, setSeedQuery] = useState('');
+export default function QueryDiscovery({
+  auditId,
+  backendUrl,
+}: QueryDiscoveryProps) {
+  const [seedQuery, setSeedQuery] = useState("");
   const [loading, setLoading] = useState(false);
   const [results, setResults] = useState<QueryOpportunity[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const discoverQueries = async () => {
     if (!seedQuery.trim()) return;
-    
+
     setLoading(true);
     setError(null);
-    
+
     try {
-      const res = await fetchWithBackendAuth(`${backendUrl}/api/geo/query-discovery`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          audit_id: auditId,
-          seed_query: seedQuery,
-        }),
-      });
-      
-      if (!res.ok) throw new Error('Failed to discover queries');
+      const res = await fetchWithBackendAuth(
+        `${backendUrl}/api/geo/query-discovery`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            audit_id: auditId,
+            seed_query: seedQuery,
+          }),
+        },
+      );
+
+      if (!res.ok) throw new Error("Failed to discover queries");
       const data = await res.json();
       setResults(data.opportunities || []);
     } catch (err: any) {
@@ -61,8 +67,8 @@ export default function QueryDiscovery({ auditId, backendUrl }: QueryDiscoveryPr
           onChange={(e) => setSeedQuery(e.target.value)}
           className="flex-1 bg-muted/30 border-border/70 text-foreground placeholder:text-muted-foreground"
         />
-        <Button 
-          onClick={discoverQueries} 
+        <Button
+          onClick={discoverQueries}
           disabled={loading || !seedQuery.trim()}
           className="glass-button-primary"
         >
@@ -87,17 +93,26 @@ export default function QueryDiscovery({ auditId, backendUrl }: QueryDiscoveryPr
       {results && results.length === 0 && (
         <div className="text-center py-12 bg-muted/30 rounded-2xl border border-dashed border-border">
           <Search className="w-12 h-12 text-muted-foreground/60 mx-auto mb-4" />
-          <p className="text-muted-foreground">No opportunities found. Try a different seed query.</p>
+          <p className="text-muted-foreground">
+            No opportunities found. Try a different seed query.
+          </p>
         </div>
       )}
 
       {results && results.length > 0 && (
         <div className="space-y-4">
-          <p className="text-muted-foreground mb-4">Found {results.length} opportunities:</p>
+          <p className="text-muted-foreground mb-4">
+            Found {results.length} opportunities:
+          </p>
           {results.map((opp, idx) => (
-            <div key={idx} className="bg-muted/30 border border-border rounded-xl p-6">
+            <div
+              key={idx}
+              className="bg-muted/30 border border-border rounded-xl p-6"
+            >
               <div className="flex justify-between items-start mb-3">
-                <h4 className="font-semibold text-foreground text-lg">{opp.query}</h4>
+                <h4 className="font-semibold text-foreground text-lg">
+                  {opp.query}
+                </h4>
                 <div className="flex items-center gap-2">
                   <span className="bg-blue-500/20 text-blue-300 px-3 py-1 rounded-lg text-sm font-bold">
                     Score: {opp.potential_score}
@@ -107,18 +122,22 @@ export default function QueryDiscovery({ auditId, backendUrl }: QueryDiscoveryPr
                   </span>
                 </div>
               </div>
-              
+
               <div className="grid grid-cols-2 gap-4 mb-4 text-sm">
                 <div>
                   <span className="text-muted-foreground">Volume:</span>
-                  <span className="text-foreground ml-2">{opp.volume_estimate}</span>
+                  <span className="text-foreground ml-2">
+                    {opp.volume_estimate}
+                  </span>
                 </div>
                 <div>
                   <span className="text-muted-foreground">Competition:</span>
-                  <span className="text-foreground ml-2 capitalize">{opp.competition_level}</span>
+                  <span className="text-foreground ml-2 capitalize">
+                    {opp.competition_level}
+                  </span>
                 </div>
               </div>
-              
+
               <div className="bg-green-500/10 border border-green-500/20 rounded-lg p-3">
                 <div className="flex items-start gap-2">
                   <CheckCircle className="w-4 h-4 text-green-400 mt-0.5" />

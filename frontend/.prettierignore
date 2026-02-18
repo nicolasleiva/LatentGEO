@@ -1,0 +1,12 @@
+node_modules
+.next
+.next_old
+.open-next
+.pnpm-store
+.cache
+.swc
+.wrangler
+coverage
+dist
+build
+pnpm-lock.yaml

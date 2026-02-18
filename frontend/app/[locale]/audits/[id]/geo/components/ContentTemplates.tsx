@@ -1,12 +1,25 @@
-'use client';
+"use client";
 
-import { useState } from 'react';
-import { Award, Copy, Check, Sparkles, AlertCircle, FileText } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Textarea } from '@/components/ui/textarea';
-import { Label } from '@/components/ui/label';
-import { fetchWithBackendAuth } from '@/lib/backend-auth';
+import { useState } from "react";
+import {
+  Award,
+  Copy,
+  Check,
+  Sparkles,
+  AlertCircle,
+  FileText,
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
+import { fetchWithBackendAuth } from "@/lib/backend-auth";
 
 interface Template {
   id: string;
@@ -21,31 +34,37 @@ interface ContentTemplatesProps {
   backendUrl: string;
 }
 
-export default function ContentTemplates({ backendUrl }: ContentTemplatesProps) {
-  const [category, setCategory] = useState('all');
+export default function ContentTemplates({
+  backendUrl,
+}: ContentTemplatesProps) {
+  const [category, setCategory] = useState("all");
   const [loading, setLoading] = useState(false);
   const [templates, setTemplates] = useState<Template[]>([]);
-  const [selectedTemplate, setSelectedTemplate] = useState<Template | null>(null);
+  const [selectedTemplate, setSelectedTemplate] = useState<Template | null>(
+    null,
+  );
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
   const categories = [
-    { value: 'all', label: 'All Categories' },
-    { value: 'product', label: 'Product Pages' },
-    { value: 'service', label: 'Service Pages' },
-    { value: 'blog', label: 'Blog/Articles' },
-    { value: 'landing', label: 'Landing Pages' },
-    { value: 'about', label: 'About Pages' },
-    { value: 'faq', label: 'FAQ Pages' },
+    { value: "all", label: "All Categories" },
+    { value: "product", label: "Product Pages" },
+    { value: "service", label: "Service Pages" },
+    { value: "blog", label: "Blog/Articles" },
+    { value: "landing", label: "Landing Pages" },
+    { value: "about", label: "About Pages" },
+    { value: "faq", label: "FAQ Pages" },
   ];
 
   const fetchTemplates = async () => {
     setLoading(true);
     setError(null);
-    
+
     try {
-      const res = await fetchWithBackendAuth(`${backendUrl}/api/geo/content-templates?category=${category}`);
-      if (!res.ok) throw new Error('Failed to fetch templates');
+      const res = await fetchWithBackendAuth(
+        `${backendUrl}/api/geo/content-templates?category=${category}`,
+      );
+      if (!res.ok) throw new Error("Failed to fetch templates");
       const data = await res.json();
       setTemplates(data.templates || []);
     } catch (err: any) {
@@ -82,9 +101,9 @@ export default function ContentTemplates({ backendUrl }: ContentTemplatesProps) 
               </SelectContent>
             </Select>
           </div>
-          
-          <Button 
-            onClick={fetchTemplates} 
+
+          <Button
+            onClick={fetchTemplates}
             disabled={loading}
             className="glass-button-primary w-full"
           >
@@ -109,7 +128,9 @@ export default function ContentTemplates({ backendUrl }: ContentTemplatesProps) 
 
       {templates.length > 0 && !selectedTemplate && (
         <div className="space-y-3">
-          <p className="text-muted-foreground mb-4">Select a template to view:</p>
+          <p className="text-muted-foreground mb-4">
+            Select a template to view:
+          </p>
           {templates.map((template) => (
             <button
               key={template.id}
@@ -118,8 +139,12 @@ export default function ContentTemplates({ backendUrl }: ContentTemplatesProps) 
             >
               <div className="flex justify-between items-start">
                 <div>
-                  <h4 className="font-semibold text-foreground">{template.name}</h4>
-                  <p className="text-muted-foreground text-sm mt-1">{template.description}</p>
+                  <h4 className="font-semibold text-foreground">
+                    {template.name}
+                  </h4>
+                  <p className="text-muted-foreground text-sm mt-1">
+                    {template.description}
+                  </p>
                 </div>
                 <span className="bg-muted/40 text-muted-foreground px-2 py-1 rounded text-xs capitalize">
                   {template.category}
@@ -134,37 +159,45 @@ export default function ContentTemplates({ backendUrl }: ContentTemplatesProps) 
         <div className="bg-muted/30 border border-border rounded-xl p-6">
           <div className="flex justify-between items-start mb-4">
             <div>
-              <h3 className="font-semibold text-foreground text-xl">{selectedTemplate.name}</h3>
-              <p className="text-muted-foreground">{selectedTemplate.description}</p>
+              <h3 className="font-semibold text-foreground text-xl">
+                {selectedTemplate.name}
+              </h3>
+              <p className="text-muted-foreground">
+                {selectedTemplate.description}
+              </p>
             </div>
             <div className="flex gap-2">
-              <Button 
-                variant="outline" 
+              <Button
+                variant="outline"
                 onClick={() => setSelectedTemplate(null)}
                 className="border-border/70 text-foreground"
               >
                 Back
               </Button>
-              <Button 
-                variant="outline" 
+              <Button
+                variant="outline"
                 onClick={copyTemplate}
                 className="border-border/70 text-foreground"
               >
                 {copied ? (
-                  <><Check className="w-4 h-4 mr-2" /> Copied!</>
+                  <>
+                    <Check className="w-4 h-4 mr-2" /> Copied!
+                  </>
                 ) : (
-                  <><Copy className="w-4 h-4 mr-2" /> Copy</>
+                  <>
+                    <Copy className="w-4 h-4 mr-2" /> Copy
+                  </>
                 )}
               </Button>
             </div>
           </div>
-          
+
           <Textarea
             value={selectedTemplate.structure}
             readOnly
             className="bg-muted/50 border-border text-foreground font-mono text-sm min-h-[300px] mb-6"
           />
-          
+
           {selectedTemplate.tips.length > 0 && (
             <div>
               <h4 className="font-semibold text-foreground mb-3 flex items-center gap-2">
@@ -173,7 +206,10 @@ export default function ContentTemplates({ backendUrl }: ContentTemplatesProps) 
               </h4>
               <ul className="space-y-2">
                 {selectedTemplate.tips.map((tip, idx) => (
-                  <li key={idx} className="text-muted-foreground text-sm flex items-start gap-2">
+                  <li
+                    key={idx}
+                    className="text-muted-foreground text-sm flex items-start gap-2"
+                  >
                     <span className="text-yellow-400">•</span> {tip}
                   </li>
                 ))}

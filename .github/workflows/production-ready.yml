@@ -215,7 +215,7 @@ jobs:
     - name: Run unit tests
       run: |
         cd frontend
-        pnpm test -- --coverage --watchAll=false
+        pnpm test:ci -- --coverage
 
     - name: Build frontend
       run: |

@@ -1,11 +1,17 @@
-'use client';
+"use client";
 
-import { useState } from 'react';
-import { Award, AlertCircle, Sparkles, CheckCircle, XCircle } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Textarea } from '@/components/ui/textarea';
-import { Label } from '@/components/ui/label';
-import { fetchWithBackendAuth } from '@/lib/backend-auth';
+import { useState } from "react";
+import {
+  Award,
+  AlertCircle,
+  Sparkles,
+  CheckCircle,
+  XCircle,
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
+import { fetchWithBackendAuth } from "@/lib/backend-auth";
 
 interface AnalysisResult {
   score: number;
@@ -20,25 +26,28 @@ interface ContentAnalyzeProps {
 }
 
 export default function ContentAnalyze({ backendUrl }: ContentAnalyzeProps) {
-  const [content, setContent] = useState('');
+  const [content, setContent] = useState("");
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<AnalysisResult | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const analyzeContent = async () => {
     if (!content.trim()) return;
-    
+
     setLoading(true);
     setError(null);
-    
+
     try {
-      const res = await fetchWithBackendAuth(`${backendUrl}/api/geo/analyze-content`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content }),
-      });
-      
-      if (!res.ok) throw new Error('Failed to analyze content');
+      const res = await fetchWithBackendAuth(
+        `${backendUrl}/api/geo/analyze-content`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ content }),
+        },
+      );
+
+      if (!res.ok) throw new Error("Failed to analyze content");
       const data = await res.json();
       setResult(data);
     } catch (err: any) {
@@ -49,15 +58,15 @@ export default function ContentAnalyze({ backendUrl }: ContentAnalyzeProps) {
   };
 
   const getScoreColor = (score: number) => {
-    if (score >= 80) return 'text-green-400';
-    if (score >= 60) return 'text-yellow-400';
-    return 'text-red-400';
+    if (score >= 80) return "text-green-400";
+    if (score >= 60) return "text-yellow-400";
+    return "text-red-400";
   };
 
   const getScoreBg = (score: number) => {
-    if (score >= 80) return 'bg-green-500/20';
-    if (score >= 60) return 'bg-yellow-500/20';
-    return 'bg-red-500/20';
+    if (score >= 80) return "bg-green-500/20";
+    if (score >= 60) return "bg-yellow-500/20";
+    return "bg-red-500/20";
   };
 
   return (
@@ -73,9 +82,9 @@ export default function ContentAnalyze({ backendUrl }: ContentAnalyzeProps) {
               className="mt-2 min-h-[200px] bg-muted/30 border-border/70 text-foreground placeholder:text-muted-foreground"
             />
           </div>
-          
-          <Button 
-            onClick={analyzeContent} 
+
+          <Button
+            onClick={analyzeContent}
             disabled={loading || !content.trim()}
             className="glass-button-primary w-full"
           >
@@ -101,8 +110,12 @@ export default function ContentAnalyze({ backendUrl }: ContentAnalyzeProps) {
       {result && (
         <div className="space-y-6">
           {/* Score */}
-          <div className={`${getScoreBg(result.score)} border border-border rounded-xl p-6 text-center`}>
-            <p className="text-muted-foreground text-sm mb-2">GEO Readiness Score</p>
+          <div
+            className={`${getScoreBg(result.score)} border border-border rounded-xl p-6 text-center`}
+          >
+            <p className="text-muted-foreground text-sm mb-2">
+              GEO Readiness Score
+            </p>
             <p className={`text-5xl font-bold ${getScoreColor(result.score)}`}>
               {result.score}/100
             </p>
@@ -119,7 +132,10 @@ export default function ContentAnalyze({ backendUrl }: ContentAnalyzeProps) {
                 </h4>
                 <ul className="space-y-2">
                   {result.strengths.map((strength, idx) => (
-                    <li key={idx} className="text-muted-foreground text-sm flex items-start gap-2">
+                    <li
+                      key={idx}
+                      className="text-muted-foreground text-sm flex items-start gap-2"
+                    >
                       <span className="text-green-400">•</span> {strength}
                     </li>
                   ))}
@@ -136,7 +152,10 @@ export default function ContentAnalyze({ backendUrl }: ContentAnalyzeProps) {
                 </h4>
                 <ul className="space-y-2">
                   {result.weaknesses.map((weakness, idx) => (
-                    <li key={idx} className="text-muted-foreground text-sm flex items-start gap-2">
+                    <li
+                      key={idx}
+                      className="text-muted-foreground text-sm flex items-start gap-2"
+                    >
                       <span className="text-red-400">•</span> {weakness}
                     </li>
                   ))}
@@ -154,7 +173,10 @@ export default function ContentAnalyze({ backendUrl }: ContentAnalyzeProps) {
               </h4>
               <ul className="space-y-2">
                 {result.recommendations.map((rec, idx) => (
-                  <li key={idx} className="text-muted-foreground text-sm flex items-start gap-2">
+                  <li
+                    key={idx}
+                    className="text-muted-foreground text-sm flex items-start gap-2"
+                  >
                     <span className="text-blue-400">•</span> {rec}
                   </li>
                 ))}

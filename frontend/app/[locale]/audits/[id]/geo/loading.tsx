@@ -1,17 +1,20 @@
-'use client';
+"use client";
 
-import { ArrowLeft } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import Link from 'next/link';
+import { ArrowLeft } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import Link from "next/link";
 
-export function GEOSkeleton({ auditId = '' }: { auditId?: string }) {
+export function GEOSkeleton({ auditId = "" }: { auditId?: string }) {
   return (
     <div className="min-h-screen bg-background text-foreground pb-20 animate-in fade-in duration-300">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Header Skeleton */}
         <div className="mb-12">
           <Link href={`/audits/${auditId}`}>
-            <Button variant="ghost" className="text-muted-foreground hover:text-foreground hover:bg-muted/40 mb-6 pl-0">
+            <Button
+              variant="ghost"
+              className="text-muted-foreground hover:text-foreground hover:bg-muted/40 mb-6 pl-0"
+            >
               <ArrowLeft className="w-4 h-4 mr-2" />
               Back to Audit
             </Button>
@@ -44,10 +47,13 @@ export function GEOSkeleton({ auditId = '' }: { auditId?: string }) {
         <div className="glass-card p-8 mb-8">
           <div className="h-8 w-48 bg-muted/50 rounded mb-6 animate-pulse" />
           <div className="h-4 w-96 bg-muted/30 rounded mb-8 animate-pulse" />
-          
+
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             {[1, 2, 3].map((i) => (
-              <div key={i} className="bg-muted/30 rounded-lg p-6 border border-border">
+              <div
+                key={i}
+                className="bg-muted/30 rounded-lg p-6 border border-border"
+              >
                 <div className="flex justify-between items-start mb-4">
                   <div className="h-6 w-32 bg-muted/50 rounded animate-pulse" />
                   <div className="h-6 w-16 bg-muted/50 rounded animate-pulse" />

@@ -1,25 +1,28 @@
-'use client'
+"use client";
 
-import { useState } from 'react'
-import { Search, Sparkles } from 'lucide-react'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
+import { useState } from "react";
+import { Search, Sparkles } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 
 interface AISearchBarProps {
-  onSearch: (query: string) => void
-  placeholder?: string
+  onSearch: (query: string) => void;
+  placeholder?: string;
 }
 
-export function AISearchBar({ onSearch, placeholder = 'Ask AI about your site or enter a URL to audit...' }: AISearchBarProps) {
-  const [query, setQuery] = useState('')
+export function AISearchBar({
+  onSearch,
+  placeholder = "Ask AI about your site or enter a URL to audit...",
+}: AISearchBarProps) {
+  const [query, setQuery] = useState("");
 
   const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
+    e.preventDefault();
     if (query.trim()) {
-      onSearch(query)
-      setQuery('')
+      onSearch(query);
+      setQuery("");
     }
-  }
+  };
 
   return (
     <form onSubmit={handleSubmit} className="relative w-full max-w-3xl">
@@ -44,5 +47,5 @@ export function AISearchBar({ onSearch, placeholder = 'Ask AI about your site or
         </Button>
       </div>
     </form>
-  )
+  );
 }

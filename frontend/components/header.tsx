@@ -1,10 +1,10 @@
-'use client'
+"use client";
 
-import { useMemo, type ComponentType } from 'react'
-import Image from 'next/image'
-import Link from 'next/link'
-import { usePathname } from 'next/navigation'
-import { useUser } from '@auth0/nextjs-auth0/client'
+import { useMemo, type ComponentType } from "react";
+import Image from "next/image";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
+import { useUser } from "@auth0/nextjs-auth0/client";
 import {
   Sparkles,
   LayoutDashboard,
@@ -18,9 +18,9 @@ import {
   LogOut,
   Loader2,
   Rocket,
-} from 'lucide-react'
-import { ThemeToggle } from '@/components/theme-toggle'
-import { Button } from '@/components/ui/button'
+} from "lucide-react";
+import { ThemeToggle } from "@/components/theme-toggle";
+import { Button } from "@/components/ui/button";
 import {
   Sheet,
   SheetClose,
@@ -29,79 +29,85 @@ import {
   SheetHeader,
   SheetTitle,
   SheetTrigger,
-} from '@/components/ui/sheet'
-import { cn } from '@/lib/utils'
+} from "@/components/ui/sheet";
+import { cn } from "@/lib/utils";
 
 type NavItem = {
-  href: string
-  label: string
-  icon: ComponentType<{ className?: string }>
-}
+  href: string;
+  label: string;
+  icon: ComponentType<{ className?: string }>;
+};
 
-const supportedLocales = new Set(['en', 'es'])
+const supportedLocales = new Set(["en", "es"]);
 const guestNavItems: NavItem[] = [
-  { href: '/', label: 'Product', icon: Sparkles },
-  { href: '/pricing', label: 'Pricing', icon: Tag },
-  { href: '/docs', label: 'Docs', icon: Book },
-]
+  { href: "/", label: "Product", icon: Sparkles },
+  { href: "/pricing", label: "Pricing", icon: Tag },
+  { href: "/docs", label: "Docs", icon: Book },
+];
 const appNavItems: NavItem[] = [
-  { href: '/audits', label: 'Audits', icon: LayoutDashboard },
-  { href: '/analytics', label: 'Insights', icon: BarChart3 },
-  { href: '/exports', label: 'Exports', icon: FileText },
-  { href: '/settings', label: 'Settings', icon: Settings },
-]
+  { href: "/audits", label: "Audits", icon: LayoutDashboard },
+  { href: "/analytics", label: "Insights", icon: BarChart3 },
+  { href: "/exports", label: "Exports", icon: FileText },
+  { href: "/settings", label: "Settings", icon: Settings },
+];
 
 export function Header() {
-  const pathname = usePathname()
-  const { user, isLoading } = useUser()
+  const pathname = usePathname();
+  const { user, isLoading } = useUser();
 
   const localePrefix = useMemo(() => {
-    const firstSegment = pathname?.split('/').filter(Boolean)[0]
+    const firstSegment = pathname?.split("/").filter(Boolean)[0];
     if (firstSegment && supportedLocales.has(firstSegment)) {
-      return `/${firstSegment}`
+      return `/${firstSegment}`;
     }
-    return '/en'
-  }, [pathname])
+    return "/en";
+  }, [pathname]);
 
   const pathWithoutLocale = useMemo(() => {
-    if (!pathname) return '/'
-    const segments = pathname.split('/').filter(Boolean)
+    if (!pathname) return "/";
+    const segments = pathname.split("/").filter(Boolean);
     if (segments[0] && supportedLocales.has(segments[0])) {
-      return `/${segments.slice(1).join('/')}` || '/'
+      return `/${segments.slice(1).join("/")}` || "/";
     }
-    return pathname
-  }, [pathname])
+    return pathname;
+  }, [pathname]);
 
-  const activeAuditMatch = pathWithoutLocale.match(/^\/audits\/([^/]+)/)
-  const activeAuditHref = activeAuditMatch ? `/audits/${activeAuditMatch[1]}` : null
+  const activeAuditMatch = pathWithoutLocale.match(/^\/audits\/([^/]+)/);
+  const activeAuditHref = activeAuditMatch
+    ? `/audits/${activeAuditMatch[1]}`
+    : null;
 
   const withLocale = (href: string) => {
-    if (href.startsWith('/auth/')) return href
-    const normalized = href.startsWith('/') ? href : `/${href}`
-    if (normalized === '/') return localePrefix
-    if (normalized.startsWith('/en/') || normalized.startsWith('/es/')) return normalized
-    return `${localePrefix}${normalized}`
-  }
+    if (href.startsWith("/auth/")) return href;
+    const normalized = href.startsWith("/") ? href : `/${href}`;
+    if (normalized === "/") return localePrefix;
+    if (normalized.startsWith("/en/") || normalized.startsWith("/es/"))
+      return normalized;
+    return `${localePrefix}${normalized}`;
+  };
 
   const navItems: NavItem[] = useMemo(() => {
-    if (!user) return guestNavItems
-    if (!activeAuditHref) return appNavItems
-    return [{ href: activeAuditHref, label: 'Live Audit', icon: Activity }, ...appNavItems]
-  }, [user, activeAuditHref])
+    if (!user) return guestNavItems;
+    if (!activeAuditHref) return appNavItems;
+    return [
+      { href: activeAuditHref, label: "Live Audit", icon: Activity },
+      ...appNavItems,
+    ];
+  }, [user, activeAuditHref]);
 
   const isActiveLink = (href: string) => {
-    const target = withLocale(href).replace(/\/+$/, '')
-    const current = (pathname || '').replace(/\/+$/, '')
-    if (!target) return current === ''
-    return current === target || current.startsWith(`${target}/`)
-  }
+    const target = withLocale(href).replace(/\/+$/, "");
+    const current = (pathname || "").replace(/\/+$/, "");
+    if (!target) return current === "";
+    return current === target || current.startsWith(`${target}/`);
+  };
 
-  const profileLabel = user?.name || user?.email || 'User'
+  const profileLabel = user?.name || user?.email || "User";
 
   return (
     <header className="sticky top-0 z-50 w-full border-b border-border/70 bg-background/80 backdrop-blur-xl">
       <div className="container flex h-20 items-center justify-between px-4 sm:px-6">
-        <Link href={withLocale('/')} className="flex items-center gap-3 group">
+        <Link href={withLocale("/")} className="flex items-center gap-3 group">
           <div className="p-2 bg-foreground/5 rounded-xl border border-foreground/10 group-hover:bg-foreground/10 transition-colors">
             <Sparkles className="h-6 w-6 text-foreground" />
           </div>
@@ -112,23 +118,23 @@ export function Header() {
 
         <nav className="hidden lg:flex items-center gap-2">
           {navItems.map((item) => {
-            const Icon = item.icon
-            const active = isActiveLink(item.href)
+            const Icon = item.icon;
+            const active = isActiveLink(item.href);
             return (
               <Link
                 key={item.href}
                 href={withLocale(item.href)}
                 className={cn(
-                  'flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition-colors',
+                  "flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition-colors",
                   active
-                    ? 'bg-foreground/10 text-foreground'
-                    : 'text-foreground/70 hover:bg-foreground/5 hover:text-foreground'
+                    ? "bg-foreground/10 text-foreground"
+                    : "text-foreground/70 hover:bg-foreground/5 hover:text-foreground",
                 )}
               >
                 <Icon className="h-4 w-4" />
                 {item.label}
               </Link>
-            )
+            );
           })}
         </nav>
 
@@ -148,7 +154,7 @@ export function Header() {
           ) : user ? (
             <div className="hidden md:flex items-center gap-2">
               <Button asChild size="sm" className="rounded-xl">
-                <Link href={withLocale('/')}>
+                <Link href={withLocale("/")}>
                   <Rocket className="h-4 w-4" />
                   New audit
                 </Link>
@@ -175,7 +181,12 @@ export function Header() {
                 </span>
               </div>
 
-              <Button asChild variant="ghost" size="sm" className="rounded-xl text-red-500 hover:text-red-600 hover:bg-red-500/10">
+              <Button
+                asChild
+                variant="ghost"
+                size="sm"
+                className="rounded-xl text-red-500 hover:text-red-600 hover:bg-red-500/10"
+              >
                 <a href="/auth/logout">
                   <LogOut className="h-4 w-4" />
                   Logout
@@ -195,7 +206,12 @@ export function Header() {
 
           <Sheet>
             <SheetTrigger asChild>
-              <Button variant="ghost" size="icon-sm" className="md:hidden rounded-xl" aria-label="Open navigation">
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                className="md:hidden rounded-xl"
+                aria-label="Open navigation"
+              >
                 <Menu className="h-5 w-5" />
               </Button>
             </SheetTrigger>
@@ -203,31 +219,33 @@ export function Header() {
               <SheetHeader>
                 <SheetTitle>Navigation</SheetTitle>
                 <SheetDescription>
-                  {user ? 'Signed in workspace navigation.' : 'Explore product and start your first audit.'}
+                  {user
+                    ? "Signed in workspace navigation."
+                    : "Explore product and start your first audit."}
                 </SheetDescription>
               </SheetHeader>
 
               <div className="px-4 pb-6 space-y-6">
                 <div className="space-y-2">
                   {navItems.map((item) => {
-                    const Icon = item.icon
-                    const active = isActiveLink(item.href)
+                    const Icon = item.icon;
+                    const active = isActiveLink(item.href);
                     return (
                       <SheetClose asChild key={item.href}>
                         <Link
                           href={withLocale(item.href)}
                           className={cn(
-                            'flex items-center gap-3 rounded-xl border px-4 py-3 text-sm font-medium',
+                            "flex items-center gap-3 rounded-xl border px-4 py-3 text-sm font-medium",
                             active
-                              ? 'bg-foreground/10 border-foreground/20 text-foreground'
-                              : 'bg-background/70 border-border text-foreground/80'
+                              ? "bg-foreground/10 border-foreground/20 text-foreground"
+                              : "bg-background/70 border-border text-foreground/80",
                           )}
                         >
                           <Icon className="h-4 w-4" />
                           {item.label}
                         </Link>
                       </SheetClose>
-                    )
+                    );
                   })}
                 </div>
 
@@ -240,7 +258,7 @@ export function Header() {
                   <div className="space-y-2">
                     <SheetClose asChild>
                       <Link
-                        href={withLocale('/')}
+                        href={withLocale("/")}
                         className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground shadow-sm hover:bg-primary/90"
                       >
                         <Rocket className="h-4 w-4" />
@@ -283,5 +301,5 @@ export function Header() {
         </div>
       </div>
     </header>
-  )
+  );
 }
