@@ -1,0 +1,103 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Data stack for auditor-geo staging (RDS PostgreSQL + ElastiCache Redis)
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: auditor-geo
+  EnvironmentName:
+    Type: String
+    Default: staging
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+  PrivateSubnetIds:
+    Type: CommaDelimitedList
+  RDSSecurityGroupId:
+    Type: AWS::EC2::SecurityGroup::Id
+  RedisSecurityGroupId:
+    Type: AWS::EC2::SecurityGroup::Id
+  DBName:
+    Type: String
+    Default: auditor_db
+  DBUser:
+    Type: String
+    Default: auditor
+  DBPassword:
+    Type: String
+    NoEcho: true
+    MinLength: 8
+  DBInstanceClass:
+    Type: String
+    Default: db.t3.micro
+  DBAllocatedStorage:
+    Type: Number
+    Default: 20
+  RedisNodeType:
+    Type: String
+    Default: cache.t3.micro
+
+Resources:
+  DBSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: !Sub '${ProjectName}-${EnvironmentName} DB subnet group'
+      SubnetIds: !Ref PrivateSubnetIds
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${EnvironmentName}-db-subnet-group'
+
+  PostgresDB:
+    Type: AWS::RDS::DBInstance
+    DeletionPolicy: Snapshot
+    UpdateReplacePolicy: Snapshot
+    Properties:
+      DBInstanceIdentifier: !Sub '${ProjectName}-${EnvironmentName}-postgres'
+      Engine: postgres
+      DBName: !Ref DBName
+      MasterUsername: !Ref DBUser
+      MasterUserPassword: !Ref DBPassword
+      DBInstanceClass: !Ref DBInstanceClass
+      AllocatedStorage: !Ref DBAllocatedStorage
+      StorageType: gp3
+      StorageEncrypted: true
+      MultiAZ: false
+      PubliclyAccessible: false
+      BackupRetentionPeriod: 7
+      AutoMinorVersionUpgrade: true
+      DeletionProtection: false
+      VPCSecurityGroups:
+        - !Ref RDSSecurityGroupId
+      DBSubnetGroupName: !Ref DBSubnetGroup
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${EnvironmentName}-postgres'
+
+  RedisSubnetGroup:
+    Type: AWS::ElastiCache::SubnetGroup
+    Properties:
+      Description: !Sub '${ProjectName}-${EnvironmentName} redis subnet group'
+      SubnetIds: !Ref PrivateSubnetIds
+      CacheSubnetGroupName: !Sub '${ProjectName}-${EnvironmentName}-redis-subnet-group'
+
+  RedisCluster:
+    Type: AWS::ElastiCache::CacheCluster
+    Properties:
+      ClusterName: !Sub '${ProjectName}-${EnvironmentName}-redis'
+      Engine: redis
+      CacheNodeType: !Ref RedisNodeType
+      NumCacheNodes: 1
+      VpcSecurityGroupIds:
+        - !Ref RedisSecurityGroupId
+      CacheSubnetGroupName: !Ref RedisSubnetGroup
+      PreferredAvailabilityZone: !Select [0, !GetAZs '']
+      AutoMinorVersionUpgrade: true
+
+Outputs:
+  DBEndpointAddress:
+    Value: !GetAtt PostgresDB.Endpoint.Address
+  DBEndpointPort:
+    Value: !GetAtt PostgresDB.Endpoint.Port
+  RedisPrimaryEndpoint:
+    Value: !GetAtt RedisCluster.RedisEndpoint.Address
+  RedisPort:
+    Value: !GetAtt RedisCluster.RedisEndpoint.Port

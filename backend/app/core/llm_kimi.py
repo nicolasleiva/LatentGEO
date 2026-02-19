@@ -4,6 +4,7 @@ LLM Service - Kimi 2.5 (NVIDIA NIM)
 
 from __future__ import annotations
 
+import asyncio
 import json
 from typing import Any, Dict, List
 from urllib.parse import urlparse
@@ -49,6 +50,40 @@ def _get_api_key() -> str | None:
 
 def _safe_close_message(exc: Exception) -> bool:
     return "Event loop is closed" in str(exc)
+
+
+def _classify_kimi_generation_error(exc: BaseException) -> tuple[str, str]:
+    timeout_errors = (
+        asyncio.TimeoutError,
+        TimeoutError,
+        httpx.TimeoutException,
+        httpx.ConnectTimeout,
+        httpx.ReadTimeout,
+        httpx.WriteTimeout,
+        httpx.PoolTimeout,
+    )
+    if isinstance(exc, asyncio.CancelledError) or isinstance(exc, timeout_errors):
+        return (
+            "KIMI_TIMEOUT",
+            "Kimi request timed out while waiting for provider response.",
+        )
+
+    network_errors = (
+        httpx.NetworkError,
+        httpx.TransportError,
+        httpx.ConnectError,
+        httpx.ReadError,
+    )
+    if isinstance(exc, network_errors):
+        return (
+            "KIMI_NETWORK_ERROR",
+            "Kimi request failed due to a provider network transport error.",
+        )
+
+    if isinstance(exc, ValueError) and "empty response" in str(exc).lower():
+        return ("KIMI_EMPTY_RESPONSE", "Kimi returned an empty response.")
+
+    return ("KIMI_REQUEST_FAILED", "Kimi request failed unexpectedly.")
 
 
 def _strip_markdown_fences(text: str) -> str:
@@ -221,9 +256,17 @@ async def kimi_function(
 
     except KimiUnavailableError:
         raise
-    except Exception as e:
-        logger.error(f"Error with KIMI: {e}")
-        raise KimiGenerationError(str(e)) from e
+    except asyncio.CancelledError as err:
+        error_code, stable_message = _classify_kimi_generation_error(err)
+        logger.warning(f"Error with KIMI [{error_code}]: {stable_message}")
+        raise KimiGenerationError(f"{error_code}: {stable_message}") from err
+    except Exception as err:
+        error_code, stable_message = _classify_kimi_generation_error(err)
+        logger.error(
+            f"Error with KIMI [{error_code}]: {stable_message}. "
+            f"Raw={type(err).__name__}: {err}"
+        )
+        raise KimiGenerationError(f"{error_code}: {stable_message}") from err
     finally:
         if client is not None:
             try:

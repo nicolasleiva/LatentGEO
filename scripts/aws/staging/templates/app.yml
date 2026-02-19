@@ -1,0 +1,457 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: App stack for auditor-geo staging (ECS Fargate + ALB + CloudFront)
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: auditor-geo
+  EnvironmentName:
+    Type: String
+    Default: staging
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+  PublicSubnetIds:
+    Type: CommaDelimitedList
+  PrivateSubnetIds:
+    Type: CommaDelimitedList
+  ALBSecurityGroupId:
+    Type: AWS::EC2::SecurityGroup::Id
+  ECSSecurityGroupId:
+    Type: AWS::EC2::SecurityGroup::Id
+  AppSecretArn:
+    Type: String
+  BackendImageUri:
+    Type: String
+  FrontendImageUri:
+    Type: String
+  WorkerImageUri:
+    Type: String
+  DesiredBackendCount:
+    Type: Number
+    Default: 1
+  DesiredFrontendCount:
+    Type: Number
+    Default: 1
+  DesiredWorkerCount:
+    Type: Number
+    Default: 0
+  BackendCpu:
+    Type: Number
+    Default: 512
+  BackendMemory:
+    Type: Number
+    Default: 1024
+  FrontendCpu:
+    Type: Number
+    Default: 512
+  FrontendMemory:
+    Type: Number
+    Default: 1024
+  WorkerCpu:
+    Type: Number
+    Default: 512
+  WorkerMemory:
+    Type: Number
+    Default: 1024
+
+Resources:
+  ECSCluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: !Sub '${ProjectName}-${EnvironmentName}'
+
+  BackendLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/ecs/${ProjectName}-${EnvironmentName}-backend'
+      RetentionInDays: 14
+
+  FrontendLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/ecs/${ProjectName}-${EnvironmentName}-frontend'
+      RetentionInDays: 14
+
+  WorkerLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/ecs/${ProjectName}-${EnvironmentName}-worker'
+      RetentionInDays: 14
+
+  ECSTaskExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ecs-tasks.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+      Policies:
+        - PolicyName: ReadStagingAppSecret
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - secretsmanager:GetSecretValue
+                Resource: !Ref AppSecretArn
+
+  ECSTaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ecs-tasks.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Policies:
+        - PolicyName: MinimalAppTaskAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - secretsmanager:GetSecretValue
+                Resource: !Ref AppSecretArn
+
+  BackendTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub '${ProjectName}-${EnvironmentName}-backend'
+      Cpu: !Ref BackendCpu
+      Memory: !Ref BackendMemory
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      ExecutionRoleArn: !GetAtt ECSTaskExecutionRole.Arn
+      TaskRoleArn: !GetAtt ECSTaskRole.Arn
+      ContainerDefinitions:
+        - Name: backend
+          Image: !Ref BackendImageUri
+          Essential: true
+          PortMappings:
+            - ContainerPort: 8000
+              Protocol: tcp
+          Environment:
+            - Name: ENVIRONMENT
+              Value: production
+            - Name: DEBUG
+              Value: 'False'
+            - Name: PYTHONUNBUFFERED
+              Value: '1'
+          Secrets:
+            - Name: DATABASE_URL
+              ValueFrom: !Sub '${AppSecretArn}:DATABASE_URL::'
+            - Name: REDIS_URL
+              ValueFrom: !Sub '${AppSecretArn}:REDIS_URL::'
+            - Name: CELERY_BROKER_URL
+              ValueFrom: !Sub '${AppSecretArn}:CELERY_BROKER_URL::'
+            - Name: CELERY_RESULT_BACKEND
+              ValueFrom: !Sub '${AppSecretArn}:CELERY_RESULT_BACKEND::'
+            - Name: SECRET_KEY
+              ValueFrom: !Sub '${AppSecretArn}:SECRET_KEY::'
+            - Name: ENCRYPTION_KEY
+              ValueFrom: !Sub '${AppSecretArn}:ENCRYPTION_KEY::'
+            - Name: WEBHOOK_SECRET
+              ValueFrom: !Sub '${AppSecretArn}:WEBHOOK_SECRET::'
+            - Name: BACKEND_INTERNAL_JWT_SECRET
+              ValueFrom: !Sub '${AppSecretArn}:BACKEND_INTERNAL_JWT_SECRET::'
+            - Name: CORS_ORIGINS
+              ValueFrom: !Sub '${AppSecretArn}:CORS_ORIGINS::'
+            - Name: TRUSTED_HOSTS
+              ValueFrom: !Sub '${AppSecretArn}:TRUSTED_HOSTS::'
+            - Name: FRONTEND_URL
+              ValueFrom: !Sub '${AppSecretArn}:FRONTEND_URL::'
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref BackendLogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: ecs
+
+  FrontendTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub '${ProjectName}-${EnvironmentName}-frontend'
+      Cpu: !Ref FrontendCpu
+      Memory: !Ref FrontendMemory
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      ExecutionRoleArn: !GetAtt ECSTaskExecutionRole.Arn
+      TaskRoleArn: !GetAtt ECSTaskRole.Arn
+      ContainerDefinitions:
+        - Name: frontend
+          Image: !Ref FrontendImageUri
+          Essential: true
+          PortMappings:
+            - ContainerPort: 3000
+              Protocol: tcp
+          Environment:
+            - Name: NODE_ENV
+              Value: production
+          Secrets:
+            - Name: NEXT_PUBLIC_API_URL
+              ValueFrom: !Sub '${AppSecretArn}:NEXT_PUBLIC_API_URL::'
+            - Name: NEXT_PUBLIC_BACKEND_URL
+              ValueFrom: !Sub '${AppSecretArn}:NEXT_PUBLIC_BACKEND_URL::'
+            - Name: API_URL
+              ValueFrom: !Sub '${AppSecretArn}:API_URL::'
+            - Name: APP_BASE_URL
+              ValueFrom: !Sub '${AppSecretArn}:APP_BASE_URL::'
+            - Name: AUTH0_DOMAIN
+              ValueFrom: !Sub '${AppSecretArn}:AUTH0_DOMAIN::'
+            - Name: AUTH0_CLIENT_ID
+              ValueFrom: !Sub '${AppSecretArn}:AUTH0_CLIENT_ID::'
+            - Name: AUTH0_CLIENT_SECRET
+              ValueFrom: !Sub '${AppSecretArn}:AUTH0_CLIENT_SECRET::'
+            - Name: AUTH0_SECRET
+              ValueFrom: !Sub '${AppSecretArn}:AUTH0_SECRET::'
+            - Name: BACKEND_INTERNAL_JWT_SECRET
+              ValueFrom: !Sub '${AppSecretArn}:BACKEND_INTERNAL_JWT_SECRET::'
+            - Name: SECRET_KEY
+              ValueFrom: !Sub '${AppSecretArn}:SECRET_KEY::'
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref FrontendLogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: ecs
+
+  WorkerTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub '${ProjectName}-${EnvironmentName}-worker'
+      Cpu: !Ref WorkerCpu
+      Memory: !Ref WorkerMemory
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      ExecutionRoleArn: !GetAtt ECSTaskExecutionRole.Arn
+      TaskRoleArn: !GetAtt ECSTaskRole.Arn
+      ContainerDefinitions:
+        - Name: worker
+          Image: !Ref WorkerImageUri
+          Essential: true
+          Command:
+            - celery
+            - -A
+            - app.workers.tasks
+            - worker
+            - --loglevel=info
+          Environment:
+            - Name: ENVIRONMENT
+              Value: production
+            - Name: DEBUG
+              Value: 'False'
+          Secrets:
+            - Name: DATABASE_URL
+              ValueFrom: !Sub '${AppSecretArn}:DATABASE_URL::'
+            - Name: REDIS_URL
+              ValueFrom: !Sub '${AppSecretArn}:REDIS_URL::'
+            - Name: CELERY_BROKER_URL
+              ValueFrom: !Sub '${AppSecretArn}:CELERY_BROKER_URL::'
+            - Name: CELERY_RESULT_BACKEND
+              ValueFrom: !Sub '${AppSecretArn}:CELERY_RESULT_BACKEND::'
+            - Name: SECRET_KEY
+              ValueFrom: !Sub '${AppSecretArn}:SECRET_KEY::'
+            - Name: ENCRYPTION_KEY
+              ValueFrom: !Sub '${AppSecretArn}:ENCRYPTION_KEY::'
+            - Name: WEBHOOK_SECRET
+              ValueFrom: !Sub '${AppSecretArn}:WEBHOOK_SECRET::'
+            - Name: BACKEND_INTERNAL_JWT_SECRET
+              ValueFrom: !Sub '${AppSecretArn}:BACKEND_INTERNAL_JWT_SECRET::'
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref WorkerLogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: ecs
+
+  ApplicationLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Sub '${ProjectName}-${EnvironmentName}-alb'
+      Scheme: internet-facing
+      Type: application
+      SecurityGroups:
+        - !Ref ALBSecurityGroupId
+      Subnets: !Ref PublicSubnetIds
+
+  BackendTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: !Sub '${ProjectName}-${EnvironmentName}-be-tg'
+      VpcId: !Ref VpcId
+      Port: 8000
+      Protocol: HTTP
+      TargetType: ip
+      HealthCheckPath: /health
+      HealthCheckProtocol: HTTP
+      Matcher:
+        HttpCode: 200-399
+
+  FrontendTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: !Sub '${ProjectName}-${EnvironmentName}-fe-tg'
+      VpcId: !Ref VpcId
+      Port: 3000
+      Protocol: HTTP
+      TargetType: ip
+      HealthCheckPath: /en
+      HealthCheckProtocol: HTTP
+      Matcher:
+        HttpCode: 200-399
+
+  ALBListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref ApplicationLoadBalancer
+      Port: 80
+      Protocol: HTTP
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref FrontendTargetGroup
+
+  ApiPathRule:
+    Type: AWS::ElasticLoadBalancingV2::ListenerRule
+    Properties:
+      ListenerArn: !Ref ALBListener
+      Priority: 10
+      Conditions:
+        - Field: path-pattern
+          PathPatternConfig:
+            Values:
+              - /api/*
+              - /health
+      Actions:
+        - Type: forward
+          TargetGroupArn: !Ref BackendTargetGroup
+
+  BackendService:
+    Type: AWS::ECS::Service
+    DependsOn:
+      - ALBListener
+      - ApiPathRule
+    Properties:
+      ServiceName: !Sub '${ProjectName}-${EnvironmentName}-backend-svc'
+      Cluster: !Ref ECSCluster
+      TaskDefinition: !Ref BackendTaskDefinition
+      LaunchType: FARGATE
+      DesiredCount: !Ref DesiredBackendCount
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: DISABLED
+          SecurityGroups:
+            - !Ref ECSSecurityGroupId
+          Subnets: !Ref PrivateSubnetIds
+      LoadBalancers:
+        - ContainerName: backend
+          ContainerPort: 8000
+          TargetGroupArn: !Ref BackendTargetGroup
+
+  FrontendService:
+    Type: AWS::ECS::Service
+    DependsOn:
+      - ALBListener
+    Properties:
+      ServiceName: !Sub '${ProjectName}-${EnvironmentName}-frontend-svc'
+      Cluster: !Ref ECSCluster
+      TaskDefinition: !Ref FrontendTaskDefinition
+      LaunchType: FARGATE
+      DesiredCount: !Ref DesiredFrontendCount
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: DISABLED
+          SecurityGroups:
+            - !Ref ECSSecurityGroupId
+          Subnets: !Ref PrivateSubnetIds
+      LoadBalancers:
+        - ContainerName: frontend
+          ContainerPort: 3000
+          TargetGroupArn: !Ref FrontendTargetGroup
+
+  WorkerService:
+    Type: AWS::ECS::Service
+    Properties:
+      ServiceName: !Sub '${ProjectName}-${EnvironmentName}-worker-svc'
+      Cluster: !Ref ECSCluster
+      TaskDefinition: !Ref WorkerTaskDefinition
+      LaunchType: FARGATE
+      DesiredCount: !Ref DesiredWorkerCount
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: DISABLED
+          SecurityGroups:
+            - !Ref ECSSecurityGroupId
+          Subnets: !Ref PrivateSubnetIds
+
+  CloudFrontDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        HttpVersion: http2
+        PriceClass: PriceClass_100
+        Origins:
+          - Id: alb-origin
+            DomainName: !GetAtt ApplicationLoadBalancer.DNSName
+            CustomOriginConfig:
+              HTTPPort: 80
+              HTTPSPort: 443
+              OriginProtocolPolicy: http-only
+        DefaultCacheBehavior:
+          TargetOriginId: alb-origin
+          ViewerProtocolPolicy: redirect-to-https
+          AllowedMethods:
+            - GET
+            - HEAD
+            - OPTIONS
+            - PUT
+            - PATCH
+            - POST
+            - DELETE
+          CachedMethods:
+            - GET
+            - HEAD
+          Compress: true
+          ForwardedValues:
+            QueryString: true
+            Cookies:
+              Forward: all
+            Headers:
+              - '*'
+          MinTTL: 0
+          DefaultTTL: 0
+          MaxTTL: 0
+        ViewerCertificate:
+          CloudFrontDefaultCertificate: true
+
+Outputs:
+  ClusterName:
+    Value: !Ref ECSCluster
+  BackendServiceName:
+    Value: !Sub '${ProjectName}-${EnvironmentName}-backend-svc'
+  FrontendServiceName:
+    Value: !Sub '${ProjectName}-${EnvironmentName}-frontend-svc'
+  WorkerServiceName:
+    Value: !Sub '${ProjectName}-${EnvironmentName}-worker-svc'
+  AlbDnsName:
+    Value: !GetAtt ApplicationLoadBalancer.DNSName
+  CloudFrontDomainName:
+    Value: !GetAtt CloudFrontDistribution.DomainName
+  TaskExecutionRoleArn:
+    Value: !GetAtt ECSTaskExecutionRole.Arn
+  TaskRoleArn:
+    Value: !GetAtt ECSTaskRole.Arn
