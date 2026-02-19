@@ -365,7 +365,7 @@ jobs:
   performance-tests:
     name: Performance Benchmarks
     runs-on: ubuntu-latest
-    if: (github.event_name == 'schedule' || (github.event_name == 'push' && contains(github.event.head_commit.message, '[perf]'))) && vars.PERF_TARGET_URL != '' && secrets.PERF_BEARER_TOKEN != ''
+    if: (github.event_name == 'schedule' || (github.event_name == 'push' && contains(github.event.head_commit.message, '[perf]'))) && vars.PERF_TARGET_URL != ''
     env:
       TARGET_BASE_URL: ${{ vars.PERF_TARGET_URL }}
       PERF_AUDIT_ID: ${{ vars.PERF_AUDIT_ID }}
@@ -374,22 +374,31 @@ jobs:
     - uses: actions/checkout@v4
 
     - name: Set up Python
+      if: env.PERF_BEARER_TOKEN != ''
       uses: actions/setup-python@v5
       with:
         python-version: ${{ env.PYTHON_VERSION }}
 
     - name: Install dependencies
+      if: env.PERF_BEARER_TOKEN != ''
       run: |
         cd backend
         pip install -r requirements.txt
         pip install locust
 
     - name: Run Load Tests
+      if: env.PERF_BEARER_TOKEN != ''
       run: |
         cd backend
         locust -f tests/load_test.py --host="$TARGET_BASE_URL" --headless -u 100 -r 10 --run-time 5m --html=load_test_report.html
 
+    - name: Skip benchmarks when token is missing
+      if: env.PERF_BEARER_TOKEN == ''
+      run: |
+        echo "PERF_BEARER_TOKEN is not configured; skipping performance benchmarks."
+
     - name: Upload Load Test Report
+      if: env.PERF_BEARER_TOKEN != ''
       uses: actions/upload-artifact@v4
       with:
         name: load-test-report
