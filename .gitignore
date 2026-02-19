@@ -69,6 +69,9 @@ out/
 payload.json
 .next_old/
 .open-next/
+*.tsbuildinfo
+frontend/playwright-report/
+frontend/test-results/
 
 # ===================================================================
 # Docker
