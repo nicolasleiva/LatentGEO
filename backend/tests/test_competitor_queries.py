@@ -103,9 +103,9 @@ def test_extract_competitor_urls_falls_back_to_anchor_terms_when_core_terms_are_
         "Growth Analytics",
     )
     target["category"] = "E-commerce"
-    target[
-        "subcategory"
-    ] = "Musical Instruments & Pro Audio niche High-end guitar boutique"
+    target["subcategory"] = (
+        "Musical Instruments & Pro Audio niche High-end guitar boutique"
+    )
     target["market"] = "United States"
 
     search_results = {

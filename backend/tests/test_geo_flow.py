@@ -4,6 +4,7 @@ Integration tests for GEO GitHub flow.
 These tests require real GitHub connection/repository IDs and are skipped
 unless explicitly configured via env vars.
 """
+
 import os
 from typing import List
 

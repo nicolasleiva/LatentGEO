@@ -1,6 +1,7 @@
 """
 LLM related functions - Redirigido a KIMI
 """
+
 from ..core.llm_kimi import get_llm_function as kimi_get_llm_function
 from ..core.logger import get_logger
 

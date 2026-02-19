@@ -2,6 +2,7 @@
 Production-Ready Database Configuration for Tests
 No mocks, using YOUR existing database and .env configuration
 """
+
 import os
 from pathlib import Path
 from typing import Generator, List

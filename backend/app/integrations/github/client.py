@@ -1,6 +1,7 @@
 """
 GitHub API Client - Professional wrapper around PyGithub
 """
+
 import base64
 import json
 from typing import Any, Dict, List

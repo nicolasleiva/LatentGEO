@@ -1,6 +1,7 @@
 """
 Tests para el API de Auditorías
 """
+
 from unittest.mock import MagicMock, patch
 
 from app.schemas import AuditStatus

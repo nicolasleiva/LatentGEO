@@ -3,6 +3,7 @@ Professional Next.js Code Modifier - Production Ready
 Uses Kimi AI for intelligent JSX transformations
 Handles ALL fix types: metadata, Schema.org, FAQs, heading hierarchy, etc.
 """
+
 import json
 import logging
 import re
@@ -636,9 +637,9 @@ Respond ONLY with valid JSON, no markdown:
         except Exception as e:
             logger.error(f"Error generating metadata with Kimi: {e}")
             return {
-                "title": context["headings"][0]
-                if context["headings"]
-                else "Page Title",
+                "title": (
+                    context["headings"][0] if context["headings"] else "Page Title"
+                ),
                 "description": f"Learn about {context['headings'][0] if context['headings'] else 'this topic'}",
             }
 

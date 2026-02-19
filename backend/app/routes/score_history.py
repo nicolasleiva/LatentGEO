@@ -1,6 +1,7 @@
 """
 Score History API Routes - Tracking histórico y comparativas temporales
 """
+
 from typing import List
 
 from fastapi import APIRouter, Depends, Query

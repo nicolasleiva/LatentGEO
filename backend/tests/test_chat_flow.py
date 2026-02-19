@@ -1,6 +1,7 @@
 """
 Test completo del flujo de chat
 """
+
 import os
 import time
 

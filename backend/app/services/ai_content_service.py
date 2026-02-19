@@ -2,6 +2,7 @@
 Servicio para sugerencias de contenido AI.
 Genera recomendaciones de contenido basadas en keywords y gaps.
 """
+
 import json
 import logging
 from typing import Any, Dict, List

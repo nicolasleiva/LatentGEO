@@ -1,6 +1,7 @@
 """
 API Endpoints para búsqueda AI
 """
+
 import re
 
 from app.core.database import get_db

@@ -1,6 +1,7 @@
 """
 Enhanced Astro Code Modifier - Uses Kimi AI to generate real content
 """
+
 import re
 from typing import Dict, List
 

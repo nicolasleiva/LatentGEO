@@ -865,9 +865,7 @@ class PDFService:
                 volume_value = (
                     k.volume
                     if hasattr(k, "volume")
-                    else k.search_volume
-                    if hasattr(k, "search_volume")
-                    else 0
+                    else k.search_volume if hasattr(k, "search_volume") else 0
                 ) or 0
                 difficulty_value = (
                     k.difficulty if hasattr(k, "difficulty") else 0
@@ -880,11 +878,11 @@ class PDFService:
                 )
                 keywords.append(
                     {
-                        "keyword": k.term
-                        if hasattr(k, "term")
-                        else k.keyword
-                        if hasattr(k, "keyword")
-                        else "",
+                        "keyword": (
+                            k.term
+                            if hasattr(k, "term")
+                            else k.keyword if hasattr(k, "keyword") else ""
+                        ),
                         "search_volume": volume_value,
                         "difficulty": difficulty_value,
                         "cpc": cpc_value,
@@ -896,17 +894,23 @@ class PDFService:
                 )
 
         backlinks = {
-            "total_backlinks": len(audit.backlinks)
-            if hasattr(audit, "backlinks")
-            else 0,
-            "referring_domains": len(
-                set(
-                    b.source_url.split("/")[2] if "/" in b.source_url else b.source_url
-                    for b in audit.backlinks
+            "total_backlinks": (
+                len(audit.backlinks) if hasattr(audit, "backlinks") else 0
+            ),
+            "referring_domains": (
+                len(
+                    set(
+                        (
+                            b.source_url.split("/")[2]
+                            if "/" in b.source_url
+                            else b.source_url
+                        )
+                        for b in audit.backlinks
+                    )
                 )
-            )
-            if hasattr(audit, "backlinks")
-            else 0,
+                if hasattr(audit, "backlinks")
+                else 0
+            ),
             "top_backlinks": [],
         }
         if hasattr(audit, "backlinks"):
@@ -915,18 +919,20 @@ class PDFService:
                     {
                         "source_url": b.source_url,
                         "target_url": b.target_url,
-                        "anchor_text": b.anchor_text
-                        if hasattr(b, "anchor_text")
-                        else "",
+                        "anchor_text": (
+                            b.anchor_text if hasattr(b, "anchor_text") else ""
+                        ),
                         "domain_authority": (
                             b.domain_authority if hasattr(b, "domain_authority") else 0
                         )
                         or 0,
                         "page_authority": getattr(b, "page_authority", 0) or 0,
                         "spam_score": getattr(b, "spam_score", 0) or 0,
-                        "link_type": "dofollow"
-                        if getattr(b, "is_dofollow", True)
-                        else "nofollow",
+                        "link_type": (
+                            "dofollow"
+                            if getattr(b, "is_dofollow", True)
+                            else "nofollow"
+                        ),
                     }
                 )
 
@@ -943,10 +949,10 @@ class PDFService:
                         "device": r.device if hasattr(r, "device") else "desktop",
                         "previous_position": getattr(r, "previous_position", None),
                         "change": (
-                            (r.position or 100) - getattr(r, "previous_position", 0)
-                        )
-                        if getattr(r, "previous_position", None)
-                        else 0,
+                            ((r.position or 100) - getattr(r, "previous_position", 0))
+                            if getattr(r, "previous_position", None)
+                            else 0
+                        ),
                     }
                 )
 
@@ -956,18 +962,26 @@ class PDFService:
                 llm_visibility.append(
                     {
                         "query": visibility.query,
-                        "llm_platform": visibility.llm_name
-                        if hasattr(visibility, "llm_name")
-                        else getattr(visibility, "llm_platform", ""),
-                        "mentioned": visibility.is_visible
-                        if hasattr(visibility, "is_visible")
-                        else getattr(visibility, "mentioned", False),
-                        "position": visibility.rank
-                        if hasattr(visibility, "rank")
-                        else getattr(visibility, "position", None),
-                        "context": visibility.citation_text
-                        if hasattr(visibility, "citation_text")
-                        else getattr(visibility, "context", ""),
+                        "llm_platform": (
+                            visibility.llm_name
+                            if hasattr(visibility, "llm_name")
+                            else getattr(visibility, "llm_platform", "")
+                        ),
+                        "mentioned": (
+                            visibility.is_visible
+                            if hasattr(visibility, "is_visible")
+                            else getattr(visibility, "mentioned", False)
+                        ),
+                        "position": (
+                            visibility.rank
+                            if hasattr(visibility, "rank")
+                            else getattr(visibility, "position", None)
+                        ),
+                        "context": (
+                            visibility.citation_text
+                            if hasattr(visibility, "citation_text")
+                            else getattr(visibility, "context", "")
+                        ),
                         "sentiment": getattr(visibility, "sentiment", "neutral"),
                         "competitors_mentioned": getattr(
                             visibility, "competitors_mentioned", []
@@ -981,19 +995,23 @@ class PDFService:
             for a in audit.ai_content_suggestions:
                 ai_content_suggestions.append(
                     {
-                        "title": a.topic
-                        if hasattr(a, "topic")
-                        else getattr(a, "title", ""),
+                        "title": (
+                            a.topic if hasattr(a, "topic") else getattr(a, "title", "")
+                        ),
                         "target_keyword": getattr(a, "target_keyword", ""),
-                        "content_type": a.suggestion_type
-                        if hasattr(a, "suggestion_type")
-                        else getattr(a, "content_type", ""),
+                        "content_type": (
+                            a.suggestion_type
+                            if hasattr(a, "suggestion_type")
+                            else getattr(a, "content_type", "")
+                        ),
                         "priority": a.priority if hasattr(a, "priority") else "medium",
                         "estimated_traffic": getattr(a, "estimated_traffic", 0) or 0,
                         "difficulty": getattr(a, "difficulty", 0) or 0,
-                        "outline": a.content_outline
-                        if hasattr(a, "content_outline")
-                        else getattr(a, "outline", {}),
+                        "outline": (
+                            a.content_outline
+                            if hasattr(a, "content_outline")
+                            else getattr(a, "outline", {})
+                        ),
                     }
                 )
         else:
@@ -1050,22 +1068,25 @@ class PDFService:
                 "low_difficulty_opportunities": len(
                     [k for k in keywords if k.get("difficulty", 100) < 30]
                 ),
-                "average_difficulty": sum(k.get("difficulty", 0) for k in keywords)
-                / len(keywords)
-                if keywords
-                else 0,
+                "average_difficulty": (
+                    sum(k.get("difficulty", 0) for k in keywords) / len(keywords)
+                    if keywords
+                    else 0
+                ),
             },
             # Backlinks data
             "backlinks": backlinks,
             "backlinks_summary": {
                 "total_backlinks": backlinks["total_backlinks"],
                 "referring_domains": backlinks["referring_domains"],
-                "average_domain_authority": sum(
-                    b.get("domain_authority", 0) for b in backlinks["top_backlinks"]
-                )
-                / len(backlinks["top_backlinks"])
-                if backlinks["top_backlinks"]
-                else 0,
+                "average_domain_authority": (
+                    sum(
+                        b.get("domain_authority", 0) for b in backlinks["top_backlinks"]
+                    )
+                    / len(backlinks["top_backlinks"])
+                    if backlinks["top_backlinks"]
+                    else 0
+                ),
                 "dofollow_count": len(
                     [
                         b
@@ -1091,10 +1112,12 @@ class PDFService:
                 "top_3_rankings": len(
                     [r for r in rank_tracking if r.get("position", 100) <= 3]
                 ),
-                "average_position": sum(r.get("position", 100) for r in rank_tracking)
-                / len(rank_tracking)
-                if rank_tracking
-                else 0,
+                "average_position": (
+                    sum(r.get("position", 100) for r in rank_tracking)
+                    / len(rank_tracking)
+                    if rank_tracking
+                    else 0
+                ),
                 "improved_rankings": len(
                     [r for r in rank_tracking if r.get("change", 0) < 0]
                 ),  # Negative change = improvement
@@ -1109,23 +1132,25 @@ class PDFService:
                 "mentions_count": len(
                     [entry for entry in llm_visibility if entry.get("mentioned")]
                 ),
-                "average_position": sum(
-                    entry.get("position", 100)
-                    for entry in llm_visibility
-                    if entry.get("mentioned") and entry.get("position")
-                )
-                / len(
-                    [
-                        entry
+                "average_position": (
+                    sum(
+                        entry.get("position", 100)
                         for entry in llm_visibility
                         if entry.get("mentioned") and entry.get("position")
-                    ]
-                )
-                if any(
-                    entry.get("mentioned") and entry.get("position")
-                    for entry in llm_visibility
-                )
-                else 0,
+                    )
+                    / len(
+                        [
+                            entry
+                            for entry in llm_visibility
+                            if entry.get("mentioned") and entry.get("position")
+                        ]
+                    )
+                    if any(
+                        entry.get("mentioned") and entry.get("position")
+                        for entry in llm_visibility
+                    )
+                    else 0
+                ),
                 "platforms": list(
                     set(
                         entry.get("llm_platform")
@@ -2094,13 +2119,15 @@ class PDFService:
                         ),
                         "top_backlinks": backlinks_list[:20],
                         "summary": {
-                            "average_domain_authority": round(
-                                sum(b["domain_authority"] for b in backlinks_list)
-                                / len(backlinks_list),
-                                1,
-                            )
-                            if backlinks_list
-                            else 0,
+                            "average_domain_authority": (
+                                round(
+                                    sum(b["domain_authority"] for b in backlinks_list)
+                                    / len(backlinks_list),
+                                    1,
+                                )
+                                if backlinks_list
+                                else 0
+                            ),
                             "dofollow_count": len(
                                 [b for b in backlinks_list if b["is_dofollow"]]
                             ),
@@ -2147,13 +2174,18 @@ class PDFService:
                             ),
                             "top_backlinks": backlinks_list[:20],
                             "summary": {
-                                "average_domain_authority": round(
-                                    sum(b["domain_authority"] for b in backlinks_list)
-                                    / len(backlinks_list),
-                                    1,
-                                )
-                                if backlinks_list
-                                else 0,
+                                "average_domain_authority": (
+                                    round(
+                                        sum(
+                                            b["domain_authority"]
+                                            for b in backlinks_list
+                                        )
+                                        / len(backlinks_list),
+                                        1,
+                                    )
+                                    if backlinks_list
+                                    else 0
+                                ),
                                 "dofollow_count": len(
                                     [b for b in backlinks_list if b["is_dofollow"]]
                                 ),

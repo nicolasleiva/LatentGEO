@@ -2,6 +2,7 @@
 Servicio para análisis de backlinks.
 Genera backlinks de ejemplo basados en el perfil del sitio.
 """
+
 import logging
 from typing import Any, Dict
 from urllib.parse import urlparse
@@ -64,11 +65,13 @@ class BacklinksService:
                     "high_authority_count": len(
                         [b for b in backlinks if b["domain_authority"] >= 80]
                     ),
-                    "spam_score_avg": round(
-                        sum(b["spam_score"] for b in backlinks) / total_backlinks, 1
-                    )
-                    if total_backlinks > 0
-                    else 0,
+                    "spam_score_avg": (
+                        round(
+                            sum(b["spam_score"] for b in backlinks) / total_backlinks, 1
+                        )
+                        if total_backlinks > 0
+                        else 0
+                    ),
                 },
             }
 

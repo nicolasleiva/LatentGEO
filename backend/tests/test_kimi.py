@@ -1,6 +1,7 @@
 """
 Test rápido de Kimi/NVIDIA API
 """
+
 import os
 
 import pytest
