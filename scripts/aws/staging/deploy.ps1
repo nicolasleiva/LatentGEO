@@ -114,6 +114,91 @@ function To-Bool {
     }
 }
 
+function Format-AwsArgsForLog {
+    param([string[]]$Arguments)
+
+    $redacted = New-Object System.Collections.Generic.List[string]
+    $redactNext = $false
+    foreach ($arg in $Arguments) {
+        if ($redactNext) {
+            $redacted.Add('***REDACTED***')
+            $redactNext = $false
+            continue
+        }
+
+        if ($arg -in @('--secret-string', '--password', '--cli-input-json')) {
+            $redacted.Add($arg)
+            $redactNext = $true
+            continue
+        }
+
+        if ($arg -like 'DBPassword=*') {
+            $redacted.Add('DBPassword=***REDACTED***')
+            continue
+        }
+
+        $redacted.Add($arg)
+    }
+
+    return ($redacted -join ' ')
+}
+
+function Get-SecureRandomInt {
+    param([int]$MaxExclusive)
+
+    if ($MaxExclusive -le 0) {
+        throw "MaxExclusive must be greater than zero. Value=$MaxExclusive"
+    }
+
+    if (-not (Get-Variable -Name 'Rng' -Scope Script -ErrorAction SilentlyContinue)) {
+        $script:Rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+    }
+
+    $range = [uint32]$MaxExclusive
+    $limit = [uint32]::MaxValue - ([uint32]::MaxValue % $range)
+    $bytes = New-Object byte[] 4
+    do {
+        $script:Rng.GetBytes($bytes)
+        $sample = [System.BitConverter]::ToUInt32($bytes, 0)
+    } while ($sample -ge $limit)
+
+    return [int]($sample % $range)
+}
+
+function New-StrongPassword {
+    param([int]$Length = 32)
+
+    if ($Length -lt 16) {
+        throw "Password length must be at least 16. Value=$Length"
+    }
+
+    $upper = 'ABCDEFGHJKLMNPQRSTUVWXYZ'
+    $lower = 'abcdefghijkmnopqrstuvwxyz'
+    $digits = '23456789'
+    $symbols = '!#$%^*_-+'
+    $all = "$upper$lower$digits$symbols"
+
+    $chars = New-Object System.Collections.Generic.List[char]
+    foreach ($charSet in @($upper, $lower, $digits, $symbols)) {
+        $chars.Add($charSet[(Get-SecureRandomInt -MaxExclusive $charSet.Length)])
+    }
+
+    for ($i = $chars.Count; $i -lt $Length; $i++) {
+        $chars.Add($all[(Get-SecureRandomInt -MaxExclusive $all.Length)])
+    }
+
+    for ($i = $chars.Count - 1; $i -gt 0; $i--) {
+        $j = Get-SecureRandomInt -MaxExclusive ($i + 1)
+        if ($j -ne $i) {
+            $tmp = $chars[$i]
+            $chars[$i] = $chars[$j]
+            $chars[$j] = $tmp
+        }
+    }
+
+    return (-join $chars)
+}
+
 function Invoke-Aws {
     param([string[]]$Arguments)
 
@@ -127,15 +212,16 @@ function Invoke-Aws {
     }
 
     $finalArgs = @($baseArgs + $Arguments)
+    $argsForLog = Format-AwsArgsForLog -Arguments $finalArgs
 
     if ($DryRun) {
-        Write-Host "DRYRUN aws $($finalArgs -join ' ')"
+        Write-Host "DRYRUN aws $argsForLog"
         return ''
     }
 
     $output = & $script:AwsCli @finalArgs 2>&1
     if ($LASTEXITCODE -ne 0) {
-        throw "AWS command failed: aws $($finalArgs -join ' ')`n$output"
+        throw "AWS command failed: aws $argsForLog`n$output"
     }
 
     return $output
@@ -391,7 +477,11 @@ $allowedIngressCidr = Get-ConfigValue -Map $config -Key 'ALLOWED_INGRESS_CIDR' -
 
 $dbName = Get-ConfigValue -Map $config -Key 'DB_NAME' -DefaultValue 'auditor_db'
 $dbUser = Get-ConfigValue -Map $config -Key 'DB_USER' -DefaultValue 'auditor'
-$dbPassword = Get-ConfigValue -Map $config -Key 'DB_PASSWORD' -Required
+$dbPassword = Get-ConfigValue -Map $config -Key 'DB_PASSWORD' -DefaultValue ''
+if ([string]::IsNullOrWhiteSpace($dbPassword)) {
+    $dbPassword = New-StrongPassword -Length 32
+    Write-Step 'DB_PASSWORD not set. Generated a strong password for this deployment only.'
+}
 $dbInstanceClass = Get-ConfigValue -Map $config -Key 'DB_INSTANCE_CLASS' -DefaultValue 'db.t3.micro'
 $dbAllocatedStorage = Get-ConfigValue -Map $config -Key 'DB_ALLOCATED_STORAGE' -DefaultValue '20'
 $redisNodeType = Get-ConfigValue -Map $config -Key 'REDIS_NODE_TYPE' -DefaultValue 'cache.t3.micro'
@@ -485,13 +575,19 @@ else {
     Write-Step "Source env file not found, continuing without optional values: $sourceEnvFile"
 }
 
-$databaseUrl = "postgresql+psycopg2://${dbUser}:${dbPassword}@${dbEndpoint}:5432/${dbName}"
+$dbPasswordEncoded = [System.Uri]::EscapeDataString($dbPassword)
+$databaseUrl = "postgresql+psycopg2://${dbUser}:${dbPasswordEncoded}@${dbEndpoint}:5432/${dbName}"
 $redisUrl = "redis://${redisEndpoint}:6379/0"
 
 $primarySecretKey = Get-FromMaps -Primary $dotenv -Secondary $config -Key 'SECRET_KEY' -Required
 $backendJwtSecret = Get-FromMaps -Primary $dotenv -Secondary $config -Key 'BACKEND_INTERNAL_JWT_SECRET' -DefaultValue $primarySecretKey
 
 $secretPayload = [ordered]@{
+    DB_HOST = $dbEndpoint
+    DB_PORT = '5432'
+    DB_NAME = $dbName
+    DB_USER = $dbUser
+    DB_PASSWORD = $dbPassword
     DATABASE_URL = $databaseUrl
     REDIS_URL = $redisUrl
     CELERY_BROKER_URL = $redisUrl
