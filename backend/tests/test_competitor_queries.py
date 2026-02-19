@@ -1,5 +1,5 @@
 import pytest
-from app.services.pipeline_service import PipelineService
+from app.services.pipeline_service import PipelineService, run_initial_audit
 
 
 def _make_target_audit(url: str, title: str, meta: str, h1: str):
@@ -517,20 +517,16 @@ async def test_agent1_infers_category_when_llm_returns_unknown():
     assert external_intel.get("category")
     assert external_intel.get("category") != "Unknown Category"
     assert external_intel.get("category_source") in {"onsite_inference", "agent1"}
+    assert external_intel.get("status") == "ok"
     assert isinstance(external_intel.get("queries_to_run"), list)
     assert len(external_intel.get("queries_to_run")) >= 1
-    assert external_intel.get("query_source") in {
-        "agent1",
-        "agent1_retry",
-        "agent1_recovered",
-    }
-    assert external_intel.get("primary_query")
-    assert queries[0]["query"] == external_intel.get("primary_query")
+    assert external_intel.get("query_source") in {"agent1", "agent1_retry"}
+    assert "primary_query" not in external_intel
     assert len(queries) >= 1
 
 
 @pytest.mark.asyncio
-async def test_primary_query_is_first_and_mandatory():
+async def test_agent1_does_not_inject_primary_query_when_llm_queries_are_invalid():
     service = PipelineService()
     target = _make_target_audit(
         "https://guitarras.example.com/",
@@ -557,6 +553,42 @@ async def test_primary_query_is_first_and_mandatory():
         }
         """
 
+    with pytest.raises(RuntimeError, match="AGENT1_CORE_QUERY_EMPTY"):
+        await service.analyze_external_intelligence(
+            target,
+            llm_function=fake_llm,
+            mode="full",
+            retry_policy={"max_retries": 0, "timeout_seconds": 10},
+        )
+
+
+@pytest.mark.asyncio
+async def test_agent1_preserves_llm_queries_without_primary_injection():
+    service = PipelineService()
+    target = _make_target_audit(
+        "https://soundpro.example.com/",
+        "Tienda de instrumentos",
+        "Compra guitarras online",
+        "Guitarra eléctrica y acústica",
+    )
+    target["language"] = "es"
+    target["market"] = "Argentina"
+    target["category"] = "E-commerce"
+    target["subcategory"] = "Instrumentos musicales"
+    target["content"]["nav_items"] = ["Guitarras", "Ofertas"]
+    target["content"]["text_sample"] = "Guitarras con envío nacional y stock."
+
+    async def fake_llm(*, system_prompt: str, user_prompt: str) -> str:
+        return """
+        {
+          "category": "E-commerce",
+          "queries_to_run": [
+            {"id": "q1", "query": "comprar guitarras online Argentina", "purpose": "competitor discovery"}
+          ],
+          "business_type": "RETAIL"
+        }
+        """
+
     external_intel, queries = await service.analyze_external_intelligence(
         target,
         llm_function=fake_llm,
@@ -564,10 +596,12 @@ async def test_primary_query_is_first_and_mandatory():
         retry_policy={"max_retries": 0, "timeout_seconds": 10},
     )
 
-    assert external_intel.get("primary_query")
-    assert queries
-    assert queries[0]["query"] == external_intel.get("primary_query")
-    assert "guitarra" in queries[0]["query"].lower()
+    assert external_intel.get("status") == "ok"
+    assert external_intel.get("query_source") == "agent1"
+    assert "primary_query" not in external_intel
+    assert len(queries) == 1
+    assert queries[0]["query"] == "comprar guitarras online Argentina"
+    assert external_intel.get("queries_to_run") == queries
 
 
 @pytest.mark.asyncio
@@ -618,3 +652,73 @@ async def test_agent1_error_raises_without_fallbacks():
             mode="fast",
             retry_policy={"max_retries": 0, "timeout_seconds": 1},
         )
+
+
+@pytest.mark.asyncio
+async def test_run_initial_audit_marks_external_intelligence_unavailable_on_timeout():
+    target = _make_target_audit(
+        "https://plataforma5.la/",
+        "Plataforma 5 | Coding Bootcamp",
+        "Bootcamp intensivo de programación full stack",
+        "Coding Bootcamp Full Stack",
+    )
+
+    async def failing_llm(*, system_prompt: str, user_prompt: str) -> str:
+        raise TimeoutError("llm timeout")
+
+    result = await run_initial_audit(
+        url=target["url"],
+        target_audit=target,
+        audit_id=123,
+        llm_function=failing_llm,
+        google_api_key=None,
+        google_cx_id=None,
+        crawler_service=None,
+        audit_local_service=None,
+        progress_callback=None,
+        generate_report=False,
+        enable_llm_external_intel=True,
+        external_intel_mode="fast",
+        external_intel_timeout_seconds=1.0,
+    )
+
+    external = result.get("external_intelligence", {})
+    assert external.get("status") == "unavailable"
+    assert external.get("error_code") == "AGENT1_LLM_TIMEOUT"
+    assert external.get("query_source") == "none"
+    assert external.get("queries_to_run") == []
+
+
+@pytest.mark.asyncio
+async def test_run_initial_audit_without_llm_has_no_synthetic_queries():
+    target = _make_target_audit(
+        "https://plataforma5.la/",
+        "Plataforma 5 | Coding Bootcamp",
+        "Bootcamp intensivo de programación full stack",
+        "Coding Bootcamp Full Stack",
+    )
+
+    async def fake_llm(*, system_prompt: str, user_prompt: str) -> str:
+        return "{}"
+
+    result = await run_initial_audit(
+        url=target["url"],
+        target_audit=target,
+        audit_id=124,
+        llm_function=fake_llm,
+        google_api_key=None,
+        google_cx_id=None,
+        crawler_service=None,
+        audit_local_service=None,
+        progress_callback=None,
+        generate_report=False,
+        enable_llm_external_intel=False,
+        external_intel_mode="fast",
+        external_intel_timeout_seconds=1.0,
+    )
+
+    external = result.get("external_intelligence", {})
+    assert external.get("status") == "unavailable"
+    assert external.get("error_code") == "AGENT1_DISABLED"
+    assert external.get("query_source") == "none"
+    assert external.get("queries_to_run") == []
