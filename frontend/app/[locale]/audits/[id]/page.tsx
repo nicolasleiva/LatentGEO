@@ -158,6 +158,8 @@ export default function AuditDetailPage() {
     [audit],
   );
   const languageDisplay = audit?.language || "en";
+  const externalIntelUnavailable =
+    audit?.external_intelligence?.status === "unavailable";
   const geoRoutes = useMemo(() => {
     const toolsBase = `${localePrefix}/audits/${auditId}`;
     return {
@@ -749,6 +751,15 @@ export default function AuditDetailPage() {
                 <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-700">
                   This audit failed before completion. Check backend logs for
                   the detailed error.
+                </div>
+              )}
+              {externalIntelUnavailable && (
+                <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-700 flex items-start gap-2">
+                  <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                  <span>
+                    External intelligence no disponible (timeout/proveedor). No
+                    se generaron competidores automáticos.
+                  </span>
                 </div>
               )}
             </div>

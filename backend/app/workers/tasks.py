@@ -187,7 +187,12 @@ def run_audit_task(self, audit_id: int):
                 generate_report=False,
                 enable_llm_external_intel=True,
                 external_intel_mode="full",
-                external_intel_timeout_seconds=30.0,
+                external_intel_timeout_seconds=(
+                    settings.AGENT1_LLM_TIMEOUT_SECONDS
+                    if settings.AGENT1_LLM_TIMEOUT_SECONDS
+                    and settings.AGENT1_LLM_TIMEOUT_SECONDS > 0
+                    else None
+                ),
             )
         )
 
@@ -863,8 +868,19 @@ def generate_full_report_task(audit_id: int):
                         audit.category = category_value
                     db.commit()
                 except Exception as e:
+                    external_intelligence = (
+                        PipelineService._build_unavailable_external_intelligence(
+                            target_audit if isinstance(target_audit, dict) else {},
+                            error_code="AGENT1_UNAVAILABLE",
+                            error_message=str(e),
+                            analysis_mode="full",
+                        )
+                    )
+                    audit.external_intelligence = external_intelligence
+                    db.commit()
                     logger.warning(
-                        f"External intelligence skipped during PDF generation: {e}"
+                        "External intelligence unavailable during PDF generation; "
+                        f"strict unavailable state persisted for audit_id={audit_id}"
                     )
             search_results = audit.search_results or {}
             competitor_audits = audit.competitor_audits or []

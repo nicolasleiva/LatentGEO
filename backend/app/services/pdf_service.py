@@ -218,6 +218,17 @@ class PDFService:
         data = external_intelligence if isinstance(external_intelligence, dict) else {}
         if not data:
             return {"is_complete": False, "reason": "missing"}
+        status_value = str(data.get("status", "")).strip().lower()
+        if status_value == "unavailable":
+            return {
+                "is_complete": False,
+                "reason": "unavailable",
+                "has_category": False,
+                "has_subcategory": False,
+                "has_queries": False,
+                "has_market": False,
+                "queries_count": 0,
+            }
 
         unknown_markers = {"", "unknown", "unknown category", "n/a", "none", "null"}
 
@@ -2525,8 +2536,24 @@ class PDFService:
                     external_intel_refreshed = True
                     logger.info("✓ External intelligence refreshed for PDF context")
             except Exception as external_err:
+                from .pipeline_service import get_pipeline_service
+
+                pipeline_service = get_pipeline_service()
+                fallback_target = (
+                    audit.target_audit if isinstance(audit.target_audit, dict) else {}
+                )
+                audit.external_intelligence = (
+                    pipeline_service._build_unavailable_external_intelligence(
+                        fallback_target,
+                        error_code="AGENT1_UNAVAILABLE",
+                        error_message=str(external_err),
+                        analysis_mode="full",
+                    )
+                )
+                db.commit()
                 logger.warning(
-                    f"External intelligence full refresh failed. Continuing with persisted data: {external_err}"
+                    "External intelligence full refresh failed; strict unavailable state persisted. "
+                    f"audit_id={audit_id} provider=kimi_async_openai mode=full"
                 )
         else:
             external_intel_refresh_reason = "not_needed"
