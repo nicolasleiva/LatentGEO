@@ -4,26 +4,28 @@ Complete guide for running all tests in the Auditor GEO platform.
 
 ## Quick Start
 
-### Automated Test Script
+### Fast Validation Commands
 
-**Linux/Mac:**
 ```bash
 cd auditor_geo
-chmod +x test_production_ready.sh
-./test_production_ready.sh
+pnpm --dir frontend lint
+pnpm --dir frontend run format:check
+pnpm --dir frontend run type-check
+pnpm --dir frontend test:ci
+pnpm --dir frontend build
+python -m ruff check backend/app backend/tests
+python -m black --check backend
+python -m isort --check-only backend
+python -m mypy backend/app --ignore-missing-imports --show-error-codes
+python -m bandit -r backend/app -q
+python -m pip_audit -r backend/requirements.txt
+pytest -q backend/tests
 ```
 
-**Windows:**
-```cmd
-cd auditor_geo
-test_production_ready.bat
-```
-
-This will check:
-- ✓ Services are running (backend, frontend, Redis, database)
-- ✓ Backend endpoints respond correctly
-- ✓ Frontend pages load
-- ✓ Environment files exist
+These commands validate:
+- ✓ Frontend lint/format/types/tests/build
+- ✓ Backend quality/security checks
+- ✓ Backend unit/integration suite (where enabled)
 
 ---
 

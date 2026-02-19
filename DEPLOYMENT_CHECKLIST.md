@@ -429,3 +429,36 @@
 - [AWS Security Best Practices](https://aws.amazon.com/security/best-practices/)
 - [AWS Pricing Calculator](https://calculator.aws/)
 - [AWS Architecture Center](https://aws.amazon.com/architecture/)
+
+---
+
+## Strict Release Gate (workflow_dispatch)
+
+### Secrets requeridos
+- [ ] `DATABASE_URL`
+- [ ] `REDIS_URL`
+- [ ] `GOOGLE_PAGESPEED_API_KEY`
+- [ ] `GOOGLE_API_KEY`
+- [ ] `CSE_ID`
+- [ ] `NVIDIA_API_KEY`
+- [ ] `AUTH0_DOMAIN`
+- [ ] `AUTH0_CLIENT_ID`
+- [ ] `APP_BASE_URL`
+- [ ] `AUTH0_SECRET`
+- [ ] `AUTH0_CLIENT_SECRET`
+- [ ] `PERF_AUTH_EMAIL`
+- [ ] `PERF_AUTH_PASSWORD`
+- [ ] `PERF_BEARER_TOKEN` (opcional para Locust en pipeline rápido)
+
+### Variables requeridas
+- [ ] `PROD_TEST_URL`
+- [ ] `PROD_TEST_USER_ID`
+- [ ] `PROD_TEST_KEYWORDS`
+- [ ] `GEO_TEST_CONNECTION_ID`
+- [ ] `GEO_TEST_REPO_ID`
+- [ ] `LIVE_BASE_URL`
+- [ ] `LIVE_TARGET_URL`
+- [ ] `PERF_AUDIT_ID`
+- [ ] `PERF_LOCALE` (default recomendado: `en`)
+- [ ] `PERF_SAMPLES` (default recomendado: `20`)
+- [ ] `PERF_THRESHOLD_MS` (default recomendado: `2000`)
