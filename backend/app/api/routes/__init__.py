@@ -2,6 +2,7 @@
 API Routes - Production Ready
 All routes are imported with error handling to prevent single module failures from breaking the app.
 """
+
 from app.core.logger import get_logger
 
 # Core routes (always available)

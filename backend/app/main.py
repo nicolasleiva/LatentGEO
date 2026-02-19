@@ -1,6 +1,7 @@
 """
 FastAPI Main Application - Production Ready (Level 2/3)
 """
+
 from fastapi import APIRouter, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.utils import get_openapi

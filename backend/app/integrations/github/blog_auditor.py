@@ -1,6 +1,7 @@
 """
 Blog Auditor Service - Comprehensive blog analysis for repositories
 """
+
 import re
 from datetime import datetime
 from typing import Any, Dict, List

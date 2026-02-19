@@ -1,6 +1,7 @@
 """
 Cache Service - Redis caching for performance optimization
 """
+
 import json
 from typing import Any, Optional
 

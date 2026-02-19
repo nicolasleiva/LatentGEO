@@ -1,6 +1,7 @@
 """
 Score History Service - Tracking histórico de scores
 """
+
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
@@ -143,9 +144,11 @@ class ScoreHistoryService:
                 "previous": previous,
                 "change": round(current - previous, 1),
                 "change_pct": change_pct,
-                "trend": "up"
-                if current > previous
-                else ("down" if current < previous else "stable"),
+                "trend": (
+                    "up"
+                    if current > previous
+                    else ("down" if current < previous else "stable")
+                ),
             }
 
         return {

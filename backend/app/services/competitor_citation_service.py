@@ -155,10 +155,10 @@ class CompetitorCitationService:
         results["competitors"].sort(key=lambda x: x["mentions"], reverse=True)
 
         # Analizar por qué competidores son más citados
-        results[
-            "gap_analysis"
-        ] = await CompetitorCitationService._analyze_citation_gaps(
-            results, queries, llm_function
+        results["gap_analysis"] = (
+            await CompetitorCitationService._analyze_citation_gaps(
+                results, queries, llm_function
+            )
         )
 
         # Guardar en DB

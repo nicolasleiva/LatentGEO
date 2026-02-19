@@ -3,12 +3,8 @@ node_modules
 .next_old
 .open-next
 .pnpm-store
-.cache
-.swc
-.wrangler
 coverage
 dist
 build
 playwright-report
 test-results
-pnpm-lock.yaml

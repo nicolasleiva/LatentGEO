@@ -1,6 +1,7 @@
 """
 Tests for Pydantic Validators - Security Focused
 """
+
 import pytest
 from app.schemas.validators import (
     APIKeyInput,

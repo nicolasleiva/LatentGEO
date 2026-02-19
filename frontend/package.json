@@ -11,10 +11,12 @@
     "dev": "next dev",
     "format:check": "prettier --check .",
     "lint": "eslint . --ext .js,.jsx,.ts,.tsx",
+    "perf:e2e": "playwright test e2e/geo-performance.spec.ts",
+    "perf:e2e:install": "playwright install --with-deps chromium",
     "start": "next start",
     "test": "jest --watch",
     "test:ci": "jest --ci --runInBand --silent",
-    "type-check": "tsc --noEmit"
+    "type-check": "tsc --noEmit --incremental false"
   },
   "dependencies": {
     "@auth0/nextjs-auth0": "^4.13.1",
@@ -70,6 +72,7 @@
     "@eslint/js": "^9.39.2",
     "@next/swc-linux-x64-gnu": "14.2.33",
     "@opennextjs/cloudflare": "^1.15.1",
+    "@playwright/test": "^1.58.2",
     "@testing-library/jest-dom": "^6.6.3",
     "@testing-library/react": "^16.1.0",
     "@testing-library/user-event": "^14.5.2",

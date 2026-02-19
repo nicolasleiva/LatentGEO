@@ -1,6 +1,7 @@
 """
 Configuración de Base de Datos con SQLAlchemy
 """
+
 import asyncio
 
 from sqlalchemy import create_engine, inspect, text

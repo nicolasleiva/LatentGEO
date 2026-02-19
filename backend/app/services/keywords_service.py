@@ -2,6 +2,7 @@
 Servicio para análisis de palabras clave.
 Genera keywords basadas en el contenido del sitio auditado.
 """
+
 import logging
 from typing import Any, Dict, List
 from urllib.parse import urlparse

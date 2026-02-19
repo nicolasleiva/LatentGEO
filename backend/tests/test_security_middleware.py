@@ -1,6 +1,7 @@
 """
 Tests for Security Middleware - Production Ready
 """
+
 import time
 from unittest.mock import MagicMock
 

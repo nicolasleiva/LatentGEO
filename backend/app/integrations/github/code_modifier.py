@@ -1,6 +1,7 @@
 """
 Code Modifier Service - Applies SEO/GEO fixes to source files
 """
+
 import re
 from typing import Dict, List, Optional
 
