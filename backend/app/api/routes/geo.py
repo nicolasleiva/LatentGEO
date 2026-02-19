@@ -1,6 +1,7 @@
 """
 GEO Features API Routes
 """
+
 import json
 from datetime import datetime
 from typing import Any, Dict, List, Optional
@@ -268,9 +269,9 @@ def get_recent_citations_legacy(
                         :220
                     ],
                     "llm_name": c.llm_name,
-                    "citation_type": "direct"
-                    if c.position and c.position <= 2
-                    else "indirect",
+                    "citation_type": (
+                        "direct" if c.position and c.position <= 2 else "indirect"
+                    ),
                     "confidence": 0.85 if c.is_mentioned else 0.4,
                     "created_at": c.tracked_at.isoformat(),
                 }
@@ -417,9 +418,9 @@ async def discover_queries_legacy(
                     "intent": row.get("intent", "informational"),
                     "potential_score": row.get("potential_score", 0),
                     "volume_estimate": "medium",
-                    "competition_level": "high"
-                    if row.get("potential_score", 0) > 60
-                    else "medium",
+                    "competition_level": (
+                        "high" if row.get("potential_score", 0) > 60 else "medium"
+                    ),
                     "recommendation": "Create a citation-ready page with direct answers, proof blocks, and trusted external sources.",
                 }
             )
@@ -709,9 +710,11 @@ async def generate_multiple_schemas_legacy(request: SchemaGeneratorLegacyRequest
                 {
                     "schema_type": row.get("type", "Organization"),
                     "reason": "Suggested based on detected page structure and intent.",
-                    "priority": "high"
-                    if row.get("type") in {"Product", "Article", "FAQPage"}
-                    else "medium",
+                    "priority": (
+                        "high"
+                        if row.get("type") in {"Product", "Article", "FAQPage"}
+                        else "medium"
+                    ),
                     "schema_json": json.dumps(
                         row.get("schema", {}), indent=2, ensure_ascii=False
                     ),
@@ -1209,9 +1212,11 @@ async def get_geo_dashboard(
             "competitor_benchmark": {
                 "has_data": benchmark.get("has_data", False),
                 "your_mentions": benchmark.get("your_mentions", 0),
-                "top_competitor": benchmark.get("competitors", [{}])[0].get("name")
-                if benchmark.get("competitors")
-                else None,
+                "top_competitor": (
+                    benchmark.get("competitors", [{}])[0].get("name")
+                    if benchmark.get("competitors")
+                    else None
+                ),
                 "gap_analysis": benchmark.get("gap_analysis", {}),
             },
             "commerce_campaign": {
@@ -1220,24 +1225,28 @@ async def get_geo_dashboard(
             },
             "commerce_query_analyzer": {
                 "has_data": latest_query_analysis is not None,
-                "analysis_id": latest_query_analysis.id
-                if latest_query_analysis
-                else None,
-                "query": (latest_query_analysis.payload or {}).get("query")
-                if latest_query_analysis
-                else None,
-                "market": (latest_query_analysis.payload or {}).get("market")
-                if latest_query_analysis
-                else None,
+                "analysis_id": (
+                    latest_query_analysis.id if latest_query_analysis else None
+                ),
+                "query": (
+                    (latest_query_analysis.payload or {}).get("query")
+                    if latest_query_analysis
+                    else None
+                ),
+                "market": (
+                    (latest_query_analysis.payload or {}).get("market")
+                    if latest_query_analysis
+                    else None
+                ),
             },
             "article_engine": {
                 "has_data": latest_batch is not None,
                 "batch_id": latest_batch.id if latest_batch else None,
-                "generated_count": (latest_batch.summary or {}).get(
-                    "generated_count", 0
-                )
-                if latest_batch
-                else 0,
+                "generated_count": (
+                    (latest_batch.summary or {}).get("generated_count", 0)
+                    if latest_batch
+                    else 0
+                ),
             },
         }
 

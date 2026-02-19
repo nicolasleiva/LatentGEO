@@ -1,6 +1,7 @@
 """
 GitHub OAuth Authentication Handler
 """
+
 import secrets
 from typing import Dict, Optional
 

@@ -5,6 +5,7 @@ Test completo del sistema después de los cambios:
 - Sin referencias a OPENAI_API_KEY
 - Todos los endpoints funcionando correctamente
 """
+
 import os
 import time
 from typing import Any, Dict

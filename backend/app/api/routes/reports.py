@@ -1,6 +1,7 @@
 """
 API Endpoints para PDF y Reportes
 """
+
 import json
 import os
 from pathlib import Path
@@ -209,9 +210,9 @@ async def get_markdown_report(
             content={
                 "audit_id": audit_id,
                 "markdown": audit.report_markdown,
-                "created_at": audit.completed_at.isoformat()
-                if audit.completed_at
-                else None,
+                "created_at": (
+                    audit.completed_at.isoformat() if audit.completed_at else None
+                ),
             }
         )
     except HTTPException:

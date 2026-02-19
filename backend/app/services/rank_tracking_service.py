@@ -2,6 +2,7 @@
 Servicio para rank tracking.
 Genera datos de posicionamiento basados en keywords.
 """
+
 import logging
 from typing import Any, Dict, List
 

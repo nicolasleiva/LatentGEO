@@ -1,4 +1,5 @@
 """Test directo de PageSpeed API"""
+
 import os
 
 import pytest

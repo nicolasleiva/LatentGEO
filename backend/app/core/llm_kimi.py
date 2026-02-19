@@ -1,6 +1,7 @@
 """
 LLM Service - Kimi 2.5 (NVIDIA NIM)
 """
+
 from __future__ import annotations
 
 import json
@@ -140,9 +141,11 @@ def _normalize_results(
         ).strip()
         normalized.append(
             {
-                "position": len(normalized) + 1
-                if not raw.get("position")
-                else int(raw["position"]),
+                "position": (
+                    len(normalized) + 1
+                    if not raw.get("position")
+                    else int(raw["position"])
+                ),
                 "title": title,
                 "url": url,
                 "domain": domain,

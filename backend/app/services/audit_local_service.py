@@ -87,9 +87,9 @@ class AuditLocalService:
 
         headers = HEADERS.copy()
         headers["User-Agent"] = random.choice(USER_AGENTS)  # nosec B311
-        headers[
-            "Accept"
-        ] = "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8"
+        headers["Accept"] = (
+            "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8"
+        )
         headers["Accept-Language"] = "es-ES,es;q=0.9,en;q=0.8"
 
         try:
@@ -159,9 +159,9 @@ class AuditLocalService:
                         "prev_level": last_level,
                         "current_level": level,
                         "text": AuditLocalService.snippet(h),
-                        "prev_tag_html": str(last_header_tag)
-                        if last_header_tag
-                        else "",
+                        "prev_tag_html": (
+                            str(last_header_tag) if last_header_tag else ""
+                        ),
                         "current_tag_html": str(h),
                     }
                 )
@@ -302,12 +302,14 @@ class AuditLocalService:
                 "examples": faqs[:5],
             },
             "inverted_pyramid_style": {
-                "status": "pass"
-                if any(
-                    p.text.strip().startswith(("In summary", "TL;DR", "Resumen"))
-                    for p in paragraphs[:3]
+                "status": (
+                    "pass"
+                    if any(
+                        p.text.strip().startswith(("In summary", "TL;DR", "Resumen"))
+                        for p in paragraphs[:3]
+                    )
+                    else "warn"
                 )
-                else "warn"
             },
         }
 

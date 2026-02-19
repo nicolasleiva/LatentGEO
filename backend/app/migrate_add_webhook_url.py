@@ -1,6 +1,7 @@
 """
 Script de migración para agregar columna webhook_url
 """
+
 from app.core.config import settings
 from sqlalchemy import create_engine, text
 

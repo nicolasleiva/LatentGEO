@@ -1,6 +1,7 @@
 """
 Ownership and tenant isolation helpers.
 """
+
 from app.core.auth import AuthUser
 from app.core.config import settings
 from app.models import Audit

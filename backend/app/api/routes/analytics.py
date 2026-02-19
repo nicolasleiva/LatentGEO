@@ -1,6 +1,7 @@
 """
 API Endpoints para Analytics
 """
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
@@ -45,9 +46,9 @@ async def get_audit_analytics(
             avg_schema = sum(p.schema_score for p in pages) / len(pages)
             avg_overall = sum(p.overall_score for p in pages) / len(pages)
         else:
-            avg_h1 = (
-                avg_structure
-            ) = avg_content = avg_eeat = avg_schema = avg_overall = 0
+            avg_h1 = avg_structure = avg_content = avg_eeat = avg_schema = (
+                avg_overall
+            ) = 0
 
         return {
             "audit_id": audit_id,
@@ -149,9 +150,11 @@ async def get_competitor_analysis(
             "total_competitors": len(competitors),
             "your_geo_score": round(client_geo_score, 2),
             "average_competitor_score": round(avg_competitor_score, 2),
-            "position": "Por encima del promedio"
-            if client_geo_score > avg_competitor_score
-            else "Por debajo del promedio",
+            "position": (
+                "Por encima del promedio"
+                if client_geo_score > avg_competitor_score
+                else "Por debajo del promedio"
+            ),
             "competitors": [
                 {"domain": c.domain, "url": c.url, "geo_score": c.geo_score}
                 for c in sorted(competitors, key=lambda x: x.geo_score, reverse=True)

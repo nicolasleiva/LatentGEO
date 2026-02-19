@@ -1,6 +1,7 @@
 """
 Test for fix plan generation in PDF service.
 """
+
 from unittest.mock import AsyncMock, patch
 
 import pytest
