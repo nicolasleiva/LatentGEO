@@ -326,7 +326,10 @@ export default function GEODashboardPage() {
   return (
     <div className="min-h-screen bg-background text-foreground pb-20">
       <Header />
-      <main className="max-w-7xl mx-auto px-6 py-10">
+      <main
+        data-testid="geo-dashboard-page"
+        className="max-w-7xl mx-auto px-6 py-10"
+      >
         {/* Header */}
         <div className="mb-12">
           <Link href={`/audits/${auditId}`}>
@@ -662,6 +665,7 @@ export default function GEODashboardPage() {
 
           <TabsContent
             value="commerce"
+            data-testid="geo-tab-commerce"
             className="transition-all duration-300 ease-out data-[state=inactive]:opacity-0 data-[state=active]:opacity-100"
           >
             <div className="glass-card p-8">
@@ -688,6 +692,7 @@ export default function GEODashboardPage() {
 
           <TabsContent
             value="article-engine"
+            data-testid="geo-tab-article-engine"
             className="transition-all duration-300 ease-out data-[state=inactive]:opacity-0 data-[state=active]:opacity-100"
           >
             <div className="glass-card p-8">
