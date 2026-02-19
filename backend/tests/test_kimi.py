@@ -1,23 +1,33 @@
 """
 Test rápido de Kimi/NVIDIA API
 """
+import os
+
 import pytest
 from app.core.config import settings
 from openai import AsyncOpenAI
 
+STRICT_TEST_MODE = os.getenv("STRICT_TEST_MODE") == "1"
 
+
+@pytest.mark.integration
+@pytest.mark.live
 @pytest.mark.asyncio
 async def test_kimi_integration():
     # 1. Verificar configuración
     api_key = settings.NVIDIA_API_KEY or settings.NV_API_KEY
 
     if not api_key:
+        if STRICT_TEST_MODE:
+            pytest.fail("No NVIDIA API key configured in strict mode.")
         pytest.skip("No NVIDIA API key configured — skipping KIMI integration test")
 
     # 2. Crear cliente
     try:
         client = AsyncOpenAI(api_key=api_key, base_url=settings.NV_BASE_URL)
     except Exception as e:
+        if STRICT_TEST_MODE:
+            pytest.fail(f"Could not construct KIMI client in strict mode: {e}")
         pytest.skip(f"Could not construct KIMI client: {e}")
 
     # 3. Hacer prueba simple
@@ -49,6 +59,8 @@ async def test_kimi_integration():
             max_tokens=1000,
         )
     except Exception as e:
+        if STRICT_TEST_MODE:
+            pytest.fail(f"KIMI API error or timeout in strict mode: {e}")
         pytest.skip(f"KIMI API error or timeout: {e}")
 
     message = response.choices[0].message

@@ -13,10 +13,22 @@ from app.services.keyword_service import KeywordService
 from app.services.pagespeed_service import PageSpeedService
 from app.services.rank_tracker_service import RankTrackerService
 
-pytestmark = pytest.mark.skipif(
-    os.getenv("RUN_INTEGRATION_TESTS") != "1",
-    reason="Set RUN_INTEGRATION_TESTS=1 to run real GEO service integration tests.",
-)
+STRICT_TEST_MODE = os.getenv("STRICT_TEST_MODE") == "1"
+
+pytestmark = [
+    pytest.mark.integration,
+    pytest.mark.live,
+    pytest.mark.skipif(
+        os.getenv("RUN_INTEGRATION_TESTS") != "1",
+        reason="Set RUN_INTEGRATION_TESTS=1 to run real GEO service integration tests.",
+    ),
+]
+
+
+def _skip_or_fail(message: str) -> None:
+    if STRICT_TEST_MODE:
+        pytest.fail(message)
+    pytest.skip(message)
 
 
 class TestPageSpeedServiceReal:
@@ -36,7 +48,7 @@ class TestPageSpeedServiceReal:
     async def test_analyze_url_returns_real_data(self):
         """Test que analyze_url retorna datos reales de la API"""
         if not settings.GOOGLE_PAGESPEED_API_KEY:
-            pytest.skip("GOOGLE_PAGESPEED_API_KEY no configurada")
+            _skip_or_fail("GOOGLE_PAGESPEED_API_KEY no configurada")
 
         url = "https://www.google.com"
         result = await PageSpeedService.analyze_url(
@@ -65,7 +77,7 @@ class TestPageSpeedServiceReal:
     async def test_analyze_both_strategies(self):
         """Test que analyze_both_strategies retorna mobile y desktop"""
         if not settings.GOOGLE_PAGESPEED_API_KEY:
-            pytest.skip("GOOGLE_PAGESPEED_API_KEY no configurada")
+            _skip_or_fail("GOOGLE_PAGESPEED_API_KEY no configurada")
 
         url = "https://www.google.com"
         result = await PageSpeedService.analyze_both_strategies(
@@ -104,7 +116,7 @@ class TestKeywordServiceReal:
             if not service.client:
                 result = await service.research_keywords(1, "example.com")
                 assert result == [], "Sin API key debe retornar lista vacía"
-                pytest.skip("NVIDIA_API_KEY no configurada")
+                _skip_or_fail("NVIDIA_API_KEY no configurada")
 
             # Test con API real
             result = await service.research_keywords(
@@ -141,7 +153,7 @@ class TestBacklinkServiceReal:
     async def test_analyze_backlinks_returns_data(self):
         """Test que analyze_backlinks retorna datos reales"""
         if not settings.GOOGLE_API_KEY or not settings.CSE_ID:
-            pytest.skip("GOOGLE_API_KEY o CSE_ID no configurados")
+            _skip_or_fail("GOOGLE_API_KEY o CSE_ID no configurados")
 
         db = SessionLocal()
         try:
@@ -169,7 +181,7 @@ class TestRankTrackerServiceReal:
     async def test_track_rankings_returns_data(self):
         """Test que track_rankings retorna datos reales"""
         if not settings.GOOGLE_API_KEY or not settings.CSE_ID:
-            pytest.skip("GOOGLE_API_KEY o CSE_ID no configurados")
+            _skip_or_fail("GOOGLE_API_KEY o CSE_ID no configurados")
 
         db = SessionLocal()
         try:
@@ -199,7 +211,7 @@ class TestDataQuality:
     async def test_no_mock_data_in_pagespeed(self):
         """Verifica que PageSpeed no retorna datos mock"""
         if not settings.GOOGLE_PAGESPEED_API_KEY:
-            pytest.skip("GOOGLE_PAGESPEED_API_KEY no configurada")
+            _skip_or_fail("GOOGLE_PAGESPEED_API_KEY no configurada")
 
         url = "https://www.google.com"
         result = await PageSpeedService.analyze_url(
