@@ -4,6 +4,7 @@ GEO Blog Auditor - Audits blogs for LLM optimization (GEO)
 Extends BlogAuditorService with additional checks specific to
 Generative Engine Optimization (being cited by ChatGPT, Gemini, Claude).
 """
+
 from typing import Any, Dict, List
 
 from ...core.logger import get_logger

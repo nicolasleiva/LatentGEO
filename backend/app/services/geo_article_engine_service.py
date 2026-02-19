@@ -1480,12 +1480,12 @@ class GeoArticleEngineService:
         )
         serp_results: List[Dict[str, Any]] = []
         external_from_serp: List[Dict[str, Any]] = []
-        top_competitors: List[
-            Dict[str, Any]
-        ] = GeoArticleEngineService._extract_competitors_from_audit(
-            audit=audit,
-            audit_domain=audit_domain,
-            vertical_hint=vertical_hint,
+        top_competitors: List[Dict[str, Any]] = (
+            GeoArticleEngineService._extract_competitors_from_audit(
+                audit=audit,
+                audit_domain=audit_domain,
+                vertical_hint=vertical_hint,
+            )
         )
         inferred_intent = ""
         secondary_keywords: List[str] = []
@@ -1652,9 +1652,9 @@ class GeoArticleEngineService:
                 "primary_keyword": primary_keyword,
                 "secondary_keywords": secondary_keywords,
                 "search_intent": search_intent,
-                "strategy_mode": "audit_only"
-                if audit_only
-                else "audit_plus_kimi_search_expansion",
+                "strategy_mode": (
+                    "audit_only" if audit_only else "audit_plus_kimi_search_expansion"
+                ),
             },
             "market": market,
             "language": language,
@@ -1665,9 +1665,11 @@ class GeoArticleEngineService:
             "audit_signals": audit_signals,
             "serp_results": serp_results[: GeoArticleEngineService.DEFAULT_TOP_K],
             "evidence": [] if audit_only else search_payload.get("evidence", []),
-            "provider": "audit-only"
-            if audit_only
-            else search_payload.get("provider", "kimi-2.5-search"),
+            "provider": (
+                "audit-only"
+                if audit_only
+                else search_payload.get("provider", "kimi-2.5-search")
+            ),
             "ai_content_strategy": ai_strategy_item or {},
             "audited_context": audited_context,
             "topic_terms": topic_terms,
@@ -1786,9 +1788,11 @@ class GeoArticleEngineService:
                 "qa_requirements": {
                     "required": require_qa,
                     "min_pairs": min_qa_pairs,
-                    "section_heading": "Preguntas frecuentes"
-                    if language.lower().startswith("es")
-                    else "FAQ",
+                    "section_heading": (
+                        "Preguntas frecuentes"
+                        if language.lower().startswith("es")
+                        else "FAQ"
+                    ),
                     "format": "Use question headings or Q:/A: pairs.",
                 },
                 "citation_format": "[Source: https://...]",
@@ -1907,9 +1911,11 @@ class GeoArticleEngineService:
                 qa_requirements={
                     "required": require_qa,
                     "min_pairs": min_qa_pairs,
-                    "section_heading": "Preguntas frecuentes"
-                    if language.lower().startswith("es")
-                    else "FAQ",
+                    "section_heading": (
+                        "Preguntas frecuentes"
+                        if language.lower().startswith("es")
+                        else "FAQ"
+                    ),
                 },
             )
             if repaired_markdown:
@@ -2127,9 +2133,11 @@ class GeoArticleEngineService:
                 "tone": tone,
                 "include_schema": include_schema,
                 "market": selected_market,
-                "keyword_strategy_mode": "audit_only"
-                if GeoArticleEngineService._audit_only_mode()
-                else "audit_plus_kimi_search_expansion",
+                "keyword_strategy_mode": (
+                    "audit_only"
+                    if GeoArticleEngineService._audit_only_mode()
+                    else "audit_plus_kimi_search_expansion"
+                ),
                 "started_at": datetime.now(timezone.utc).isoformat(),
             },
             articles=[],

@@ -1,6 +1,7 @@
 """
 Configuración de Pytest y fixtures
 """
+
 import os
 import sys
 from typing import Generator

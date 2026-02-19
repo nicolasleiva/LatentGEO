@@ -1,6 +1,7 @@
 """
 Rate Limiting Middleware - Protección contra abuse
 """
+
 import time
 from collections import defaultdict
 from typing import Dict, Tuple

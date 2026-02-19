@@ -2,6 +2,7 @@
 WebSocket Router for Real-time Audit Progress.
 Level 2 Professional Feature.
 """
+
 import asyncio
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect

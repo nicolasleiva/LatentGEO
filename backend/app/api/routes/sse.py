@@ -2,6 +2,7 @@
 Server-Sent Events (SSE) endpoint for real-time audit progress updates.
 Replaces polling to reduce server load and improve responsiveness.
 """
+
 import asyncio
 import json
 from typing import AsyncGenerator
