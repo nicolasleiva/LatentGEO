@@ -488,15 +488,18 @@ else {
 $databaseUrl = "postgresql+psycopg2://${dbUser}:${dbPassword}@${dbEndpoint}:5432/${dbName}"
 $redisUrl = "redis://${redisEndpoint}:6379/0"
 
+$primarySecretKey = Get-FromMaps -Primary $dotenv -Secondary $config -Key 'SECRET_KEY' -Required
+$backendJwtSecret = Get-FromMaps -Primary $dotenv -Secondary $config -Key 'BACKEND_INTERNAL_JWT_SECRET' -DefaultValue $primarySecretKey
+
 $secretPayload = [ordered]@{
     DATABASE_URL = $databaseUrl
     REDIS_URL = $redisUrl
     CELERY_BROKER_URL = $redisUrl
     CELERY_RESULT_BACKEND = $redisUrl
-    SECRET_KEY = Get-FromMaps -Primary $dotenv -Secondary $config -Key 'SECRET_KEY' -Required
+    SECRET_KEY = $primarySecretKey
     ENCRYPTION_KEY = Get-FromMaps -Primary $dotenv -Secondary $config -Key 'ENCRYPTION_KEY' -Required
     WEBHOOK_SECRET = Get-FromMaps -Primary $dotenv -Secondary $config -Key 'WEBHOOK_SECRET' -Required
-    BACKEND_INTERNAL_JWT_SECRET = Get-FromMaps -Primary $dotenv -Secondary $config -Key 'BACKEND_INTERNAL_JWT_SECRET' -Required
+    BACKEND_INTERNAL_JWT_SECRET = $backendJwtSecret
     AUTH0_DOMAIN = Get-FromMaps -Primary $dotenv -Secondary $config -Key 'AUTH0_DOMAIN' -Required
     AUTH0_CLIENT_ID = Get-FromMaps -Primary $dotenv -Secondary $config -Key 'AUTH0_CLIENT_ID' -Required
     AUTH0_CLIENT_SECRET = Get-FromMaps -Primary $dotenv -Secondary $config -Key 'AUTH0_CLIENT_SECRET' -Required
