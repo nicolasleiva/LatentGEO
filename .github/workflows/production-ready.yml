@@ -121,6 +121,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
 
     - name: Run Trivy vulnerability scanner
       uses: aquasecurity/trivy-action@master
@@ -130,19 +132,11 @@ jobs:
         format: 'sarif'
         output: 'trivy-results.sarif'
 
-    - name: Upload Trivy scan results
-      uses: github/codeql-action/upload-sarif@v3
-      if: always()
-      continue-on-error: true
-      with:
-        sarif_file: 'trivy-results.sarif'
-
     - name: Secret detection
+      if: github.event_name == 'pull_request' || github.event_name == 'push'
       uses: trufflesecurity/trufflehog@main
       with:
         path: ./
-        base: ${{ github.event.repository.default_branch }}
-        head: HEAD
         extra_args: --debug --only-verified
 
   # JOB 3: Backend Testing
@@ -371,7 +365,7 @@ jobs:
   performance-tests:
     name: Performance Benchmarks
     runs-on: ubuntu-latest
-    if: (github.event_name == 'schedule' || contains(github.event.head_commit.message, '[perf]')) && vars.PERF_TARGET_URL != ''
+    if: (github.event_name == 'schedule' || (github.event_name == 'push' && contains(github.event.head_commit.message, '[perf]'))) && vars.PERF_TARGET_URL != '' && secrets.PERF_BEARER_TOKEN != ''
     env:
       TARGET_BASE_URL: ${{ vars.PERF_TARGET_URL }}
       PERF_AUDIT_ID: ${{ vars.PERF_AUDIT_ID }}
@@ -396,7 +390,7 @@ jobs:
         locust -f tests/load_test.py --host="$TARGET_BASE_URL" --headless -u 100 -r 10 --run-time 5m --html=load_test_report.html
 
     - name: Upload Load Test Report
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: load-test-report
         path: backend/load_test_report.html
