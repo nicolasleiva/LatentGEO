@@ -40,7 +40,7 @@ jobs:
       run: |
         cd backend
         python -m pip install --upgrade pip
-        pip install ruff black mypy isort
+        pip install ruff black mypy isort bandit pip-audit
         pip install -r requirements.txt
 
     - name: Run Ruff (Python Linting)
@@ -63,12 +63,27 @@ jobs:
         cd backend
         isort --check-only --diff .
 
+    - name: Run Bandit (Security Static Analysis)
+      run: |
+        cd backend
+        bandit -r app -q
+
+    - name: Run pip-audit (Dependency Vulnerabilities)
+      run: |
+        cd backend
+        pip_audit -r requirements.txt
+
     - name: Set up Node.js
       uses: actions/setup-node@v4
       with:
         node-version: ${{ env.NODE_VERSION }}
         cache: 'pnpm'
         cache-dependency-path: frontend/pnpm-lock.yaml
+
+    - name: Set up pnpm
+      uses: pnpm/action-setup@v4
+      with:
+        version: 10.6.2
 
     - name: Install frontend dependencies
       run: |
@@ -89,6 +104,11 @@ jobs:
       run: |
         cd frontend
         pnpm type-check
+
+    - name: Audit frontend dependencies (high/critical)
+      run: |
+        cd frontend
+        pnpm audit --prod --audit-level=high
 
   # JOB 2: Security Scanning
   security-scan:
@@ -206,6 +226,11 @@ jobs:
         node-version: ${{ env.NODE_VERSION }}
         cache: 'pnpm'
         cache-dependency-path: frontend/pnpm-lock.yaml
+
+    - name: Set up pnpm
+      uses: pnpm/action-setup@v4
+      with:
+        version: 10.6.2
 
     - name: Install dependencies
       run: |
@@ -340,7 +365,11 @@ jobs:
   performance-tests:
     name: Performance Benchmarks
     runs-on: ubuntu-latest
-    if: github.event_name == 'schedule' || contains(github.event.head_commit.message, '[perf]')
+    if: (github.event_name == 'schedule' || contains(github.event.head_commit.message, '[perf]')) && vars.PERF_TARGET_URL != ''
+    env:
+      TARGET_BASE_URL: ${{ vars.PERF_TARGET_URL }}
+      PERF_AUDIT_ID: ${{ vars.PERF_AUDIT_ID }}
+      PERF_BEARER_TOKEN: ${{ secrets.PERF_BEARER_TOKEN }}
     steps:
     - uses: actions/checkout@v4
 
@@ -358,7 +387,7 @@ jobs:
     - name: Run Load Tests
       run: |
         cd backend
-        locust -f tests/load_test.py --headless -u 100 -r 10 --run-time 5m --html=load_test_report.html
+        locust -f tests/load_test.py --host="$TARGET_BASE_URL" --headless -u 100 -r 10 --run-time 5m --html=load_test_report.html
 
     - name: Upload Load Test Report
       uses: actions/upload-artifact@v3
