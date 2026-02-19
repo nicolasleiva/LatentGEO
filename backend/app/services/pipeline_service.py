@@ -3633,6 +3633,144 @@ class PipelineService:
         return category or "Unknown Category", subcategory, "onsite_inference"
 
     @staticmethod
+    def _resolve_external_intel_error(exc: Exception) -> Tuple[str, str]:
+        if exc is None:
+            return (
+                "AGENT1_UNAVAILABLE",
+                "Agent 1 external intelligence is unavailable.",
+            )
+
+        chain: List[BaseException] = []
+        visited_ids = set()
+        cursor: Optional[BaseException] = exc
+        while cursor is not None and id(cursor) not in visited_ids:
+            chain.append(cursor)
+            visited_ids.add(id(cursor))
+            cursor = (
+                cursor.__cause__ if cursor.__cause__ is not None else cursor.__context__
+            )
+
+        for item in chain:
+            if isinstance(item, (asyncio.TimeoutError, TimeoutError)):
+                return (
+                    "AGENT1_LLM_TIMEOUT",
+                    "Agent 1 timed out while waiting for provider response.",
+                )
+
+            raw = str(item or "").strip()
+            lowered = raw.lower()
+            if "agent1_core_query_empty" in lowered:
+                return ("AGENT1_CORE_QUERY_EMPTY", raw)
+            if "kimi_timeout" in lowered or "timeout" in lowered:
+                return (
+                    "AGENT1_LLM_TIMEOUT",
+                    "Agent 1 timed out while waiting for provider response.",
+                )
+            if "cancelled" in lowered or "canceled" in lowered:
+                return (
+                    "AGENT1_LLM_TIMEOUT",
+                    "Agent 1 request was cancelled before completing.",
+                )
+            if any(
+                token in lowered
+                for token in [
+                    "network",
+                    "connection",
+                    "connect",
+                    "transport",
+                    "dns",
+                    "socket",
+                    "kimi_network_error",
+                ]
+            ):
+                return (
+                    "AGENT1_LLM_NETWORK",
+                    "Agent 1 failed due to provider network transport issues.",
+                )
+
+        message = str(exc).strip() or "Agent 1 external intelligence is unavailable."
+        return ("AGENT1_UNAVAILABLE", message)
+
+    @staticmethod
+    def _build_unavailable_external_intelligence(
+        target_audit: Dict[str, Any],
+        *,
+        error_code: str,
+        error_message: str,
+        analysis_mode: str,
+    ) -> Dict[str, Any]:
+        normalized_target = target_audit if isinstance(target_audit, dict) else {}
+        normalized_mode = str(analysis_mode or "full").strip().lower()
+        if normalized_mode not in {"fast", "full"}:
+            normalized_mode = "full"
+
+        category_value = PipelineService._sanitize_context_label(
+            normalized_target.get("category"), fallback="Unknown Category"
+        )
+        subcategory_value = PipelineService._sanitize_context_label(
+            normalized_target.get("subcategory"), fallback=None
+        )
+        category_value, subcategory_value = PipelineService._normalize_category_fields(
+            category_value, subcategory_value
+        )
+        category_value = PipelineService._sanitize_context_label(
+            category_value, fallback="Unknown Category"
+        )
+        subcategory_value = PipelineService._sanitize_context_label(
+            subcategory_value, fallback=None
+        )
+
+        category_source = "unresolved"
+        if PipelineService._is_unknown_category(category_value):
+            (
+                inferred_category,
+                inferred_subcategory,
+                inference_source,
+            ) = PipelineService._infer_category_from_site_signals(normalized_target)
+            if inferred_category and not PipelineService._is_unknown_category(
+                inferred_category
+            ):
+                category_value = inferred_category
+                if not subcategory_value and inferred_subcategory:
+                    subcategory_value = inferred_subcategory
+                category_source = inference_source
+        else:
+            category_source = "onsite_inference"
+
+        market_value = PipelineService._normalize_market_value(
+            normalized_target.get("market")
+        ) or PipelineService._infer_market_from_url(
+            str(normalized_target.get("url", "")).strip()
+        )
+
+        sanitized_error_code = str(error_code or "AGENT1_UNAVAILABLE").strip()
+        sanitized_error_message = (
+            str(error_message or "Agent 1 external intelligence is unavailable.")
+            .strip()
+            .replace("\n", " ")
+        )
+        if len(sanitized_error_message) > 300:
+            sanitized_error_message = sanitized_error_message[:300].rstrip()
+
+        return {
+            "status": "unavailable",
+            "error_code": sanitized_error_code,
+            "error_message": sanitized_error_message,
+            "is_ymyl": False,
+            "category": category_value,
+            "subcategory": subcategory_value,
+            "business_type": "OTHER",
+            "business_model": {},
+            "market_maturity": "unknown",
+            "strategic_insights": {},
+            "market": market_value,
+            "category_source": category_source,
+            "analysis_mode": normalized_mode,
+            "queries_to_run": [],
+            "query_source": "none",
+        }
+
+    @staticmethod
     def _generic_business_terms() -> set:
         return {
             "digital",
@@ -5661,15 +5799,6 @@ class PipelineService:
                 language_hint = "en"
 
             core_profile = self._build_core_business_profile(target_audit, max_terms=6)
-            primary_query = self._build_primary_business_query(
-                core_profile=core_profile,
-                market_hint=market_hint,
-                language=language_hint,
-            )
-            if not primary_query:
-                raise RuntimeError(
-                    "AGENT1_CORE_QUERY_EMPTY: Could not derive primary business query from audited signals."
-                )
 
             if llm_function is None:
                 logger.error("LLM function is None in analyze_external_intelligence")
@@ -5925,27 +6054,11 @@ class PipelineService:
                     core_profile=core_profile,
                 )
 
-            if not search_queries:
-                recovered_queries = self._recover_queries_from_core_profile(
-                    core_profile=core_profile,
-                    market_hint=market_hint,
-                    language=language_hint,
-                    max_queries=max_queries,
-                )
-                if recovered_queries:
-                    search_queries = recovered_queries
-                    query_source = "agent1_recovered"
-                    logger.info(
-                        "[AGENTE 1] Se regeneraron queries desde core business real."
-                    )
-
-            # Filtrado final: sin queries outlier-only y siempre con query primaria obligatoria en posición 1
+            # Filtrado final: conservar solo queries emitidas por Agent 1 y alineadas al core profile.
             final_queries: List[Dict[str, str]] = []
             seen_queries = set()
 
-            def _append_query(
-                query_text: str, purpose: str, preferred_id: str = ""
-            ) -> None:
+            def _append_query(query_text: str, purpose: str, query_id: str) -> None:
                 normalized = re.sub(r"\s+", " ", str(query_text or "").strip())
                 if not normalized:
                     return
@@ -5955,17 +6068,11 @@ class PipelineService:
                 seen_queries.add(key)
                 final_queries.append(
                     {
-                        "id": preferred_id or f"q{len(final_queries) + 1}",
+                        "id": query_id or f"q{len(final_queries) + 1}",
                         "query": normalized,
                         "purpose": purpose or "Competitor discovery",
                     }
                 )
-
-            _append_query(
-                primary_query,
-                "Primary core business query",
-                preferred_id="primary_query",
-            )
 
             for item in search_queries:
                 if not isinstance(item, dict):
@@ -5980,7 +6087,7 @@ class PipelineService:
                 _append_query(
                     candidate_query,
                     str(item.get("purpose", "")).strip() or "Competitor discovery",
-                    preferred_id=str(item.get("id", "")).strip(),
+                    query_id=str(item.get("id", "")).strip(),
                 )
                 if len(final_queries) >= max_queries:
                     break
@@ -6001,6 +6108,8 @@ class PipelineService:
                     logger.info(
                         f"[AGENTE 1] Categoría inferida desde señales onsite: {category_value}"
                     )
+            if self._is_unknown_category(category_value):
+                category_source = "unresolved"
 
             # Coerciones defensivas
             is_ymyl_raw = payload.get("is_ymyl", payload.get("ymyl_status", False))
@@ -6046,41 +6155,8 @@ class PipelineService:
                 "market": market_value,
                 "category_source": category_source,
                 "analysis_mode": normalized_mode,
+                "status": "ok",
             }
-
-            market_for_queries = market_hint or market_value
-            if market_for_queries and search_queries:
-                market_aliases = {
-                    token
-                    for token in re.findall(
-                        r"[a-z0-9]+", str(market_for_queries).lower()
-                    )
-                    if token
-                }
-                market_lower = str(market_for_queries).strip().lower()
-                if market_lower == "united states":
-                    market_aliases.update({"usa", "us"})
-                elif market_lower == "latin america":
-                    market_aliases.update({"latam"})
-
-                def _contains_market_marker(query_text: str) -> bool:
-                    query_lower = str(query_text or "").lower()
-                    if market_lower and market_lower in query_lower:
-                        return True
-                    for alias in market_aliases:
-                        if len(alias) <= 2:
-                            if re.search(rf"\b{re.escape(alias)}\b", query_lower):
-                                return True
-                            continue
-                        if alias in query_lower:
-                            return True
-                    return False
-
-                for q in search_queries:
-                    query_text = q.get("query", "")
-                    if not _contains_market_marker(query_text):
-                        q["query"] = f"{query_text} {market_for_queries}".strip()
-                search_queries = search_queries[:max_queries]
 
             normalized_queries: List[Dict[str, str]] = []
             for idx, item in enumerate(search_queries, start=1):
@@ -6120,7 +6196,6 @@ class PipelineService:
 
             external_intelligence["queries_to_run"] = search_queries
             external_intelligence["query_source"] = query_source
-            external_intelligence["primary_query"] = primary_query
             if settings.AGENT1_QUERY_DIAGNOSTICS:
                 external_intelligence["query_diagnostics"] = {
                     "core_terms_used": core_profile.get("core_terms", []),
@@ -6137,8 +6212,7 @@ class PipelineService:
 
             return external_intelligence, search_queries
 
-        except Exception as e:
-            logger.exception(f"Error en Agente 1: {e}")
+        except Exception:
             raise
 
     @staticmethod
@@ -7891,11 +7965,32 @@ async def run_initial_audit(
                 retry_policy=retry_policy,
             )
         except Exception as e:
-            logger.error(
-                f"run_initial_audit: external intelligence failed: {e}", exc_info=True
+            error_code, error_message = service._resolve_external_intel_error(e)
+            external_intelligence = service._build_unavailable_external_intelligence(
+                normalized_target,
+                error_code=error_code,
+                error_message=error_message,
+                analysis_mode=external_intel_mode,
+            )
+            search_queries = []
+            timeout_value = (
+                f"{external_intel_timeout_seconds}s"
+                if external_intel_timeout_seconds
+                else "configured-default"
+            )
+            logger.warning(
+                "External intelligence unavailable; continuing with partial completion. "
+                f"audit_id={audit_id} error_code={error_code} "
+                f"timeout={timeout_value} provider=kimi_async_openai mode={external_intel_mode}"
             )
     else:
-        search_queries = service._generate_fallback_queries(normalized_target)
+        external_intelligence = service._build_unavailable_external_intelligence(
+            normalized_target,
+            error_code="AGENT1_DISABLED",
+            error_message="External intelligence disabled for this audit run.",
+            analysis_mode=external_intel_mode,
+        )
+        search_queries = []
 
     # 2) Google Search results
     search_results: Dict[str, Any] = {}

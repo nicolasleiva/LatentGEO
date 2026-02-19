@@ -37,7 +37,7 @@ class Settings(BaseSettings):
     NV_API_KEY_ANALYSIS: Optional[str] = None  # Puede ser diferente
     NV_MAX_TOKENS: int = 16384
     AGENT1_LLM_TIMEOUT_SECONDS: float = float(
-        os.getenv("AGENT1_LLM_TIMEOUT_SECONDS", "60")
+        os.getenv("AGENT1_LLM_TIMEOUT_SECONDS", "120")
     )
     AGENT1_RELAXED_QUERY_FILTER: bool = (
         os.getenv("AGENT1_RELAXED_QUERY_FILTER", "False").lower() == "true"
