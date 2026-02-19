@@ -10,6 +10,7 @@ on:
     - cron: '0 2 * * *'
 
 permissions:
+  actions: read
   contents: read
   security-events: write
 
@@ -244,7 +245,7 @@ jobs:
     - name: Run unit tests
       run: |
         cd frontend
-        pnpm test:ci -- --coverage
+        pnpm test:ci
 
     - name: Build frontend
       run: |
