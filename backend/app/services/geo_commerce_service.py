@@ -627,15 +627,21 @@ class GeoCommerceService:
             if not parsed:
                 return {}
             return {
-                "why_not_first": parsed.get("why_not_first")
-                if isinstance(parsed.get("why_not_first"), list)
-                else [],
-                "disadvantages_vs_top1": parsed.get("disadvantages_vs_top1")
-                if isinstance(parsed.get("disadvantages_vs_top1"), list)
-                else [],
-                "action_plan": parsed.get("action_plan")
-                if isinstance(parsed.get("action_plan"), list)
-                else [],
+                "why_not_first": (
+                    parsed.get("why_not_first")
+                    if isinstance(parsed.get("why_not_first"), list)
+                    else []
+                ),
+                "disadvantages_vs_top1": (
+                    parsed.get("disadvantages_vs_top1")
+                    if isinstance(parsed.get("disadvantages_vs_top1"), list)
+                    else []
+                ),
+                "action_plan": (
+                    parsed.get("action_plan")
+                    if isinstance(parsed.get("action_plan"), list)
+                    else []
+                ),
             }
         except Exception as exc:
             logger.warning(f"LLM diagnosis failed for commerce query analyzer: {exc}")

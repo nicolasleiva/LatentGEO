@@ -1,0 +1,208 @@
+name: Strict Release Gate
+
+on:
+  workflow_dispatch:
+
+env:
+  PYTHON_VERSION: "3.11"
+  NODE_VERSION: "20"
+
+jobs:
+  preflight:
+    name: Validate Strict Inputs
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate required vars/secrets
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          REDIS_URL: ${{ secrets.REDIS_URL }}
+          PROD_TEST_URL: ${{ vars.PROD_TEST_URL }}
+          PROD_TEST_USER_ID: ${{ vars.PROD_TEST_USER_ID }}
+          PROD_TEST_KEYWORDS: ${{ vars.PROD_TEST_KEYWORDS }}
+          GOOGLE_PAGESPEED_API_KEY: ${{ secrets.GOOGLE_PAGESPEED_API_KEY }}
+          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+          CSE_ID: ${{ secrets.CSE_ID }}
+          NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
+          GEO_TEST_CONNECTION_ID: ${{ vars.GEO_TEST_CONNECTION_ID }}
+          GEO_TEST_REPO_ID: ${{ vars.GEO_TEST_REPO_ID }}
+          LIVE_BASE_URL: ${{ vars.LIVE_BASE_URL }}
+          LIVE_TARGET_URL: ${{ vars.LIVE_TARGET_URL }}
+          PERF_AUDIT_ID: ${{ vars.PERF_AUDIT_ID }}
+          PERF_AUTH_EMAIL: ${{ secrets.PERF_AUTH_EMAIL }}
+          PERF_AUTH_PASSWORD: ${{ secrets.PERF_AUTH_PASSWORD }}
+          AUTH0_DOMAIN: ${{ secrets.AUTH0_DOMAIN }}
+          AUTH0_CLIENT_ID: ${{ secrets.AUTH0_CLIENT_ID }}
+          APP_BASE_URL: ${{ secrets.APP_BASE_URL }}
+          AUTH0_SECRET: ${{ secrets.AUTH0_SECRET }}
+          AUTH0_CLIENT_SECRET: ${{ secrets.AUTH0_CLIENT_SECRET }}
+        run: |
+          set -euo pipefail
+          required=(
+            DATABASE_URL REDIS_URL
+            PROD_TEST_URL PROD_TEST_USER_ID PROD_TEST_KEYWORDS
+            GOOGLE_PAGESPEED_API_KEY GOOGLE_API_KEY CSE_ID NVIDIA_API_KEY
+            GEO_TEST_CONNECTION_ID GEO_TEST_REPO_ID
+            LIVE_BASE_URL LIVE_TARGET_URL
+            PERF_AUDIT_ID PERF_AUTH_EMAIL PERF_AUTH_PASSWORD
+            AUTH0_DOMAIN AUTH0_CLIENT_ID APP_BASE_URL AUTH0_SECRET AUTH0_CLIENT_SECRET
+          )
+          missing=()
+          for name in "${required[@]}"; do
+            value="${!name:-}"
+            if [[ -z "$value" ]]; then
+              missing+=("$name")
+            fi
+          done
+          if [[ "${#missing[@]}" -gt 0 ]]; then
+            echo "Missing required inputs for strict release: ${missing[*]}"
+            exit 1
+          fi
+          echo "Strict preflight passed."
+
+  backend-strict:
+    name: Backend Strict Gate
+    runs-on: ubuntu-latest
+    needs: preflight
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt
+          pip install ruff black==24.3.0 mypy isort bandit pip-audit pytest pytest-asyncio pytest-cov httpx
+
+      - name: Backend static quality
+        run: |
+          python -m ruff check backend/app backend/tests
+          python -m black --check backend/app backend/tests
+          python -m isort --check-only backend/app backend/tests
+          python -m mypy backend/app --ignore-missing-imports --show-error-codes
+
+      - name: Backend security gates
+        run: |
+          python -m bandit -r backend/app -q
+          python -m pip_audit -r backend/requirements.txt
+
+      - name: Run strict backend tests (no skipped)
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          REDIS_URL: ${{ secrets.REDIS_URL }}
+          PROD_TEST_URL: ${{ vars.PROD_TEST_URL }}
+          PROD_TEST_USER_ID: ${{ vars.PROD_TEST_USER_ID }}
+          PROD_TEST_KEYWORDS: ${{ vars.PROD_TEST_KEYWORDS }}
+          GOOGLE_PAGESPEED_API_KEY: ${{ secrets.GOOGLE_PAGESPEED_API_KEY }}
+          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+          CSE_ID: ${{ secrets.CSE_ID }}
+          NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
+          GEO_TEST_CONNECTION_ID: ${{ vars.GEO_TEST_CONNECTION_ID }}
+          GEO_TEST_REPO_ID: ${{ vars.GEO_TEST_REPO_ID }}
+          LIVE_BASE_URL: ${{ vars.LIVE_BASE_URL }}
+          LIVE_TARGET_URL: ${{ vars.LIVE_TARGET_URL }}
+          RUN_INTEGRATION_TESTS: "1"
+          RUN_INTEGRATION: "1"
+          RUN_LIVE_E2E: "1"
+          RUN_REAL_KIMI_SEARCH_TEST: "1"
+          STRICT_TEST_MODE: "1"
+          PAGESPEED_TEST_URL: ${{ vars.LIVE_TARGET_URL }}
+        run: |
+          mkdir -p artifacts
+          pytest -q backend/tests --junitxml=artifacts/backend-junit.xml
+
+      - name: Assert strict backend skipped count = 0
+        run: |
+          python - <<'PY'
+          import xml.etree.ElementTree as ET
+
+          root = ET.parse("artifacts/backend-junit.xml").getroot()
+          total_skipped = 0
+          for suite in root.iter("testsuite"):
+              total_skipped += int(suite.attrib.get("skipped", "0"))
+
+          if total_skipped > 0:
+              raise SystemExit(
+                  f"STRICT_TEST_MODE requires zero skipped tests, found {total_skipped}."
+              )
+          print("Strict backend skipped assertion passed (0 skipped).")
+          PY
+
+      - name: Upload backend strict artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-strict-artifacts
+          path: |
+            artifacts/backend-junit.xml
+
+  frontend-strict:
+    name: Frontend Strict Gate
+    runs-on: ubuntu-latest
+    needs: preflight
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.6.2
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "pnpm"
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm --dir frontend install --frozen-lockfile
+
+      - name: Frontend quality gates
+        run: |
+          pnpm --dir frontend lint
+          pnpm --dir frontend run format:check
+          pnpm --dir frontend run type-check
+          pnpm --dir frontend test:ci
+          pnpm --dir frontend build
+
+      - name: Frontend dependency audit
+        run: pnpm --dir frontend audit --prod --audit-level=high
+
+      - name: Install Playwright browser
+        run: pnpm --dir frontend run perf:e2e:install
+
+      - name: Run GEO UI performance gate (p95 < 2s)
+        env:
+          PERF_BASE_URL: ${{ vars.LIVE_BASE_URL }}
+          PERF_AUDIT_ID: ${{ vars.PERF_AUDIT_ID }}
+          PERF_LOCALE: ${{ vars.PERF_LOCALE }}
+          PERF_SAMPLES: ${{ vars.PERF_SAMPLES }}
+          PERF_THRESHOLD_MS: ${{ vars.PERF_THRESHOLD_MS }}
+          PERF_AUTH_EMAIL: ${{ secrets.PERF_AUTH_EMAIL }}
+          PERF_AUTH_PASSWORD: ${{ secrets.PERF_AUTH_PASSWORD }}
+          PERF_REPORT_PATH: playwright-report/geo-performance.json
+        run: pnpm --dir frontend run perf:e2e
+
+      - name: Upload frontend strict artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-strict-artifacts
+          path: |
+            frontend/playwright-report
+            frontend/test-results
+            frontend/playwright-report/geo-performance.json
+
+  strict-release-ready:
+    name: Strict Release Ready
+    runs-on: ubuntu-latest
+    needs: [backend-strict, frontend-strict]
+    steps:
+      - name: Final status
+        run: |
+          echo "Strict backend and frontend gates passed."
+          echo "Release candidate is production-ready under strict criteria."

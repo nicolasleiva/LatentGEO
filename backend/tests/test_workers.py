@@ -1,6 +1,7 @@
 """
 Tests para los Celery Workers
 """
+
 from unittest.mock import ANY, AsyncMock, patch
 
 import pytest

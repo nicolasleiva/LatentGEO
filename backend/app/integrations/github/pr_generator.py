@@ -1,6 +1,7 @@
 """
 PR Generator Service - Creates professional Pull Requests with SEO/GEO fixes
 """
+
 import json
 from datetime import datetime
 from typing import Any, Dict, List

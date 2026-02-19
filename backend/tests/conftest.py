@@ -1,6 +1,7 @@
 """
 Configuración de Pytest y fixtures
 """
+
 import os
 import sys
 from typing import Generator
@@ -11,7 +12,10 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
+pytest_plugins = ["conftest_production"]
+
 RUN_INTEGRATION_TESTS = os.getenv("RUN_INTEGRATION_TESTS") == "1"
+STRICT_TEST_MODE = os.getenv("STRICT_TEST_MODE") == "1"
 
 # Add the backend directory to sys.path
 # In Docker, this is /app. Locally, it's the backend folder.
@@ -37,6 +41,25 @@ except ImportError as e:
         from backend.app.main import app
     except ImportError:
         raise e
+
+
+def pytest_terminal_summary(terminalreporter, exitstatus, config):
+    """
+    En modo estricto, cualquier test omitido se considera fallo de gate.
+    """
+    if not STRICT_TEST_MODE:
+        return
+
+    skipped = terminalreporter.stats.get("skipped", [])
+    skipped_count = len(skipped)
+    if skipped_count == 0:
+        return
+
+    terminalreporter.write_sep(
+        "=",
+        f"STRICT_TEST_MODE=1: se detectaron {skipped_count} tests omitidos (no permitido).",
+    )
+    terminalreporter._session.exitstatus = 1
 
 
 @pytest.fixture(scope="function", autouse=True)
@@ -82,6 +105,8 @@ def db_session(setup_test_db) -> Generator:
     Fixture para obtener una sesión de base de datos de test.
     """
     if RUN_INTEGRATION_TESTS:
+        if STRICT_TEST_MODE:
+            pytest.fail("db_session disabled in integration mode")
         pytest.skip("db_session disabled in integration mode")
 
     engine = setup_test_db

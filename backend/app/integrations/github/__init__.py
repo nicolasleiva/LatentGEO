@@ -1,6 +1,7 @@
 """
 GitHub Integration Module
 """
+
 from .blog_auditor import BlogAuditorService as BlogAuditorService
 from .client import GitHubClient as GitHubClient
 from .geo_blog_auditor import GEOBlogAuditor as GEOBlogAuditor

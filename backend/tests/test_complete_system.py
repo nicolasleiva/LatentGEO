@@ -5,6 +5,7 @@ Test completo del sistema después de los cambios:
 - Sin referencias a OPENAI_API_KEY
 - Todos los endpoints funcionando correctamente
 """
+
 import os
 import time
 from typing import Any, Dict
@@ -13,10 +14,15 @@ import pytest
 import requests
 from app.core.auth import create_access_token
 
-pytestmark = pytest.mark.skipif(
-    os.getenv("RUN_INTEGRATION_TESTS") != "1",
-    reason="Requiere servicios corriendo (localhost) y acceso a red",
-)
+STRICT_TEST_MODE = os.getenv("STRICT_TEST_MODE") == "1"
+
+pytestmark = [
+    pytest.mark.integration,
+    pytest.mark.skipif(
+        os.getenv("RUN_INTEGRATION_TESTS") != "1",
+        reason="Requiere servicios corriendo (localhost) y acceso a red",
+    ),
+]
 
 ROOT_URL = "http://localhost:8000"
 BASE_URL = f"{ROOT_URL}/api"
@@ -226,9 +232,13 @@ def test_manual_pagespeed(created_audit_id, auth_context):
             # If pagespeed not configured, return 200 may not happen; treat as non-fatal
             print_warning(f"PageSpeed returned {response.status_code}")
             print_info("This is OK if API key is not configured")
+            if STRICT_TEST_MODE:
+                pytest.fail("PageSpeed API not configured in test environment")
             pytest.skip("PageSpeed API not configured in test environment")
 
     except Exception as e:
+        if STRICT_TEST_MODE:
+            pytest.fail(f"PageSpeed test failed due to error in strict mode: {e}")
         pytest.skip(f"PageSpeed test skipped due to error: {e}")
 
 
