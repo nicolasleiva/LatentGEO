@@ -76,7 +76,7 @@ jobs:
     - name: Run pip-audit (Dependency Vulnerabilities)
       run: |
         cd backend
-        pip_audit -r requirements.txt
+        python -m pip_audit -r requirements.txt
 
     - name: Set up pnpm
       uses: pnpm/action-setup@v4
