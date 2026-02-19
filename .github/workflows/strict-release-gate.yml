@@ -80,8 +80,8 @@ jobs:
       - name: Backend static quality
         run: |
           python -m ruff check backend/app backend/tests
-          python -m black --check backend
-          python -m isort --check-only backend
+          python -m black --check backend/app backend/tests
+          python -m isort --check-only backend/app backend/tests
           python -m mypy backend/app --ignore-missing-imports --show-error-codes
 
       - name: Backend security gates
@@ -146,17 +146,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.6.2
+
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: "pnpm"
           cache-dependency-path: frontend/pnpm-lock.yaml
-
-      - name: Set up pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 10.6.2
 
       - name: Install dependencies
         run: pnpm --dir frontend install --frozen-lockfile
