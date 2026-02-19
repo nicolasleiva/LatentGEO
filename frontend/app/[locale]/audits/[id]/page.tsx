@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback, useMemo } from "react";
+import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 
 import dynamic from "next/dynamic";
 import Link from "next/link";
@@ -120,6 +120,9 @@ const normalizeCategory = (value?: string) => {
   return cleaned || "Unclassified";
 };
 
+const GEO_DASHBOARD_CACHE_PREFIX = "geo-dashboard-";
+type GeoWarmTab = "commerce" | "article-engine";
+
 export default function AuditDetailPage() {
   const params = useParams();
   const router = useRouter();
@@ -169,6 +172,78 @@ export default function AuditDetailPage() {
       githubAutoFix: `${toolsBase}/github-auto-fix`,
     };
   }, [auditId, localePrefix]);
+  const geoWarmupStateRef = useRef<{
+    auditId: string | null;
+    inFlight: boolean;
+  }>({
+    auditId: null,
+    inFlight: false,
+  });
+  const geoWarmedTabsRef = useRef<Set<GeoWarmTab>>(new Set());
+
+  const warmGeoTabModule = useCallback((tab: GeoWarmTab) => {
+    if (geoWarmedTabsRef.current.has(tab)) return;
+    geoWarmedTabsRef.current.add(tab);
+    if (tab === "commerce") {
+      void import("./geo/components/CommerceCampaign");
+      return;
+    }
+    void import("./geo/components/ArticleEngine");
+  }, []);
+
+  const warmGeoDashboardCache = useCallback(async () => {
+    if (!auditId || typeof window === "undefined") return;
+
+    const cacheKey = `${GEO_DASHBOARD_CACHE_PREFIX}${auditId}`;
+    if (localStorage.getItem(cacheKey)) return;
+
+    const warmState = geoWarmupStateRef.current;
+    if (warmState.inFlight && warmState.auditId === auditId) return;
+
+    warmState.auditId = auditId;
+    warmState.inFlight = true;
+    try {
+      const res = await fetchWithBackendAuth(
+        `${backendUrl}/api/geo/dashboard/${auditId}`,
+      );
+      if (!res.ok) return;
+      const geoData = await res.json();
+      localStorage.setItem(cacheKey, JSON.stringify(geoData));
+    } catch {
+      // Best-effort warm-up only; GEO page still fetches live data on entry.
+    } finally {
+      if (geoWarmupStateRef.current.auditId === auditId) {
+        geoWarmupStateRef.current.inFlight = false;
+      }
+    }
+  }, [auditId, backendUrl]);
+
+  const warmGeoNavigation = useCallback(
+    (route: string, tab?: GeoWarmTab) => {
+      const prefetch = router.prefetch;
+      if (typeof prefetch === "function") {
+        try {
+          prefetch(route);
+        } catch {
+          // no-op in environments where prefetch is unavailable
+        }
+      }
+      void warmGeoDashboardCache();
+      if (tab) {
+        warmGeoTabModule(tab);
+      }
+    },
+    [router, warmGeoDashboardCache, warmGeoTabModule],
+  );
+
+  const getGeoWarmLinkProps = useCallback(
+    (route: string, tab?: GeoWarmTab) => ({
+      onMouseEnter: () => warmGeoNavigation(route, tab),
+      onFocus: () => warmGeoNavigation(route, tab),
+      onTouchStart: () => warmGeoNavigation(route, tab),
+    }),
+    [warmGeoNavigation],
+  );
 
   const loadReport = useCallback(async () => {
     if (reportLoading || reportMarkdown) return;
@@ -344,8 +419,6 @@ export default function AuditDetailPage() {
   }, [fetchData]);
 
   useEffect(() => {
-    const prefetch = router.prefetch;
-    if (typeof prefetch !== "function") return;
     const routes = [
       geoRoutes.geoDashboard,
       geoRoutes.keywords,
@@ -357,14 +430,25 @@ export default function AuditDetailPage() {
       geoRoutes.geoArticleEngine,
       geoRoutes.githubAutoFix,
     ];
-    routes.forEach((route) => {
-      try {
-        prefetch(route);
-      } catch {
-        // no-op in environments where prefetch is unavailable
-      }
-    });
-  }, [geoRoutes, router]);
+    routes.forEach((route) => warmGeoNavigation(route));
+  }, [geoRoutes, warmGeoNavigation]);
+
+  useEffect(() => {
+    geoWarmupStateRef.current = { auditId: null, inFlight: false };
+    geoWarmedTabsRef.current.clear();
+  }, [auditId]);
+
+  useEffect(() => {
+    if (audit?.status !== "completed") return;
+    void warmGeoDashboardCache();
+
+    const preloadTimer = setTimeout(() => {
+      warmGeoTabModule("commerce");
+      warmGeoTabModule("article-engine");
+    }, 1200);
+
+    return () => clearTimeout(preloadTimer);
+  }, [audit?.status, warmGeoDashboardCache, warmGeoTabModule]);
 
   // Limpiar PageSpeed cuando status cambia a 'running'
   useEffect(() => {
@@ -707,7 +791,13 @@ export default function AuditDetailPage() {
                   {pdfGenerating ? "Generating PDF..." : "PDF Report"}
                 </Button>
                 <Button
-                  onClick={() => router.push(`/audits/${auditId}/geo`)}
+                  data-testid="open-geo-dashboard-button"
+                  onMouseEnter={() => warmGeoNavigation(geoRoutes.geoDashboard)}
+                  onFocus={() => warmGeoNavigation(geoRoutes.geoDashboard)}
+                  onClick={() => {
+                    warmGeoNavigation(geoRoutes.geoDashboard);
+                    router.push(geoRoutes.geoDashboard);
+                  }}
                   className="glass-button-primary px-6"
                 >
                   <ExternalLink className="h-4 w-4 mr-2" />
@@ -1304,6 +1394,8 @@ export default function AuditDetailPage() {
                   {/* GEO Dashboard */}
                   <Link
                     href={geoRoutes.geoDashboard}
+                    {...getGeoWarmLinkProps(geoRoutes.geoDashboard)}
+                    data-testid="geo-tool-card-dashboard"
                     className="group glass-panel p-6 rounded-2xl transition-all text-left hover:-translate-y-1 block"
                   >
                     <div className="flex items-start justify-between mb-3">
@@ -1323,6 +1415,7 @@ export default function AuditDetailPage() {
                   {/* Keywords Research */}
                   <Link
                     href={geoRoutes.keywords}
+                    {...getGeoWarmLinkProps(geoRoutes.keywords)}
                     className="group glass-panel p-6 rounded-2xl transition-all text-left hover:-translate-y-1 block"
                   >
                     <div className="flex items-start justify-between mb-3">
@@ -1342,6 +1435,7 @@ export default function AuditDetailPage() {
                   {/* Backlinks Analysis */}
                   <Link
                     href={geoRoutes.backlinks}
+                    {...getGeoWarmLinkProps(geoRoutes.backlinks)}
                     className="group glass-panel p-6 rounded-2xl transition-all text-left hover:-translate-y-1 block"
                   >
                     <div className="flex items-start justify-between mb-3">
@@ -1361,6 +1455,7 @@ export default function AuditDetailPage() {
                   {/* Rank Tracking */}
                   <Link
                     href={geoRoutes.rankTracking}
+                    {...getGeoWarmLinkProps(geoRoutes.rankTracking)}
                     className="group glass-panel p-6 rounded-2xl transition-all text-left hover:-translate-y-1 block"
                   >
                     <div className="flex items-start justify-between mb-3">
@@ -1399,6 +1494,7 @@ export default function AuditDetailPage() {
                   {/* AI Content Suggestions */}
                   <Link
                     href={geoRoutes.aiContent}
+                    {...getGeoWarmLinkProps(geoRoutes.aiContent)}
                     className="group glass-panel p-6 rounded-2xl transition-all text-left hover:-translate-y-1 block"
                   >
                     <div className="flex items-start justify-between mb-3">
@@ -1418,6 +1514,8 @@ export default function AuditDetailPage() {
                   {/* Commerce LLM */}
                   <Link
                     href={geoRoutes.geoCommerce}
+                    {...getGeoWarmLinkProps(geoRoutes.geoCommerce, "commerce")}
+                    data-testid="geo-tool-card-commerce"
                     className="group glass-panel p-6 rounded-2xl transition-all text-left hover:-translate-y-1 block"
                   >
                     <div className="flex items-start justify-between mb-3">
@@ -1438,6 +1536,11 @@ export default function AuditDetailPage() {
                   {/* Article Engine */}
                   <Link
                     href={geoRoutes.geoArticleEngine}
+                    {...getGeoWarmLinkProps(
+                      geoRoutes.geoArticleEngine,
+                      "article-engine",
+                    )}
+                    data-testid="geo-tool-card-article-engine"
                     className="group glass-panel p-6 rounded-2xl transition-all text-left hover:-translate-y-1 block"
                   >
                     <div className="flex items-start justify-between mb-3">
@@ -1458,6 +1561,7 @@ export default function AuditDetailPage() {
                   {/* GitHub Auto-Fix */}
                   <Link
                     href={geoRoutes.githubAutoFix}
+                    {...getGeoWarmLinkProps(geoRoutes.githubAutoFix)}
                     className="group glass-panel p-6 rounded-2xl transition-all text-left hover:-translate-y-1 block"
                   >
                     <div className="flex items-start justify-between mb-3">
