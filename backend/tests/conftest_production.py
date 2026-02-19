@@ -2,6 +2,7 @@
 Production-Ready Database Configuration for Tests
 No mocks, using YOUR existing database and .env configuration
 """
+
 import os
 from pathlib import Path
 from typing import Generator, List
@@ -9,7 +10,7 @@ from urllib.parse import urlparse, urlunparse
 
 import pytest
 from dotenv import load_dotenv
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -19,6 +20,7 @@ if env_path.exists():
     load_dotenv(env_path)
 
 RUN_INTEGRATION_TESTS = os.getenv("RUN_INTEGRATION_TESTS") == "1"
+STRICT_TEST_MODE = os.getenv("STRICT_TEST_MODE") == "1"
 
 
 def _require_env(name: str) -> str:
@@ -36,6 +38,15 @@ def _parse_csv_env(name: str) -> List[str]:
             f"{name} is required when RUN_INTEGRATION_TESTS=1 (comma-separated list)."
         )
     return values
+
+
+def _require_non_empty_env(name: str) -> str:
+    value = os.getenv(name, "").strip()
+    if not value:
+        raise RuntimeError(
+            f"{name} is required when STRICT_TEST_MODE=1 and RUN_INTEGRATION_TESTS=1"
+        )
+    return value
 
 
 def _redact_url(url: str) -> str:
@@ -113,6 +124,51 @@ def get_engine():
     return engine
 
 
+def _validate_strict_prerequisites() -> None:
+    if not (STRICT_TEST_MODE and RUN_INTEGRATION_TESTS):
+        return
+
+    required_env = [
+        "DATABASE_URL",
+        "REDIS_URL",
+        "PROD_TEST_URL",
+        "PROD_TEST_USER_ID",
+        "PROD_TEST_KEYWORDS",
+        "GOOGLE_PAGESPEED_API_KEY",
+        "GOOGLE_API_KEY",
+        "CSE_ID",
+        "NVIDIA_API_KEY",
+        "GEO_TEST_CONNECTION_ID",
+        "GEO_TEST_REPO_ID",
+        "LIVE_BASE_URL",
+        "LIVE_TARGET_URL",
+        "RUN_REAL_KIMI_SEARCH_TEST",
+        "RUN_LIVE_E2E",
+    ]
+    missing = [name for name in required_env if not os.getenv(name, "").strip()]
+    if missing:
+        raise RuntimeError(
+            "STRICT_TEST_MODE prerequisites missing: " + ", ".join(sorted(missing))
+        )
+
+    # Validate DB connectivity up-front to fail early and clearly.
+    engine = get_engine()
+    with engine.connect() as conn:
+        conn.execute(text("SELECT 1"))
+
+    # Validate Redis connectivity for integration/live pipelines.
+    try:
+        import redis  # Imported lazily to avoid unnecessary dependency at module import.
+    except Exception as exc:
+        raise RuntimeError(f"redis package is required in strict mode: {exc}") from exc
+
+    redis_client = redis.from_url(
+        _require_non_empty_env("REDIS_URL"), decode_responses=True
+    )
+    if not redis_client.ping():
+        raise RuntimeError("Redis ping failed under STRICT_TEST_MODE")
+
+
 def setup_test_database():
     """
     Prepare your existing database for tests.
@@ -151,6 +207,7 @@ def cleanup_test_database():
 @pytest.fixture(scope="session")
 def db_engine():
     """Session-scoped database engine"""
+    _validate_strict_prerequisites()
     engine = setup_test_database()
     yield engine
     cleanup_test_database()

@@ -1044,9 +1044,11 @@ class PipelineService:
                 all_raw_jsonld.append(
                     {
                         "page_path": path,
-                        "raw_json": s["schema"]["raw_jsonld"][0]
-                        if s["schema"]["raw_jsonld"]
-                        else "{}",
+                        "raw_json": (
+                            s["schema"]["raw_jsonld"][0]
+                            if s["schema"]["raw_jsonld"]
+                            else "{}"
+                        ),
                     }
                 )
 
@@ -1139,9 +1141,9 @@ class PipelineService:
             },
             "eeat": {
                 "author_presence": {
-                    "status": "warn"
-                    if len(pages_with_author) < len(summaries)
-                    else "pass",
+                    "status": (
+                        "warn" if len(pages_with_author) < len(summaries) else "pass"
+                    ),
                     "details": f"Author found on {len(pages_with_author)}/{len(summaries)} pages.",
                     "pages_with_author": pages_with_author,
                     "pages_missing_author": author_missing_issues,
@@ -1159,9 +1161,9 @@ class PipelineService:
             },
             "schema": {
                 "schema_presence": {
-                    "status": "warn"
-                    if len(pages_with_schema) < len(summaries)
-                    else "pass",
+                    "status": (
+                        "warn" if len(pages_with_schema) < len(summaries) else "pass"
+                    ),
                     "details": f"JSON-LD Schema found on {len(pages_with_schema)}/{len(summaries)} pages.",
                     "pages_with_schema": pages_with_schema,
                 },
@@ -5605,10 +5607,12 @@ class PipelineService:
 
             llm_timeout_seconds = _to_float(
                 retry_config.get("timeout_seconds"),
-                settings.AGENT1_LLM_TIMEOUT_SECONDS
-                if settings.AGENT1_LLM_TIMEOUT_SECONDS
-                and settings.AGENT1_LLM_TIMEOUT_SECONDS > 0
-                else (12.0 if normalized_mode == "fast" else 25.0),
+                (
+                    settings.AGENT1_LLM_TIMEOUT_SECONDS
+                    if settings.AGENT1_LLM_TIMEOUT_SECONDS
+                    and settings.AGENT1_LLM_TIMEOUT_SECONDS > 0
+                    else (12.0 if normalized_mode == "fast" else 25.0)
+                ),
             )
             retry_timeout_seconds = _to_float(
                 retry_config.get("retry_timeout_seconds"),
@@ -6198,13 +6202,13 @@ class PipelineService:
                         summary.setdefault("url", comp_url)
                         summary.setdefault("domain", domain)
                         if CompetitorService is not None:
-                            summary[
-                                "geo_score"
-                            ] = CompetitorService._calculate_geo_score(summary)
-                            summary[
-                                "benchmark"
-                            ] = CompetitorService._format_competitor_data(
-                                summary, summary["geo_score"], comp_url
+                            summary["geo_score"] = (
+                                CompetitorService._calculate_geo_score(summary)
+                            )
+                            summary["benchmark"] = (
+                                CompetitorService._format_competitor_data(
+                                    summary, summary["geo_score"], comp_url
+                                )
                             )
                         logger.info(
                             f"PIPELINE: Auditoría de competidor {comp_url} exitosa."
@@ -6387,9 +6391,9 @@ class PipelineService:
                 ),
                 "total_competitors": len(competitor_audits),
                 "target_score": target_scores["total"],
-                "best_competitor_score": sorted_scores[0]["scores"]["total"]
-                if sorted_scores
-                else 0,
+                "best_competitor_score": (
+                    sorted_scores[0]["scores"]["total"] if sorted_scores else 0
+                ),
             },
         }
 
@@ -6936,9 +6940,11 @@ class PipelineService:
                                         ].items()
                                         if isinstance(v, dict)
                                     ],
-                                    key=lambda x: x[1].get("numericValue", 0)
-                                    if x[1].get("numericValue") is not None
-                                    else 0,
+                                    key=lambda x: (
+                                        x[1].get("numericValue", 0)
+                                        if x[1].get("numericValue") is not None
+                                        else 0
+                                    ),
                                     reverse=True,
                                 )
                                 minimized["pagespeed"][device][key] = dict(

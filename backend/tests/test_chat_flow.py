@@ -1,6 +1,7 @@
 """
 Test completo del flujo de chat
 """
+
 import os
 import time
 
@@ -8,10 +9,13 @@ import pytest
 import requests
 from app.core.auth import create_access_token
 
-pytestmark = pytest.mark.skipif(
-    os.getenv("RUN_INTEGRATION_TESTS") != "1",
-    reason="Requiere servicios corriendo (localhost) y acceso a red",
-)
+pytestmark = [
+    pytest.mark.integration,
+    pytest.mark.skipif(
+        os.getenv("RUN_INTEGRATION_TESTS") != "1",
+        reason="Requiere servicios corriendo (localhost) y acceso a red",
+    ),
+]
 
 ROOT_URL = "http://localhost:8000"
 BASE_URL = f"{ROOT_URL}/api"

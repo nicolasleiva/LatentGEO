@@ -3,6 +3,7 @@ Servicio para análisis de visibilidad en LLMs.
 Genera datos de menciones en plataformas de IA.
 Core service for GEO (Generative Engine Optimization).
 """
+
 import json
 import logging
 from datetime import datetime, timezone
@@ -159,9 +160,9 @@ class LLMVisibilityService:
                         "is_visible": is_visible,
                         "rank": rank,
                         "citation_text": citation,
-                        "evidence_status": "verified"
-                        if is_visible
-                        else "insufficient_data",
+                        "evidence_status": (
+                            "verified" if is_visible else "insufficient_data"
+                        ),
                         "checked_at": datetime.now(timezone.utc).isoformat(),
                     }
                 )

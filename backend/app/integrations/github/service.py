@@ -1,6 +1,7 @@
 """
 GitHub Service - Main orchestration service
 """
+
 from datetime import datetime
 from typing import Any, Dict, List
 

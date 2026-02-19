@@ -1,6 +1,7 @@
 """
 Modelos de Base de Datos
 """
+
 # ruff: noqa: E402
 
 import enum

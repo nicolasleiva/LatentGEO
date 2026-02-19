@@ -1,6 +1,7 @@
 """
 Servicio de Auditoría - Lógica principal
 """
+
 import json
 import os
 from datetime import datetime, timezone

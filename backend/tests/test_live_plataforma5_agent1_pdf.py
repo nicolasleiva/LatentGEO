@@ -6,10 +6,14 @@ import pytest
 import requests
 from app.core.auth import create_access_token
 
-pytestmark = pytest.mark.skipif(
-    os.getenv("RUN_INTEGRATION_TESTS") != "1" or os.getenv("RUN_LIVE_E2E") != "1",
-    reason="Requiere RUN_INTEGRATION_TESTS=1 y RUN_LIVE_E2E=1 (ejecución manual)",
-)
+pytestmark = [
+    pytest.mark.integration,
+    pytest.mark.live,
+    pytest.mark.skipif(
+        os.getenv("RUN_INTEGRATION_TESTS") != "1" or os.getenv("RUN_LIVE_E2E") != "1",
+        reason="Requiere RUN_INTEGRATION_TESTS=1 y RUN_LIVE_E2E=1 (ejecución manual)",
+    ),
+]
 
 BASE_URL = os.getenv("LIVE_BASE_URL", "http://localhost:8000").rstrip("/")
 API_BASE = f"{BASE_URL}/api"

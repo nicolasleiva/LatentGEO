@@ -93,12 +93,11 @@ auditor/                                    Raíz del proyecto
 ├── Dockerfile.backend                      🔧 Imagen backend (NEW)
 ├── Dockerfile.frontend                     🎨 Imagen frontend (NEW)
 │
-├── INSTALLATION_GUIDE.md                   📖 Instalación paso a paso (NEW)
-├── API_REFERENCE.md                        📡 Referencia API completa (NEW)
-├── ARCHITECTURE.txt                        📊 Diagrama ASCII art (NEW)
-├── SUMMARY.md                              📋 Resumen ejecutivo (NEW)
-├── NEXT_STEPS.md                           🗺️ Roadmap futuro (NEW)
-├── MANIFEST.md                             📁 Listado de archivos (NEW)
+├── API_REFERENCE.md                        📡 Referencia API completa
+├── DEPLOYMENT_CHECKLIST.md                 🚀 Checklist de despliegue
+├── ENVIRONMENT_SETUP.md                    🔐 Setup de entorno
+├── RUN_TESTS.md                            ✅ Guía de tests
+├── SECURITY_IMPROVEMENTS.md                🛡️ Resumen de seguridad
 │
 ├── start.bat                               ▶️ Script Windows (NEW)
 ├── start.sh                                ▶️ Script Linux/Mac (NEW)
@@ -286,13 +285,13 @@ BACKEND                          FRONTEND                    INFRASTRUCTURE
 ## 📖 DOCUMENTACIÓN INCLUIDA
 
 1. **README.md** - Visión general y quick start
-2. **INSTALLATION_GUIDE.md** - Instalación detallada con troubleshooting
-3. **API_REFERENCE.md** - Referencia completa de todos los endpoints
-4. **ARCHITECTURE.txt** - Diagrama ASCII de arquitectura
-5. **SUMMARY.md** - Resumen ejecutivo del proyecto
-6. **NEXT_STEPS.md** - Roadmap para próximas fases
-7. **MANIFEST.md** - Listado detallado de archivos creados
-8. **backend/README.md** - Documentación específica del backend
+2. **API_REFERENCE.md** - Referencia completa de endpoints
+3. **DEPLOYMENT_CHECKLIST.md** - Checklist de despliegue
+4. **ENVIRONMENT_SETUP.md** - Setup detallado de entorno
+5. **RUN_TESTS.md** - Guía de validaciones
+6. **SECURITY_IMPROVEMENTS.md** - Resumen de hardening
+7. **QUICK_START.md** - Inicio rápido
+8. **START_HERE.md** - Guía de navegación del proyecto
 9. **Swagger UI** - Auto-documentación en `/docs`
 
 ---
@@ -381,7 +380,7 @@ Las APIs REST pueden ser consumidas por:
 | "Docker not found" | Instalar Docker Desktop |
 | "Module not found" | `pip install -r requirements.txt` |
 
-Ver **INSTALLATION_GUIDE.md** para más detalles.
+Ver **ENVIRONMENT_SETUP.md** para más detalles.
 
 ---
 
@@ -391,10 +390,10 @@ Ver **INSTALLATION_GUIDE.md** para más detalles.
 Ubicación                    Descripción
 ─────────────────────────────────────────────
 README.md                    Inicio aquí ⭐
-INSTALLATION_GUIDE.md        Instalar paso a paso
+QUICK_START.md               Arranque rápido
+ENVIRONMENT_SETUP.md         Setup por entorno
+RUN_TESTS.md                 Ejecutar validaciones
 API_REFERENCE.md             APIs documentadas
-NEXT_STEPS.md                Próximas acciones
-backend/README.md            Detalles backend
 http://localhost:8000/docs   Swagger UI (vivo)
 ```
 
@@ -493,4 +492,4 @@ start.bat  # Windows
 
 ---
 
-**¿Necesitas ayuda? Consulta NEXT_STEPS.md para la integración del código existente** 💬
+**¿Necesitas ayuda? Consulta QUICK_START.md y ENVIRONMENT_SETUP.md** 💬

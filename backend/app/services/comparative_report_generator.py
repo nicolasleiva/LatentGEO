@@ -1,6 +1,7 @@
 """
 Generador de Reportes Comparativos HTML
 """
+
 import json
 from pathlib import Path
 from typing import Dict, List
@@ -62,9 +63,7 @@ def generate_html_report(
         score_class = (
             "score-high"
             if item["scores"]["total"] >= 70
-            else "score-medium"
-            if item["scores"]["total"] >= 50
-            else "score-low"
+            else "score-medium" if item["scores"]["total"] >= 50 else "score-low"
         )
         html += f"""
                 <tr>
