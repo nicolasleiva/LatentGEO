@@ -1,5 +1,5 @@
 {
-  "name": "my-v0-project",
+  "name": "latentgeo",
   "version": "0.1.0",
   "private": true,
   "packageManager": "pnpm@10.6.2",
@@ -16,7 +16,7 @@
     "start": "next start",
     "test": "jest --watch",
     "test:ci": "jest --ci --runInBand --silent",
-    "type-check": "tsc --noEmit --incremental false"
+    "type-check": "next typegen && tsc --noEmit --incremental false"
   },
   "dependencies": {
     "@auth0/nextjs-auth0": "^4.13.1",

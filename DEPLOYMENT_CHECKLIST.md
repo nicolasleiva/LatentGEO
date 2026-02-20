@@ -1,5 +1,34 @@
 # ✅ Checklist de Despliegue a AWS
 
+## Fase 0: Estabilización Preproducción (Bloqueante, sin deploy)
+
+> No avanzar a staging/producción hasta completar esta fase.
+
+### Gate técnico obligatorio
+- [ ] `pnpm --dir frontend lint`
+- [ ] `pnpm --dir frontend run format:check`
+- [ ] `pnpm --dir frontend run type-check`
+- [ ] `pnpm --dir frontend test:ci`
+- [ ] `STRICT_BUILD=1 pnpm --dir frontend build`
+- [ ] `python -m ruff check backend/app`
+- [ ] `python -m mypy backend/app --ignore-missing-imports --show-error-codes`
+- [ ] `python -m bandit -r backend/app -q`
+- [ ] `pytest -q backend/tests -m "not integration and not live"`
+
+### Smoke externa mínima (bloqueante)
+- [ ] Definir `SMOKE_BASE_URL` (entorno objetivo)
+- [ ] Opcional: definir `SMOKE_BEARER_TOKEN`
+- [ ] Ejecutar `pytest -q backend/tests/test_release_smoke_external.py`
+- [ ] Verificar:
+  - [ ] `GET /health` = 200
+  - [ ] `GET /docs` = 200
+  - [ ] `GET /api/webhooks/health` = 200
+  - [ ] `GET /api/geo/content-templates`:
+    - [ ] con token = 200
+    - [ ] sin token = 401/403 (no 404/5xx)
+
+---
+
 ## Fase 1: Preparación (Semana 1)
 
 ### Seguridad
@@ -434,31 +463,14 @@
 
 ## Strict Release Gate (workflow_dispatch)
 
-### Secrets requeridos
-- [ ] `DATABASE_URL`
-- [ ] `REDIS_URL`
-- [ ] `GOOGLE_PAGESPEED_API_KEY`
-- [ ] `GOOGLE_API_KEY`
-- [ ] `CSE_ID`
-- [ ] `NVIDIA_API_KEY`
-- [ ] `AUTH0_DOMAIN`
-- [ ] `AUTH0_CLIENT_ID`
-- [ ] `APP_BASE_URL`
-- [ ] `AUTH0_SECRET`
-- [ ] `AUTH0_CLIENT_SECRET`
-- [ ] `PERF_AUTH_EMAIL`
-- [ ] `PERF_AUTH_PASSWORD`
-- [ ] `PERF_BEARER_TOKEN` (opcional para Locust en pipeline rápido)
-
 ### Variables requeridas
-- [ ] `PROD_TEST_URL`
-- [ ] `PROD_TEST_USER_ID`
-- [ ] `PROD_TEST_KEYWORDS`
-- [ ] `GEO_TEST_CONNECTION_ID`
-- [ ] `GEO_TEST_REPO_ID`
-- [ ] `LIVE_BASE_URL`
-- [ ] `LIVE_TARGET_URL`
-- [ ] `PERF_AUDIT_ID`
-- [ ] `PERF_LOCALE` (default recomendado: `en`)
-- [ ] `PERF_SAMPLES` (default recomendado: `20`)
-- [ ] `PERF_THRESHOLD_MS` (default recomendado: `2000`)
+- [ ] `SMOKE_BASE_URL` (obligatoria, debe iniciar con `http://` o `https://`)
+
+### Secrets opcionales
+- [ ] `SMOKE_BEARER_TOKEN` (si no existe, el smoke valida `401/403` en endpoint protegido)
+
+### Resultado esperado
+- [ ] Backend local determinista verde (`pytest -q backend/tests -m "not integration and not live"`)
+- [ ] Smoke externa mínima verde (`pytest -q backend/tests/test_release_smoke_external.py`)
+- [ ] Frontend strict verde (`lint`, `format:check`, `type-check`, `test:ci`, `build` con `STRICT_BUILD=1`)
+- [ ] Sin deploy automático en esta etapa
