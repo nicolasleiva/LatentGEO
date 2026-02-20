@@ -19,13 +19,43 @@ python -m isort --check-only backend
 python -m mypy backend/app --ignore-missing-imports --show-error-codes
 python -m bandit -r backend/app -q
 python -m pip_audit -r backend/requirements.txt
-pytest -q backend/tests
+pytest -q backend/tests -m "not integration and not live"
+# External smoke (strict release gate)
+SMOKE_BASE_URL=https://your-staging-or-prod-url \
+SMOKE_BEARER_TOKEN=optional-token \
+pytest -q backend/tests/test_release_smoke_external.py
 ```
 
 These commands validate:
 - ✓ Frontend lint/format/types/tests/build
 - ✓ Backend quality/security checks
-- ✓ Backend unit/integration suite (where enabled)
+- ✓ Backend deterministic local suite (no integration/live)
+- ✓ External smoke availability on critical endpoints
+
+---
+
+## Preproduction Release Gate (No Deploy)
+
+Use this exact sequence before any staging/production promotion:
+
+```bash
+cd auditor_geo
+pnpm --dir frontend lint
+pnpm --dir frontend run format:check
+pnpm --dir frontend run type-check
+pnpm --dir frontend test:ci
+STRICT_BUILD=1 pnpm --dir frontend build
+python -m ruff check backend/app
+python -m mypy backend/app --ignore-missing-imports --show-error-codes
+python -m bandit -r backend/app -q
+pytest -q backend/tests -m "not integration and not live"
+SMOKE_BASE_URL=https://your-staging-or-prod-url pytest -q backend/tests/test_release_smoke_external.py
+```
+
+Blocking rules:
+- `Release blocked` if any command above fails.
+- `Release blocked` if smoke suite fails on `/health`, `/docs`, `/api/webhooks/health`, or `/api/geo/content-templates`.
+- `No deploy` until all commands are green.
 
 ---
 

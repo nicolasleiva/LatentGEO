@@ -188,14 +188,31 @@ jobs:
         pip install -r requirements.txt
         pip install pytest pytest-asyncio pytest-cov httpx
 
-    - name: Run unit tests with coverage
+    - name: Run deterministic backend suite with coverage
       env:
         DATABASE_URL: postgresql://test:test@localhost:5432/test_db
         REDIS_URL: redis://localhost:6379/0
         ENVIRONMENT: testing
       run: |
         cd backend
-        pytest tests/ -v --cov=app --cov-report=xml --cov-report=term-missing
+        pytest -q tests -m "not integration and not live" --cov=app --cov-report=xml --cov-report=term-missing --junitxml=backend-junit.xml
+
+    - name: Assert deterministic suite skipped count = 0
+      run: |
+        python - <<'PY'
+        import xml.etree.ElementTree as ET
+
+        root = ET.parse("backend/backend-junit.xml").getroot()
+        total_skipped = 0
+        for suite in root.iter("testsuite"):
+            total_skipped += int(suite.attrib.get("skipped", "0"))
+
+        if total_skipped > 0:
+            raise SystemExit(
+                f"Deterministic suite requires zero skipped tests, found {total_skipped}."
+            )
+        print("Deterministic backend skipped assertion passed (0 skipped).")
+        PY
 
     - name: Upload coverage to Codecov
       uses: codecov/codecov-action@v3
@@ -204,14 +221,18 @@ jobs:
         flags: backend
         name: backend-coverage
 
-    - name: Run integration tests
+    - name: Run external smoke suite (main branch)
+      if: github.ref == 'refs/heads/main'
       env:
-        DATABASE_URL: postgresql://test:test@localhost:5432/test_db
-        REDIS_URL: redis://localhost:6379/0
-        ENVIRONMENT: testing
+        SMOKE_BASE_URL: ${{ vars.SMOKE_BASE_URL }}
+        SMOKE_BEARER_TOKEN: ${{ secrets.SMOKE_BEARER_TOKEN }}
       run: |
+        if [ -z "${SMOKE_BASE_URL}" ]; then
+          echo "SMOKE_BASE_URL must be configured for main-branch smoke validation."
+          exit 1
+        fi
         cd backend
-        pytest tests/test_integration*.py -v -m "integration"
+        pytest -q tests/test_release_smoke_external.py
 
   # JOB 4: Frontend Testing
   frontend-tests:
@@ -243,6 +264,8 @@ jobs:
         pnpm test:ci
 
     - name: Build frontend
+      env:
+        STRICT_BUILD: "1"
       run: |
         cd frontend
         pnpm build
