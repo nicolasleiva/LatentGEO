@@ -2,6 +2,7 @@
 const isProd =
   process.env.NODE_ENV === "production" ||
   process.env.ENVIRONMENT === "production";
+const strictBuild = process.env.STRICT_BUILD === "1";
 
 const rawApiUrl =
   process.env.NEXT_PUBLIC_API_URL ||
@@ -52,14 +53,14 @@ const nextConfig = {
     },
   },
 
-  // Disable type checking during build (run separately to save memory)
+  // Local builds can skip expensive checks. CI sets STRICT_BUILD=1.
   typescript: {
-    ignoreBuildErrors: true,
+    ignoreBuildErrors: !strictBuild,
   },
 
-  // Disable eslint during build (run separately to save memory)
+  // Local builds can skip expensive checks. CI sets STRICT_BUILD=1.
   eslint: {
-    ignoreDuringBuilds: true,
+    ignoreDuringBuilds: !strictBuild,
   },
 
   // Webpack memory optimization

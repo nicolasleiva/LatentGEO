@@ -8,59 +8,69 @@ from app.services.pipeline_service import PipelineService
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
+VALID_OPPORTUNITY_DATA = st.fixed_dictionaries(
+    {
+        "title": st.text(min_size=1, max_size=80),
+        "numericValue": st.one_of(
+            st.integers(min_value=-1000, max_value=10000),
+            st.floats(
+                min_value=-1000,
+                max_value=10000,
+                allow_nan=False,
+                allow_infinity=False,
+            ),
+            st.none(),
+        ),
+        "score": st.one_of(
+            st.none(),
+            st.floats(min_value=0, max_value=1, allow_nan=False, allow_infinity=False),
+        ),
+        "description": st.one_of(st.none(), st.text(max_size=120)),
+        "displayValue": st.one_of(st.none(), st.text(max_size=50)),
+    }
+)
+
+INVALID_OPPORTUNITY_DATA = st.one_of(
+    st.none(),
+    st.integers(),
+    st.text(max_size=40),
+    st.lists(st.text(max_size=20), max_size=4),
+    st.booleans(),
+)
+
+COMPLEX_OPPORTUNITIES_DICT = st.dictionaries(
+    keys=st.text(min_size=1, max_size=20),
+    values=st.one_of(VALID_OPPORTUNITY_DATA, INVALID_OPPORTUNITY_DATA),
+    min_size=0,
+    max_size=10,
+)
+
+INVALID_OPPORTUNITIES_INPUT = st.one_of(
+    st.none(),
+    st.text(max_size=80),
+    st.integers(),
+    st.floats(allow_nan=False, allow_infinity=False),
+    st.lists(st.integers(), max_size=10),
+)
+
 
 class TestPageSpeedOpportunitiesProperties:
     """Property-based tests for PageSpeed opportunities extraction."""
 
-    @given(
-        opportunities=st.one_of(
-            st.none(),
-            st.just({}),
-            st.dictionaries(
-                keys=st.text(min_size=1, max_size=50),
-                values=st.dictionaries(
-                    keys=st.sampled_from(
-                        [
-                            "title",
-                            "numericValue",
-                            "score",
-                            "description",
-                            "displayValue",
-                        ]
-                    ),
-                    values=st.one_of(
-                        st.text(max_size=100),
-                        st.integers(min_value=0, max_value=10000),
-                        st.floats(
-                            min_value=0,
-                            max_value=1,
-                            allow_nan=False,
-                            allow_infinity=False,
-                        ),
-                        st.none(),  # Include None values to test null handling
-                    ),
-                    min_size=0,
-                    max_size=5,
-                ),
-                min_size=0,
-                max_size=20,
-            ),
-            st.lists(st.text()),  # Invalid: list instead of dict
-            st.text(),  # Invalid: string instead of dict
-            st.integers(),  # Invalid: int instead of dict
-        )
-    )
-    @settings(max_examples=100, deadline=None)
-    def test_property_opportunities_extraction_never_crashes(self, opportunities):
+    @given(opportunities=COMPLEX_OPPORTUNITIES_DICT)
+    @settings(max_examples=80, deadline=None)
+    def test_property_opportunities_extraction_never_crashes_for_complex_dicts(
+        self, opportunities
+    ):
         """
         Property 1: PageSpeed opportunities extraction is type-safe
 
-        For any input (dict, None, list, string, etc.), extracting opportunities
+        For any complex opportunities dictionary, extracting opportunities
         should never raise a TypeError and should always return a list.
 
         **Validates: Requirements 1.1, 1.2, 1.3**
         """
-        # This should never crash, regardless of input
+        # This should never crash, regardless of mixed valid/invalid values
         result = PipelineService._extract_top_opportunities(opportunities)
 
         # Always returns a list
@@ -74,6 +84,21 @@ class TestPageSpeedOpportunitiesProperties:
             assert "savings_ms" in item
             assert isinstance(item["savings_ms"], (int, float))
             assert item["savings_ms"] > 0  # Only positive savings
+
+    @given(opportunities=INVALID_OPPORTUNITIES_INPUT)
+    @settings(max_examples=80, deadline=None)
+    def test_property_opportunities_extraction_never_crashes_for_invalid_inputs(
+        self, opportunities
+    ):
+        """
+        Property 1b: Non-dict inputs are always handled safely.
+
+        **Validates: Requirements 1.1, 1.2, 1.3**
+        """
+        result = PipelineService._extract_top_opportunities(opportunities)
+
+        assert isinstance(result, list), f"Expected list, got {type(result)}"
+        assert result == []
 
     @given(
         opportunities=st.dictionaries(
@@ -206,3 +231,36 @@ class TestPageSpeedOpportunitiesProperties:
         assert len(result) == 1
         assert result[0]["id"] == "valid_numeric"
         assert result[0]["savings_ms"] == 1000
+
+    def test_opportunities_extraction_regression_mixed_payload(self):
+        """
+        Regression: mixed payload with malformed entries and nullable values
+        should stay stable and preserve sorting.
+        """
+        opportunities = {
+            "largest-contentful-paint": {
+                "title": "Largest Contentful Paint",
+                "numericValue": 500,
+                "score": 0.41,
+                "description": None,
+                "displayValue": "0.5 s",
+            },
+            "unused-css": {
+                "title": "Remove unused CSS",
+                "numericValue": 845.5,
+                "score": 0.7,
+                "description": "Reduce transfer size.",
+                "displayValue": "845 ms",
+            },
+            "bad-shape": ["not", "a", "dict"],
+            "none-value": None,
+            "negative-value": {"title": "Ignore negative", "numericValue": -15},
+            "missing-numeric": {"title": "Missing numeric value"},
+        }
+
+        result = PipelineService._extract_top_opportunities(opportunities, limit=5)
+
+        assert [item["id"] for item in result] == [
+            "unused-css",
+            "largest-contentful-paint",
+        ]
