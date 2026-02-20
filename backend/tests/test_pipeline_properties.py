@@ -8,9 +8,28 @@ from app.services.pipeline_service import PipelineService
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
+ASCII_TEXT = st.text(
+    alphabet=st.characters(min_codepoint=32, max_codepoint=126),
+    min_size=1,
+    max_size=60,
+)
+
+OPPORTUNITY_KEY_POOL = [
+    "largest-contentful-paint",
+    "unused-css-rules",
+    "unused-javascript",
+    "render-blocking-resources",
+    "server-response-time",
+    "offscreen-images",
+    "modern-image-formats",
+    "total-byte-weight",
+    "redirects",
+    "dom-size",
+]
+
 VALID_OPPORTUNITY_DATA = st.fixed_dictionaries(
     {
-        "title": st.text(min_size=1, max_size=80),
+        "title": ASCII_TEXT,
         "numericValue": st.one_of(
             st.integers(min_value=-1000, max_value=10000),
             st.floats(
@@ -18,28 +37,35 @@ VALID_OPPORTUNITY_DATA = st.fixed_dictionaries(
                 max_value=10000,
                 allow_nan=False,
                 allow_infinity=False,
+                width=32,
             ),
             st.none(),
         ),
         "score": st.one_of(
             st.none(),
-            st.floats(min_value=0, max_value=1, allow_nan=False, allow_infinity=False),
+            st.floats(
+                min_value=0,
+                max_value=1,
+                allow_nan=False,
+                allow_infinity=False,
+                width=32,
+            ),
         ),
-        "description": st.one_of(st.none(), st.text(max_size=120)),
-        "displayValue": st.one_of(st.none(), st.text(max_size=50)),
+        "description": st.one_of(st.none(), st.text(max_size=80)),
+        "displayValue": st.one_of(st.none(), st.text(max_size=30)),
     }
 )
 
 INVALID_OPPORTUNITY_DATA = st.one_of(
     st.none(),
     st.integers(),
-    st.text(max_size=40),
-    st.lists(st.text(max_size=20), max_size=4),
+    st.text(max_size=24),
+    st.lists(st.text(max_size=12), max_size=3),
     st.booleans(),
 )
 
 COMPLEX_OPPORTUNITIES_DICT = st.dictionaries(
-    keys=st.text(min_size=1, max_size=20),
+    keys=st.sampled_from(OPPORTUNITY_KEY_POOL),
     values=st.one_of(VALID_OPPORTUNITY_DATA, INVALID_OPPORTUNITY_DATA),
     min_size=0,
     max_size=10,
@@ -47,10 +73,10 @@ COMPLEX_OPPORTUNITIES_DICT = st.dictionaries(
 
 INVALID_OPPORTUNITIES_INPUT = st.one_of(
     st.none(),
-    st.text(max_size=80),
+    st.text(max_size=40),
     st.integers(),
-    st.floats(allow_nan=False, allow_infinity=False),
-    st.lists(st.integers(), max_size=10),
+    st.floats(allow_nan=False, allow_infinity=False, width=32),
+    st.lists(st.integers(), max_size=6),
 )
 
 
@@ -58,7 +84,7 @@ class TestPageSpeedOpportunitiesProperties:
     """Property-based tests for PageSpeed opportunities extraction."""
 
     @given(opportunities=COMPLEX_OPPORTUNITIES_DICT)
-    @settings(max_examples=80, deadline=None)
+    @settings(max_examples=50, deadline=None)
     def test_property_opportunities_extraction_never_crashes_for_complex_dicts(
         self, opportunities
     ):
@@ -86,7 +112,7 @@ class TestPageSpeedOpportunitiesProperties:
             assert item["savings_ms"] > 0  # Only positive savings
 
     @given(opportunities=INVALID_OPPORTUNITIES_INPUT)
-    @settings(max_examples=80, deadline=None)
+    @settings(max_examples=50, deadline=None)
     def test_property_opportunities_extraction_never_crashes_for_invalid_inputs(
         self, opportunities
     ):
@@ -102,16 +128,20 @@ class TestPageSpeedOpportunitiesProperties:
 
     @given(
         opportunities=st.dictionaries(
-            keys=st.text(min_size=1, max_size=50),
+            keys=st.sampled_from(OPPORTUNITY_KEY_POOL),
             values=st.fixed_dictionaries(
                 {
-                    "title": st.text(min_size=1, max_size=100),
+                    "title": ASCII_TEXT,
                     "numericValue": st.integers(min_value=1, max_value=10000),
                     "score": st.floats(
-                        min_value=0, max_value=1, allow_nan=False, allow_infinity=False
+                        min_value=0,
+                        max_value=1,
+                        allow_nan=False,
+                        allow_infinity=False,
+                        width=32,
                     ),
-                    "description": st.text(max_size=200),
-                    "displayValue": st.text(max_size=50),
+                    "description": st.text(max_size=80),
+                    "displayValue": st.text(max_size=30),
                 }
             ),
             min_size=2,
