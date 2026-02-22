@@ -43,9 +43,10 @@ async def health_check(db: Session = Depends(get_db)):
     except Exception as e:
         logger.error(f"Redis health check failed: {e}")
         health_status["services"]["redis"] = "disconnected"
-        health_status["status"] = "degraded"
+        if health_status["status"] == "healthy":
+            health_status["status"] = "degraded"
 
-    status_code = 200 if health_status["status"] == "healthy" else 503
+    status_code = 503 if health_status["status"] == "unhealthy" else 200
     return JSONResponse(status_code=status_code, content=health_status)
 
 

@@ -35,6 +35,9 @@ SERPER_API_KEY=your_serper_api_key_here
 # Application Settings
 SECRET_KEY=your_secret_key_here_min_32_chars
 DEBUG=False
+FORWARDED_ALLOW_IPS=127.0.0.1,::1
+LOG_DIR=logs
+PIPELINE_JSON_PARSE_MAX_CHARS=200000
 
 # HubSpot Integration (Required for HubSpot features)
 HUBSPOT_CLIENT_ID=your_hubspot_client_id
@@ -64,6 +67,7 @@ The following variables are **required** and the application will fail to start 
 - `GITHUB_CLIENT_ID` - GitHub App client ID
 - `GITHUB_CLIENT_SECRET` - GitHub App client secret
 - `ENCRYPTION_KEY` - 32-byte key for encrypting OAuth tokens
+- `DB_PASSWORD` - Required by `docker-compose.yml`/`docker-compose.prod.yml` for Postgres startup (fail-fast policy)
 
 ### Optional Variables
 
@@ -73,6 +77,9 @@ These variables are optional but recommended:
 - `NVIDIA_API_KEY` - For NVIDIA LLM features
 - `GOOGLE_API_KEY` - For additional Google services
 - `SERPER_API_KEY` - For competitor discovery search in the initial audit pipeline (replaces Google CSE in this flow)
+- `FORWARDED_ALLOW_IPS` - Trusted proxy IPs/CIDRs for forwarded headers (required in production)
+- `LOG_DIR` - Application log directory (falls back to `/tmp/logs` if unavailable)
+- `PIPELINE_JSON_PARSE_MAX_CHARS` - Safety limit for LLM JSON parsing payload size
 
 ---
 
@@ -279,6 +286,9 @@ alembic upgrade head
 # Clone repository
 git clone <repository-url>
 cd auditor_geo
+
+# Required for docker-compose.yml / docker-compose.prod.yml
+echo "DB_PASSWORD=your_strong_password" >> .env
 
 # Copy environment files
 cp backend/.env.example backend/.env

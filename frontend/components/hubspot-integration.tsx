@@ -207,8 +207,17 @@ export function HubSpotIntegration({
     }
   };
 
-  const connectHubSpot = () => {
-    window.location.href = `${backendUrl}/api/hubspot/auth-url`;
+  const connectHubSpot = async () => {
+    try {
+      const res = await fetchWithBackendAuth(`${backendUrl}/api/hubspot/auth-url`);
+      const data = await res.json();
+      if (!res.ok || !data?.url) {
+        throw new Error(data?.detail || "Failed to get HubSpot auth URL");
+      }
+      window.location.href = data.url;
+    } catch (err) {
+      console.error("Error starting HubSpot OAuth:", err);
+    }
   };
 
   if (connections.length === 0) {

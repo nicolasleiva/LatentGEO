@@ -43,8 +43,18 @@ export default function GitHubAdminPage() {
     }
   };
 
-  const authorize = () => {
-    window.location.href = `${API_URL}/api/github/oauth/authorize`;
+  const authorize = async () => {
+    try {
+      const res = await fetchWithBackendAuth(`${API_URL}/api/github/auth-url`);
+      const data = await res.json();
+      if (!res.ok || !data?.url) {
+        throw new Error(data?.detail || "Failed to get GitHub auth URL");
+      }
+      window.location.href = data.url;
+    } catch (error) {
+      console.error("Error getting GitHub auth URL:", error);
+      setError("Could not start GitHub OAuth flow.");
+    }
   };
 
   const parseBlogPaths = () =>

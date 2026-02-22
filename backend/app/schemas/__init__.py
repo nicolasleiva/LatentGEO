@@ -18,7 +18,7 @@ class AuditStatus(str, Enum):
 class AuditCreate(BaseModel):
     url: str  # We use str to apply custom validation
     max_pages: Optional[int] = 100
-    language: Optional[str] = "en"  # "en" or "es" (forced to "en" in backend)
+    language: Optional[str] = "en"  # "en", "es", "pt", "fr", "de"
     competitors: Optional[List[str]] = None  # URLs de competidores
     market: Optional[str] = None  # "us", "latam", "emea", "argentina", etc.
     source: Optional[str] = "web"  # "web", "hubspot"

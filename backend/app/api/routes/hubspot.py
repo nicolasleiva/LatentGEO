@@ -6,8 +6,13 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from ...core.access_control import ensure_audit_access
+from ...core.access_control import (
+    ensure_audit_access,
+    ensure_connection_access,
+    is_connection_owned_by_user,
+)
 from ...core.auth import AuthUser, get_current_user
+from ...core.oauth_state import build_oauth_state, validate_oauth_state
 from ...core.database import get_db
 from ...integrations.hubspot.auth import HubSpotAuth
 from ...integrations.hubspot.service import HubSpotService
@@ -19,6 +24,12 @@ router = APIRouter(prefix="/hubspot", tags=["hubspot"])
 
 class ConnectRequest(BaseModel):
     code: str
+    state: Optional[str] = None
+
+
+class ConnectResponse(BaseModel):
+    url: str
+    state: str
 
 
 class ApplyChangeRequest(BaseModel):
@@ -29,16 +40,42 @@ class ApplyChangeRequest(BaseModel):
     audit_id: Optional[int] = None
 
 
-@router.get("/auth-url")
-def get_auth_url():
+@router.get("/auth-url", response_model=ConnectResponse)
+def get_auth_url(current_user: AuthUser = Depends(get_current_user)):
     """Obtiene la URL para iniciar la autenticación con HubSpot"""
-    return {"url": HubSpotAuth.get_authorization_url()}
+    state = build_oauth_state("hubspot", current_user)
+    return {"url": HubSpotAuth.get_authorization_url(state=state), "state": state}
+
+
+def _get_owned_connection(
+    db: Session, connection_id: str, current_user: AuthUser
+) -> HubSpotConnection:
+    connection = (
+        db.query(HubSpotConnection)
+        .filter(
+            HubSpotConnection.id == connection_id,
+            HubSpotConnection.is_active.is_(True),
+        )
+        .first()
+    )
+    return ensure_connection_access(
+        connection,
+        current_user,
+        db,
+        resource_label="conexión de HubSpot",
+    )
 
 
 @router.post("/callback")
-async def oauth_callback(request: ConnectRequest, db: Session = Depends(get_db)):
+async def oauth_callback(
+    request: ConnectRequest,
+    db: Session = Depends(get_db),
+    current_user: AuthUser = Depends(get_current_user),
+):
     """Maneja el callback de OAuth y crea la conexión"""
     try:
+        validate_oauth_state(request.state or "", "hubspot", current_user)
+
         # 1. Exchange code for tokens
         token_data = await HubSpotAuth.exchange_code(request.code)
 
@@ -68,7 +105,12 @@ async def oauth_callback(request: ConnectRequest, db: Session = Depends(get_db))
                 await temp_client.close()
 
         service = HubSpotService(db)
-        connection = await service.create_or_update_connection(token_data, portal_id)
+        connection = await service.create_or_update_connection(
+            token_data=token_data,
+            portal_id=portal_id,
+            owner_user_id=current_user.user_id,
+            owner_email=current_user.email,
+        )
 
         return {
             "status": "success",
@@ -76,16 +118,46 @@ async def oauth_callback(request: ConnectRequest, db: Session = Depends(get_db))
             "portal_id": portal_id,
         }
 
+    except HTTPException:
+        raise
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
 
 @router.get("/connections")
-def get_connections(db: Session = Depends(get_db)):
+def get_connections(
+    db: Session = Depends(get_db),
+    current_user: AuthUser = Depends(get_current_user),
+):
     """Lista conexiones activas de HubSpot"""
-    connections = (
+    all_connections = (
         db.query(HubSpotConnection).filter(HubSpotConnection.is_active.is_(True)).all()
     )
+    connections = []
+    for connection in all_connections:
+        if is_connection_owned_by_user(connection, current_user):
+            connections.append(connection)
+            continue
+
+        # Legacy rows only in DEBUG are auto-claimed.
+        if (
+            not connection.owner_user_id
+            and not connection.owner_email
+            and current_user
+        ):
+            try:
+                claimed = ensure_connection_access(
+                    connection,
+                    current_user,
+                    db,
+                    resource_label="conexión de HubSpot",
+                )
+                connections.append(claimed)
+            except HTTPException:
+                # Skip non-owned rows in production.
+                continue
 
     return [
         {
@@ -99,19 +171,33 @@ def get_connections(db: Session = Depends(get_db)):
 
 
 @router.post("/sync/{connection_id}")
-async def sync_pages(connection_id: str, db: Session = Depends(get_db)):
+async def sync_pages(
+    connection_id: str,
+    db: Session = Depends(get_db),
+    current_user: AuthUser = Depends(get_current_user),
+):
     """Sincroniza las páginas de una conexión"""
     service = HubSpotService(db)
     try:
+        _get_owned_connection(db, connection_id, current_user)
         pages = await service.sync_pages(connection_id)
         return {"status": "success", "synced_count": len(pages)}
+    except HTTPException:
+        raise
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/pages/{connection_id}")
-def get_pages(connection_id: str, db: Session = Depends(get_db)):
+def get_pages(
+    connection_id: str,
+    db: Session = Depends(get_db),
+    current_user: AuthUser = Depends(get_current_user),
+):
     """Obtiene las páginas sincronizadas"""
+    _get_owned_connection(db, connection_id, current_user)
     pages = (
         db.query(HubSpotPage).filter(HubSpotPage.connection_id == connection_id).all()
     )
@@ -147,7 +233,17 @@ def get_recommendations(
         # Buscar página de HubSpot correspondiente por URL
         # Nota: Esto asume que la URL auditada coincide con la URL de HubSpot
         # En un caso real, podríamos necesitar un mapeo más robusto
-        hubspot_page = db.query(HubSpotPage).filter(HubSpotPage.url == page.url).first()
+        hubspot_pages = db.query(HubSpotPage).filter(HubSpotPage.url == page.url).all()
+        hubspot_page = None
+        for candidate in hubspot_pages:
+            connection = (
+                db.query(HubSpotConnection)
+                .filter(HubSpotConnection.id == candidate.connection_id)
+                .first()
+            )
+            if connection and is_connection_owned_by_user(connection, current_user):
+                hubspot_page = candidate
+                break
 
         if not hubspot_page:
             continue
@@ -243,6 +339,18 @@ async def batch_apply_recommendations(
                 )
                 continue
 
+            try:
+                _get_owned_connection(db, page.connection_id, current_user)
+            except HTTPException as forbidden:
+                results["failed"].append(
+                    {
+                        "page_id": rec["hubspot_page_id"],
+                        "error": forbidden.detail,
+                        "field": rec.get("field", "unknown"),
+                    }
+                )
+                continue
+
             change = await service.apply_change(
                 connection_id=page.connection_id,
                 page_id=rec["hubspot_page_id"],
@@ -287,7 +395,11 @@ async def batch_apply_recommendations(
 
 
 @router.post("/rollback/{change_id}")
-async def rollback_change(change_id: str, db: Session = Depends(get_db)):
+async def rollback_change(
+    change_id: str,
+    db: Session = Depends(get_db),
+    current_user: AuthUser = Depends(get_current_user),
+):
     """Revierte un cambio aplicado"""
     service = HubSpotService(db)
 
@@ -295,6 +407,8 @@ async def rollback_change(change_id: str, db: Session = Depends(get_db)):
     change = db.query(HubSpotChange).filter(HubSpotChange.id == change_id).first()
     if not change:
         raise HTTPException(status_code=404, detail="Change not found")
+
+    _get_owned_connection(db, change.page.connection_id, current_user)
 
     if change.status != "applied":
         raise HTTPException(

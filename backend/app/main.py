@@ -140,7 +140,9 @@ def create_app() -> FastAPI:
     # Add ProxyHeaders middleware to get real IP behind Nginx/ALB
     from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
-    app.add_middleware(ProxyHeadersMiddleware, trusted_hosts=settings.TRUSTED_HOSTS)
+    app.add_middleware(
+        ProxyHeadersMiddleware, trusted_hosts=settings.FORWARDED_ALLOW_IPS
+    )
 
     # Add rate limiting (production)
     if RATE_LIMIT_AVAILABLE and not settings.DEBUG:

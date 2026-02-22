@@ -674,7 +674,7 @@ class APIService {
 
   // ============= HUBSPOT =============
 
-  async getHubSpotAuthUrl(): Promise<{ url: string }> {
+  async getHubSpotAuthUrl(): Promise<{ url: string; state: string }> {
     const res = await fetchWithBackendAuth(
       `${this.baseUrl}/api/hubspot/auth-url`,
     );
@@ -682,13 +682,13 @@ class APIService {
     return res.json();
   }
 
-  async hubSpotCallback(code: string): Promise<any> {
+  async hubSpotCallback(code: string, state: string): Promise<any> {
     const res = await fetchWithBackendAuth(
       `${this.baseUrl}/api/hubspot/callback`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ code }),
+        body: JSON.stringify({ code, state }),
       },
     );
     if (!res.ok) throw new Error(`API error: ${res.status}`);
@@ -822,7 +822,7 @@ class APIService {
 
   // ============= GITHUB =============
 
-  async getGitHubAuthUrl(): Promise<{ url: string }> {
+  async getGitHubAuthUrl(): Promise<{ url: string; state: string }> {
     const res = await fetchWithBackendAuth(
       `${this.baseUrl}/api/github/auth-url`,
     );
@@ -830,13 +830,13 @@ class APIService {
     return res.json();
   }
 
-  async githubCallback(code: string): Promise<any> {
+  async githubCallback(code: string, state: string): Promise<any> {
     const res = await fetchWithBackendAuth(
       `${this.baseUrl}/api/github/callback`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ code }),
+        body: JSON.stringify({ code, state }),
       },
     );
     if (!res.ok) throw new Error(`API error: ${res.status}`);

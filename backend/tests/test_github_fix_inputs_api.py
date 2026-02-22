@@ -2,6 +2,7 @@ import os
 
 from app.core.config import settings
 from app.models import Audit, AuditedPage, AuditStatus
+from app.models.github import GitHubConnection, GitHubRepository
 
 
 def _seed_fix_inputs_audit(db_session) -> Audit:
@@ -66,9 +67,45 @@ def _seed_fix_inputs_audit(db_session) -> Audit:
     return audit
 
 
+def _seed_owned_connection_and_repo(db_session):
+    connection = GitHubConnection(
+        owner_user_id="test-user",
+        owner_email="test@example.com",
+        github_user_id="gh-test-user",
+        github_username="test-user",
+        access_token="encrypted-token",
+        token_type="bearer",
+        scope="repo",
+        account_type="user",
+        is_active=True,
+    )
+    db_session.add(connection)
+    db_session.commit()
+    db_session.refresh(connection)
+
+    repo = GitHubRepository(
+        connection_id=connection.id,
+        github_repo_id="gh-repo-test",
+        full_name="test-user/test-repo",
+        name="test-repo",
+        owner="test-user",
+        url="https://github.com/test-user/test-repo",
+        homepage_url="https://example.com",
+        default_branch="main",
+        is_private=False,
+        site_type="nextjs",
+        is_active=True,
+    )
+    db_session.add(repo)
+    db_session.commit()
+    db_session.refresh(repo)
+    return connection.id, repo.id
+
+
 def test_fix_inputs_endpoints(client, db_session, monkeypatch, tmp_path):
     monkeypatch.setattr(settings, "REPORTS_DIR", str(tmp_path), raising=False)
     audit = _seed_fix_inputs_audit(db_session)
+    connection_id, repo_id = _seed_owned_connection_and_repo(db_session)
 
     response = client.get(f"/api/github/fix-inputs/{audit.id}")
     assert response.status_code == 200
@@ -77,7 +114,8 @@ def test_fix_inputs_endpoints(client, db_session, monkeypatch, tmp_path):
 
     # Should block PR while required inputs are missing
     pr_response = client.post(
-        "/api/github/create-auto-fix-pr/connection/repo", json={"audit_id": audit.id}
+        f"/api/github/create-auto-fix-pr/{connection_id}/{repo_id}",
+        json={"audit_id": audit.id},
     )
     assert pr_response.status_code == 422
 

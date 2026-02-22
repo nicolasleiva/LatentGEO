@@ -4,6 +4,8 @@ Servicio de Auditoría - Lógica principal
 
 import json
 import os
+import re
+from hashlib import sha256
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 from urllib.parse import urlparse
@@ -64,12 +66,13 @@ class AuditService:
         if host.startswith("www."):
             host = host[4:]
         domain = host
+        language = audit_create.language or "en"
 
         audit = Audit(
             url=url,
             domain=domain,
             status=AuditStatus.PENDING,
-            language="en",
+            language=language,
             competitors=audit_create.competitors,
             market=audit_create.market,
             source=audit_create.source,
@@ -278,6 +281,16 @@ class AuditService:
                     pass
 
         return str(value)
+
+    @staticmethod
+    def _safe_fs_name(value: str, max_len: int = 120) -> str:
+        cleaned = re.sub(r"[^A-Za-z0-9._-]+", "_", str(value or ""))
+        cleaned = cleaned.strip("._-") or "page"
+        if len(cleaned) <= max_len:
+            return cleaned
+        digest = sha256(cleaned.encode("utf-8")).hexdigest()[:10]
+        head = cleaned[: max_len - 11].rstrip("._-") or "page"
+        return f"{head}_{digest}"
 
     @staticmethod
     async def set_audit_results(
@@ -512,7 +525,6 @@ class AuditService:
             os.makedirs(reports_dir, exist_ok=True)
             os.makedirs(pages_dir, exist_ok=True)
             os.makedirs(competitors_dir, exist_ok=True)
-            import re
 
             # Guardar resumen agregado
             aggregated_path = os.path.join(reports_dir, "aggregated_summary.json")
@@ -589,11 +601,6 @@ class AuditService:
             with open(context_path, "w", encoding="utf-8") as f:
                 json.dump(final_context, f, ensure_ascii=False, indent=2)
 
-            # Guardar fix plan
-            fix_plan_path = os.path.join(reports_dir, "fix_plan.json")
-            with open(fix_plan_path, "w", encoding="utf-8") as f:
-                json.dump(fix_plan, f, ensure_ascii=False, indent=2)
-
             logger.info(f"Archivos JSON guardados en {reports_dir}")
         except Exception as e:
             logger.error(
@@ -620,11 +627,10 @@ class AuditService:
             os.makedirs(pages_dir, exist_ok=True)
 
             # Generar nombre de archivo seguro
-            import re
-
-            safe_filename = (
-                re.sub(r"https?://", "", page_url).replace("/", "_").replace(":", "_")
+            raw_filename = (
+                str(page_url or "").replace("https://", "").replace("http://", "")
             )
+            safe_filename = AuditService._safe_fs_name(raw_filename)
             page_json_path = os.path.join(
                 pages_dir, f"report_{page_index}_{safe_filename}.json"
             )

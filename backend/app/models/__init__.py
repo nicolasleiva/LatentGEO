@@ -74,7 +74,7 @@ class Audit(Base):
     # Metadata
     is_ymyl = Column(Boolean, default=False)
     category = Column(String(255), nullable=True)
-    language = Column(String(10), default="en")  # forced to "en"
+    language = Column(String(10), default="en")
     competitors = Column(JSON, nullable=True)  # Lista de URLs de competidores
     market = Column(String(50), nullable=True)  # "us", "latam", "emea", etc.
 

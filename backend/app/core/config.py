@@ -2,10 +2,39 @@
 Configuración de la aplicación
 """
 
+import json
 import os
-from typing import Optional
+from typing import Any, Optional
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings
+
+
+def _parse_string_list(value: Any) -> list[str]:
+    """Normaliza listas desde list, JSON string, CSV o valor único."""
+    if value is None:
+        return []
+
+    if isinstance(value, list):
+        return [str(item).strip() for item in value if str(item).strip()]
+
+    if isinstance(value, str):
+        raw = value.strip()
+        if not raw:
+            return []
+
+        if raw.startswith("["):
+            try:
+                parsed = json.loads(raw)
+            except json.JSONDecodeError:
+                parsed = None
+            if isinstance(parsed, list):
+                return [str(item).strip() for item in parsed if str(item).strip()]
+
+        return [item.strip() for item in raw.split(",") if item.strip()]
+
+    normalized = str(value).strip()
+    return [normalized] if normalized else []
 
 
 class Settings(BaseSettings):
@@ -132,6 +161,10 @@ class Settings(BaseSettings):
     MAX_CRAWL_PAGES: int = int(os.getenv("MAX_CRAWL_PAGES", "50"))
     MAX_AUDIT_PAGES: int = int(os.getenv("MAX_AUDIT_PAGES", "50"))
     ENABLE_PAGESPEED: bool = os.getenv("ENABLE_PAGESPEED", "True").lower() == "true"
+    ALLOW_INSECURE_SSL_FALLBACK: bool = (
+        os.getenv("ALLOW_INSECURE_SSL_FALLBACK", "False").lower() == "true"
+    )
+    PDF_LOCK_TTL_SECONDS: int = int(os.getenv("PDF_LOCK_TTL_SECONDS", "900"))
     MAX_CRAWL_DEFAULT: int = 50
     RESPECT_ROBOTS: bool = os.getenv("RESPECT_ROBOTS", "False").lower() == "true"
     MAX_AUDIT_DEFAULT: int = 5
@@ -158,12 +191,18 @@ class Settings(BaseSettings):
     DEBUG: bool = os.getenv("DEBUG", "False").lower() == "true"
     debug: Optional[str] = None
     secret_key: str = os.getenv("SECRET_KEY", "CHANGE_ME_IN_PRODUCTION")
+    OAUTH_STATE_SECRET: Optional[str] = os.getenv("OAUTH_STATE_SECRET")
+    OAUTH_STATE_TTL_SECONDS: int = int(os.getenv("OAUTH_STATE_TTL_SECONDS", "600"))
     cors_origins: Optional[str] = None
-    # If using .env with JSON list format like ["url1", "url2"], Pydantic handles it.
-    CORS_ORIGINS: list = []
+    CORS_ORIGINS: list[str] = []
 
     # ===== PRODUCTION SECURITY SETTINGS =====
-    TRUSTED_HOSTS: list = []
+    TRUSTED_HOSTS: list[str] = []
+    FORWARDED_ALLOW_IPS: list[str] = []
+    LOG_DIR: str = os.getenv("LOG_DIR", "logs")
+    PIPELINE_JSON_PARSE_MAX_CHARS: int = int(
+        os.getenv("PIPELINE_JSON_PARSE_MAX_CHARS") or "200000"
+    )
 
     # HTTPS redirect (enable in production with SSL)
     FORCE_HTTPS: bool = False
@@ -184,6 +223,13 @@ class Settings(BaseSettings):
 
     # Frontend URL for constructing dashboard links in webhooks
     FRONTEND_URL: Optional[str] = os.getenv("FRONTEND_URL")
+
+    @field_validator(
+        "CORS_ORIGINS", "TRUSTED_HOSTS", "FORWARDED_ALLOW_IPS", mode="before"
+    )
+    @classmethod
+    def _normalize_list_fields(cls, value: Any) -> list[str]:
+        return _parse_string_list(value)
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -211,6 +257,8 @@ class Settings(BaseSettings):
                     "testserver",
                     "*.your-domain.com",
                 ]
+            if not self.FORWARDED_ALLOW_IPS:
+                self.FORWARDED_ALLOW_IPS = ["127.0.0.1", "::1"]
             if not self.FRONTEND_URL:
                 self.FRONTEND_URL = "http://localhost:3000"
 
@@ -294,6 +342,12 @@ def validate_environment():
             errors.append("CORS_ORIGINS is missing in production.")
         if not settings.TRUSTED_HOSTS:
             errors.append("TRUSTED_HOSTS is missing in production.")
+        if not settings.FORWARDED_ALLOW_IPS:
+            errors.append("FORWARDED_ALLOW_IPS is missing in production.")
+        if "*" in settings.FORWARDED_ALLOW_IPS:
+            errors.append(
+                "FORWARDED_ALLOW_IPS cannot include '*' in production. Set explicit proxy IPs/CIDRs."
+            )
 
     # 5. HubSpot/GitHub Integration Security
     if (settings.HUBSPOT_CLIENT_ID or settings.GITHUB_CLIENT_ID) and (
