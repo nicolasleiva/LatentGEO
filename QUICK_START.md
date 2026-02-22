@@ -183,7 +183,7 @@ docker exec -it auditor_db psql -U auditor -d auditor_db
 cat backend/.env | grep NVIDIA_API_KEY
 
 # Deberías ver:
-# NVIDIA_API_KEY=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
+# NVIDIA_API_KEY=nvapi-j....
 ```
 
 ---
