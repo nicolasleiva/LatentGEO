@@ -5136,6 +5136,8 @@ export interface components {
         ConnectRequest: {
             /** Code */
             code: string;
+            /** State */
+            state?: string | null;
         };
         /** ConnectResponse */
         ConnectResponse: {
@@ -8326,7 +8328,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["ConnectResponse"];
                 };
             };
         };
@@ -12179,7 +12181,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["ConnectResponse"];
                 };
             };
         };

@@ -7,6 +7,7 @@ from collections import defaultdict
 from typing import Dict, Tuple
 
 import redis
+from app.core.request_identity import get_client_ip
 from fastapi import Request, status
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -31,17 +32,22 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         self.last_cleanup = time.time()
         self.cleanup_interval = 60
 
-        try:
-            # Connect to Redis
-            self.redis_client = redis.from_url(
-                settings.REDIS_URL, decode_responses=True
-            )
-            self.redis_client.ping()
-            self.use_redis = True
-            logger.info("Rate Limiter: Using Redis-based strategy")
-        except Exception as e:
+        if settings.REDIS_URL:
+            try:
+                # Connect to Redis
+                self.redis_client = redis.from_url(
+                    settings.REDIS_URL, decode_responses=True
+                )
+                self.redis_client.ping()
+                self.use_redis = True
+                logger.info("Rate Limiter: Using Redis-based strategy")
+            except Exception as e:
+                logger.warning(
+                    f"Rate Limiter: Redis unavailable ({e}). Falling back to in-memory strategy."
+                )
+        else:
             logger.warning(
-                f"Rate Limiter: Redis unavailable ({e}). Falling back to in-memory strategy."
+                "Rate Limiter: REDIS_URL not configured. Falling back to in-memory strategy."
             )
 
     def _get_rate_limit(self, path: str) -> Tuple[int, int]:
@@ -56,37 +62,29 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         if user_id:
             return f"user:{user_id}"
 
-        forwarded = request.headers.get("X-Forwarded-For")
-        if forwarded:
-            ip = forwarded.split(",")[0].strip()
-        else:
-            ip = request.client.host if request.client else "unknown"
+        ip = get_client_ip(request)
         return f"ip:{ip}"
 
     def _check_redis_limit(
         self, key: str, max_requests: int, window: int
     ) -> Tuple[bool, int, int]:
         """Check rate limit using Redis INCR and EXPIRE"""
-        try:
-            redis_key = f"rate_limit:{key}"
-            current_count = self.redis_client.get(redis_key)
+        redis_key = f"rate_limit:{key}"
+        current_count = self.redis_client.get(redis_key)
 
-            if current_count and int(current_count) >= max_requests:
-                ttl = self.redis_client.ttl(redis_key)
-                return False, int(current_count), ttl
-
-            # Increment and set TTL if new
-            pipe = self.redis_client.pipeline()
-            pipe.incr(redis_key)
-            pipe.expire(redis_key, window, nx=True)
-            results = pipe.execute()
-
-            new_count = results[0]
+        if current_count and int(current_count) >= max_requests:
             ttl = self.redis_client.ttl(redis_key)
-            return True, new_count, ttl
-        except Exception as e:
-            logger.error(f"Redis rate limit error: {e}")
-            return True, 1, window  # Allow on Redis failure
+            return False, int(current_count), ttl
+
+        # Increment and set TTL if new
+        pipe = self.redis_client.pipeline()
+        pipe.incr(redis_key)
+        pipe.expire(redis_key, window, nx=True)
+        results = pipe.execute()
+
+        new_count = results[0]
+        ttl = self.redis_client.ttl(redis_key)
+        return True, new_count, ttl
 
     def _check_memory_limit(
         self, key: str, max_requests: int, window: int
@@ -124,15 +122,28 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
         max_requests, window = self._get_rate_limit(request.url.path)
         client_key = self._get_client_key(request)
+        rate_limit_mode = "memory-fallback"
 
         if self.use_redis:
-            allowed, count, reset_after = self._check_redis_limit(
-                client_key, max_requests, window
-            )
+            try:
+                allowed, count, reset_after = self._check_redis_limit(
+                    client_key, max_requests, window
+                )
+                rate_limit_mode = "redis"
+            except Exception as e:
+                logger.warning(
+                    f"Rate limiter Redis runtime failure ({e}). Falling back to memory strategy."
+                )
+                self.use_redis = False
+                allowed, count, reset_after = self._check_memory_limit(
+                    client_key, max_requests, window
+                )
+                rate_limit_mode = "memory-fallback"
         else:
             allowed, count, reset_after = self._check_memory_limit(
                 client_key, max_requests, window
             )
+            rate_limit_mode = "memory-fallback"
 
         if not allowed:
             logger.warning(f"Rate limit exceeded: {client_key} on {request.url.path}")
@@ -143,7 +154,10 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                     "detail": f"Max {max_requests} requests per {window}s.",
                     "retry_after": reset_after,
                 },
-                headers={"Retry-After": str(reset_after)},
+                headers={
+                    "Retry-After": str(max(0, reset_after)),
+                    "X-RateLimit-Mode": rate_limit_mode,
+                },
             )
 
         response = await call_next(request)
@@ -151,6 +165,9 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         # Add rate limit headers
         response.headers["X-RateLimit-Limit"] = str(max_requests)
         response.headers["X-RateLimit-Remaining"] = str(max(0, max_requests - count))
-        response.headers["X-RateLimit-Reset"] = str(int(time.time() + reset_after))
+        response.headers["X-RateLimit-Reset"] = str(
+            int(time.time() + max(0, reset_after))
+        )
+        response.headers["X-RateLimit-Mode"] = rate_limit_mode
 
         return response

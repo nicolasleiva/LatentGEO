@@ -10,6 +10,7 @@ from collections import defaultdict
 from typing import Callable, Dict, Optional, Tuple
 
 from app.core.logger import get_logger
+from app.core.request_identity import get_client_ip
 from fastapi import Request, Response
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -45,12 +46,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
     def _get_client_key(self, request: Request) -> str:
         """Get unique client identifier (IP + optional user)"""
-        # Get real IP (considering proxies)
-        forwarded = request.headers.get("X-Forwarded-For")
-        if forwarded:
-            client_ip = forwarded.split(",")[0].strip()
-        else:
-            client_ip = request.client.host if request.client else "unknown"
+        client_ip = get_client_ip(request)
 
         # Hash for privacy
         return hashlib.sha256(client_ip.encode()).hexdigest()[:16]
@@ -122,7 +118,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
 
         # Skip for trusted IPs
-        client_host = request.client.host if request.client else "unknown"
+        client_host = get_client_ip(request)
         if client_host in self.trusted_ips:
             return await call_next(request)
 
@@ -213,7 +209,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         if self.csp_enabled:
             csp_directives = [
                 "default-src 'self'",
-                "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://apis.google.com",
+                "script-src 'self' 'unsafe-inline' https://apis.google.com",
                 "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
                 "font-src 'self' https://fonts.gstatic.com",
                 "img-src 'self' data: https: blob:",
@@ -280,13 +276,7 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
         start_time = time.time()
 
-        # Get client IP
-        forwarded = request.headers.get("X-Forwarded-For")
-        client_ip = (
-            forwarded.split(",")[0].strip()
-            if forwarded
-            else (request.client.host if request.client else "unknown")
-        )
+        client_ip = get_client_ip(request)
 
         # Process request
         response = await call_next(request)

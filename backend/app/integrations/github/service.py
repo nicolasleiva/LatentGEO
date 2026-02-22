@@ -7,6 +7,7 @@ from typing import Any, Dict, List
 
 from sqlalchemy.orm import Session
 
+from ...core.config import settings
 from ...core.logger import get_logger
 from ...models import Audit
 from ...models.github import (
@@ -21,6 +22,13 @@ from .oauth import GitHubOAuth
 from .pr_generator import PRGeneratorService
 
 logger = get_logger(__name__)
+
+
+def _normalize_email(value: str | None) -> str | None:
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip().lower()
+    return normalized or None
 
 
 class GitHubService:
@@ -337,7 +345,11 @@ class GitHubService:
         return fixes
 
     async def create_or_update_connection(
-        self, token_data: Dict, user_info: Dict
+        self,
+        token_data: Dict,
+        user_info: Dict,
+        owner_user_id: str,
+        owner_email: str | None = None,
     ) -> GitHubConnection:
         """
         Crea o actualiza conexión de GitHub
@@ -350,6 +362,7 @@ class GitHubService:
             GitHubConnection object
         """
         github_user_id = str(user_info["id"])
+        owner_email_normalized = _normalize_email(owner_email)
 
         # Buscar conexión existente
         connection = (
@@ -362,15 +375,48 @@ class GitHubService:
         encrypted_token = GitHubOAuth.encrypt_token(token_data["access_token"])
 
         if connection:
+            existing_owner_user_id = (connection.owner_user_id or "").strip()
+            existing_owner_email = _normalize_email(connection.owner_email)
+
+            # Do not allow cross-user reassignments.
+            owner_matches = (
+                (existing_owner_user_id and existing_owner_user_id == owner_user_id)
+                or (
+                    existing_owner_email
+                    and owner_email_normalized
+                    and existing_owner_email == owner_email_normalized
+                )
+            )
+
+            if existing_owner_user_id or existing_owner_email:
+                if not owner_matches:
+                    raise PermissionError(
+                        "GitHub connection already belongs to another user"
+                    )
+            else:
+                # Legacy row without owner.
+                if settings.DEBUG:
+                    connection.owner_user_id = owner_user_id
+                    connection.owner_email = owner_email_normalized
+                else:
+                    raise PermissionError(
+                        "Legacy GitHub connection without owner is blocked in production"
+                    )
+
             # Actualizar existente
             connection.access_token = encrypted_token
             connection.token_type = token_data.get("token_type", "bearer")
             connection.scope = token_data.get("scope", "")
             connection.is_active = True
+            connection.github_username = user_info["login"]
+            connection.owner_user_id = connection.owner_user_id or owner_user_id
+            connection.owner_email = connection.owner_email or owner_email_normalized
             connection.updated_at = datetime.utcnow()
         else:
             # Crear nueva
             connection = GitHubConnection(
+                owner_user_id=owner_user_id,
+                owner_email=owner_email_normalized,
                 github_user_id=github_user_id,
                 github_username=user_info["login"],
                 access_token=encrypted_token,
@@ -479,7 +525,10 @@ class GitHubService:
         client = await self.get_valid_client(connection_id)
         repo = (
             self.db.query(GitHubRepository)
-            .filter(GitHubRepository.id == repo_id)
+            .filter(
+                GitHubRepository.id == repo_id,
+                GitHubRepository.connection_id == connection_id,
+            )
             .first()
         )
 
@@ -533,7 +582,10 @@ class GitHubService:
         client = await self.get_valid_client(connection_id)
         repo = (
             self.db.query(GitHubRepository)
-            .filter(GitHubRepository.id == repo_id)
+            .filter(
+                GitHubRepository.id == repo_id,
+                GitHubRepository.connection_id == connection_id,
+            )
             .first()
         )
         audit = self.db.query(Audit).filter(Audit.id == audit_id).first()

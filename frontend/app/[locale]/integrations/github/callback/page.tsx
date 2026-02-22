@@ -19,6 +19,7 @@ function CallbackContent() {
 
   useEffect(() => {
     const code = searchParams.get("code");
+    const state = searchParams.get("state");
     const error = searchParams.get("error");
 
     if (error) {
@@ -33,6 +34,12 @@ function CallbackContent() {
       return;
     }
 
+    if (!state) {
+      setStatus("error");
+      setMessage("OAuth state not received");
+      return;
+    }
+
     const exchangeCode = async () => {
       try {
         const response = await fetchWithBackendAuth(
@@ -42,7 +49,7 @@ function CallbackContent() {
             headers: {
               "Content-Type": "application/json",
             },
-            body: JSON.stringify({ code }),
+            body: JSON.stringify({ code, state }),
           },
         );
 

@@ -22,6 +22,13 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 # Copy application code (this layer changes often)
 COPY backend/ .
 
+# Create non-root runtime user and writable directories
+RUN groupadd --gid 1000 appuser \
+    && useradd --uid 1000 --gid appuser --create-home --shell /usr/sbin/nologin appuser \
+    && mkdir -p /app/reports /app/logs /app/db /tmp \
+    && chown -R appuser:appuser /app \
+    && chmod 1777 /tmp
+
 # Development optimizations
 ENV PYTHONUNBUFFERED=1 \
     HOST=0.0.0.0 \
@@ -31,6 +38,9 @@ ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     # Disable pip cache in container (we use mount cache instead)
     PIP_NO_CACHE_DIR=1
+
+# Run as non-root
+USER appuser
 
 EXPOSE 8000
 

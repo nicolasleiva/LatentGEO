@@ -3809,11 +3809,18 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectResponse"
+                }
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
       }
     },
     "/api/v1/hubspot/callback": {
@@ -3853,7 +3860,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
       }
     },
     "/api/v1/hubspot/connections": {
@@ -3873,7 +3885,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
       }
     },
     "/api/v1/hubspot/sync/{connection_id}": {
@@ -3884,6 +3901,11 @@
         "summary": "Sync Pages",
         "description": "Sincroniza las p\u00e1ginas de una conexi\u00f3n",
         "operationId": "sync_pages_api_v1_hubspot_sync__connection_id__post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "parameters": [
           {
             "name": "connection_id",
@@ -3925,6 +3947,11 @@
         "summary": "Get Pages",
         "description": "Obtiene las p\u00e1ginas sincronizadas",
         "operationId": "get_pages_api_v1_hubspot_pages__connection_id__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "parameters": [
           {
             "name": "connection_id",
@@ -4057,6 +4084,11 @@
         "summary": "Rollback Change",
         "description": "Revierte un cambio aplicado",
         "operationId": "rollback_change_api_v1_hubspot_rollback__change_id__post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "parameters": [
           {
             "name": "change_id",
@@ -4109,7 +4141,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
       }
     },
     "/api/v1/github/oauth/authorize": {
@@ -4129,7 +4166,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
       }
     },
     "/api/v1/github/callback": {
@@ -4169,7 +4211,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
       }
     },
     "/api/v1/github/connections": {
@@ -4189,7 +4236,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
       }
     },
     "/api/v1/github/sync/{connection_id}": {
@@ -4200,6 +4252,11 @@
         "summary": "Sync Repositories",
         "description": "Sincroniza repositorios de una conexi\u00f3n",
         "operationId": "sync_repositories_api_v1_github_sync__connection_id__post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "parameters": [
           {
             "name": "connection_id",
@@ -4241,6 +4298,11 @@
         "summary": "Get Repositories",
         "description": "Obtiene repositorios de una conexi\u00f3n",
         "operationId": "get_repositories_api_v1_github_repos__connection_id__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "parameters": [
           {
             "name": "connection_id",
@@ -4288,6 +4350,11 @@
         "summary": "Get Repositories",
         "description": "Obtiene repositorios de una conexi\u00f3n",
         "operationId": "get_repositories_api_v1_github_repositories__connection_id__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "parameters": [
           {
             "name": "connection_id",
@@ -4335,6 +4402,11 @@
         "summary": "Analyze Repository",
         "description": "Analiza un repositorio para detectar tipo de sitio",
         "operationId": "analyze_repository_api_v1_github_analyze__connection_id___repo_id__post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "parameters": [
           {
             "name": "connection_id",
@@ -4432,6 +4504,11 @@
         "summary": "Get Pull Requests",
         "description": "Obtiene PRs de un repositorio",
         "operationId": "get_pull_requests_api_v1_github_prs__repo_id__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "parameters": [
           {
             "name": "repo_id",
@@ -4479,6 +4556,11 @@
         "summary": "Audit Repository Blogs",
         "description": "Audita todos los blogs de un repositorio\n\nEncuentra autom\u00e1ticamente todos los archivos de blog seg\u00fan el framework\ny ejecuta una auditor\u00eda SEO completa en cada uno.\n\nArgs:\n    connection_id: ID de la conexi\u00f3n de GitHub\n    repo_id: ID del repositorio\n\nReturns:\n    Reporte completo con todos los blogs auditados y sus issues",
         "operationId": "audit_repository_blogs_api_v1_github_audit_blogs__connection_id___repo_id__post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "parameters": [
           {
             "name": "connection_id",
@@ -4529,6 +4611,11 @@
         "summary": "Create Blog Fixes Pr",
         "description": "Crea un PR con fixes para blogs espec\u00edficos\n\nToma los resultados de una auditor\u00eda de blogs y crea un PR\naplicando todos los fixes necesarios.\n\nArgs:\n    connection_id: ID de la conexi\u00f3n\n    repo_id: ID del repositorio\n    blog_paths: Lista de paths de blogs a aplicar fixes\n\nReturns:\n    PR creado con fixes aplicados",
         "operationId": "create_blog_fixes_pr_api_v1_github_create_blog_fixes_pr__connection_id___repo_id__post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "parameters": [
           {
             "name": "connection_id",
@@ -4847,6 +4934,11 @@
         "summary": "Audit Repository Blogs Geo",
         "description": "Audita blogs de un repositorio para SEO + GEO\n\nGEO (Generative Engine Optimization) detecta issues adicionales a SEO:\n- Formato Q&A (LLMs prefieren preguntas-respuestas)\n- E-E-A-T signals (Experience, Expertise, Authority, Trust)\n- Estructura de fragmentos (snippet-level clarity)\n- Lenguaje conversacional vs keyword-stuffed\n- Respuestas directas (pir\u00e1mide invertida)\n\nArgs:\n    connection_id: ID de la conexi\u00f3n de GitHub\n    repo_id: ID del repositorio\n\nReturns:\n    Reporte completo con SEO issues + GEO issues + GEO score por blog",
         "operationId": "audit_repository_blogs_geo_api_v1_github_audit_blogs_geo__connection_id___repo_id__post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "parameters": [
           {
             "name": "connection_id",
@@ -4897,6 +4989,11 @@
         "summary": "Create Geo Fixes Pr",
         "description": "Crea PR con fixes SEO + GEO para blogs",
         "operationId": "create_geo_fixes_pr_api_v1_github_create_geo_fixes_pr__connection_id___repo_id__post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "parameters": [
           {
             "name": "connection_id",
@@ -9209,11 +9306,18 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectResponse"
+                }
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
       }
     },
     "/api/hubspot/callback": {
@@ -9253,7 +9357,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
       }
     },
     "/api/hubspot/connections": {
@@ -9273,7 +9382,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
       }
     },
     "/api/hubspot/sync/{connection_id}": {
@@ -9284,6 +9398,11 @@
         "summary": "Sync Pages",
         "description": "Sincroniza las p\u00e1ginas de una conexi\u00f3n",
         "operationId": "sync_pages_api_hubspot_sync__connection_id__post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "parameters": [
           {
             "name": "connection_id",
@@ -9325,6 +9444,11 @@
         "summary": "Get Pages",
         "description": "Obtiene las p\u00e1ginas sincronizadas",
         "operationId": "get_pages_api_hubspot_pages__connection_id__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "parameters": [
           {
             "name": "connection_id",
@@ -9457,6 +9581,11 @@
         "summary": "Rollback Change",
         "description": "Revierte un cambio aplicado",
         "operationId": "rollback_change_api_hubspot_rollback__change_id__post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "parameters": [
           {
             "name": "change_id",
@@ -9509,7 +9638,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
       }
     },
     "/api/github/oauth/authorize": {
@@ -9529,7 +9663,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
       }
     },
     "/api/github/callback": {
@@ -9569,7 +9708,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
       }
     },
     "/api/github/connections": {
@@ -9589,7 +9733,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
       }
     },
     "/api/github/sync/{connection_id}": {
@@ -9600,6 +9749,11 @@
         "summary": "Sync Repositories",
         "description": "Sincroniza repositorios de una conexi\u00f3n",
         "operationId": "sync_repositories_api_github_sync__connection_id__post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "parameters": [
           {
             "name": "connection_id",
@@ -9641,6 +9795,11 @@
         "summary": "Get Repositories",
         "description": "Obtiene repositorios de una conexi\u00f3n",
         "operationId": "get_repositories_api_github_repos__connection_id__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "parameters": [
           {
             "name": "connection_id",
@@ -9688,6 +9847,11 @@
         "summary": "Get Repositories",
         "description": "Obtiene repositorios de una conexi\u00f3n",
         "operationId": "get_repositories_api_github_repositories__connection_id__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "parameters": [
           {
             "name": "connection_id",
@@ -9735,6 +9899,11 @@
         "summary": "Analyze Repository",
         "description": "Analiza un repositorio para detectar tipo de sitio",
         "operationId": "analyze_repository_api_github_analyze__connection_id___repo_id__post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "parameters": [
           {
             "name": "connection_id",
@@ -9832,6 +10001,11 @@
         "summary": "Get Pull Requests",
         "description": "Obtiene PRs de un repositorio",
         "operationId": "get_pull_requests_api_github_prs__repo_id__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "parameters": [
           {
             "name": "repo_id",
@@ -9879,6 +10053,11 @@
         "summary": "Audit Repository Blogs",
         "description": "Audita todos los blogs de un repositorio\n\nEncuentra autom\u00e1ticamente todos los archivos de blog seg\u00fan el framework\ny ejecuta una auditor\u00eda SEO completa en cada uno.\n\nArgs:\n    connection_id: ID de la conexi\u00f3n de GitHub\n    repo_id: ID del repositorio\n\nReturns:\n    Reporte completo con todos los blogs auditados y sus issues",
         "operationId": "audit_repository_blogs_api_github_audit_blogs__connection_id___repo_id__post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "parameters": [
           {
             "name": "connection_id",
@@ -9929,6 +10108,11 @@
         "summary": "Create Blog Fixes Pr",
         "description": "Crea un PR con fixes para blogs espec\u00edficos\n\nToma los resultados de una auditor\u00eda de blogs y crea un PR\naplicando todos los fixes necesarios.\n\nArgs:\n    connection_id: ID de la conexi\u00f3n\n    repo_id: ID del repositorio\n    blog_paths: Lista de paths de blogs a aplicar fixes\n\nReturns:\n    PR creado con fixes aplicados",
         "operationId": "create_blog_fixes_pr_api_github_create_blog_fixes_pr__connection_id___repo_id__post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "parameters": [
           {
             "name": "connection_id",
@@ -10247,6 +10431,11 @@
         "summary": "Audit Repository Blogs Geo",
         "description": "Audita blogs de un repositorio para SEO + GEO\n\nGEO (Generative Engine Optimization) detecta issues adicionales a SEO:\n- Formato Q&A (LLMs prefieren preguntas-respuestas)\n- E-E-A-T signals (Experience, Expertise, Authority, Trust)\n- Estructura de fragmentos (snippet-level clarity)\n- Lenguaje conversacional vs keyword-stuffed\n- Respuestas directas (pir\u00e1mide invertida)\n\nArgs:\n    connection_id: ID de la conexi\u00f3n de GitHub\n    repo_id: ID del repositorio\n\nReturns:\n    Reporte completo con SEO issues + GEO issues + GEO score por blog",
         "operationId": "audit_repository_blogs_geo_api_github_audit_blogs_geo__connection_id___repo_id__post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "parameters": [
           {
             "name": "connection_id",
@@ -10297,6 +10486,11 @@
         "summary": "Create Geo Fixes Pr",
         "description": "Crea PR con fixes SEO + GEO para blogs",
         "operationId": "create_geo_fixes_pr_api_github_create_geo_fixes_pr__connection_id___repo_id__post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "parameters": [
           {
             "name": "connection_id",
@@ -12224,6 +12418,17 @@
           "code": {
             "type": "string",
             "title": "Code"
+          },
+          "state": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "State"
           }
         },
         "type": "object",

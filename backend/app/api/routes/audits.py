@@ -1,5 +1,6 @@
 import asyncio
 import os
+import uuid
 from datetime import datetime
 from typing import List
 from urllib.parse import urlparse
@@ -24,6 +25,7 @@ from app.services.competitor_filters import (
     is_valid_competitor_domain,
     normalize_domain,
 )
+from app.services.cache_service import cache
 from app.services.pipeline_service import PipelineService
 
 # Importar la tarea de Celery
@@ -41,6 +43,78 @@ router = APIRouter(
 )
 
 _pdf_generation_in_progress: set[int] = set()
+_pdf_generation_tokens: dict[int, str] = {}
+
+
+def _pdf_lock_key(audit_id: int) -> str:
+    return f"pdf_generation_lock:{audit_id}"
+
+
+def _acquire_pdf_generation_lock(audit_id: int) -> tuple[bool, str | None, str | None]:
+    """
+    Acquire PDF lock using Redis (distributed) with local fallback.
+    Returns (acquired, token, mode["redis"|"local"]).
+    """
+    token = str(uuid.uuid4())
+    ttl_seconds = max(30, int(settings.PDF_LOCK_TTL_SECONDS or 900))
+
+    if cache.enabled and cache.redis_client:
+        try:
+            acquired = bool(
+                cache.redis_client.set(
+                    _pdf_lock_key(audit_id),
+                    token,
+                    nx=True,
+                    ex=ttl_seconds,
+                )
+            )
+            if acquired:
+                return True, token, "redis"
+            return False, None, "redis"
+        except Exception as exc:
+            logger.warning(
+                f"Redis PDF lock unavailable for audit {audit_id}; falling back to local lock: {exc}"
+            )
+    else:
+        logger.warning(
+            f"Redis PDF lock disabled for audit {audit_id}; using local in-memory lock"
+        )
+
+    if audit_id in _pdf_generation_in_progress:
+        return False, None, "local"
+
+    _pdf_generation_in_progress.add(audit_id)
+    _pdf_generation_tokens[audit_id] = token
+    return True, token, "local"
+
+
+def _release_pdf_generation_lock(
+    audit_id: int, token: str | None, mode: str | None
+) -> None:
+    """Release Redis/local PDF lock safely."""
+    if not token or not mode:
+        return
+
+    if mode == "redis":
+        if cache.enabled and cache.redis_client:
+            try:
+                lock_key = _pdf_lock_key(audit_id)
+                current_token = cache.redis_client.get(lock_key)
+                if current_token == token:
+                    cache.redis_client.delete(lock_key)
+            except Exception as exc:
+                logger.warning(
+                    f"Failed to release Redis PDF lock for audit {audit_id}: {exc}"
+                )
+        return
+
+    current_token = _pdf_generation_tokens.get(audit_id)
+    if current_token and current_token != token:
+        logger.warning(
+            f"PDF local lock token mismatch for audit {audit_id}; forcing release"
+        )
+    _pdf_generation_tokens.pop(audit_id, None)
+    _pdf_generation_in_progress.discard(audit_id)
 
 
 def _get_owned_audit(db: Session, audit_id: int, current_user: AuthUser) -> Audit:
@@ -84,7 +158,7 @@ async def run_audit_sync(audit_id: int):
 
         # Enriquecer con mercado/idioma/dominio si no vienen en el resumen
         if isinstance(target_audit_result, dict):
-            target_audit_result["language"] = "en"
+            target_audit_result["language"] = audit.language or "en"
             if audit.market and not target_audit_result.get("market"):
                 target_audit_result["market"] = audit.market
             if audit.domain and not target_audit_result.get("domain"):
@@ -722,6 +796,8 @@ async def generate_audit_pdf(
     from app.services.pdf_service import PDFService
 
     audit = _get_owned_audit(db, audit_id, current_user)
+    lock_token: str | None = None
+    lock_mode: str | None = None
 
     if audit.status != AuditStatus.COMPLETED:
         raise HTTPException(
@@ -729,7 +805,8 @@ async def generate_audit_pdf(
             detail=f"La auditoría debe estar completada. Estado actual: {audit.status.value}",
         )
 
-    if audit_id in _pdf_generation_in_progress:
+    acquired_lock, lock_token, lock_mode = _acquire_pdf_generation_lock(audit_id)
+    if not acquired_lock:
         return JSONResponse(
             status_code=409,
             content={
@@ -741,7 +818,6 @@ async def generate_audit_pdf(
         )
 
     try:
-        _pdf_generation_in_progress.add(audit_id)
         logger.info(
             f"=== Starting PDF generation with auto-PageSpeed for audit {audit_id} ==="
         )
@@ -818,7 +894,7 @@ async def generate_audit_pdf(
         logger.error(f"Error: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Error generating PDF: {str(e)}")
     finally:
-        _pdf_generation_in_progress.discard(audit_id)
+        _release_pdf_generation_lock(audit_id, lock_token, lock_mode)
 
 
 @router.get("/{audit_id}/download-pdf")
@@ -907,7 +983,8 @@ async def configure_audit_chat(
             role="assistant", content="This audit is already in progress or completed."
         )
 
-    audit.language = "en"
+    if config.language:
+        audit.language = config.language
     if config.competitors:
         audit.competitors = config.competitors
     if config.market:

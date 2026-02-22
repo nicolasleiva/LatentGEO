@@ -1,513 +1,166 @@
-# 📖 API Reference - GEO Audit Platform
+# API Reference (LatentGEO)
 
-## Base URL
-```
-http://localhost:8000
-```
+## Base URLs
+- Legacy: `http://localhost:8000/api`
+- Versioned: `http://localhost:8000/api/v1`
+
+Both prefixes expose the same protected business routes.
 
 ## Authentication
-Actualmente sin autenticación. Adicionar JWT Bearer si es necesario.
+Most API routes require JWT bearer auth.
 
----
+Use:
 
-## 1️⃣ AUDITORÍAS
-
-### 1.1 Crear Nueva Auditoría
 ```http
-POST /audits/
-Content-Type: application/json
+Authorization: Bearer <token>
+```
 
+JWT claims expected by backend:
+- `sub` (required): internal user id.
+- `email` or `user_email` (optional): user email for ownership checks.
+
+Common auth/authorization responses:
+- `401`: missing, invalid, or expired token.
+- `403`: cross-user access denied, or legacy ownerless connection blocked in production.
+
+## Ownership and Legacy Policy
+GitHub and HubSpot connections are user-owned (`owner_user_id`, `owner_email`).
+
+- Production (`DEBUG=false`): ownerless legacy rows are blocked (`403`).
+- Debug (`DEBUG=true`): first authenticated access auto-claims legacy ownerless rows.
+
+## OAuth Security Contract
+GitHub and HubSpot OAuth now require an authenticated user for both start and callback.
+
+- `/auth-url` returns `{ "url": "...", "state": "..." }`.
+- `state` is signed and time-limited (default 10 minutes).
+- Callback rejects invalid state (`400`) or user mismatch (`401`).
+
+Callback payload format:
+
+```json
 {
-  "url": "https://ejemplo.com",
-  "max_crawl": 50,
-  "max_audit": 5
+  "code": "oauth_code",
+  "state": "signed_state"
 }
 ```
 
-**Response (201):**
+## Protected vs Public Endpoints
+
+### Public Endpoints
+- `GET /health`
+- `GET /health/ready`
+- `GET /health/live`
+- `POST /api/github/webhook` and `POST /api/v1/github/webhook` (signature-validated)
+- `POST /api/webhooks/github/incoming` and `POST /api/v1/webhooks/github/incoming` (signature-validated if configured)
+- `POST /api/webhooks/hubspot/incoming` and `POST /api/v1/webhooks/hubspot/incoming`
+- `GET /api/webhooks/health` and `GET /api/v1/webhooks/health`
+
+### HubSpot Endpoints (Bearer Required)
+- `GET /api/hubspot/auth-url`
+- `POST /api/hubspot/callback`
+- `GET /api/hubspot/connections`
+- `POST /api/hubspot/sync/{connection_id}`
+- `GET /api/hubspot/pages/{connection_id}`
+- `POST /api/hubspot/rollback/{change_id}`
+- `GET /api/hubspot/recommendations/{audit_id}`
+- `POST /api/hubspot/apply-recommendations`
+
+Same set is available under `/api/v1/hubspot/*`.
+
+### GitHub Endpoints (Bearer Required)
+- `GET /api/github/auth-url`
+- `GET /api/github/oauth/authorize`
+- `POST /api/github/callback`
+- `GET /api/github/connections`
+- `POST /api/github/sync/{connection_id}`
+- `GET /api/github/repos/{connection_id}`
+- `GET /api/github/repositories/{connection_id}`
+- `POST /api/github/analyze/{connection_id}/{repo_id}`
+- `GET /api/github/prs/{repo_id}`
+- `POST /api/github/audit-blogs/{connection_id}/{repo_id}`
+- `POST /api/github/create-blog-fixes-pr/{connection_id}/{repo_id}`
+- `POST /api/github/audit-blogs-geo/{connection_id}/{repo_id}`
+- `POST /api/github/create-geo-fixes-pr/{connection_id}/{repo_id}`
+- `POST /api/github/create-auto-fix-pr/{connection_id}/{repo_id}`
+- `POST /api/github/create-pr`
+- `GET /api/github/fix-inputs/{audit_id}`
+- `POST /api/github/fix-inputs/{audit_id}`
+- `POST /api/github/fix-inputs/chat/{audit_id}`
+
+Same set is available under `/api/v1/github/*`.
+
+## Health Semantics
+`GET /health` returns:
+- `200` when `status` is `healthy` or `degraded`.
+- `503` only when `status` is `unhealthy`.
+
+Typical payload:
+
 ```json
 {
-  "id": 1,
-  "url": "https://ejemplo.com",
-  "domain": "ejemplo.com",
-  "status": "pending",
-  "progress": 0.0,
-  "task_id": null,
-  "created_at": "2024-01-15T10:30:00"
-}
-```
-
-### 1.2 Listar Auditorías
-```http
-GET /audits/?page=1&page_size=20
-```
-
-**Response (200):**
-```json
-{
-  "total": 42,
-  "page": 1,
-  "page_size": 20,
-  "pages": 3,
-  "data": [
-    {
-      "id": 1,
-      "url": "https://ejemplo.com",
-      "domain": "ejemplo.com",
-      "status": "completed",
-      "progress": 100.0,
-      "total_pages": 5,
-      "critical_issues": 2,
-      "high_issues": 5,
-      "medium_issues": 12,
-      "low_issues": 8,
-      "is_ymyl": false,
-      "category": "E-commerce",
-      "created_at": "2024-01-15T10:30:00",
-      "completed_at": "2024-01-15T11:45:00"
-    }
-  ]
-}
-```
-
-### 1.3 Obtener Detalle de Auditoría
-```http
-GET /audits/1
-```
-
-**Response (200):**
-```json
-{
-  "id": 1,
-  "url": "https://ejemplo.com",
-  "domain": "ejemplo.com",
-  "status": "completed",
-  "progress": 100.0,
-  "total_pages": 5,
-  "critical_issues": 2,
-  "high_issues": 5,
-  "medium_issues": 12,
-  "low_issues": 8,
-  "is_ymyl": false,
-  "category": "E-commerce",
-  "created_at": "2024-01-15T10:30:00",
-  "completed_at": "2024-01-15T11:45:00",
-  "report_markdown": "# Reporte...",
-  "fix_plan": [
-    {
-      "page_path": "/",
-      "issue_code": "H1_MISSING",
-      "priority": "CRITICAL",
-      "description": "Falta H1 en página",
-      "suggestion": "Agregar H1 con palabra clave principal"
-    }
-  ],
-  "pages": [
-    {
-      "url": "https://ejemplo.com/",
-      "path": "/",
-      "overall_score": 7.5,
-      "critical_issues": 1,
-      "high_issues": 2,
-      "medium_issues": 3,
-      "low_issues": 2
-    }
-  ]
-}
-```
-
-### 1.4 Filtrar por Estado
-```http
-GET /audits/status/completed
-```
-
-**Estados posibles:** `pending`, `running`, `completed`, `failed`
-
-### 1.5 Obtener Estadísticas
-```http
-GET /audits/stats/summary
-```
-
-**Response (200):**
-```json
-{
-  "total": 42,
-  "pending": 5,
-  "running": 2,
-  "completed": 33,
-  "failed": 2
-}
-```
-
-### 1.6 Eliminar Auditoría
-```http
-DELETE /audits/1
-```
-
-**Response (204):** Sin contenido
-
----
-
-## 2️⃣ REPORTES
-
-### 2.1 Obtener Reportes de Auditoría
-```http
-GET /reports/audit/1
-```
-
-**Response (200):**
-```json
-{
-  "audit_id": 1,
-  "total_reports": 2,
-  "reports": [
-    {
-      "id": 1,
-      "audit_id": 1,
-      "report_type": "markdown",
-      "file_path": "/reports/ejemplo.com/report.md",
-      "file_size": 15240,
-      "created_at": "2024-01-15T11:45:00"
-    },
-    {
-      "id": 2,
-      "audit_id": 1,
-      "report_type": "pdf",
-      "file_path": "/reports/ejemplo.com/report.pdf",
-      "file_size": 2048000,
-      "created_at": "2024-01-15T11:50:00"
-    }
-  ]
-}
-```
-
-### 2.2 Generar PDF (V11 Complete Context)
-Genera un reporte PDF comprensivo que incluye:
-- Análisis PageSpeed (Mobile/Desktop)
-- Investigación de Keywords (Volumen, Dificultad)
-- Perfil de Backlinks (DA, Anchor text)
-- Rank Tracking & Visibilidad en LLMs
-- Sugerencias de Contenido IA
-
-```http
-POST /audits/{audit_id}/generate-pdf?force_pagespeed_refresh=false
-```
-
-**Response (200):**
-```json
-{
-  "success": true,
-  "pdf_path": "/app/reports/ejemplo.com/Reporte_Consolidado_....pdf",
-  "message": "PDF generated successfully with PageSpeed data",
-  "pagespeed_included": true,
-  "file_size": 125000
-}
-```
-
-### 2.3 Obtener Markdown
-```http
-GET /reports/markdown/1
-```
-
-**Response (200):**
-```json
-{
-  "audit_id": 1,
-  "markdown": "# Informe de Auditoría...",
-  "created_at": "2024-01-15T11:45:00"
-}
-```
-
-### 2.4 Obtener JSON
-```http
-GET /reports/json/1
-```
-
-**Response (200):**
-```json
-{
-  "audit_id": 1,
-  "url": "https://ejemplo.com",
-  "domain": "ejemplo.com",
-  "status": "completed",
-  "is_ymyl": false,
-  "category": "E-commerce",
-  "target_audit": {...},
-  "external_intelligence": {...},
-  "search_results": {...},
-  "fix_plan": [...],
-  "created_at": "2024-01-15T10:30:00",
-  "completed_at": "2024-01-15T11:45:00"
-}
-```
-
-### 2.5 Descargar Reporte
-```http
-GET /reports/download/1
-```
-
-**Response (200):** Descarga archivo binario
-
----
-
-## 3️⃣ ANALYTICS
-
-### 3.1 Análisis de Auditoría
-```http
-GET /analytics/audit/1
-```
-
-**Response (200):**
-```json
-{
-  "audit_id": 1,
-  "domain": "ejemplo.com",
-  "total_pages": 5,
-  "is_ymyl": false,
-  "category": "E-commerce",
-  "issues": {
-    "critical": 2,
-    "high": 5,
-    "medium": 12,
-    "low": 8,
-    "total": 27
-  },
-  "scores": {
-    "h1_score": 8.5,
-    "structure_score": 7.2,
-    "content_score": 6.8,
-    "eeat_score": 7.0,
-    "schema_score": 5.5,
-    "overall_score": 7.0
-  },
-  "pages": [
-    {
-      "url": "https://ejemplo.com/",
-      "path": "/",
-      "overall_score": 7.5,
-      "issues": {
-        "critical": 1,
-        "high": 2,
-        "medium": 3,
-        "low": 2
-      }
-    }
-  ]
-}
-```
-
-### 3.2 Análisis Competitivo
-```http
-GET /analytics/competitors/1
-```
-
-**Response (200):**
-```json
-{
-  "audit_id": 1,
-  "total_competitors": 3,
-  "your_geo_score": 7.5,
-  "average_competitor_score": 8.2,
-  "position": "Por debajo del promedio",
-  "competitors": [
-    {
-      "domain": "competidor1.com",
-      "url": "https://competidor1.com",
-      "geo_score": 8.9
-    },
-    {
-      "domain": "competidor2.com",
-      "url": "https://competidor2.com",
-      "geo_score": 8.1
-    }
-  ],
-  "identified_gaps": [
-    "Schema faltante: FAQPage",
-    "Schema faltante: Article"
-  ]
-}
-```
-
-### 3.3 Dashboard
-```http
-GET /analytics/dashboard
-```
-
-**Response (200):**
-```json
-{
-  "summary": {
-    "total_audits": 42,
-    "completed_audits": 33,
-    "running_audits": 2,
-    "failed_audits": 2,
-    "success_rate": 78.57
-  },
-  "recent_audits": [
-    {
-      "id": 1,
-      "url": "https://ejemplo.com",
-      "domain": "ejemplo.com",
-      "status": "completed",
-      "progress": 100.0,
-      "total_pages": 5,
-      "issues": {
-        "critical": 2,
-        "high": 5,
-        "medium": 12,
-        "low": 8
-      },
-      "created_at": "2024-01-15T10:30:00"
-    }
-  ],
-  "metrics": {
-    "unique_domains": 15,
-    "total_issues": 847,
-    "average_issues_per_audit": 20.17
+  "status": "degraded",
+  "services": {
+    "database": "connected",
+    "redis": "disconnected"
   }
 }
 ```
 
-### 3.4 Issues por Prioridad
-```http
-GET /analytics/issues/1
+## Examples
+
+### Get OAuth URL (Authenticated)
+```bash
+curl -s http://localhost:8000/api/github/auth-url \
+  -H "Authorization: Bearer $TOKEN"
 ```
 
-**Response (200):**
+Response:
+
 ```json
 {
-  "audit_id": 1,
-  "total_issues": 27,
-  "by_priority": {
-    "CRITICAL": [
-      {
-        "page_path": "/",
-        "issue_code": "H1_MISSING",
-        "description": "Falta H1",
-        "suggestion": "Agregar H1"
-      }
-    ],
-    "HIGH": [
-      {
-        "page_path": "/product",
-        "issue_code": "HEADER_HIERARCHY",
-        "description": "Jerarquía de headers incorrecta",
-        "suggestion": "Usar H2 después de H1"
-      }
-    ],
-    "MEDIUM": [...],
-    "LOW": [...]
-  }
+  "url": "https://github.com/login/oauth/authorize?...",
+  "state": "eyJhbGciOiJIUzI1NiIs..."
 }
 ```
 
----
-
-## 4️⃣ HEALTH & INFO
-
-### 4.1 Health Check
-```http
-GET /health
+### OAuth Callback (Authenticated + state)
+```bash
+curl -s -X POST http://localhost:8000/api/github/callback \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"code":"oauth_code","state":"signed_state"}'
 ```
 
-**Response (200):**
-```json
-{
-  "status": "ok",
-  "version": "1.0.0",
-  "database": "ok",
-  "redis": "ok",
-  "api_name": "GEO Audit Platform"
-}
+### Cross-user Access Rejected
+```bash
+curl -s http://localhost:8000/api/hubspot/pages/<connection_id_of_other_user> \
+  -H "Authorization: Bearer $TOKEN"
 ```
 
-### 4.2 Configuración Pública
-```http
-GET /config
+Expected:
+- `403` when connection does not belong to current user.
+
+## HTTP Status Codes Used Frequently
+- `200` OK
+- `201` Created
+- `400` Invalid request or invalid OAuth state
+- `401` Missing/invalid credentials or OAuth state-user mismatch
+- `403` Forbidden by ownership/legacy policy
+- `404` Resource not found
+- `409` Conflict (for active PDF generation lock)
+- `422` Validation errors (for example, missing required fix inputs)
+- `500` Internal server error
+- `503` Unhealthy service state
+
+## OpenAPI + Frontend Types
+After backend contract changes, regenerate frontend API artifacts:
+
+```bash
+pnpm --dir frontend run api:generate-types
+pnpm --dir frontend run type-check
 ```
 
-**Response (200):**
-```json
-{
-  "app_name": "GEO Audit Platform",
-  "app_version": "1.0.0",
-  "debug": false,
-  "max_crawl_default": 50,
-  "max_audit_default": 5,
-  "default_page_size": 20,
-  "max_page_size": 100
-}
-```
-
-### 4.3 Información API
-```http
-GET /info
-```
-
-**Response (200):**
-```json
-{
-  "title": "GEO Audit Platform",
-  "version": "1.0.0",
-  "description": "API profesional para auditorías SEO/GEO con arquitectura modular",
-  "documentation": "/docs",
-  "endpoints": {
-    "audits": "/audits",
-    "reports": "/reports",
-    "analytics": "/analytics",
-    "crawler": "/crawler"
-  }
-}
-```
-
----
-
-## 🔍 HTTP Status Codes
-
-| Código | Significado |
-|--------|------------|
-| 200 | OK - Solicitud exitosa |
-| 201 | Created - Recurso creado |
-| 202 | Accepted - Solicitud aceptada (asincrónica) |
-| 204 | No Content - Eliminado exitosamente |
-| 400 | Bad Request - Parámetros inválidos |
-| 404 | Not Found - Recurso no encontrado |
-| 500 | Internal Server Error - Error del servidor |
-| 503 | Service Unavailable - Servicio no disponible |
-
----
-
-## 📋 Esquemas de Datos
-
-### Audit Status
-```
-pending   - Esperando procesamiento
-running   - En ejecución
-completed - Completada
-failed    - Falló
-```
-
-### Issue Priority
-```
-CRITICAL - Acción inmediata
-HIGH     - Impacto alto
-MEDIUM   - Optimización
-LOW      - Mejora menor
-```
-
----
-
-## 🔐 Notas de Seguridad
-
-- ⚠️ Actualmente sin autenticación
-- ⚠️ CORS configurado para desarrollo
-- ⚠️ Cambiar SECRET_KEY en producción
-- ✅ Se recomienda usar HTTPS en producción
-- ✅ Implementar JWT Bearer token
-- ✅ Rate limiting en endpoints críticos
-
----
-
-## 📞 Soporte
-
-Para issues o preguntas: [support@geoaudit.local](mailto:support@geoaudit.local)
+Generated files:
+- `frontend/lib/api-client/openapi.json`
+- `frontend/lib/api-client/schema.ts`

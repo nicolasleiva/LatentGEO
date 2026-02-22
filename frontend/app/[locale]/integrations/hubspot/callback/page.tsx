@@ -13,6 +13,7 @@ function CallbackContent() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const code = searchParams.get("code");
+  const state = searchParams.get("state");
   const [status, setStatus] = useState("Processing...");
   const [error, setError] = useState("");
 
@@ -24,7 +25,7 @@ function CallbackContent() {
           {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ code: authCode }),
+            body: JSON.stringify({ code: authCode, state }),
           },
         );
 
@@ -45,12 +46,14 @@ function CallbackContent() {
       }
     };
 
-    if (code) {
+    if (!state) {
+      setError("Missing OAuth state");
+    } else if (code) {
       exchangeCode(code);
     } else {
       setError("No authorization code found");
     }
-  }, [code, pathname, router]);
+  }, [code, pathname, router, state]);
 
   return (
     <Card className="w-full max-w-md text-center">
