@@ -13,6 +13,12 @@ from .logger import get_logger
 
 logger = get_logger(__name__)
 
+# Fail fast with clear message for local/manual runs.
+if not settings.DATABASE_URL:
+    raise RuntimeError(
+        "DATABASE_URL no configurada. Definila en .env o variables de entorno."
+    )
+
 # Configurar engine según el tipo de BD
 if settings.DATABASE_URL.startswith("sqlite"):
     engine = create_engine(
@@ -50,6 +56,52 @@ def get_db():
 def create_all_tables():
     """Crear todas las tablas"""
     Base.metadata.create_all(bind=engine)
+
+
+def _ensure_column_exists(connection, table: str, column: str, column_sql: str) -> None:
+    inspector = inspect(connection)
+    if table not in inspector.get_table_names():
+        return
+    columns = {c["name"] for c in inspector.get_columns(table)}
+    if column in columns:
+        return
+
+    logger.info(f"[DB] Migrando: agregando columna '{column}' en '{table}'...")
+    connection.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {column_sql}"))
+    connection.commit()
+    logger.info(f"[DB] Columna '{column}' agregada en '{table}'.")
+
+
+def ensure_connection_owner_columns(connection) -> None:
+    """Ensure ownership columns/indexes for integration connections."""
+    columns_to_ensure = [
+        ("github_connections", "owner_user_id", "VARCHAR(255)"),
+        ("github_connections", "owner_email", "VARCHAR(255)"),
+        ("hubspot_connections", "owner_user_id", "VARCHAR(255)"),
+        ("hubspot_connections", "owner_email", "VARCHAR(255)"),
+    ]
+
+    for table, column, column_sql in columns_to_ensure:
+        try:
+            _ensure_column_exists(connection, table, column, column_sql)
+        except Exception as exc:
+            logger.warning(
+                f"[DB] No se pudo asegurar columna '{column}' en '{table}': {exc}"
+            )
+
+    index_sql = [
+        "CREATE INDEX IF NOT EXISTS idx_github_connections_owner_user_id ON github_connections (owner_user_id)",
+        "CREATE INDEX IF NOT EXISTS idx_github_connections_owner_email ON github_connections (owner_email)",
+        "CREATE INDEX IF NOT EXISTS idx_hubspot_connections_owner_user_id ON hubspot_connections (owner_user_id)",
+        "CREATE INDEX IF NOT EXISTS idx_hubspot_connections_owner_email ON hubspot_connections (owner_email)",
+    ]
+
+    for sql in index_sql:
+        try:
+            connection.execute(text(sql))
+            connection.commit()
+        except Exception as exc:
+            logger.warning(f"[DB] No se pudo crear índice de ownership: {exc}")
 
 
 def ensure_performance_indexes(engine_ref=None) -> None:
@@ -90,6 +142,14 @@ def ensure_performance_indexes(engine_ref=None) -> None:
             "geo_article_batches",
             ["audit_id", "created_at DESC"],
         ),
+        ("idx_github_connections_owner_user_id", "github_connections", ["owner_user_id"]),
+        ("idx_github_connections_owner_email", "github_connections", ["owner_email"]),
+        (
+            "idx_hubspot_connections_owner_user_id",
+            "hubspot_connections",
+            ["owner_user_id"],
+        ),
+        ("idx_hubspot_connections_owner_email", "hubspot_connections", ["owner_email"]),
     ]
 
     dialect = engine_to_use.dialect.name
@@ -152,6 +212,14 @@ async def init_db():
                             logger.info("[DB] Columna 'source' agregada exitosamente.")
                         except Exception as e:
                             logger.error(f"[DB] Error agregando columna 'source': {e}")
+
+                # Ensure ownership columns in integration tables.
+                try:
+                    ensure_connection_owner_columns(connection)
+                except Exception as e:
+                    logger.warning(
+                        f"[DB] No se pudieron asegurar columnas owner_* en conexiones: {e}"
+                    )
 
                 # Crear índices de performance si faltan
                 try:

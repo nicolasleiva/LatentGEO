@@ -7,7 +7,7 @@ services:
   # Base de Datos - Sin puertos expuestos
   db:
     environment:
-      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD requerido}
     ports: []  # No exponer en producción
 
   # Redis - Sin puertos expuestos

@@ -23,8 +23,8 @@ class HubSpotConnection(Base):
     __tablename__ = "hubspot_connections"
 
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    # En un sistema real, esto debería estar vinculado a un usuario o tenant
-    # user_id = Column(String(36), ForeignKey("users.id"), nullable=False)
+    owner_user_id = Column(String(255), nullable=True, index=True)
+    owner_email = Column(String(255), nullable=True, index=True)
     portal_id = Column(String(50), nullable=False)
     access_token = Column(Text, nullable=False)  # Encrypted
     refresh_token = Column(Text, nullable=False)  # Encrypted

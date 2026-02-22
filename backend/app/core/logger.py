@@ -2,14 +2,34 @@ import logging
 import logging.handlers
 import os
 import sys
+import tempfile
 
 import structlog
 
 from .config import settings
 
-# Crear directorio de logs
-LOG_DIR = os.path.join(os.getcwd(), "logs")
-os.makedirs(LOG_DIR, exist_ok=True)
+
+def _resolve_log_dir(path: str) -> str:
+    if os.path.isabs(path):
+        return path
+    return os.path.join(os.getcwd(), path)
+
+
+def _init_log_dir() -> str:
+    preferred = _resolve_log_dir(settings.LOG_DIR or "logs")
+    fallback_tmp = os.path.join(tempfile.gettempdir(), "logs")
+    candidates = [preferred, fallback_tmp]
+    for candidate in candidates:
+        try:
+            os.makedirs(candidate, exist_ok=True)
+            return candidate
+        except OSError:
+            continue
+    return preferred
+
+
+# Crear directorio de logs con fallback para FS restringidos
+LOG_DIR = _init_log_dir()
 LOG_FILE = os.path.join(LOG_DIR, "app.log")
 
 

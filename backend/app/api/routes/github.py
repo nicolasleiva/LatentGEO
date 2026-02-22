@@ -13,12 +13,17 @@ from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, 
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from ...core.access_control import ensure_audit_access
+from ...core.access_control import (
+    ensure_audit_access,
+    ensure_connection_access,
+    is_connection_owned_by_user,
+)
 from ...core.auth import AuthUser, get_current_user
 from ...core.config import settings
 from ...core.database import get_db
 from ...core.llm_kimi import KimiGenerationError, KimiUnavailableError, get_llm_function
 from ...core.logger import get_logger
+from ...core.oauth_state import build_oauth_state, validate_oauth_state
 from ...integrations.github.oauth import GitHubOAuth
 from ...integrations.github.service import GitHubService
 from ...models.github import (
@@ -36,6 +41,46 @@ logger = get_logger(__name__)
 def _get_owned_audit(db: Session, audit_id: int, current_user: AuthUser):
     audit = AuditService.get_audit(db, audit_id)
     return ensure_audit_access(audit, current_user)
+
+
+def _get_owned_connection(
+    db: Session, connection_id: str, current_user: AuthUser
+) -> GitHubConnection:
+    connection = (
+        db.query(GitHubConnection)
+        .filter(
+            GitHubConnection.id == connection_id,
+            GitHubConnection.is_active.is_(True),
+        )
+        .first()
+    )
+    return ensure_connection_access(
+        connection,
+        current_user,
+        db,
+        resource_label="conexión de GitHub",
+    )
+
+
+def _get_owned_repo(
+    db: Session,
+    repo_id: str,
+    current_user: AuthUser,
+    expected_connection_id: Optional[str] = None,
+) -> GitHubRepository:
+    repo = db.query(GitHubRepository).filter(GitHubRepository.id == repo_id).first()
+    if not repo:
+        raise HTTPException(status_code=404, detail="Repository not found")
+
+    _get_owned_connection(db, repo.connection_id, current_user)
+
+    if expected_connection_id and repo.connection_id != expected_connection_id:
+        raise HTTPException(
+            status_code=403,
+            detail="Repository does not belong to provided connection",
+        )
+
+    return repo
 
 
 # Request/Response Models
@@ -166,10 +211,11 @@ def _build_chat_fallback(field_label: str, issue_code: str, placeholder: str) ->
 
 
 @router.get("/auth-url", response_model=ConnectResponse)
-def get_auth_url():
+def get_auth_url(current_user: AuthUser = Depends(get_current_user)):
     """Obtiene URL para iniciar OAuth con GitHub"""
     try:
-        data = GitHubOAuth.get_authorization_url()
+        state = build_oauth_state("github", current_user)
+        data = GitHubOAuth.get_authorization_url(state=state)
         return data
     except Exception as e:
         logger.error(f"Error generating GitHub auth URL: {e}")
@@ -177,12 +223,13 @@ def get_auth_url():
 
 
 @router.get("/oauth/authorize")
-def oauth_authorize():
+def oauth_authorize(current_user: AuthUser = Depends(get_current_user)):
     """Redirige directamente a GitHub OAuth (para compatibilidad con frontend)"""
     from fastapi.responses import RedirectResponse
 
     try:
-        auth_data = GitHubOAuth.get_authorization_url()
+        state = build_oauth_state("github", current_user)
+        auth_data = GitHubOAuth.get_authorization_url(state=state)
         return RedirectResponse(url=auth_data["url"])
     except Exception as e:
         logger.error(f"Error redirecting to GitHub OAuth: {e}")
@@ -194,9 +241,12 @@ async def oauth_callback(
     request: CallbackRequest,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
+    current_user: AuthUser = Depends(get_current_user),
 ):
     """Maneja callback de OAuth"""
     try:
+        validate_oauth_state(request.state or "", "github", current_user)
+
         # 1. Exchange code for token
         token_data = await GitHubOAuth.exchange_code(request.code)
 
@@ -205,7 +255,12 @@ async def oauth_callback(
 
         # 3. Create/update connection
         service = GitHubService(db)
-        connection = await service.create_or_update_connection(token_data, user_info)
+        connection = await service.create_or_update_connection(
+            token_data=token_data,
+            user_info=user_info,
+            owner_user_id=current_user.user_id,
+            owner_email=current_user.email,
+        )
 
         # 4. Sync repositories in background to avoid blocking the user
         background_tasks.add_task(service.sync_repositories, connection.id)
@@ -216,15 +271,45 @@ async def oauth_callback(
             "username": connection.github_username,
         }
 
+    except HTTPException:
+        raise
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
     except Exception as e:
         logger.error(f"GitHub OAuth callback error: {e}")
         raise HTTPException(status_code=400, detail=str(e))
 
 
 @router.get("/connections")
-def get_connections(db: Session = Depends(get_db)):
+def get_connections(
+    db: Session = Depends(get_db),
+    current_user: AuthUser = Depends(get_current_user),
+):
     """Lista conexiones activas de GitHub"""
-    connections = db.query(GitHubConnection).filter(GitHubConnection.is_active).all()
+    all_connections = (
+        db.query(GitHubConnection).filter(GitHubConnection.is_active.is_(True)).all()
+    )
+    connections = []
+    for connection in all_connections:
+        if is_connection_owned_by_user(connection, current_user):
+            connections.append(connection)
+            continue
+
+        if (
+            not connection.owner_user_id
+            and not connection.owner_email
+            and current_user
+        ):
+            try:
+                claimed = ensure_connection_access(
+                    connection,
+                    current_user,
+                    db,
+                    resource_label="conexión de GitHub",
+                )
+                connections.append(claimed)
+            except HTTPException:
+                continue
 
     return [
         {
@@ -238,12 +323,19 @@ def get_connections(db: Session = Depends(get_db)):
 
 
 @router.post("/sync/{connection_id}")
-async def sync_repositories(connection_id: str, db: Session = Depends(get_db)):
+async def sync_repositories(
+    connection_id: str,
+    db: Session = Depends(get_db),
+    current_user: AuthUser = Depends(get_current_user),
+):
     """Sincroniza repositorios de una conexión"""
     service = GitHubService(db)
     try:
+        _get_owned_connection(db, connection_id, current_user)
         repos = await service.sync_repositories(connection_id)
         return {"status": "success", "synced_count": len(repos)}
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error syncing repositories: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -251,8 +343,13 @@ async def sync_repositories(connection_id: str, db: Session = Depends(get_db)):
 
 @router.get("/repositories/{connection_id}", response_model=List[RepositoryResponse])
 @router.get("/repos/{connection_id}", response_model=List[RepositoryResponse])
-def get_repositories(connection_id: str, db: Session = Depends(get_db)):
+def get_repositories(
+    connection_id: str,
+    db: Session = Depends(get_db),
+    current_user: AuthUser = Depends(get_current_user),
+):
     """Obtiene repositorios de una conexión"""
+    _get_owned_connection(db, connection_id, current_user)
     repos = (
         db.query(GitHubRepository)
         .filter(
@@ -267,11 +364,16 @@ def get_repositories(connection_id: str, db: Session = Depends(get_db)):
 
 @router.post("/analyze/{connection_id}/{repo_id}")
 async def analyze_repository(
-    connection_id: str, repo_id: str, db: Session = Depends(get_db)
+    connection_id: str,
+    repo_id: str,
+    db: Session = Depends(get_db),
+    current_user: AuthUser = Depends(get_current_user),
 ):
     """Analiza un repositorio para detectar tipo de sitio"""
     service = GitHubService(db)
     try:
+        _get_owned_connection(db, connection_id, current_user)
+        _get_owned_repo(db, repo_id, current_user, expected_connection_id=connection_id)
         repo = await service.analyze_repository(connection_id, repo_id)
         return {
             "id": repo.id,
@@ -280,6 +382,8 @@ async def analyze_repository(
             "build_command": repo.build_command,
             "output_dir": repo.output_dir,
         }
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error analyzing repository: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -296,6 +400,13 @@ async def create_pull_request(
 
     try:
         _get_owned_audit(db, request.audit_id, current_user)
+        _get_owned_connection(db, request.connection_id, current_user)
+        _get_owned_repo(
+            db,
+            request.repo_id,
+            current_user,
+            expected_connection_id=request.connection_id,
+        )
         pr = await service.create_pr_with_fixes(
             connection_id=request.connection_id,
             repo_id=request.repo_id,
@@ -305,22 +416,32 @@ async def create_pull_request(
 
         return pr
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error creating PR: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/prs/{repo_id}", response_model=List[PRResponse])
-async def get_pull_requests(repo_id: str, db: Session = Depends(get_db)):
+async def get_pull_requests(
+    repo_id: str,
+    db: Session = Depends(get_db),
+    current_user: AuthUser = Depends(get_current_user),
+):
     """Obtiene PRs de un repositorio"""
     service = GitHubService(db)
+    _get_owned_repo(db, repo_id, current_user)
     prs = await service.get_repository_prs(repo_id)
     return prs
 
 
 @router.post("/audit-blogs/{connection_id}/{repo_id}")
 async def audit_repository_blogs(
-    connection_id: str, repo_id: str, db: Session = Depends(get_db)
+    connection_id: str,
+    repo_id: str,
+    db: Session = Depends(get_db),
+    current_user: AuthUser = Depends(get_current_user),
 ):
     """
     Audita todos los blogs de un repositorio
@@ -336,16 +457,17 @@ async def audit_repository_blogs(
         Reporte completo con todos los blogs auditados y sus issues
     """
     from ...integrations.github.blog_auditor import BlogAuditorService
-    from ...models.github import GitHubRepository
 
     service = GitHubService(db)
 
     try:
-        # Obtener repo
-        repo = db.query(GitHubRepository).filter(GitHubRepository.id == repo_id).first()
-
-        if not repo:
-            raise HTTPException(status_code=404, detail="Repository not found")
+        _get_owned_connection(db, connection_id, current_user)
+        repo = _get_owned_repo(
+            db,
+            repo_id,
+            current_user,
+            expected_connection_id=connection_id,
+        )
 
         # Asegurarse que el repo esté analizado
         if not repo.site_type or repo.site_type == "unknown":
@@ -364,6 +486,8 @@ async def audit_repository_blogs(
 
         return audit_results
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error auditing blogs: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -375,6 +499,7 @@ async def create_blog_fixes_pr(
     repo_id: str,
     blog_paths: List[str],
     db: Session = Depends(get_db),
+    current_user: AuthUser = Depends(get_current_user),
 ):
     """
     Crea un PR con fixes para blogs específicos
@@ -391,16 +516,17 @@ async def create_blog_fixes_pr(
         PR creado con fixes aplicados
     """
     from ...integrations.github.blog_auditor import BlogAuditorService
-    from ...models.github import GitHubRepository
 
     service = GitHubService(db)
 
     try:
-        # Obtener repo
-        repo = db.query(GitHubRepository).filter(GitHubRepository.id == repo_id).first()
-
-        if not repo:
-            raise HTTPException(status_code=404, detail="Repository not found")
+        _get_owned_connection(db, connection_id, current_user)
+        repo = _get_owned_repo(
+            db,
+            repo_id,
+            current_user,
+            expected_connection_id=connection_id,
+        )
 
         # Obtener cliente
         client = await service.get_valid_client(connection_id)
@@ -451,6 +577,8 @@ async def create_blog_fixes_pr(
             "blogs_fixed": len(blog_paths),
         }
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error creating blog fixes PR: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -474,8 +602,6 @@ async def convert_audit_to_fixes(
     Returns:
         Dict con audit_id y lista de fixes formateados para aplicar
     """
-    from ...integrations.github.service import GitHubService
-
     audit = _get_owned_audit(db, audit_id, current_user)
 
     service = GitHubService(db)
@@ -715,7 +841,10 @@ async def get_geo_score(
 
 @router.post("/audit-blogs-geo/{connection_id}/{repo_id}")
 async def audit_repository_blogs_geo(
-    connection_id: str, repo_id: str, db: Session = Depends(get_db)
+    connection_id: str,
+    repo_id: str,
+    db: Session = Depends(get_db),
+    current_user: AuthUser = Depends(get_current_user),
 ):
     """
     Audita blogs de un repositorio para SEO + GEO
@@ -735,16 +864,17 @@ async def audit_repository_blogs_geo(
         Reporte completo con SEO issues + GEO issues + GEO score por blog
     """
     from ...integrations.github.geo_blog_auditor import GEOBlogAuditor
-    from ...models.github import GitHubRepository
 
     service = GitHubService(db)
 
     try:
-        # Obtener repo
-        repo = db.query(GitHubRepository).filter(GitHubRepository.id == repo_id).first()
-
-        if not repo:
-            raise HTTPException(status_code=404, detail="Repository not found")
+        _get_owned_connection(db, connection_id, current_user)
+        repo = _get_owned_repo(
+            db,
+            repo_id,
+            current_user,
+            expected_connection_id=connection_id,
+        )
 
         # Asegurarse que el repo esté analizado
         if not repo.site_type or repo.site_type == "unknown":
@@ -765,6 +895,8 @@ async def audit_repository_blogs_geo(
 
         return audit_results
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error auditing blogs with GEO: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -781,6 +913,7 @@ async def create_geo_fixes_pr(
     repo_id: str,
     request: CreateGeoPRRequest,
     db: Session = Depends(get_db),
+    current_user: AuthUser = Depends(get_current_user),
 ):
     """
     Crea PR con fixes SEO + GEO para blogs
@@ -788,16 +921,17 @@ async def create_geo_fixes_pr(
     blog_paths = request.blog_paths
     include_geo = request.include_geo
     from ...integrations.github.geo_blog_auditor import GEOBlogAuditor
-    from ...models.github import GitHubRepository
 
     service = GitHubService(db)
 
     try:
-        # Obtener repo
-        repo = db.query(GitHubRepository).filter(GitHubRepository.id == repo_id).first()
-
-        if not repo:
-            raise HTTPException(status_code=404, detail="Repository not found")
+        _get_owned_connection(db, connection_id, current_user)
+        repo = _get_owned_repo(
+            db,
+            repo_id,
+            current_user,
+            expected_connection_id=connection_id,
+        )
 
         # Obtener cliente
         client = await service.get_valid_client(connection_id)
@@ -872,6 +1006,8 @@ async def create_geo_fixes_pr(
             "geo_enabled": include_geo,
         }
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error creating GEO fixes PR: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -1081,12 +1217,19 @@ async def create_auto_fix_pr(
     Utiliza el método GitHubService.create_pr_with_fixes que ya tiene toda
     la lógica de extracción de contexto enriquecido (PageSpeed, Technical, etc.)
     """
-    from ...integrations.github.service import GitHubService
     from ...models import AuditStatus
 
     service = GitHubService(db)
 
     try:
+        _get_owned_connection(db, connection_id, current_user)
+        _get_owned_repo(
+            db,
+            repo_id,
+            current_user,
+            expected_connection_id=connection_id,
+        )
+
         # 1. Obtener auditoría
         audit = _get_owned_audit(db, request.audit_id, current_user)
 

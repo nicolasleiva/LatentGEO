@@ -3,6 +3,7 @@ from typing import Dict, List, Optional
 
 from sqlalchemy.orm import Session
 
+from ...core.config import settings
 from ...models.hubspot import (
     ChangeStatus,
     HubSpotChange,
@@ -13,12 +14,23 @@ from .auth import HubSpotAuth
 from .client import HubSpotClient
 
 
+def _normalize_email(value: str | None) -> str | None:
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip().lower()
+    return normalized or None
+
+
 class HubSpotService:
     def __init__(self, db: Session):
         self.db = db
 
     async def create_or_update_connection(
-        self, token_data: Dict, portal_id: str
+        self,
+        token_data: Dict,
+        portal_id: str,
+        owner_user_id: str,
+        owner_email: str | None = None,
     ) -> HubSpotConnection:
         """Crea o actualiza una conexión de HubSpot"""
 
@@ -31,17 +43,47 @@ class HubSpotService:
 
         expires_in = token_data.get("expires_in", 1800)
         expires_at = datetime.utcnow() + timedelta(seconds=expires_in)
+        owner_email_normalized = _normalize_email(owner_email)
 
         encrypted_access_token = HubSpotAuth.encrypt_token(token_data["access_token"])
         encrypted_refresh_token = HubSpotAuth.encrypt_token(token_data["refresh_token"])
 
         if connection:
+            existing_owner_user_id = (connection.owner_user_id or "").strip()
+            existing_owner_email = _normalize_email(connection.owner_email)
+            owner_matches = (
+                (existing_owner_user_id and existing_owner_user_id == owner_user_id)
+                or (
+                    existing_owner_email
+                    and owner_email_normalized
+                    and existing_owner_email == owner_email_normalized
+                )
+            )
+
+            if existing_owner_user_id or existing_owner_email:
+                if not owner_matches:
+                    raise PermissionError(
+                        "HubSpot connection already belongs to another user"
+                    )
+            else:
+                if settings.DEBUG:
+                    connection.owner_user_id = owner_user_id
+                    connection.owner_email = owner_email_normalized
+                else:
+                    raise PermissionError(
+                        "Legacy HubSpot connection without owner is blocked in production"
+                    )
+
             connection.access_token = encrypted_access_token
             connection.refresh_token = encrypted_refresh_token
             connection.expires_at = expires_at
+            connection.owner_user_id = connection.owner_user_id or owner_user_id
+            connection.owner_email = connection.owner_email or owner_email_normalized
             connection.updated_at = datetime.utcnow()
         else:
             connection = HubSpotConnection(
+                owner_user_id=owner_user_id,
+                owner_email=owner_email_normalized,
                 portal_id=portal_id,
                 access_token=encrypted_access_token,
                 refresh_token=encrypted_refresh_token,

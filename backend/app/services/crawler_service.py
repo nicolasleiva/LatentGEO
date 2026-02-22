@@ -25,6 +25,8 @@ import aiohttp
 from bs4 import BeautifulSoup
 from defusedxml import ElementTree as DefusedET
 
+from ..core.config import settings
+
 logger = logging.getLogger(__name__)
 
 # Headers para simular navegador
@@ -244,22 +246,27 @@ class CrawlerService:
                             text = await r.text()
                             rp.parse(text.splitlines())
             except Exception as e:
-                logger.warning(
-                    f"Error descargando robots.txt para {base_url}: {e}. Reintentando sin SSL..."
-                )
-                # Intento 2: SSL relajado
-                connector = aiohttp.TCPConnector(ssl=False)
-                async with aiohttp.ClientSession(
-                    headers=headers, connector=connector
-                ) as s:
-                    async with s.get(
-                        robots_url,
-                        timeout=aiohttp.ClientTimeout(total=5),
-                        allow_redirects=True,
-                    ) as r:
-                        if r.status == 200:
-                            text = await r.text()
-                            rp.parse(text.splitlines())
+                if not settings.ALLOW_INSECURE_SSL_FALLBACK:
+                    logger.warning(
+                        f"Error descargando robots.txt para {base_url}: {e}. Fallback SSL inseguro deshabilitado."
+                    )
+                else:
+                    logger.warning(
+                        f"Error descargando robots.txt para {base_url}: {e}. Reintentando sin SSL por configuración explícita..."
+                    )
+                    # Intento 2: SSL relajado
+                    connector = aiohttp.TCPConnector(ssl=False)
+                    async with aiohttp.ClientSession(
+                        headers=headers, connector=connector
+                    ) as s:
+                        async with s.get(
+                            robots_url,
+                            timeout=aiohttp.ClientTimeout(total=5),
+                            allow_redirects=True,
+                        ) as r:
+                            if r.status == 200:
+                                text = await r.text()
+                                rp.parse(text.splitlines())
 
         except Exception as e:
             logger.warning(f"No se pudo descargar robots.txt definitivamente: {e}")
@@ -295,8 +302,10 @@ class CrawlerService:
         session: aiohttp.ClientSession,
         url: str,
         timeout: int = 10,
-        allow_insecure_fallback: bool = True,
+        allow_insecure_fallback: Optional[bool] = None,
     ) -> Optional[str]:
+        if allow_insecure_fallback is None:
+            allow_insecure_fallback = settings.ALLOW_INSECURE_SSL_FALLBACK
         try:
             async with session.get(
                 url, timeout=aiohttp.ClientTimeout(total=timeout)
@@ -397,7 +406,10 @@ class CrawlerService:
 
         async with aiohttp.ClientSession(headers=headers) as session:
             robots_text = await CrawlerService._fetch_text_url(
-                session, robots_url, timeout=6, allow_insecure_fallback=True
+                session,
+                robots_url,
+                timeout=6,
+                allow_insecure_fallback=settings.ALLOW_INSECURE_SSL_FALLBACK,
             )
             if robots_text:
                 for line in robots_text.splitlines():
@@ -414,7 +426,10 @@ class CrawlerService:
                 seen_sitemaps.add(sitemap_url)
 
                 xml_text = await CrawlerService._fetch_text_url(
-                    session, sitemap_url, timeout=10, allow_insecure_fallback=True
+                    session,
+                    sitemap_url,
+                    timeout=10,
+                    allow_insecure_fallback=settings.ALLOW_INSECURE_SSL_FALLBACK,
                 )
                 if not xml_text:
                     continue
@@ -569,27 +584,32 @@ class CrawlerService:
                                         if callback:
                                             callback(url, "skipped")
                             except Exception as e:
-                                logger.warning(
-                                    f"Error inicial en crawler para {url}: {e}. Reintentando sin SSL..."
-                                )
-                                # Reintento sin SSL
-                                connector_no_ssl = aiohttp.TCPConnector(ssl=False)
-                                async with aiohttp.ClientSession(
-                                    connector=connector_no_ssl, headers=headers
-                                ) as secure_session:
-                                    async with secure_session.get(
-                                        url, allow_redirects=True
-                                    ) as resp:
-                                        if (
-                                            resp.status == 200
-                                            and "text/html"
-                                            in resp.headers.get("content-type", "")
-                                        ):
-                                            try:
-                                                html = await resp.text()
-                                            except Exception:
-                                                raw = await resp.read()
-                                                html = raw.decode(errors="ignore")
+                                if not settings.ALLOW_INSECURE_SSL_FALLBACK:
+                                    logger.error(
+                                        f"Error inicial en crawler para {url}: {e}. Fallback SSL inseguro deshabilitado."
+                                    )
+                                else:
+                                    logger.warning(
+                                        f"Error inicial en crawler para {url}: {e}. Reintentando sin SSL por configuración explícita..."
+                                    )
+                                    # Reintento sin SSL
+                                    connector_no_ssl = aiohttp.TCPConnector(ssl=False)
+                                    async with aiohttp.ClientSession(
+                                        connector=connector_no_ssl, headers=headers
+                                    ) as secure_session:
+                                        async with secure_session.get(
+                                            url, allow_redirects=True
+                                        ) as resp:
+                                            if (
+                                                resp.status == 200
+                                                and "text/html"
+                                                in resp.headers.get("content-type", "")
+                                            ):
+                                                try:
+                                                    html = await resp.text()
+                                                except Exception:
+                                                    raw = await resp.read()
+                                                    html = raw.decode(errors="ignore")
 
                             if html:
                                 # Procesar página

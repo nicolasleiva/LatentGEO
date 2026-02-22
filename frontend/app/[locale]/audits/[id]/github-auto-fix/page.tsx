@@ -430,8 +430,21 @@ export default function GitHubAutoFixPage() {
     }
   };
 
-  const connectGitHub = () => {
-    window.location.href = `${backendUrl}/api/github/oauth/authorize`;
+  const connectGitHub = async () => {
+    try {
+      const res = await fetchWithBackendAuth(`${backendUrl}/api/github/auth-url`);
+      const data = await safeParseJson(res);
+      if (!res.ok || !data?.url) {
+        throw new Error(data?.detail || "Failed to get GitHub auth URL");
+      }
+      window.location.href = data.url;
+    } catch (err) {
+      console.error("Error starting GitHub OAuth:", err);
+      setPrResult({
+        success: false,
+        error: formatErrorMessage(err),
+      });
+    }
   };
 
   if (loading) {

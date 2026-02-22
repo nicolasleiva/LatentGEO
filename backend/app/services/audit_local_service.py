@@ -25,6 +25,8 @@ from urllib.parse import urlparse
 import aiohttp
 from bs4 import BeautifulSoup
 
+from ..core.config import settings
+
 logger = logging.getLogger(__name__)
 
 # Headers para simular navegador
@@ -101,8 +103,14 @@ class AuditLocalService:
                 content_type = resp.headers.get("content-type", "")
                 return resp.status, text, content_type
         except Exception as e:
+            if not settings.ALLOW_INSECURE_SSL_FALLBACK:
+                logger.error(
+                    f"Error descargando {url} con SSL verificado y fallback inseguro deshabilitado: {e}"
+                )
+                return None, None, ""
+
             logger.warning(
-                f"Primer intento fallido para {url}: {e}. Reintentando con SSL relajado..."
+                f"Primer intento fallido para {url}: {e}. Reintentando con SSL relajado por configuración explícita..."
             )
             try:
                 # Intento 2: Sin verificación SSL (por si es problema de certs en Docker)

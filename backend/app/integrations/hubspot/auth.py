@@ -1,4 +1,4 @@
-from typing import Dict
+from typing import Dict, Optional
 
 import httpx
 from cryptography.fernet import Fernet
@@ -17,15 +17,18 @@ class HubSpotAuth:
     ]
 
     @staticmethod
-    def get_authorization_url() -> str:
+    def get_authorization_url(state: Optional[str] = None) -> str:
         """Genera URL para iniciar OAuth"""
         scopes = " ".join(HubSpotAuth.SCOPES)
-        return (
+        url = (
             f"https://app.hubspot.com/oauth/authorize"
             f"?client_id={settings.HUBSPOT_CLIENT_ID}"
             f"&redirect_uri={settings.HUBSPOT_REDIRECT_URI}"
             f"&scope={scopes}"
         )
+        if state:
+            url += f"&state={state}"
+        return url
 
     @staticmethod
     async def exchange_code(code: str) -> Dict:

@@ -1,5 +1,9 @@
 .PHONY: help up down restart logs build clean test dev prod
 
+DOCKER_COMPOSE ?= docker compose
+DB_SERVICE ?= db
+DEV_DB_SERVICE ?= postgres
+
 # Default target
 help:
 	@echo "GEO Audit Platform - Docker Commands"
@@ -25,6 +29,7 @@ help:
 	@echo "  make shell-backend - Enter backend container shell"
 	@echo "  make shell-frontend- Enter frontend container shell"
 	@echo "  make shell-db      - Connect to PostgreSQL database"
+	@echo "  make dev-shell-db  - Connect to PostgreSQL (dev compose)"
 	@echo "  make shell-redis   - Connect to Redis"
 	@echo "  make test          - Run tests"
 	@echo "  make lint          - Run linters"
@@ -32,81 +37,84 @@ help:
 
 # Production targets
 prod-up:
-	docker-compose up -d
+	$(DOCKER_COMPOSE) up -d
 	@echo "✓ Production environment started"
 	@echo "  Frontend: http://localhost:3000"
 	@echo "  Backend: http://localhost:8000"
 	@echo "  API Docs: http://localhost:8000/docs"
 
 prod-down:
-	docker-compose down
+	$(DOCKER_COMPOSE) down
 	@echo "✓ Production environment stopped"
 
 prod-restart:
-	docker-compose restart
+	$(DOCKER_COMPOSE) restart
 	@echo "✓ Production services restarted"
 
 prod-logs:
-	docker-compose logs -f
+	$(DOCKER_COMPOSE) logs -f
 
 prod-build:
-	docker-compose build --no-cache
+	$(DOCKER_COMPOSE) build --no-cache
 	@echo "✓ Production images built"
 
 # Development targets
 dev-up:
-	docker-compose -f docker-compose.dev.yml up -d
+	$(DOCKER_COMPOSE) -f docker-compose.dev.yml up -d
 	@echo "✓ Development environment started (with hot reload)"
 	@echo "  Frontend: http://localhost:3000"
 	@echo "  Backend: http://localhost:8000"
 	@echo "  API Docs: http://localhost:8000/docs"
 
 dev-down:
-	docker-compose -f docker-compose.dev.yml down
+	$(DOCKER_COMPOSE) -f docker-compose.dev.yml down
 	@echo "✓ Development environment stopped"
 
 dev-restart:
-	docker-compose -f docker-compose.dev.yml restart
+	$(DOCKER_COMPOSE) -f docker-compose.dev.yml restart
 	@echo "✓ Development services restarted"
 
 dev-logs:
-	docker-compose -f docker-compose.dev.yml logs -f
+	$(DOCKER_COMPOSE) -f docker-compose.dev.yml logs -f
 
 dev-build:
-	docker-compose -f docker-compose.dev.yml build --no-cache
+	$(DOCKER_COMPOSE) -f docker-compose.dev.yml build --no-cache
 	@echo "✓ Development images built"
 
 # Utility targets
 ps:
-	docker-compose ps
+	$(DOCKER_COMPOSE) ps
 
 clean:
-	docker-compose down -v
+	$(DOCKER_COMPOSE) down -v
 	@echo "✓ All containers and volumes removed"
 
 shell-backend:
-	docker-compose exec backend bash
+	$(DOCKER_COMPOSE) exec backend bash
 
 shell-frontend:
-	docker-compose exec frontend bash
+	$(DOCKER_COMPOSE) exec frontend bash
 
 shell-db:
-	docker-compose exec postgres psql -U auditor -d auditor_db
+	$(DOCKER_COMPOSE) exec $(DB_SERVICE) psql -U auditor -d auditor_db
+
+dev-shell-db:
+	$(DOCKER_COMPOSE) -f docker-compose.dev.yml exec $(DEV_DB_SERVICE) psql -U auditor -d auditor_db
 
 shell-redis:
-	docker-compose exec redis redis-cli
+	$(DOCKER_COMPOSE) exec redis redis-cli
 
 test:
-	docker-compose exec backend pytest
+	$(DOCKER_COMPOSE) exec backend pytest
 
 lint:
-	docker-compose exec backend flake8 app/
-	docker-compose exec backend black --check app/
+	$(DOCKER_COMPOSE) exec backend flake8 app/
+	$(DOCKER_COMPOSE) exec backend black --check app/
 
 # Status checks
 status:
 	@echo "Service Status:"
-	@docker-compose ps
+	@$(DOCKER_COMPOSE) ps
 	@echo ""
 	@echo "Backend Health:"
 	@curl -s http://localhost:8000/health || echo "Backend not responding"
@@ -116,25 +124,28 @@ status:
 
 # Database operations
 db-backup:
-	docker-compose exec postgres pg_dump -U auditor auditor_db > backup.sql
+	$(DOCKER_COMPOSE) exec $(DB_SERVICE) pg_dump -U auditor auditor_db > backup.sql
 	@echo "✓ Database backed up to backup.sql"
 
 db-restore:
-	docker-compose exec -T postgres psql -U auditor auditor_db < backup.sql
+	$(DOCKER_COMPOSE) exec -T $(DB_SERVICE) psql -U auditor auditor_db < backup.sql
 	@echo "✓ Database restored from backup.sql"
 
 # Logs
 logs-backend:
-	docker-compose logs -f backend
+	$(DOCKER_COMPOSE) logs -f backend
 
 logs-frontend:
-	docker-compose logs -f frontend
+	$(DOCKER_COMPOSE) logs -f frontend
 
 logs-db:
-	docker-compose logs -f postgres
+	$(DOCKER_COMPOSE) logs -f $(DB_SERVICE)
+
+dev-logs-db:
+	$(DOCKER_COMPOSE) -f docker-compose.dev.yml logs -f $(DEV_DB_SERVICE)
 
 logs-redis:
-	docker-compose logs -f redis
+	$(DOCKER_COMPOSE) logs -f redis
 
 # Quick commands
 up: prod-up

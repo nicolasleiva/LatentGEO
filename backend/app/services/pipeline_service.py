@@ -108,7 +108,12 @@ class PipelineService:
     @staticmethod
     def now_iso() -> str:
         """Retorna timestamp ISO 8601 actual (timezone-aware)."""
-        return datetime.now(timezone.utc).isoformat() + "Z"
+        return (
+            datetime.now(timezone.utc)
+            .replace(microsecond=0)
+            .isoformat()
+            .replace("+00:00", "Z")
+        )
 
     @classmethod
     async def generate_pagespeed_analysis(
@@ -2481,6 +2486,14 @@ class PipelineService:
         text = (text or "").strip()
         if not text:
             return {default_key: ""}
+        max_chars = int(settings.PIPELINE_JSON_PARSE_MAX_CHARS)
+        if max_chars <= 0:
+            max_chars = 200000
+        if len(text) > max_chars:
+            logger.warning(
+                f"parse_agent_json_or_raw: payload exceeds limit ({len(text)} > {max_chars}), returning truncated raw."
+            )
+            return {default_key: text[:max_chars]}
 
         # Remover bloques de código
         if text.startswith("```json"):
@@ -2521,6 +2534,19 @@ class PipelineService:
                 return {default_key: text}
 
             candidate = text[start : end + 1]
+            if len(candidate) > max_chars:
+                logger.warning(
+                    f"parse_agent_json_or_raw: candidate exceeds limit ({len(candidate)} > {max_chars}), returning raw."
+                )
+                return {default_key: text[:max_chars]}
+
+            # Try strict JSON first.
+            try:
+                parsed = json.loads(candidate)
+                if isinstance(parsed, (dict, list)):
+                    return parsed
+            except json.JSONDecodeError:
+                pass
 
             # Limpiar trailing commas
             candidate_cleaned = re.sub(r",\s*([}\]])", r"\1", candidate)
@@ -2530,10 +2556,16 @@ class PipelineService:
             candidate_cleaned = re.sub(
                 r"/\*.*?\*/", "", candidate_cleaned, flags=re.DOTALL
             )
+            if len(candidate_cleaned) > max_chars:
+                logger.warning(
+                    f"parse_agent_json_or_raw: cleaned candidate exceeds limit ({len(candidate_cleaned)} > {max_chars}), returning raw."
+                )
+                return {default_key: text[:max_chars]}
 
             try:
                 parsed = json.loads(candidate_cleaned)
-                return parsed
+                if isinstance(parsed, (dict, list)):
+                    return parsed
             except json.JSONDecodeError:
                 # Fallback: intentar parseo tipo Python dict (comillas simples, True/False)
                 try:
@@ -2542,7 +2574,7 @@ class PipelineService:
                         return parsed
                 except Exception:  # nosec B110
                     pass
-                return json.loads(candidate)
+                return {default_key: text}
 
         except Exception as e:
             logger.warning(f"Fallo parsear JSON: {e}. Raw: {text[:200]}...")
