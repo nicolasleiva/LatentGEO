@@ -30,6 +30,7 @@ REDIS_URL=redis://localhost:6379/0
 GEMINI_API_KEY=your_gemini_api_key_here
 NVIDIA_API_KEY=your_nvidia_api_key_here
 GOOGLE_PAGESPEED_API_KEY=your_pagespeed_api_key_here
+SERPER_API_KEY=your_serper_api_key_here
 
 # Application Settings
 SECRET_KEY=your_secret_key_here_min_32_chars
@@ -71,6 +72,7 @@ These variables are optional but recommended:
 - `GOOGLE_PAGESPEED_API_KEY` - For PageSpeed Insights integration
 - `NVIDIA_API_KEY` - For NVIDIA LLM features
 - `GOOGLE_API_KEY` - For additional Google services
+- `SERPER_API_KEY` - For competitor discovery search in the initial audit pipeline (replaces Google CSE in this flow)
 
 ---
 

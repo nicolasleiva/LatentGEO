@@ -4,12 +4,12 @@ import AuditDetailPage from "@/app/[locale]/audits/[id]/page";
 import { fetchWithBackendAuth } from "@/lib/backend-auth";
 import { useParams, useRouter } from "next/navigation";
 
-jest.mock("next/navigation", () => ({
-  useParams: jest.fn(),
-  useRouter: jest.fn(),
+vi.mock("next/navigation", () => ({
+  useParams: vi.fn(),
+  useRouter: vi.fn(),
 }));
 
-jest.mock("next/dynamic", () => ({
+vi.mock("next/dynamic", () => ({
   __esModule: true,
   default: () => {
     const DynamicStub = () => <div data-testid="dynamic-stub" />;
@@ -17,43 +17,43 @@ jest.mock("next/dynamic", () => ({
   },
 }));
 
-jest.mock("next/image", () => {
+vi.mock("next/image", () => {
   const MockNextImage = (props: any) => (
-    <img {...props} alt={props.alt || ""} />
+    <span data-testid="next-image" data-alt={props.alt || ""} />
   );
   MockNextImage.displayName = "MockNextImage";
-  return MockNextImage;
+  return { default: MockNextImage };
 });
 
-jest.mock("@/components/header", () => ({
+vi.mock("@/components/header", () => ({
   Header: () => <div data-testid="header">Header</div>,
 }));
 
-jest.mock("@/components/ui/dialog", () => ({
+vi.mock("@/components/ui/dialog", () => ({
   Dialog: ({ children }: any) => <div>{children}</div>,
   DialogContent: ({ children }: any) => <div>{children}</div>,
   DialogTrigger: ({ children }: any) => <div>{children}</div>,
   DialogTitle: ({ children }: any) => <div>{children}</div>,
 }));
 
-jest.mock("@/hooks/useAuditSSE", () => ({
-  useAuditSSE: jest.fn(),
+vi.mock("@/hooks/useAuditSSE", () => ({
+  useAuditSSE: vi.fn(),
 }));
 
-jest.mock("@/lib/api", () => ({
+vi.mock("@/lib/api", () => ({
   API_URL: "http://localhost:8000",
 }));
 
-jest.mock("@/lib/backend-auth", () => ({
-  fetchWithBackendAuth: jest.fn(),
+vi.mock("@/lib/backend-auth", () => ({
+  fetchWithBackendAuth: vi.fn(),
 }));
 
-const mockPush = jest.fn();
-const mockPrefetch = jest.fn();
+const mockPush = vi.fn();
+const mockPrefetch = vi.fn();
 
 describe("Audit detail GEO tools navigation", () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
     (useParams as jest.Mock).mockReturnValue({ locale: "en", id: "6" });
     (useRouter as jest.Mock).mockReturnValue({
       push: mockPush,
@@ -111,7 +111,7 @@ describe("Audit detail GEO tools navigation", () => {
 
     await waitFor(() => {
       expect(
-        screen.getByRole("heading", { name: /seo & geo tools/i }),
+        screen.getByRole("heading", { name: /execution tool suite/i }),
       ).toBeInTheDocument();
     });
 
@@ -140,3 +140,4 @@ describe("Audit detail GEO tools navigation", () => {
     });
   });
 });
+

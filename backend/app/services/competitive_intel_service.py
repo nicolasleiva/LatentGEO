@@ -114,7 +114,7 @@ class CompetitiveIntelService:
 
         return {
             "status": "ok",
-            "data_source": "Google CSE top results for competitor discovery queries",
+            "data_source": "Serper top results for competitor discovery queries",
             "total_queries": total_queries,
             "coverage_by_competitor": coverage_list,
             "limitations": [

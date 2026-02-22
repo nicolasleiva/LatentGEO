@@ -56,8 +56,7 @@ FORCE_HTTPS=true
 # API Keys (AGREGAR TUS KEYS REALES)
 NVIDIA_API_KEY=your_nvidia_key_here
 GOOGLE_PAGESPEED_API_KEY=your_google_key_here
-GOOGLE_API_KEY=your_google_key_here
-CSE_ID=your_cse_id_here
+SERPER_API_KEY=your_serper_api_key_here
 
 # Auth0 (AGREGAR TUS CREDENCIALES)
 AUTH0_DOMAIN=your_domain.auth0.com

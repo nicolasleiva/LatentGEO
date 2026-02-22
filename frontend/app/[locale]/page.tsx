@@ -1,10 +1,9 @@
 "use client";
 
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { useUser } from "@auth0/nextjs-auth0/client";
-import { API_URL } from "@/lib/api";
-import { fetchWithBackendAuth } from "@/lib/backend-auth";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Search,
   ArrowRight,
@@ -24,12 +23,14 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Header } from "@/components/header";
+import { createAudit, listAudits } from "@/lib/api-client";
+import { withLocale } from "@/lib/locale-routing";
 import { cn } from "@/lib/utils";
 
 interface Audit {
   id: number;
   url: string;
-  domain: string;
+  domain?: string;
   status: string;
   created_at: string;
   geo_score?: number;
@@ -37,88 +38,89 @@ interface Audit {
 
 const featureCards = [
   {
-    title: "Product Visibility Intelligence",
+    title: "AI Demand Mapping",
     description:
-      "Improve how product pages surface in AI answers across generative search.",
+      "Map category questions, comparison prompts, and buying-intent moments where your brand must appear.",
     icon: Globe,
-    tag: "Visibility",
+    tag: "Discovery",
   },
   {
-    title: "Citation Opportunity Mapping",
+    title: "Citation Gap Analysis",
     description:
-      "Find missing proof points so models can cite your pages as trusted sources.",
+      "Find trust and evidence gaps that prevent assistants from citing your product pages confidently.",
     icon: LinkIcon,
-    tag: "Citations",
+    tag: "Trust",
   },
   {
-    title: "Conversion Friction Scanner",
+    title: "Conversion Friction Signals",
     description:
-      "Spot copy, UX, and technical blockers that reduce qualified clicks and pipeline.",
+      "Detect copy, UX, and technical blockers that suppress qualified traffic and pipeline.",
     icon: Activity,
-    tag: "Conversion",
+    tag: "Revenue",
   },
   {
-    title: "Experiment Prioritization",
-    description: "Rank growth bets by expected impact and execution effort.",
+    title: "Execution Priority Queue",
+    description:
+      "Rank experiments by impact, confidence, and implementation effort for faster shipping.",
     icon: Target,
-    tag: "Priorities",
+    tag: "Ops",
   },
   {
-    title: "Autonomous PR Shipping",
+    title: "Autonomous PR Drafting",
     description:
-      "Turn fixes into GitHub pull requests with implementation-ready changes and tests.",
+      "Generate implementation-ready GitHub pull requests with scoped fixes and review context.",
     icon: GitPullRequest,
-    tag: "Execution",
+    tag: "Code",
   },
   {
-    title: "Competitive Signal Radar",
+    title: "Competitive Motion Radar",
     description:
-      "Track where competitors win citations and where your product can overtake.",
+      "Track where competitors dominate AI citations and where your offer can overtake them.",
     icon: BarChart3,
-    tag: "Competitive",
+    tag: "Benchmark",
   },
   {
-    title: "Revenue Expansion Opportunities",
+    title: "Pipeline Expansion Paths",
     description:
-      "Surface high-intent pages and prompts that can compound clicks and sales.",
+      "Surface prompts and pages most likely to expand qualified visits, demos, and sales outcomes.",
     icon: Rocket,
     tag: "Growth",
   },
   {
-    title: "Executive Reporting",
+    title: "Executive Operating Reviews",
     description:
-      "Share concise growth updates on visibility, citations, and execution progress.",
+      "Share concise weekly updates on visibility, citations, shipped fixes, and impact trajectory.",
     icon: FileText,
-    tag: "Reporting",
+    tag: "Leadership",
   },
 ];
 
 const proofChips = [
-  "Rank products in AI answers",
-  "Get cited as a trusted source",
-  "Turn citations into qualified clicks and sales",
+  "Own category prompts in AI answers",
+  "Convert citations into qualified sessions",
+  "Ship fixes through engineering workflows",
 ];
 
 const loopCards = [
   {
-    title: "Acquire",
+    title: "Diagnose",
     summary:
-      "Find demand and win AI answers for your highest-value product pages.",
-    detail: "Run URL audit -> get prioritized opportunities",
+      "Expose where AI systems misunderstand your offer, positioning, and proof.",
+    detail: "Submit URL -> get ranked opportunities and citation gaps",
     icon: Target,
   },
   {
-    title: "Activate",
+    title: "Ship",
     summary:
-      "Convert insights into executable fixes with shipping-ready implementation paths.",
-    detail: "Approve fixes -> generate GitHub PRs + tests",
+      "Translate insights into implementation-ready tasks your team can approve quickly.",
+    detail: "Approve actions -> generate PR-ready change plans",
     icon: Zap,
   },
   {
-    title: "Expand",
+    title: "Compound",
     summary:
-      "Track compound impact from citations to qualified visits and revenue signals.",
-    detail: "Measure outcomes -> iterate on top opportunities",
+      "Track visibility, citation quality, and downstream conversion signals over time.",
+    detail: "Measure outcomes -> iterate by expected revenue impact",
     icon: BarChart3,
   },
 ];
@@ -141,29 +143,17 @@ export default function HomePage() {
   const router = useRouter();
   const pathname = usePathname();
   const { user, isLoading: authLoading } = useUser();
+  const queryClient = useQueryClient();
   const [url, setUrl] = useState("");
-  const [audits, setAudits] = useState<Audit[]>([]);
-  const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [visibleFeatures, setVisibleFeatures] = useState(0);
 
-  const backendUrl = API_URL;
-
-  const localePrefix = useMemo(() => {
-    const segment = pathname?.split("/").filter(Boolean)[0];
-    return segment === "es" || segment === "en" ? `/${segment}` : "/en";
-  }, [pathname]);
-
   const localePath = useCallback(
     (path: string) => {
-      const normalized = path.startsWith("/") ? path : `/${path}`;
-      if (normalized === "/") return localePrefix;
-      if (normalized.startsWith("/en/") || normalized.startsWith("/es/"))
-        return normalized;
-      return `${localePrefix}${normalized}`;
+      return withLocale(pathname, path);
     },
-    [localePrefix],
+    [pathname],
   );
 
   useEffect(() => {
@@ -175,30 +165,28 @@ export default function HomePage() {
     return () => window.clearInterval(timer);
   }, []);
 
-  useEffect(() => {
-    if (user && !authLoading) {
-      setLoading(true);
-      fetchWithBackendAuth(`${backendUrl}/api/audits`)
-        .then((res) => res.json())
-        .then((data) => {
-          const sorted = Array.isArray(data)
-            ? data
-                .sort(
-                  (a: Audit, b: Audit) =>
-                    new Date(b.created_at).getTime() -
-                    new Date(a.created_at).getTime(),
-                )
-                .slice(0, 6)
-            : [];
-          setAudits(sorted);
-          setLoading(false);
-        })
-        .catch((err) => {
-          console.error("Error fetching audits:", err);
-          setLoading(false);
-        });
-    }
-  }, [user, authLoading, backendUrl]);
+  const recentAuditsQuery = useQuery({
+    queryKey: ["audits", "recent"],
+    queryFn: listAudits,
+    enabled: Boolean(user) && !authLoading,
+    select: (data) =>
+      data
+        .sort(
+          (a: Audit, b: Audit) =>
+            new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+        )
+        .slice(0, 6),
+  });
+
+  const audits = (recentAuditsQuery.data as Audit[] | undefined) ?? [];
+  const loading = recentAuditsQuery.isLoading;
+
+  const createAuditMutation = useMutation({
+    mutationFn: (payload: { url: string }) => createAudit(payload),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["audits"] });
+    },
+  });
 
   const handleAudit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -231,65 +219,13 @@ export default function HomePage() {
 
     setSubmitting(true);
     try {
-      const endpoint = `${backendUrl}/api/audits/`.replace(/\/+$/, "/");
-      const requestBody = {
+      const newAudit = await createAuditMutation.mutateAsync({
         url: normalizedUrl,
-      };
-
-      const res = await fetchWithBackendAuth(endpoint, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Accept: "application/json",
-        },
-        body: JSON.stringify(requestBody),
-        credentials: "include",
       });
-
-      if (res.status === 307 || res.status === 308) {
-        const location = res.headers.get("Location");
-        if (location) {
-          const redirectUrl = location.startsWith("http")
-            ? location
-            : `${backendUrl}${location}`;
-          const redirectRes = await fetchWithBackendAuth(redirectUrl, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Accept: "application/json",
-            },
-            body: JSON.stringify(requestBody),
-            credentials: "include",
-          });
-
-          if (redirectRes.ok || redirectRes.status === 202) {
-            const newAudit = await redirectRes.json();
-            router.push(localePath(`/audits/${newAudit.id}`));
-            return;
-          } else {
-            throw new Error(`Error after redirect: ${redirectRes.status}`);
-          }
-        }
-      }
-
-      if (res.ok || res.status === 202) {
-        const newAudit = await res.json();
-        router.push(localePath(`/audits/${newAudit.id}`));
-      } else {
-        let errorText = "Unknown error";
-        try {
-          const errorData = await res.text();
-          errorText = errorData || `Error ${res.status}: ${res.statusText}`;
-        } catch {
-          errorText = `Error ${res.status}: ${res.statusText}`;
-        }
-        setError(`Failed to create audit (${res.status}): ${errorText}`);
-        setSubmitting(false);
-      }
+      router.push(localePath(`/audits/${newAudit.id}`));
     } catch (error: any) {
       console.error("Error creating audit:", error);
-      const errorMessage =
-        error.message || "Please verify the server is running.";
+      const errorMessage = error.message || "Please verify the server is running.";
       setError(`Connection error: ${errorMessage}`);
       setSubmitting(false);
     }
@@ -318,23 +254,23 @@ export default function HomePage() {
             <div className="space-y-8">
               <div className="inline-flex items-center gap-2 px-4 py-2 bg-foreground/5 border border-foreground/10 rounded-full text-foreground/80 text-sm">
                 <Sparkles className="w-4 h-4 text-brand" />
-                The real growth hacking
+                AI search operating system
               </div>
 
               <h1 className="text-4xl md:text-6xl lg:text-7xl font-semibold tracking-tight leading-[0.95]">
-                Make your products discoverable in AI answers.
+                Own your category in AI answers.
               </h1>
 
               <p className="text-lg text-muted-foreground max-w-2xl leading-relaxed">
-                Turn product pages into AI-citable sources.
+                Run one audit, get a prioritized execution map, and move from insight to shipped changes.
               </p>
 
               <p className="text-sm text-foreground/80 max-w-2xl">
-                From URL -&gt; prioritized fixes -&gt; GitHub PRs + tests.
+                From URL -&gt; high-impact gaps -&gt; implementation-ready actions.
               </p>
 
               <p className="text-sm text-muted-foreground max-w-2xl">
-                Built for ChatGPT, Perplexity &amp; generative search.
+                Built for product marketing, SEO, and growth engineering teams.
               </p>
 
               <form
@@ -347,7 +283,7 @@ export default function HomePage() {
                     <Search className="w-5 h-5 text-muted-foreground ml-4" />
                     <input
                       type="text"
-                      placeholder="Paste your website URL (e.g., ceibo.digital)"
+                      placeholder="Paste a public page URL (e.g., ceibo.digital)"
                       className="flex-1 bg-transparent border-none text-foreground placeholder:text-muted-foreground focus:ring-0 px-4 py-4 outline-none text-base"
                       value={url}
                       onChange={(e) => {
@@ -375,11 +311,11 @@ export default function HomePage() {
                       {submitting ? (
                         <>
                           <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                          Running audit
+                          Building your report
                         </>
                       ) : (
                         <>
-                          Start free audit <ArrowRight className="w-5 h-5" />
+                          Run free audit <ArrowRight className="w-5 h-5" />
                         </>
                       )}
                     </button>
@@ -397,7 +333,7 @@ export default function HomePage() {
                   <a href="/auth/login" className="text-brand hover:underline">
                     Sign in
                   </a>{" "}
-                  to save your audits and track progress.
+                  to save audits, track progress, and share reports.
                 </p>
               )}
 
@@ -437,7 +373,7 @@ export default function HomePage() {
                       </p>
                       <div className="rounded-xl border border-border/70 bg-background/70 px-4 py-3">
                         <p className="text-[11px] uppercase tracking-widest text-muted-foreground">
-                          How it works
+                          Operating step
                         </p>
                         <p className="text-sm text-foreground/85 mt-1">
                           {item.detail}
@@ -453,8 +389,7 @@ export default function HomePage() {
                 <div>
                   <p className="text-sm font-semibold">Secure by design</p>
                   <p className="text-sm text-muted-foreground mt-1">
-                    Scoped access, approval points, and audit trails keep
-                    automation controlled.
+                    Scoped access, approval checkpoints, and traceable actions keep automation controlled.
                   </p>
                 </div>
               </div>
@@ -466,15 +401,14 @@ export default function HomePage() {
           <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-4">
             <div>
               <p className="text-sm uppercase tracking-widest text-muted-foreground">
-                Feature stack
+                Capabilities
               </p>
               <h2 className="text-3xl md:text-4xl font-semibold tracking-tight mt-2">
-                From discoverability to citable product growth.
+                Everything needed to run AI visibility like an operating function.
               </h2>
             </div>
             <p className="text-muted-foreground max-w-xl">
-              Progressive cards show how teams capture visibility, ship fixes,
-              and measure growth outcomes.
+              Purpose-built modules connect discovery, remediation, and measurement without context switching.
             </p>
           </div>
 
@@ -519,46 +453,43 @@ export default function HomePage() {
               <div className="w-12 h-12 bg-brand/10 rounded-xl flex items-center justify-center mb-4 text-brand">
                 <Globe className="w-6 h-6" />
               </div>
-              <h3 className="text-lg font-semibold mb-2">
-                Product discoverability
-              </h3>
-              <p className="text-muted-foreground text-sm">
-                Improve how product pages appear across AI answers and
-                generative search journeys.
-              </p>
-            </div>
-            <div className="p-6 glass-card border-border/70">
+                <h3 className="text-lg font-semibold mb-2">
+                AI demand capture
+                </h3>
+                <p className="text-muted-foreground text-sm">
+                Prioritize the prompts and questions that shape category-level demand in AI channels.
+                </p>
+              </div>
+              <div className="p-6 glass-card border-border/70">
               <div className="w-12 h-12 bg-brand/10 rounded-xl flex items-center justify-center mb-4 text-brand">
                 <Zap className="w-6 h-6" />
               </div>
-              <h3 className="text-lg font-semibold mb-2">
-                AI-citable source readiness
-              </h3>
-              <p className="text-muted-foreground text-sm">
-                Turn product pages into stronger citation candidates with
-                concrete implementation paths.
-              </p>
-            </div>
-            <div className="p-6 glass-card border-border/70">
+                <h3 className="text-lg font-semibold mb-2">
+                Trust-ready pages
+                </h3>
+                <p className="text-muted-foreground text-sm">
+                Strengthen structure, evidence, and intent alignment so assistants cite your pages with confidence.
+                </p>
+              </div>
+              <div className="p-6 glass-card border-border/70">
               <div className="w-12 h-12 bg-brand/10 rounded-xl flex items-center justify-center mb-4 text-brand">
                 <Rocket className="w-6 h-6" />
               </div>
-              <h3 className="text-lg font-semibold mb-2">
-                Clicks and sales impact
-              </h3>
-              <p className="text-muted-foreground text-sm">
-                Connect citation gains to qualified clicks and growth-ready
-                revenue opportunities.
-              </p>
-            </div>
-          </section>
+                <h3 className="text-lg font-semibold mb-2">
+                Revenue-linked execution
+                </h3>
+                <p className="text-muted-foreground text-sm">
+                Tie AI visibility gains to qualified sessions, pipeline motion, and commercial outcomes.
+                </p>
+              </div>
+            </section>
         )}
 
         {!authLoading && user && (
           <section className="mt-16 space-y-6">
             <div className="flex justify-between items-center">
               <h2 className="text-2xl font-semibold tracking-tight">
-                Recent audits
+                Recent audit operations
               </h2>
               {audits.length > 0 && (
                 <Button
@@ -566,7 +497,7 @@ export default function HomePage() {
                   className="text-muted-foreground hover:text-foreground"
                   onClick={() => router.push(localePath("/audits"))}
                 >
-                  View all
+                  View queue
                 </Button>
               )}
             </div>
@@ -584,7 +515,7 @@ export default function HomePage() {
                   No audits yet
                 </h3>
                 <p className="text-muted-foreground/70 mb-4">
-                  Enter a URL above to start your first audit.
+                  Submit your first URL to generate an AI visibility baseline.
                 </p>
               </div>
             ) : (
@@ -658,7 +589,7 @@ export default function HomePage() {
 
       <footer className="border-t border-border mt-20 py-8">
         <div className="max-w-6xl mx-auto px-6 text-center text-muted-foreground text-sm">
-          © 2026 LatentGEO.ai. Nicolas Leiva.
+          © 2026 LatentGEO.ai. Built for AI-era growth teams.
         </div>
       </footer>
     </div>

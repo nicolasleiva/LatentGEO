@@ -26,3 +26,4 @@ describe("ThemeProvider Component", () => {
     expect(hasThemesIntegration).toBe(true);
   });
 });
+

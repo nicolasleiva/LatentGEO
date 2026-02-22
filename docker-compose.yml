@@ -50,6 +50,7 @@ services:
       PYTHONUNBUFFERED: "1"
       GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
       CSE_ID: ${CSE_ID:-}
+      SERPER_API_KEY: ${SERPER_API_KEY:-}
       NVIDIA_API_KEY: ${NVIDIA_API_KEY:-}
       NV_API_KEY: ${NV_API_KEY:-}
       NV_API_KEY_CODE: ${NV_API_KEY_CODE:-}
@@ -168,6 +169,7 @@ services:
       ENVIRONMENT: ${ENVIRONMENT:-development}
       GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
       CSE_ID: ${CSE_ID:-}
+      SERPER_API_KEY: ${SERPER_API_KEY:-}
       NVIDIA_API_KEY: ${NVIDIA_API_KEY:-}
       NV_API_KEY: ${NV_API_KEY:-}
       NV_API_KEY_CODE: ${NV_API_KEY_CODE:-}

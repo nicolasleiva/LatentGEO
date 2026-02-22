@@ -4,13 +4,13 @@ import userEvent from "@testing-library/user-event";
 import ArticleEngine from "@/app/[locale]/audits/[id]/geo/components/ArticleEngine";
 import { fetchWithBackendAuth } from "@/lib/backend-auth";
 
-jest.mock("@/lib/backend-auth", () => ({
-  fetchWithBackendAuth: jest.fn(),
+vi.mock("@/lib/backend-auth", () => ({
+  fetchWithBackendAuth: vi.fn(),
 }));
 
 describe("ArticleEngine component", () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
   });
 
   it("renders keyword strategy and competitor gaps from latest batch", async () => {
@@ -111,3 +111,4 @@ describe("ArticleEngine component", () => {
     ).toBeInTheDocument();
   });
 });
+

@@ -4,13 +4,13 @@ import userEvent from "@testing-library/user-event";
 import CommerceCampaign from "@/app/[locale]/audits/[id]/geo/components/CommerceCampaign";
 import { fetchWithBackendAuth } from "@/lib/backend-auth";
 
-jest.mock("@/lib/backend-auth", () => ({
-  fetchWithBackendAuth: jest.fn(),
+vi.mock("@/lib/backend-auth", () => ({
+  fetchWithBackendAuth: vi.fn(),
 }));
 
 describe("Commerce query analyzer", () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
   });
 
   it("sends query+market payload and renders why_not_first/action_plan output", async () => {
@@ -112,3 +112,4 @@ describe("Commerce query analyzer", () => {
     ).toBeInTheDocument();
   });
 });
+

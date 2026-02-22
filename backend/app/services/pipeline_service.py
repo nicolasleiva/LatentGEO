@@ -23,6 +23,7 @@ import json
 import logging
 import math
 import re
+import unicodedata
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import urlparse
@@ -1484,7 +1485,7 @@ class PipelineService:
             "Financial projections require confirmed traffic/conversion baselines; treat as scenario estimates unless provided."
         ]
         notes = [
-            "Competitor keyword capture uses Google CSE query results as a proxy; it is not a true ranking dataset.",
+            "Competitor keyword capture uses Serper query results as a proxy; it is not a true ranking dataset.",
         ]
         return {
             "insufficient_data": sorted(set(insufficient)),
@@ -1793,6 +1794,12 @@ class PipelineService:
             "producthunt.com",
             "appsumo.com",
             "slashdot.org",
+            "clutch.co",
+            "themanifest.com",
+            "sortlist.com",
+            "techbehemoths.com",
+            "goodfirms.co",
+            "superbcompanies.com",
             "techradar.com",
             "pcmag.com",
             "zapier.com",
@@ -1930,6 +1937,16 @@ class PipelineService:
             "/comparison",
             "/similar",
             "/reviews",
+            "/research",
+            "/reports",
+            "/report",
+            "/insight",
+            "/insights",
+            "/blog",
+            "/blogs",
+            "/news",
+            "/article",
+            "/articles",
         ]
 
         unique_domains = set()
@@ -1941,25 +1958,45 @@ class PipelineService:
             f"PIPELINE: Filtrando {len(search_items)} resultados de búsqueda para encontrar competidores."
         )
 
+        def _text_roots(text: str) -> set:
+            roots = set()
+            for token in re.findall(r"[a-z0-9áéíóúñ]{2,}", str(text or "").lower()):
+                root = PipelineService._normalize_token_root(token)
+                if root:
+                    roots.add(root)
+            return roots
+
+        def _roots_match(term_root: str, roots: set) -> bool:
+            if not term_root or not roots:
+                return False
+            if term_root in roots:
+                return True
+            if len(term_root) < 5:
+                return False
+            for root in roots:
+                if len(root) < 5:
+                    continue
+                prefix_len = min(7, len(term_root), len(root))
+                if (
+                    prefix_len >= 5
+                    and term_root[:prefix_len] == root[:prefix_len]
+                ):
+                    return True
+            return False
+
         def _count_core_term_matches(text: str) -> int:
             if not core_terms:
                 return 0
-            hay = (text or "").lower()
+            roots = _text_roots(text)
             matches = 0
+            matched_roots = set()
             for term in core_terms:
-                if len(term) >= 4:
-                    if re.search(rf"\\b{re.escape(term)}\\b", hay):
-                        matches += 1
-                        continue
-                if term in hay:
-                    matches += 1
+                root = PipelineService._normalize_token_root(term)
+                if not root or root in matched_roots:
                     continue
-                if term.endswith("s") and term[:-1] and term[:-1] in hay:
+                if _roots_match(root, roots):
                     matches += 1
-                    continue
-                if f"{term}s" in hay:
-                    matches += 1
-                    continue
+                    matched_roots.add(root)
             return matches
 
         def matches_core_terms(text: str, minimum: int) -> bool:
@@ -1968,16 +2005,16 @@ class PipelineService:
         def _count_anchor_term_matches(text: str) -> int:
             if not anchor_terms:
                 return 0
-            hay = (text or "").lower()
+            roots = _text_roots(text)
             matches = 0
+            matched_roots = set()
             for term in anchor_terms:
-                if len(term) >= 4:
-                    if re.search(rf"\\b{re.escape(term)}\\b", hay):
-                        matches += 1
-                        continue
-                if term in hay:
-                    matches += 1
+                root = PipelineService._normalize_token_root(term)
+                if not root or root in matched_roots:
                     continue
+                if _roots_match(root, roots):
+                    matches += 1
+                    matched_roots.add(root)
             return matches
 
         def _contains_banned_term(text: str, term: str) -> bool:
@@ -2135,8 +2172,13 @@ class PipelineService:
                 logger.error(f"PIPELINE: Error procesando URL {item}: {e}")
                 continue
 
-        # Second pass (relaxed) if we still need more competitors
-        if (len(local_urls) + len(global_urls)) < max(2, int(limit // 2)):
+        # Second pass (relaxed) is disabled by default to avoid false positives.
+        enable_relaxed_pass = bool(
+            getattr(settings, "COMPETITOR_RELAXED_PASS", False)
+        )
+        if enable_relaxed_pass and (len(local_urls) + len(global_urls)) < max(
+            2, int(limit // 2)
+        ):
             for item in search_items:
                 if (len(local_urls) + len(global_urls)) >= max(1, int(limit)):
                     break
@@ -2156,6 +2198,10 @@ class PipelineService:
                 except Exception as e:
                     logger.error(f"PIPELINE: Error procesando URL {item}: {e}")
                     continue
+        elif not enable_relaxed_pass:
+            logger.info(
+                "PIPELINE: relaxed competitor pass disabled (precision-first mode)."
+            )
 
         ordered_urls = local_urls + global_urls
         filtered_urls = ordered_urls[: max(1, int(limit))]
@@ -2223,6 +2269,30 @@ class PipelineService:
             str(term).strip().lower()
             for term in (effective_core_profile.get("core_terms") or [])
             if str(term).strip()
+        ]
+        noisy_core_terms = {
+            "insight",
+            "insights",
+            "webinar",
+            "webinars",
+            "newsroom",
+            "overview",
+            "news",
+            "blog",
+            "blogs",
+            "article",
+            "articles",
+            "evento",
+            "eventos",
+            "event",
+            "events",
+            "que",
+            "no",
+        }
+        core_terms_all = [
+            term
+            for term in core_terms_all
+            if len(term) >= 3 and term not in noisy_core_terms
         ]
         if not core_terms_all:
             core_terms_all = PipelineService._extract_core_terms_from_target(
@@ -3805,11 +3875,43 @@ class PipelineService:
             "superando",
             "supera",
             "superar",
+            "insight",
+            "insights",
+            "webinar",
+            "webinars",
+            "newsroom",
+            "overview",
+            "blog",
+            "news",
+            "event",
+            "events",
+            "research",
+            "report",
+            "reports",
+            "que",
+            "no",
+            "servicio",
+            "servicios",
+            "consultora",
+            "consultoras",
+            "nuestra",
+            "nuestro",
+            "nuestras",
+            "nuestros",
+            "sobre",
+            "contacto",
+            "somos",
+            "somo",
+            "global",
         }
 
     @staticmethod
     def _normalize_token_root(token: str) -> str:
-        raw = re.sub(r"[^a-z0-9áéíóúñ]+", "", str(token or "").lower())
+        normalized = unicodedata.normalize("NFKD", str(token or "").lower())
+        ascii_folded = "".join(
+            ch for ch in normalized if not unicodedata.combining(ch)
+        )
+        raw = re.sub(r"[^a-z0-9]+", "", ascii_folded)
         if not raw:
             return ""
         if raw.endswith("es") and len(raw) > 5:
@@ -4638,6 +4740,21 @@ class PipelineService:
             "ahora",
             "dia",
             "día",
+            "que",
+            "no",
+            "insight",
+            "insights",
+            "webinar",
+            "webinars",
+            "newsroom",
+            "overview",
+            "evento",
+            "eventos",
+            "event",
+            "events",
+            "research",
+            "report",
+            "reports",
         }
 
         terms = []
@@ -4985,6 +5102,21 @@ class PipelineService:
             "stop",
             "app",
             "apps",
+            "que",
+            "no",
+            "insight",
+            "insights",
+            "webinar",
+            "webinars",
+            "newsroom",
+            "overview",
+            "evento",
+            "eventos",
+            "event",
+            "events",
+            "research",
+            "report",
+            "reports",
         }
         stopwords.update(market_tokens)
 
@@ -5093,7 +5225,8 @@ class PipelineService:
             return []
         anchors = [t for t, count in counts.items() if count >= 2]
         if not anchors:
-            anchors = sorted(counts.keys(), key=lambda t: (-counts[t], t))
+            # Avoid weak one-off tokens that amplify false positives.
+            return []
         return anchors[:6]
 
     @staticmethod
@@ -5624,76 +5757,125 @@ class PipelineService:
         return queries[:5]
 
     @staticmethod
-    async def run_google_search(
-        query: str, api_key: str, cx_id: str, num_results: int = 10
+    async def run_serper_search(
+        query: str, api_key: str, num_results: int = 10
     ) -> Dict[str, Any]:
         """
-        Ejecuta una búsqueda de Google Custom Search con soporte para paginación.
+        Ejecuta búsqueda en Serper y normaliza la salida al contrato interno {"items": [...] }.
         """
-        if not api_key or not cx_id:
+        if not api_key:
             logger.error(
-                f"Step 2: GOOGLE_API_KEY or CSE_ID missing. SEARCH ABORTED for: {query}"
+                f"PIPELINE: SERPER_API_KEY missing. SEARCH ABORTED for: {query}"
             )
-            return {"error": "API Key o CX_ID no configurados"}
+            return {"error": "SERPER_API_KEY no configurada", "items": []}
 
-        endpoint = "https://www.googleapis.com/customsearch/v1"
-        all_items = []
-
-        max_pages = (num_results + 9) // 10
+        endpoint = "https://google.serper.dev/search"
+        headers = {
+            "X-API-KEY": api_key,
+            "Content-Type": "application/json",
+        }
+        all_items: List[Dict[str, Any]] = []
+        seen_links = set()
+        max_pages = max(1, (num_results + 9) // 10)
+        last_error: Optional[str] = None
 
         logger.info(
-            f"PIPELINE: Google Search Iniciado. Query: '{query}' (Objetivo: {num_results} resultados en {max_pages} páginas)"
+            f"PIPELINE: Serper Search iniciado. Query: '{query}' (Objetivo: {num_results} resultados en {max_pages} páginas)"
         )
 
         try:
             async with aiohttp.ClientSession() as session:
                 for page in range(max_pages):
-                    start_index = page * 10 + 1
-                    current_num = min(10, num_results - len(all_items))
-
-                    if current_num <= 0:
+                    if len(all_items) >= num_results:
                         break
 
-                    logger.info(
-                        f"PIPELINE: Google Search página {page + 1}/{max_pages} (start={start_index}, num={current_num})"
-                    )
-                    params = {
-                        "key": api_key,
-                        "cx": cx_id,
+                    payload = {
                         "q": query,
-                        "num": current_num,
-                        "start": start_index,
+                        "num": 10,
+                        "page": page + 1,
                     }
 
-                    async with session.get(endpoint, params=params, timeout=15) as resp:
-                        if resp.status == 200:
-                            data = await resp.json()
-                            items = data.get("items", [])
-                            if not items:
-                                logger.warning(
-                                    f"PIPELINE: Google Search no devolvió más items en la página {page + 1}"
-                                )
-                                break
-                            all_items.extend(items)
-                            logger.info(
-                                f"PIPELINE: Google Search página {page + 1} obtuvo {len(items)} items. Total acumulado: {len(all_items)}"
-                            )
-                        else:
+                    logger.info(
+                        f"PIPELINE: Serper Search página {page + 1}/{max_pages} (num=10)"
+                    )
+
+                    async with session.post(
+                        endpoint, json=payload, headers=headers, timeout=15
+                    ) as resp:
+                        if resp.status != 200:
                             error_text = await resp.text()
+                            last_error = (
+                                f"Serper API Error {resp.status} en página {page + 1}: {error_text}"
+                            )
                             logger.error(
-                                f"PIPELINE: Google Search API Error {resp.status} en página {page + 1}: {error_text}"
+                                f"PIPELINE: {last_error}"
                             )
                             break
 
-            results_count = len(all_items)
+                        data = await resp.json()
+                        organic = data.get("organic", [])
+                        if not organic:
+                            logger.warning(
+                                f"PIPELINE: Serper no devolvió más resultados en la página {page + 1}"
+                            )
+                            break
+
+                        page_items: List[Dict[str, Any]] = []
+                        for entry in organic:
+                            link = str(entry.get("link", "")).strip()
+                            if not link or link in seen_links:
+                                continue
+                            seen_links.add(link)
+                            page_items.append(
+                                {
+                                    "title": entry.get("title", ""),
+                                    "link": link,
+                                    "snippet": entry.get("snippet", ""),
+                                }
+                            )
+                            if len(all_items) + len(page_items) >= num_results:
+                                break
+
+                        if not page_items:
+                            logger.warning(
+                                "PIPELINE: Serper devolvió resultados duplicados o inválidos; finalizando paginación."
+                            )
+                            break
+
+                        all_items.extend(page_items)
+                        logger.info(
+                            f"PIPELINE: Serper Search página {page + 1} obtuvo {len(page_items)} items. Total acumulado: {len(all_items)}"
+                        )
+
+            trimmed_items = all_items[:num_results]
             logger.info(
-                f"PIPELINE: Google Search completado. Total: {results_count} items para la query: '{query}'"
+                f"PIPELINE: Serper Search completado. Total: {len(trimmed_items)} items para la query: '{query}'"
             )
-            return {"items": all_items}
+            if last_error:
+                return {"error": last_error, "items": trimmed_items}
+            return {"items": trimmed_items}
 
         except Exception as e:
-            logger.error(f"PIPELINE: Error fatal en Google Search: {e}")
-            return {"error": str(e), "items": all_items}
+            logger.error(f"PIPELINE: Error fatal en Serper Search: {e}")
+            return {"error": str(e), "items": all_items[:num_results]}
+
+    @staticmethod
+    async def run_google_search(
+        query: str, api_key: str, cx_id: str, num_results: int = 10
+    ) -> Dict[str, Any]:
+        """
+        Compat shim: mantiene firma histórica pero ejecuta búsqueda con Serper.
+        """
+        serper_key = settings.SERPER_API_KEY or api_key
+        if cx_id:
+            logger.debug(
+                "run_google_search shim: cx_id recibido pero ignorado (migrado a Serper)."
+            )
+        return await PipelineService.run_serper_search(
+            query=query,
+            api_key=serper_key,
+            num_results=num_results,
+        )
 
     async def analyze_external_intelligence(
         self,
@@ -5705,14 +5887,8 @@ class PipelineService:
         """
         Ejecuta Agente 1: Análisis de Inteligencia Externa.
 
-        Args:
-            target_audit: Auditoría local del sitio objetivo
-            llm_function: Función LLM (debe ser async y retornar string)
-            mode: `fast` (auditoría inicial) o `full` (regeneración para PDF)
-            retry_policy: Configuración opcional de reintentos/timeout
-
         Returns:
-            Tupla (external_intelligence, search_queries)
+            Tupla (external_intelligence, search_queries).
         """
         external_intelligence = {}
         search_queries = []
@@ -6053,10 +6229,15 @@ class PipelineService:
                     market_hint,
                     core_profile=core_profile,
                 )
+            pruned_queries_snapshot = [
+                item for item in search_queries if isinstance(item, dict)
+            ]
+            pruned_count = len(pruned_queries_snapshot)
 
             # Filtrado final: conservar solo queries emitidas por Agent 1 y alineadas al core profile.
             final_queries: List[Dict[str, str]] = []
             seen_queries = set()
+            strict_rejection_reasons: List[str] = []
 
             def _append_query(query_text: str, purpose: str, query_id: str) -> None:
                 normalized = re.sub(r"\s+", " ", str(query_text or "").strip())
@@ -6081,8 +6262,14 @@ class PipelineService:
                 if not candidate_query:
                     continue
                 if self._query_uses_only_outlier_terms(candidate_query, core_profile):
+                    strict_rejection_reasons.append(
+                        f"outlier_only:'{candidate_query[:80]}'"
+                    )
                     continue
                 if not self._query_matches_core_profile(candidate_query, core_profile):
+                    strict_rejection_reasons.append(
+                        f"no_core_match:'{candidate_query[:80]}'"
+                    )
                     continue
                 _append_query(
                     candidate_query,
@@ -6092,6 +6279,34 @@ class PipelineService:
                 if len(final_queries) >= max_queries:
                     break
 
+            strict_final_count = len(final_queries)
+            bypass_used = False
+            if strict_final_count == 0 and pruned_count > 0:
+                bypass_used = True
+                logger.warning(
+                    "[AGENTE 1] Filtro final estricto vació queries válidas de _prune; "
+                    f"aplicando bypass permisivo. pruned_count={pruned_count} strict_final_count={strict_final_count}"
+                )
+                if strict_rejection_reasons:
+                    logger.warning(
+                        "[AGENTE 1] Diagnóstico filtro final estricto (primeras 5): "
+                        f"{strict_rejection_reasons[:5]}"
+                    )
+                for item in pruned_queries_snapshot:
+                    _append_query(
+                        str(item.get("query", "")).strip(),
+                        str(item.get("purpose", "")).strip()
+                        or "Competitor discovery",
+                        query_id=str(item.get("id", "")).strip(),
+                    )
+                    if len(final_queries) >= max_queries:
+                        break
+
+            logger.info(
+                "[AGENTE 1] Query filter summary. "
+                f"pruned_count={pruned_count} strict_final_count={strict_final_count} "
+                f"final_count={len(final_queries)} bypass_used={bypass_used}"
+            )
             search_queries = final_queries[:max_queries]
 
             if self._is_unknown_category(category_value):
@@ -7736,34 +7951,37 @@ async def run_initial_audit(
                     f"run_initial_audit: sitemap fallback failed for {base_url}: {e}",
                 )
 
-        # Fallback 2: si sigue siendo muy bajo, intentar discovery vía Google CSE (site:domain)
-        if (
-            base_url
-            and (not crawled_urls or len(crawled_urls) <= 1)
-            and google_api_key
-            and google_cx_id
-        ):
+        # Fallback 2: si sigue siendo muy bajo, intentar discovery vía Serper (site:domain)
+        serper_key_for_discovery = getattr(settings, "SERPER_API_KEY", None)
+        if base_url and (not crawled_urls or len(crawled_urls) <= 1):
             try:
-                target_domain = base_host or urlparse(base_url).netloc.replace(
-                    "www.", ""
-                )
-                site_query = f"site:{target_domain}"
-                search_data = await service.run_google_search(
-                    site_query, google_api_key, google_cx_id
-                )
-                items = (
-                    search_data.get("items", [])
-                    if isinstance(search_data, dict)
-                    else []
-                )
-                internal_urls = service._extract_internal_urls_from_search(
-                    items, target_domain, limit=max_crawl
-                )
-                if internal_urls:
-                    crawled_urls = internal_urls
+                if not serper_key_for_discovery:
                     logger.info(
-                        f"run_initial_audit: search fallback encontró {len(crawled_urls)} URLs internas."
+                        "run_initial_audit: search fallback omitido (SERPER_API_KEY ausente)."
                     )
+                else:
+                    target_domain = base_host or urlparse(base_url).netloc.replace(
+                        "www.", ""
+                    )
+                    site_query = f"site:{target_domain}"
+                    search_data = await service.run_serper_search(
+                        site_query,
+                        serper_key_for_discovery,
+                        num_results=max(10, min(max_crawl, 100)),
+                    )
+                    items = (
+                        search_data.get("items", [])
+                        if isinstance(search_data, dict)
+                        else []
+                    )
+                    internal_urls = service._extract_internal_urls_from_search(
+                        items, target_domain, limit=max_crawl
+                    )
+                    if internal_urls:
+                        crawled_urls = internal_urls
+                        logger.info(
+                            f"run_initial_audit: search fallback encontró {len(crawled_urls)} URLs internas."
+                        )
             except Exception as e:
                 logger.warning(
                     f"run_initial_audit: search fallback failed for {base_url}: {e}"
@@ -7992,32 +8210,37 @@ async def run_initial_audit(
         )
         search_queries = []
 
-    # 2) Google Search results
+    # 2) Competitor search results (Serper)
     search_results: Dict[str, Any] = {}
-    if google_api_key and google_cx_id and search_queries:
-        search_num_results = 20 if not enable_llm_external_intel else 10
-        tasks: Dict[str, asyncio.Task] = {}
-        for q in search_queries:
-            query_text = q.get("query") if isinstance(q, dict) else str(q)
-            if not query_text:
-                continue
-            tasks[query_text] = asyncio.create_task(
-                service.run_google_search(
-                    query_text,
-                    google_api_key,
-                    google_cx_id,
-                    num_results=search_num_results,
-                )
+    if search_queries:
+        serper_api_key = settings.SERPER_API_KEY
+        if not serper_api_key:
+            logger.warning(
+                "run_initial_audit: SERPER_API_KEY missing; competitor search disabled for this audit."
             )
-
-        for query_text, task in tasks.items():
-            try:
-                search_results[query_text] = await task
-            except Exception as e:
-                logger.error(
-                    f"run_initial_audit: search failed for '{query_text}': {e}"
+        else:
+            search_num_results = 20 if not enable_llm_external_intel else 10
+            tasks: Dict[str, asyncio.Task] = {}
+            for q in search_queries:
+                query_text = q.get("query") if isinstance(q, dict) else str(q)
+                if not query_text:
+                    continue
+                tasks[query_text] = asyncio.create_task(
+                    service.run_serper_search(
+                        query_text,
+                        serper_api_key,
+                        num_results=search_num_results,
+                    )
                 )
-                search_results[query_text] = {"error": str(e), "items": []}
+
+            for query_text, task in tasks.items():
+                try:
+                    search_results[query_text] = await task
+                except Exception as e:
+                    logger.error(
+                        f"run_initial_audit: search failed for '{query_text}': {e}"
+                    )
+                    search_results[query_text] = {"error": str(e), "items": []}
     await emit_progress(45)
 
     # 3) Identify competitors

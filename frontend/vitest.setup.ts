@@ -1,4 +1,8 @@
-import "@testing-library/jest-dom";
+import "@testing-library/jest-dom/vitest";
+import { vi } from "vitest";
+
+// Temporary Jest compatibility while test files are migrated.
+(globalThis as unknown as { jest?: typeof vi }).jest = vi;
 
 if (!process.env.NEXT_PUBLIC_API_URL) {
   process.env.NEXT_PUBLIC_API_URL = "http://localhost:8000";

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, type ComponentType } from "react";
+import { useCallback, useMemo, type ComponentType } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -31,6 +31,8 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
+import { withLocale } from "@/lib/locale-routing";
+import { isKnownLocale } from "@/lib/locales";
 
 type NavItem = {
   href: string;
@@ -38,11 +40,10 @@ type NavItem = {
   icon: ComponentType<{ className?: string }>;
 };
 
-const supportedLocales = new Set(["en", "es"]);
 const guestNavItems: NavItem[] = [
-  { href: "/", label: "Product", icon: Sparkles },
+  { href: "/", label: "Platform", icon: Sparkles },
   { href: "/pricing", label: "Pricing", icon: Tag },
-  { href: "/docs", label: "Docs", icon: Book },
+  { href: "/docs", label: "Playbooks", icon: Book },
 ];
 const appNavItems: NavItem[] = [
   { href: "/audits", label: "Audits", icon: LayoutDashboard },
@@ -55,18 +56,10 @@ export function Header() {
   const pathname = usePathname();
   const { user, isLoading } = useUser();
 
-  const localePrefix = useMemo(() => {
-    const firstSegment = pathname?.split("/").filter(Boolean)[0];
-    if (firstSegment && supportedLocales.has(firstSegment)) {
-      return `/${firstSegment}`;
-    }
-    return "/en";
-  }, [pathname]);
-
   const pathWithoutLocale = useMemo(() => {
     if (!pathname) return "/";
     const segments = pathname.split("/").filter(Boolean);
-    if (segments[0] && supportedLocales.has(segments[0])) {
+    if (segments[0] && isKnownLocale(segments[0])) {
       return `/${segments.slice(1).join("/")}` || "/";
     }
     return pathname;
@@ -77,14 +70,10 @@ export function Header() {
     ? `/audits/${activeAuditMatch[1]}`
     : null;
 
-  const withLocale = (href: string) => {
-    if (href.startsWith("/auth/")) return href;
-    const normalized = href.startsWith("/") ? href : `/${href}`;
-    if (normalized === "/") return localePrefix;
-    if (normalized.startsWith("/en/") || normalized.startsWith("/es/"))
-      return normalized;
-    return `${localePrefix}${normalized}`;
-  };
+  const withCurrentLocale = useCallback(
+    (href: string) => withLocale(pathname, href),
+    [pathname],
+  );
 
   const navItems: NavItem[] = useMemo(() => {
     if (!user) return guestNavItems;
@@ -96,7 +85,7 @@ export function Header() {
   }, [user, activeAuditHref]);
 
   const isActiveLink = (href: string) => {
-    const target = withLocale(href).replace(/\/+$/, "");
+    const target = withCurrentLocale(href).replace(/\/+$/, "");
     const current = (pathname || "").replace(/\/+$/, "");
     if (!target) return current === "";
     return current === target || current.startsWith(`${target}/`);
@@ -105,15 +94,20 @@ export function Header() {
   const profileLabel = user?.name || user?.email || "User";
 
   return (
-    <header className="sticky top-0 z-50 w-full border-b border-border/70 bg-background/80 backdrop-blur-xl">
+    <header className="sticky top-0 z-50 w-full border-b border-border/70 bg-background/85 backdrop-blur-xl">
       <div className="container flex h-20 items-center justify-between px-4 sm:px-6">
-        <Link href={withLocale("/")} className="flex items-center gap-3 group">
-          <div className="p-2 bg-foreground/5 rounded-xl border border-foreground/10 group-hover:bg-foreground/10 transition-colors">
+        <Link href={withCurrentLocale("/")} className="flex items-center gap-3 group">
+          <div className="p-2.5 bg-foreground/5 rounded-2xl border border-foreground/10 group-hover:bg-foreground/10 transition-colors">
             <Sparkles className="h-6 w-6 text-foreground" />
           </div>
-          <span className="text-xl font-semibold tracking-tight">
-            LatentGEO<span className="text-brand">.ai</span>
-          </span>
+          <div className="flex flex-col leading-none">
+            <span className="text-xl font-semibold tracking-tight">
+              LatentGEO<span className="text-brand">.ai</span>
+            </span>
+            <span className="hidden xl:block text-[11px] tracking-wider uppercase text-muted-foreground mt-1">
+              AI search operations
+            </span>
+          </div>
         </Link>
 
         <nav className="hidden lg:flex items-center gap-2">
@@ -123,12 +117,12 @@ export function Header() {
             return (
               <Link
                 key={item.href}
-                href={withLocale(item.href)}
+                href={withCurrentLocale(item.href)}
                 className={cn(
-                  "flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition-colors",
+                  "flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-medium transition-colors",
                   active
-                    ? "bg-foreground/10 text-foreground"
-                    : "text-foreground/70 hover:bg-foreground/5 hover:text-foreground",
+                    ? "bg-card text-foreground border border-border/70 shadow-sm"
+                    : "text-foreground/70 hover:bg-foreground/5 hover:text-foreground border border-transparent",
                 )}
               >
                 <Icon className="h-4 w-4" />
@@ -142,7 +136,7 @@ export function Header() {
           {user && activeAuditHref && (
             <div className="hidden xl:flex items-center gap-2 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-3 py-1.5 text-xs text-emerald-700">
               <span className="h-2 w-2 rounded-full bg-emerald-500 animate-soft-pulse" />
-              Session live
+              Audit stream active
             </div>
           )}
           <ThemeToggle />
@@ -154,9 +148,9 @@ export function Header() {
           ) : user ? (
             <div className="hidden md:flex items-center gap-2">
               <Button asChild size="sm" className="rounded-xl">
-                <Link href={withLocale("/")}>
+                <Link href={withCurrentLocale("/")}>
                   <Rocket className="h-4 w-4" />
-                  New audit
+                  Run audit
                 </Link>
               </Button>
 
@@ -233,7 +227,7 @@ export function Header() {
                     return (
                       <SheetClose asChild key={item.href}>
                         <Link
-                          href={withLocale(item.href)}
+                          href={withCurrentLocale(item.href)}
                           className={cn(
                             "flex items-center gap-3 rounded-xl border px-4 py-3 text-sm font-medium",
                             active
@@ -258,11 +252,11 @@ export function Header() {
                   <div className="space-y-2">
                     <SheetClose asChild>
                       <Link
-                        href={withLocale("/")}
+                        href={withCurrentLocale("/")}
                         className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground shadow-sm hover:bg-primary/90"
                       >
                         <Rocket className="h-4 w-4" />
-                        New audit
+                        Run audit
                       </Link>
                     </SheetClose>
                     <SheetClose asChild>

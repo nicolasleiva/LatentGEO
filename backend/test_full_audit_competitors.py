@@ -68,6 +68,8 @@ async def run_full_audit_with_competitors():
         print(f"\n3. Buscando competidores...")
         competitor_urls = await find_competitors(url)
         print(f"   Encontrados: {len(competitor_urls)}")
+        if not competitor_urls:
+            raise RuntimeError("No se encontraron competidores con Serper.")
         for i, comp_url in enumerate(competitor_urls[:3], 1):
             print(f"   {i}. {comp_url}")
 
@@ -77,6 +79,8 @@ async def run_full_audit_with_competitors():
             competitor_urls[:3]
         )  # Solo 3 para hacerlo rápido
         print(f"   Completados: {len(competitor_audits)}")
+        if not competitor_audits:
+            raise RuntimeError("No se generaron auditorías de competidores.")
 
         # Guardar resultados
         print(f"\n5. Guardando resultados...")
@@ -118,6 +122,8 @@ async def run_full_audit_with_competitors():
         try:
             result = get_competitors(audit.id, 10, db)
             print(f"   Endpoint retorna: {len(result)} competidores")
+            if len(result) == 0:
+                raise RuntimeError("El endpoint de competidores no devolvió resultados.")
             for i, comp in enumerate(result, 1):
                 print(
                     f"   {i}. {comp.get('domain', 'N/A')} - GEO: {comp.get('geo_score', 'N/A')}"
@@ -135,6 +141,7 @@ async def run_full_audit_with_competitors():
         import traceback
 
         traceback.print_exc()
+        raise
     finally:
         db.close()
 
@@ -164,7 +171,10 @@ async def run_local_audit_with_crawl(url: str) -> dict:
 
 
 async def find_competitors(target_url: str) -> list:
-    """Buscar competidores usando Google Search"""
+    """Buscar competidores usando Serper Search"""
+    if not settings.SERPER_API_KEY:
+        raise RuntimeError("SERPER_API_KEY no está configurada.")
+
     # Buscar por categoría
     queries = [
         "farmacia online argentina",
@@ -173,23 +183,29 @@ async def find_competitors(target_url: str) -> list:
     ]
 
     all_items = []
-    for query in queries[:1]:  # Solo primera query para hacerlo rápido
-        results = await PipelineService.run_google_search(
+    for query in queries:
+        results = await PipelineService.run_serper_search(
             query=query,
-            api_key=settings.GOOGLE_API_KEY,
-            cx_id=settings.CSE_ID,
+            api_key=settings.SERPER_API_KEY,
             num_results=10,
         )
-        if "error" not in results:
-            all_items.extend(results.get("items", []))
+        if "error" in results:
+            raise RuntimeError(f"Error de Serper para '{query}': {results['error']}")
+        all_items.extend(results.get("items", []))
 
     # Filtrar competidores
     from urllib.parse import urlparse
 
     target_domain = urlparse(target_url).netloc.replace("www.", "")
     competitor_urls = PipelineService.filter_competitor_urls(
-        all_items, target_domain, limit=5
+        all_items,
+        target_domain,
+        limit=5,
+        core_terms=["farmacia", "online", "dermocosmetica", "perfumeria", "salud"],
+        anchor_terms=["farmacia", "medicamentos", "dermocosmetica", "perfumeria"],
     )
+    if not competitor_urls:
+        raise RuntimeError("No se encontraron competidores relevantes tras el filtrado.")
 
     return competitor_urls
 

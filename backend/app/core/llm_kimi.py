@@ -285,7 +285,7 @@ async def kimi_search_serp(
 ) -> Dict[str, Any]:
     """
     Execute search for commerce query analysis.
-    Provider is controlled by NV_KIMI_SEARCH_PROVIDER (kimi | google | auto).
+    Provider is controlled by NV_KIMI_SEARCH_PROVIDER (kimi | serper | auto).
     """
     if not settings.NV_KIMI_SEARCH_ENABLED:
         raise KimiSearchUnavailableError(
@@ -294,66 +294,80 @@ async def kimi_search_serp(
 
     provider = (settings.NV_KIMI_SEARCH_PROVIDER or "kimi").lower().strip()
 
-    async def _google_cse_search() -> Dict[str, Any]:
-        if not settings.GOOGLE_API_KEY or not settings.CSE_ID:
+    async def _serper_search() -> Dict[str, Any]:
+        if not settings.SERPER_API_KEY:
             raise KimiSearchUnavailableError(
-                "Google CSE requires GOOGLE_API_KEY (or GOOGLE_PAGESPEED_API_KEY) and CSE_ID."
+                "Serper search requires SERPER_API_KEY."
             )
 
-        endpoint = "https://www.googleapis.com/customsearch/v1"
+        endpoint = "https://google.serper.dev/search"
+        headers = {
+            "X-API-KEY": settings.SERPER_API_KEY,
+            "Content-Type": "application/json",
+        }
         max_pages = (top_k + 9) // 10
         all_items: List[Dict[str, Any]] = []
-
-        # Google CSE supports `gl` (country) and `lr` (language) filters.
         gl = (market or "").strip().lower()
-        lr = f"lang_{language.strip().lower()}" if language else None
+        hl = (language or "").strip().lower()[:2]
 
         async with httpx.AsyncClient(
             timeout=float(settings.NV_KIMI_SEARCH_TIMEOUT)
         ) as client:
             for page in range(max_pages):
-                start_index = page * 10 + 1
-                current_num = min(10, top_k - len(all_items))
-                if current_num <= 0:
+                if len(all_items) >= top_k:
                     break
-                params = {
-                    "key": settings.GOOGLE_API_KEY,
-                    "cx": settings.CSE_ID,
+                payload: Dict[str, Any] = {
                     "q": query,
-                    "num": current_num,
-                    "start": start_index,
+                    "num": min(10, top_k - len(all_items)),
+                    "page": page + 1,
                 }
                 if gl:
-                    params["gl"] = gl
-                if lr:
-                    params["lr"] = lr
+                    payload["gl"] = gl
+                if hl:
+                    payload["hl"] = hl
 
-                resp = await client.get(endpoint, params=params)
+                resp = await client.post(endpoint, headers=headers, json=payload)
                 if resp.status_code != 200:
                     raise KimiSearchError(
-                        f"Google CSE error {resp.status_code}: {resp.text}"
+                        f"Serper error {resp.status_code}: {resp.text}"
                     )
                 data = resp.json()
-                items = data.get("items", [])
-                if not items:
+                items = data.get("organic", [])
+                if not isinstance(items, list) or not items:
                     break
-                all_items.extend(items)
+                for entry in items:
+                    link = str(entry.get("link") or "").strip()
+                    if not link:
+                        continue
+                    all_items.append(
+                        {
+                            "title": entry.get("title", ""),
+                            "link": link,
+                            "snippet": entry.get("snippet", ""),
+                        }
+                    )
+                    if len(all_items) >= top_k:
+                        break
 
-        results = _normalize_results({"items": all_items}, top_k=top_k)
+        results = _normalize_results({"items": all_items[:top_k]}, top_k=top_k)
         if not results:
-            raise KimiSearchError("Google CSE returned no parseable results.")
+            raise KimiSearchError("Serper returned no parseable results.")
 
         evidence = [{"title": row["title"], "url": row["url"]} for row in results]
         return {
             "query": query,
             "market": market.upper(),
-            "provider": "google-cse",
+            "provider": "serper",
             "results": results,
             "evidence": evidence,
         }
 
-    if provider == "google":
-        return await _google_cse_search()
+    if provider in {"serper", "google"}:
+        if provider == "google":
+            logger.warning(
+                "NV_KIMI_SEARCH_PROVIDER=google is deprecated. Using Serper instead."
+            )
+        return await _serper_search()
 
     api_key = _get_api_key()
     if not api_key:
@@ -449,7 +463,7 @@ async def kimi_search_serp(
             for marker in ["web_search", "unknown tool", "unsupported", "responses"]
         ):
             if provider == "auto":
-                return await _google_cse_search()
+                return await _serper_search()
             raise KimiSearchUnavailableError(
                 "Kimi Search is not available in this runtime/provider. Check model capability and account permissions."
             ) from exc

@@ -1,12 +1,13 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { api } from "@/lib/api";
 import { Header } from "@/components/header";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
+import { withLocale } from "@/lib/locale-routing";
 import {
   Loader2,
   FileText,
@@ -30,6 +31,7 @@ interface Audit {
 
 export default function ReportsExportsPage() {
   const router = useRouter();
+  const pathname = usePathname();
   const [audits, setAudits] = useState<Audit[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedAudit, setSelectedAudit] = useState<number | null>(null);
@@ -134,7 +136,7 @@ export default function ReportsExportsPage() {
               }}
               className="text-muted-foreground hover:text-foreground hover:bg-muted/50"
             >
-              <ArrowLeft className="h-4 w-4 mr-2" /> Back to Reports
+              <ArrowLeft className="h-4 w-4 mr-2" /> Back to Reporting Studio
             </Button>
             <Button
               onClick={() => {
@@ -150,7 +152,7 @@ export default function ReportsExportsPage() {
               }}
               className="glass-button-primary"
             >
-              <Download className="h-4 w-4 mr-2" /> Download Markdown
+              <Download className="h-4 w-4 mr-2" /> Export Markdown
             </Button>
           </div>
           <Card className="glass-card p-8">
@@ -170,11 +172,10 @@ export default function ReportsExportsPage() {
       <main className="max-w-7xl mx-auto px-6 py-12">
         <div className="mb-8 animate-fade-up">
           <h1 className="text-3xl md:text-4xl font-semibold tracking-tight">
-            Reports & Exports
+            Reporting Studio
           </h1>
           <p className="text-muted-foreground mt-2 max-w-2xl">
-            Generate and download comprehensive audit reports in multiple
-            formats.
+            Generate board-ready exports and structured data packages from completed audits.
           </p>
         </div>
 
@@ -187,13 +188,13 @@ export default function ReportsExportsPage() {
                 No Completed Audits
               </h3>
               <p className="text-muted-foreground mb-6">
-                Complete an audit to generate reports.
+                Finish at least one audit to unlock report generation.
               </p>
               <Button
-                onClick={() => router.push("/")}
+                onClick={() => router.push(withLocale(pathname, "/"))}
                 className="glass-button-primary"
               >
-                Start New Audit
+                Run New Audit
               </Button>
             </Card>
           ) : (
@@ -240,7 +241,7 @@ export default function ReportsExportsPage() {
                         ) : (
                           <FileText className="h-4 w-4 mr-2" />
                         )}
-                        Generate PDF
+                        Build PDF
                       </Button>
 
                       <Button
@@ -251,7 +252,7 @@ export default function ReportsExportsPage() {
                         size="sm"
                       >
                         <Eye className="h-4 w-4 mr-2" />
-                        View Markdown
+                        Open Markdown
                       </Button>
 
                       <Button
@@ -261,16 +262,18 @@ export default function ReportsExportsPage() {
                         size="sm"
                       >
                         <FileJson className="h-4 w-4 mr-2" />
-                        Download JSON
+                        Export JSON
                       </Button>
 
                       <Button
-                        onClick={() => router.push(`/audits/${audit.id}`)}
+                        onClick={() =>
+                          router.push(withLocale(pathname, `/audits/${audit.id}`))
+                        }
                         variant="ghost"
                         className="text-muted-foreground hover:text-foreground hover:bg-muted/50"
                         size="sm"
                       >
-                        View Details →
+                        Open Audit →
                       </Button>
                     </div>
                   </div>

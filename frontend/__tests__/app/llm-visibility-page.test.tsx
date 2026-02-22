@@ -4,24 +4,24 @@ import LLMVisibilityPage from "@/app/[locale]/audits/[id]/llm-visibility/page";
 import { useParams } from "next/navigation";
 import { api } from "@/lib/api";
 
-jest.mock("next/navigation", () => ({
-  useParams: jest.fn(),
+vi.mock("next/navigation", () => ({
+  useParams: vi.fn(),
 }));
 
-jest.mock("@/components/header", () => ({
+vi.mock("@/components/header", () => ({
   Header: () => <div data-testid="header">Header</div>,
 }));
 
-jest.mock("@/lib/api", () => ({
+vi.mock("@/lib/api", () => ({
   api: {
-    getLLMVisibility: jest.fn(),
-    checkLLMVisibility: jest.fn(),
+    getLLMVisibility: vi.fn(),
+    checkLLMVisibility: vi.fn(),
   },
 }));
 
 describe("LLMVisibilityPage", () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
     (useParams as jest.Mock).mockReturnValue({ id: "1" });
     (api.getLLMVisibility as jest.Mock).mockResolvedValue([]);
   });
@@ -53,3 +53,4 @@ describe("LLMVisibilityPage", () => {
     expect(screen.queryByText(/OpenAI\/Gemini/i)).not.toBeInTheDocument();
   });
 });
+

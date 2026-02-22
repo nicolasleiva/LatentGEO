@@ -21,33 +21,12 @@ import {
   Wand2,
   Sparkles,
 } from "lucide-react";
+import { withLocale } from "@/lib/locale-routing";
 import { cn } from "@/lib/utils";
-
-const navigation = [
-  { name: "Overview", href: "/", icon: LayoutDashboard },
-  { name: "Audits", href: "/audits", icon: Search },
-  {
-    name: "Rank Tracking",
-    href: "/audits/rank-tracking",
-    icon: BarChart2,
-    disabled: true,
-  }, // Disabled in main menu, context aware
-  {
-    name: "Link Analysis",
-    href: "/audits/backlinks",
-    icon: Link2,
-    disabled: true,
-  },
-  {
-    name: "AI Visibility",
-    href: "/audits/llm-visibility",
-    icon: Bot,
-    disabled: true,
-  },
-];
 
 export function Sidebar() {
   const pathname = usePathname();
+  const route = (href: string) => withLocale(pathname, href);
 
   // Check if we are inside an audit context
   const auditMatch = pathname.match(/\/audits\/(\d+)/);
@@ -68,10 +47,10 @@ export function Sidebar() {
         </div>
 
         <Link
-          href="/"
+          href={route("/")}
           className={cn(
             "flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors",
-            pathname === "/"
+            pathname === route("/")
               ? "bg-sidebar-accent text-sidebar-accent-foreground"
               : "text-muted-foreground hover:bg-sidebar-accent/50 hover:text-foreground",
           )}
@@ -81,10 +60,10 @@ export function Sidebar() {
         </Link>
 
         <Link
-          href="/audits"
+          href={route("/audits")}
           className={cn(
             "flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors",
-            pathname === "/audits"
+            pathname === route("/audits")
               ? "bg-sidebar-accent text-sidebar-accent-foreground"
               : "text-muted-foreground hover:bg-sidebar-accent/50 hover:text-foreground",
           )}
@@ -94,10 +73,10 @@ export function Sidebar() {
         </Link>
 
         <Link
-          href="/reports"
+          href={route("/reports")}
           className={cn(
             "flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors",
-            pathname === "/reports"
+            pathname === route("/reports")
               ? "bg-sidebar-accent text-sidebar-accent-foreground"
               : "text-muted-foreground hover:bg-sidebar-accent/50 hover:text-foreground",
           )}
@@ -107,10 +86,10 @@ export function Sidebar() {
         </Link>
 
         <Link
-          href="/exports"
+          href={route("/exports")}
           className={cn(
             "flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors",
-            pathname === "/exports"
+            pathname === route("/exports")
               ? "bg-sidebar-accent text-sidebar-accent-foreground"
               : "text-muted-foreground hover:bg-sidebar-accent/50 hover:text-foreground",
           )}
@@ -126,10 +105,10 @@ export function Sidebar() {
             </div>
 
             <Link
-              href={`/audits/${currentAuditId}`}
+              href={route(`/audits/${currentAuditId}`)}
               className={cn(
                 "flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors",
-                pathname === `/audits/${currentAuditId}`
+                pathname === route(`/audits/${currentAuditId}`)
                   ? "bg-sidebar-accent text-sidebar-accent-foreground"
                   : "text-muted-foreground hover:bg-sidebar-accent/50 hover:text-foreground",
               )}
@@ -139,7 +118,7 @@ export function Sidebar() {
             </Link>
 
             <Link
-              href={`/audits/${currentAuditId}/rank-tracking`}
+              href={route(`/audits/${currentAuditId}/rank-tracking`)}
               className={cn(
                 "flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors",
                 pathname.includes("rank-tracking")
@@ -152,7 +131,7 @@ export function Sidebar() {
             </Link>
 
             <Link
-              href={`/audits/${currentAuditId}/backlinks`}
+              href={route(`/audits/${currentAuditId}/backlinks`)}
               className={cn(
                 "flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors",
                 pathname.includes("backlinks")
@@ -165,7 +144,7 @@ export function Sidebar() {
             </Link>
 
             <Link
-              href={`/audits/${currentAuditId}/llm-visibility`}
+              href={route(`/audits/${currentAuditId}/llm-visibility`)}
               className={cn(
                 "flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors",
                 pathname.includes("llm-visibility")
@@ -184,7 +163,7 @@ export function Sidebar() {
         </div>
 
         <Link
-          href="/tools/content-editor"
+          href={route("/tools/content-editor")}
           className={cn(
             "flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors",
             pathname.includes("content-editor")
@@ -201,7 +180,7 @@ export function Sidebar() {
         </div>
 
         <Link
-          href="/integrations/hubspot/connect"
+          href={route("/integrations/hubspot/connect")}
           className={cn(
             "flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors",
             pathname.includes("/integrations/hubspot")
@@ -214,10 +193,10 @@ export function Sidebar() {
         </Link>
 
         <Link
-          href="/integrations/hubspot/rollback"
+          href={route("/integrations/hubspot/rollback")}
           className={cn(
             "flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors",
-            pathname === "/integrations/hubspot/rollback"
+            pathname === route("/integrations/hubspot/rollback")
               ? "bg-sidebar-accent text-sidebar-accent-foreground"
               : "text-muted-foreground hover:bg-sidebar-accent/50 hover:text-foreground",
           )}
@@ -227,10 +206,10 @@ export function Sidebar() {
         </Link>
 
         <Link
-          href="/integrations/github"
+          href={route("/integrations/github")}
           className={cn(
             "flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors",
-            pathname === "/integrations/github"
+            pathname === route("/integrations/github")
               ? "bg-sidebar-accent text-sidebar-accent-foreground"
               : "text-muted-foreground hover:bg-sidebar-accent/50 hover:text-foreground",
           )}
@@ -244,10 +223,10 @@ export function Sidebar() {
         </div>
 
         <Link
-          href="/ops/health"
+          href={route("/ops/health")}
           className={cn(
             "flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors",
-            pathname === "/ops/health"
+            pathname === route("/ops/health")
               ? "bg-sidebar-accent text-sidebar-accent-foreground"
               : "text-muted-foreground hover:bg-sidebar-accent/50 hover:text-foreground",
           )}
@@ -257,10 +236,10 @@ export function Sidebar() {
         </Link>
 
         <Link
-          href="/ops/webhooks"
+          href={route("/ops/webhooks")}
           className={cn(
             "flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors",
-            pathname === "/ops/webhooks"
+            pathname === route("/ops/webhooks")
               ? "bg-sidebar-accent text-sidebar-accent-foreground"
               : "text-muted-foreground hover:bg-sidebar-accent/50 hover:text-foreground",
           )}
@@ -270,10 +249,10 @@ export function Sidebar() {
         </Link>
 
         <Link
-          href="/ops/realtime"
+          href={route("/ops/realtime")}
           className={cn(
             "flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors",
-            pathname === "/ops/realtime"
+            pathname === route("/ops/realtime")
               ? "bg-sidebar-accent text-sidebar-accent-foreground"
               : "text-muted-foreground hover:bg-sidebar-accent/50 hover:text-foreground",
           )}

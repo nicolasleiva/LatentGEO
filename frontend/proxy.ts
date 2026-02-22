@@ -2,15 +2,13 @@ import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 import { auth0 } from "./lib/auth0";
 
-// Supported locales
-const locales = ["en", "es"];
+// EN-first strategy
+const activeLocales = ["en"];
+const legacyLocales = ["es"];
 const defaultLocale = "en";
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
-
-  // Debug logging (server-side)
-  // console.log(`Middleware: ${pathname}`);
 
   // 1. Handle Auth0 authentication routes
   if (pathname.startsWith("/auth/")) {
@@ -18,55 +16,54 @@ export async function middleware(request: NextRequest) {
       return await auth0.middleware(request);
     } catch (error) {
       console.error("Auth0 middleware error:", error);
-      // Si hay error en Auth0, continuar sin autenticación
       return NextResponse.next();
     }
   }
 
   // 2. Skip middleware for static files and internal paths
-  // The matcher in config already handles most of this, but we double check
   if (
     pathname.startsWith("/_next") ||
     pathname.startsWith("/api") ||
     pathname.startsWith("/locales") ||
     pathname.startsWith("/images") ||
     pathname.startsWith("/fonts") ||
-    pathname.includes(".") // Crude check for files, better handled by matcher
+    pathname.includes(".")
   ) {
     return NextResponse.next();
   }
 
-  // 3. Check for locale
-  const pathnameHasLocale = locales.some(
+  // 3. Handle active locale directly
+  const hasActiveLocale = activeLocales.some(
     (locale) => pathname.startsWith(`/${locale}/`) || pathname === `/${locale}`,
   );
-
-  if (pathnameHasLocale) {
+  if (hasActiveLocale) {
     return NextResponse.next();
   }
 
-  // 4. Redirect to default locale
-  // Use clone() to ensure we don't mutate state unexpectedly
-  const url = request.nextUrl.clone();
+  // 4. Redirect legacy locale segments to /en/*
+  const legacyLocale = legacyLocales.find(
+    (locale) => pathname.startsWith(`/${locale}/`) || pathname === `/${locale}`,
+  );
+  if (legacyLocale) {
+    const url = request.nextUrl.clone();
+    const rest = pathname.slice(`/${legacyLocale}`.length) || "/";
+    url.pathname = `/${defaultLocale}${rest === "/" ? "" : rest}`;
+    return NextResponse.redirect(url);
+  }
 
-  // Clean redirection logic
+  // 5. Redirect to default locale
+  const url = request.nextUrl.clone();
   if (pathname === "/") {
     url.pathname = `/${defaultLocale}`;
   } else {
     url.pathname = `/${defaultLocale}${pathname}`;
   }
-
   return NextResponse.redirect(url);
 }
 
 export const config = {
   matcher: [
-    /*
-     * Match all request paths except for the ones starting with:
-     * - _next/static (static files)
-     * - _next/image (image optimization files)
-     * - favicon.ico, sitemap.xml, robots.txt (metadata files)
-     */
     "/((?!_next/static|_next/image|favicon.ico|sitemap.xml|robots.txt).*)",
   ],
 };
+

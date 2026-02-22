@@ -1,13 +1,14 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { api } from "@/lib/api";
 import { Header } from "@/components/header";
 import { ScoreHistoryChart } from "@/components/score-history-chart";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { withLocale } from "@/lib/locale-routing";
 import {
   Loader2,
   TrendingUp,
@@ -22,6 +23,7 @@ import {
 
 export default function AnalyticsPage() {
   const router = useRouter();
+  const pathname = usePathname();
   const [loading, setLoading] = useState(true);
   const [dashboardData, setDashboardData] = useState<any>(null);
   const [selectedDomain, setSelectedDomain] = useState<string>("");
@@ -78,11 +80,10 @@ export default function AnalyticsPage() {
       <main className="max-w-7xl mx-auto px-6 py-12">
         <div className="mb-8 animate-fade-up">
           <h1 className="text-3xl md:text-4xl font-semibold tracking-tight">
-            Analytics Dashboard
+            Visibility Command Center
           </h1>
           <p className="text-muted-foreground mt-2 max-w-2xl">
-            A unified view of SEO, GEO, and AI-readiness performance across
-            every audit.
+            Monitor execution health, queue throughput, and competitive AI visibility trends.
           </p>
         </div>
 
@@ -102,7 +103,7 @@ export default function AnalyticsPage() {
               <div className="text-3xl font-semibold text-foreground mb-1">
                 {summary.total_audits}
               </div>
-              <div className="text-sm text-muted-foreground">Total Audits</div>
+              <div className="text-sm text-muted-foreground">Audits in system</div>
             </Card>
 
             <Card className="glass-card p-6">
@@ -118,7 +119,7 @@ export default function AnalyticsPage() {
               <div className="text-3xl font-semibold text-foreground mb-1">
                 {summary.completed_audits}
               </div>
-              <div className="text-sm text-muted-foreground">Completed</div>
+              <div className="text-sm text-muted-foreground">Successfully completed</div>
             </Card>
 
             <Card className="glass-card p-6">
@@ -134,7 +135,7 @@ export default function AnalyticsPage() {
               <div className="text-3xl font-semibold text-foreground mb-1">
                 {summary.running_audits}
               </div>
-              <div className="text-sm text-muted-foreground">Running</div>
+              <div className="text-sm text-muted-foreground">Currently processing</div>
             </Card>
 
             <Card className="glass-card p-6">
@@ -150,7 +151,7 @@ export default function AnalyticsPage() {
               <div className="text-3xl font-semibold text-foreground mb-1">
                 {metrics.unique_domains}
               </div>
-              <div className="text-sm text-muted-foreground">Domains</div>
+              <div className="text-sm text-muted-foreground">Tracked domains</div>
             </Card>
           </div>
 
@@ -163,10 +164,10 @@ export default function AnalyticsPage() {
                 </div>
                 <div>
                   <h3 className="font-semibold text-foreground">
-                    Total Issues
+                    Remediation Backlog
                   </h3>
                   <p className="text-xs text-muted-foreground">
-                    Across all audits
+                    Issues across active projects
                   </p>
                 </div>
               </div>
@@ -174,7 +175,7 @@ export default function AnalyticsPage() {
                 {metrics.total_issues}
               </div>
               <div className="text-sm text-muted-foreground">
-                Avg: {metrics.average_issues_per_audit} per audit
+                Average: {metrics.average_issues_per_audit} issues per audit
               </div>
             </Card>
 
@@ -185,10 +186,10 @@ export default function AnalyticsPage() {
                 </div>
                 <div>
                   <h3 className="font-semibold text-foreground">
-                    Success Rate
+                    Completion Reliability
                   </h3>
                   <p className="text-xs text-muted-foreground">
-                    Completion rate
+                    Queue conversion rate
                   </p>
                 </div>
               </div>
@@ -206,9 +207,9 @@ export default function AnalyticsPage() {
                   <TrendingUp className="h-6 w-6 text-brand" />
                 </div>
                 <div>
-                  <h3 className="font-semibold text-foreground">Performance</h3>
+                  <h3 className="font-semibold text-foreground">Operational Health</h3>
                   <p className="text-xs text-muted-foreground">
-                    Overall health
+                    Failure pressure indicator
                   </p>
                 </div>
               </div>
@@ -216,7 +217,7 @@ export default function AnalyticsPage() {
                 {summary.failed_audits === 0 ? "Excellent" : "Good"}
               </div>
               <div className="text-sm text-muted-foreground">
-                {summary.failed_audits} failed audits
+                {summary.failed_audits} failed runs requiring review
               </div>
             </Card>
           </div>
@@ -230,10 +231,10 @@ export default function AnalyticsPage() {
                 </div>
                 <div>
                   <h2 className="text-xl font-semibold text-foreground">
-                    Score Tracking
+                    Historical Score Tracking
                   </h2>
                   <p className="text-sm text-muted-foreground">
-                    History and time-based comparison
+                    Compare domain-level performance over time
                   </p>
                 </div>
               </div>
@@ -244,7 +245,7 @@ export default function AnalyticsPage() {
                   onChange={(e) => setSelectedDomain(e.target.value)}
                   className="glass-input rounded-lg px-4 py-2 text-sm"
                 >
-                  <option value="">Select a domain...</option>
+                  <option value="">Select domain</option>
                   {recent_audits.map((audit: any) => (
                     <option key={audit.domain} value={audit.domain}>
                       {audit.domain}
@@ -257,7 +258,7 @@ export default function AnalyticsPage() {
                   onClick={() => setShowHistory(!showHistory)}
                   className="gap-2"
                 >
-                  {showHistory ? "Hide history" : "View history"}
+                  {showHistory ? "Hide chart" : "Show chart"}
                   <ChevronDown
                     className={`h-4 w-4 transition-transform ${showHistory ? "rotate-180" : ""}`}
                   />
@@ -278,14 +279,16 @@ export default function AnalyticsPage() {
           {/* Recent Audits */}
           <Card className="glass-card p-6 animate-fade-up">
             <h2 className="text-xl font-semibold text-foreground mb-6">
-              Recent Audits
+              Latest Audit Activity
             </h2>
             <div className="space-y-4">
               {recent_audits.slice(0, 10).map((audit: any) => (
                 <div
                   key={audit.id}
                   className="flex items-center justify-between p-4 glass-panel rounded-xl hover:bg-muted/50 transition-all cursor-pointer"
-                  onClick={() => router.push(`/audits/${audit.id}`)}
+                  onClick={() =>
+                    router.push(withLocale(pathname, `/audits/${audit.id}`))
+                  }
                 >
                   <div className="flex-1">
                     <div className="flex items-center gap-3 mb-1">
@@ -346,7 +349,7 @@ export default function AnalyticsPage() {
             {recent_audits.length === 0 && (
               <div className="text-center py-12 text-muted-foreground">
                 <BarChart3 className="h-12 w-12 mx-auto mb-3 opacity-40" />
-                <p>No audits yet. Start your first audit to see analytics.</p>
+                <p>No audit activity yet. Run your first audit to unlock this dashboard.</p>
               </div>
             )}
           </Card>
