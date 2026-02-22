@@ -2,17 +2,12 @@
 module.exports = {
   i18n: {
     defaultLocale: "en",
-    locales: ["en", "es"],
+    locales: ["en"],
   },
   defaultNS: "common",
   localePath: "./public/locales",
   reloadOnPrerender: process.env.NODE_ENV === "development",
-  detection: {
-    order: ["cookie", "htmlTag", "navigator"],
-    caches: ["cookie"],
-  },
-  // Ensure English is always used for enterprise consistency
+  // EN-first strategy
   load: "currentOnly",
-  // Override the default locale detection to always use English
   localeDetection: false,
 };

@@ -144,16 +144,16 @@ class TestBacklinkServiceReal:
     """Test Backlink Service con APIs reales"""
 
     @pytest.mark.asyncio
-    async def test_google_api_keys_configured(self):
-        """Verifica que las API keys de Google están configuradas"""
-        assert settings.GOOGLE_API_KEY is not None, "GOOGLE_API_KEY no está configurada"
-        assert settings.CSE_ID is not None, "CSE_ID no está configurado"
+    async def test_serper_api_key_configured(self):
+        """Verifica que la API key de Serper está configurada"""
+        assert settings.SERPER_API_KEY is not None, "SERPER_API_KEY no está configurada"
+        assert len(settings.SERPER_API_KEY) > 10, "SERPER_API_KEY parece inválida"
 
     @pytest.mark.asyncio
     async def test_analyze_backlinks_returns_data(self):
         """Test que analyze_backlinks retorna datos reales"""
-        if not settings.GOOGLE_API_KEY or not settings.CSE_ID:
-            _skip_or_fail("GOOGLE_API_KEY o CSE_ID no configurados")
+        if not settings.SERPER_API_KEY:
+            _skip_or_fail("SERPER_API_KEY no configurada")
 
         db = SessionLocal()
         try:
@@ -180,8 +180,8 @@ class TestRankTrackerServiceReal:
     @pytest.mark.asyncio
     async def test_track_rankings_returns_data(self):
         """Test que track_rankings retorna datos reales"""
-        if not settings.GOOGLE_API_KEY or not settings.CSE_ID:
-            _skip_or_fail("GOOGLE_API_KEY o CSE_ID no configurados")
+        if not settings.SERPER_API_KEY:
+            _skip_or_fail("SERPER_API_KEY no configurada")
 
         db = SessionLocal()
         try:

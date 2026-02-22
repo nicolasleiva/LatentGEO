@@ -319,7 +319,7 @@ class BacklinkService:
 
             # 2. Technical External Backlinks (link: operator)
             logger.info("🔗 Step 2: Fetching technical backlinks...")
-            technical_backlinks = await self._fetch_technical_backlinks_google(
+            technical_backlinks = await self._fetch_technical_backlinks_serper(
                 audit_id, domain
             )
             created_backlinks.extend(technical_backlinks)
@@ -344,13 +344,70 @@ class BacklinkService:
             self.db.rollback()
             raise
 
-    async def _fetch_technical_backlinks_google(
+    async def _run_serper_search(
+        self, query: str, num_results: int = 10
+    ) -> List[Dict[str, Any]]:
+        if not settings.SERPER_API_KEY:
+            logger.warning("SERPER_API_KEY not configured. Skipping Serper search.")
+            return []
+
+        endpoint = "https://google.serper.dev/search"
+        headers = {
+            "X-API-KEY": settings.SERPER_API_KEY,
+            "Content-Type": "application/json",
+        }
+        all_items: List[Dict[str, Any]] = []
+        seen_links: Set[str] = set()
+        max_pages = max(1, (num_results + 9) // 10)
+
+        try:
+            async with aiohttp.ClientSession() as session:
+                for page in range(max_pages):
+                    if len(all_items) >= num_results:
+                        break
+
+                    payload = {"q": query, "num": 10, "page": page + 1}
+                    async with session.post(
+                        endpoint, json=payload, headers=headers, timeout=15
+                    ) as resp:
+                        if resp.status != 200:
+                            error_text = await resp.text()
+                            logger.warning(
+                                f"Serper search error {resp.status} for query '{query}': {error_text}"
+                            )
+                            break
+
+                        data = await resp.json()
+                        organic = data.get("organic", [])
+                        if not organic:
+                            break
+
+                        for item in organic:
+                            link = str(item.get("link") or "").strip()
+                            if not link or link in seen_links:
+                                continue
+                            seen_links.add(link)
+                            all_items.append(
+                                {
+                                    "title": item.get("title", ""),
+                                    "link": link,
+                                    "snippet": item.get("snippet", ""),
+                                }
+                            )
+                            if len(all_items) >= num_results:
+                                break
+        except Exception as exc:
+            logger.error(f"Error running Serper search for backlinks: {exc}")
+
+        return all_items[:num_results]
+
+    async def _fetch_technical_backlinks_serper(
         self, audit_id: int, domain: str
     ) -> List[Backlink]:
         """
-        Fetches technical backlinks using Google CSE 'link:' operator.
+        Fetches technical backlinks using Serper query results.
         """
-        if not settings.GOOGLE_API_KEY or not settings.CSE_ID:
+        if not settings.SERPER_API_KEY:
             return []
         clean_domain = self._clean_domain(domain)
         excluded_domains = [
@@ -379,49 +436,32 @@ class BacklinkService:
             "tiktok.com",
         ]
 
-        query = f"link:{domain} -site:{domain}"
-        url = "https://www.googleapis.com/customsearch/v1"
-        params = {
-            "key": settings.GOOGLE_API_KEY,
-            "cx": settings.CSE_ID,
-            "q": query,
-            "num": 10,
-        }
+        query = f"link:{clean_domain} -site:{clean_domain}"
+        items = await self._run_serper_search(query=query, num_results=20)
 
         links = []
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(url, params=params) as resp:
-                    if resp.status == 200:
-                        data = await resp.json()
-                        items = data.get("items", [])
-                        seen_links = set()
-                        for item in items:
-                            source_url = (item.get("link") or "").strip()
-                            if source_url in seen_links:
-                                continue
-                            if not self._is_relevant_technical_result(
-                                item, clean_domain, excluded_domains
-                            ):
-                                continue
-                            seen_links.add(source_url)
+            seen_links = set()
+            for item in items:
+                source_url = (item.get("link") or "").strip()
+                if source_url in seen_links:
+                    continue
+                if not self._is_relevant_technical_result(
+                    item, clean_domain, excluded_domains
+                ):
+                    continue
+                seen_links.add(source_url)
 
-                            bl = Backlink(
-                                audit_id=audit_id,
-                                source_url="TECHNICAL_BACKLINK",
-                                target_url=source_url,
-                                anchor_text=(item.get("title") or "Technical Backlink")[
-                                    :500
-                                ],
-                                is_dofollow=True,
-                                domain_authority=0,
-                            )
-                            self.db.add(bl)
-                            links.append(bl)
-                    else:
-                        logger.warning(
-                            f"Google CSE Technical Backlink Error: {resp.status}"
-                        )
+                bl = Backlink(
+                    audit_id=audit_id,
+                    source_url="TECHNICAL_BACKLINK",
+                    target_url=source_url,
+                    anchor_text=(item.get("title") or "Technical Backlink")[:500],
+                    is_dofollow=True,
+                    domain_authority=0,
+                )
+                self.db.add(bl)
+                links.append(bl)
         except Exception as e:
             logger.error(f"Error fetching technical backlinks: {e}")
 
@@ -434,7 +474,7 @@ class BacklinkService:
         Fetches brand mentions and analyzes them with AI in BATCH for speed and quality.
         Filters out irrelevant e-commerce results and non-existent pages.
         """
-        if not settings.GOOGLE_API_KEY or not settings.CSE_ID:
+        if not settings.SERPER_API_KEY:
             return []
 
         # Extract brand name from domain + load contextual terms from audited content
@@ -472,64 +512,48 @@ class BacklinkService:
 
         # Search for brand mentions excluding the domain itself; add context terms when available.
         query = self._build_brand_mentions_query(brand_name, domain, context_terms)
-        url = "https://www.googleapis.com/customsearch/v1"
-        params = {
-            "key": settings.GOOGLE_API_KEY,
-            "cx": settings.CSE_ID,
-            "q": query,
-            "num": 10,
-        }
+        items = await self._run_serper_search(query=query, num_results=20)
 
         mentions = []
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(url, params=params) as resp:
-                    if resp.status == 200:
-                        data = await resp.json()
-                        items = data.get("items", [])
+            # Pre-filter items
+            filtered_items = []
+            seen_links = set()
+            for item in items:
+                source_url = (item.get("link", "") or "").strip().lower()
+                if source_url in seen_links:
+                    continue
+                if not self._is_relevant_brand_result(
+                    item,
+                    brand_name=brand_name,
+                    clean_domain=clean_domain,
+                    context_terms=context_terms,
+                    excluded_domains=EXCLUDED_DOMAINS,
+                ):
+                    continue
+                seen_links.add(source_url)
+                filtered_items.append(item)
 
-                        # Pre-filter items
-                        filtered_items = []
-                        seen_links = set()
-                        for item in items:
-                            source_url = (item.get("link", "") or "").strip().lower()
-                            if source_url in seen_links:
-                                continue
-                            if not self._is_relevant_brand_result(
-                                item,
-                                brand_name=brand_name,
-                                clean_domain=clean_domain,
-                                context_terms=context_terms,
-                                excluded_domains=EXCLUDED_DOMAINS,
-                            ):
-                                continue
-                            seen_links.add(source_url)
-                            filtered_items.append(item)
+            if not filtered_items:
+                logger.info("No relevant brand mentions found after filtering.")
+                return []
 
-                        if not filtered_items:
-                            logger.info(
-                                "No relevant brand mentions found after filtering."
-                            )
-                            return []
+            logger.info(f"📋 Analyzing {len(filtered_items)} mentions in BATCH...")
 
-                        logger.info(
-                            f"📋 Analyzing {len(filtered_items)} mentions in BATCH..."
-                        )
+            # --- BATCH ANALYSIS WITH AI ---
+            batch_data = []
+            for i, item in enumerate(filtered_items):
+                batch_data.append(
+                    {
+                        "id": i,
+                        "title": item.get("title", ""),
+                        "snippet": item.get("snippet", ""),
+                        "url": item.get("link", ""),
+                    }
+                )
 
-                        # --- BATCH ANALYSIS WITH AI ---
-                        batch_data = []
-                        for i, item in enumerate(filtered_items):
-                            batch_data.append(
-                                {
-                                    "id": i,
-                                    "title": item.get("title", ""),
-                                    "snippet": item.get("snippet", ""),
-                                    "url": item.get("link", ""),
-                                }
-                            )
-
-                        system_prompt = f"You are an expert SEO and brand analyst. Analyze brand mentions for '{brand_name}' and provide insights in a JSON array."
-                        user_prompt = f"""
+            system_prompt = f"You are an expert SEO and brand analyst. Analyze brand mentions for '{brand_name}' and provide insights in a JSON array."
+            user_prompt = f"""
 Analyze the following brand mentions. For each one, provide:
 - id: match the provided id
 - sentiment: "positive", "negative", or "neutral"
@@ -543,70 +567,57 @@ Data to analyze:
 
 Return ONLY a JSON array of objects.
 """
+            try:
+                from .pipeline_service import PipelineService
+
+                response = await self.llm_function(system_prompt, user_prompt)
+
+                # Use robust parsing from PipelineService
+                parsed_results = PipelineService.parse_agent_json_or_raw(response)
+
+                if not isinstance(parsed_results, list):
+                    # If it returned a dict with a key like 'fix_plan' or similar
+                    if isinstance(parsed_results, dict):
+                        for key in ["results", "mentions", "items"]:
+                            if key in parsed_results and isinstance(
+                                parsed_results[key], list
+                            ):
+                                parsed_results = parsed_results[key]
+                                break
+
+                if isinstance(parsed_results, list):
+                    for res_idx, analysis in enumerate(parsed_results):
+                        # Fallback index matching if ID not returned
+                        idx_raw = analysis.get("id", res_idx)
                         try:
-                            from .pipeline_service import PipelineService
+                            idx = int(idx_raw)
+                        except (TypeError, ValueError):
+                            idx = res_idx
+                        if idx < len(filtered_items):
+                            if self._analysis_is_irrelevant(analysis):
+                                continue
 
-                            response = await self.llm_function(
-                                system_prompt, user_prompt
+                            item = filtered_items[idx]
+                            score_raw = analysis.get("relevance_score", 0)
+                            try:
+                                score_value = int(score_raw or 0)
+                            except (TypeError, ValueError):
+                                score_value = 0
+                            bl = Backlink(
+                                audit_id=audit_id,
+                                source_url="BRAND_MENTION",
+                                target_url=item.get("link"),
+                                anchor_text=self._build_anchor_text(item, analysis),
+                                is_dofollow=analysis.get("sentiment") == "positive",
+                                domain_authority=score_value,
                             )
+                            self.db.add(bl)
+                            mentions.append(bl)
+                else:
+                    logger.error("Failed to parse batch AI response as list")
 
-                            # Use robust parsing from PipelineService
-                            parsed_results = PipelineService.parse_agent_json_or_raw(
-                                response
-                            )
-
-                            if not isinstance(parsed_results, list):
-                                # If it returned a dict with a key like 'fix_plan' or similar
-                                if isinstance(parsed_results, dict):
-                                    for key in ["results", "mentions", "items"]:
-                                        if key in parsed_results and isinstance(
-                                            parsed_results[key], list
-                                        ):
-                                            parsed_results = parsed_results[key]
-                                            break
-
-                            if isinstance(parsed_results, list):
-                                for res_idx, analysis in enumerate(parsed_results):
-                                    # Fallback index matching if ID not returned
-                                    idx_raw = analysis.get("id", res_idx)
-                                    try:
-                                        idx = int(idx_raw)
-                                    except (TypeError, ValueError):
-                                        idx = res_idx
-                                    if idx < len(filtered_items):
-                                        if self._analysis_is_irrelevant(analysis):
-                                            continue
-
-                                        item = filtered_items[idx]
-                                        score_raw = analysis.get("relevance_score", 0)
-                                        try:
-                                            score_value = int(score_raw or 0)
-                                        except (TypeError, ValueError):
-                                            score_value = 0
-                                        bl = Backlink(
-                                            audit_id=audit_id,
-                                            source_url="BRAND_MENTION",
-                                            target_url=item.get("link"),
-                                            anchor_text=self._build_anchor_text(
-                                                item, analysis
-                                            ),
-                                            is_dofollow=analysis.get("sentiment")
-                                            == "positive",
-                                            domain_authority=score_value,
-                                        )
-                                        self.db.add(bl)
-                                        mentions.append(bl)
-                            else:
-                                logger.error(
-                                    "Failed to parse batch AI response as list"
-                                )
-
-                        except Exception as e:
-                            logger.error(
-                                f"Error in batch AI brand mention analysis: {e}"
-                            )
-                    else:
-                        logger.warning(f"Google CSE Brand Mention Error: {resp.status}")
+            except Exception as e:
+                logger.error(f"Error in batch AI brand mention analysis: {e}")
         except Exception as e:
             logger.error(f"Error fetching brand mentions: {e}")
 

@@ -1,8 +1,11 @@
 import type { Metadata } from "next";
 import { Manrope, Sora, JetBrains_Mono } from "next/font/google";
-import { Analytics } from "@vercel/analytics/next";
 import { Auth0Provider } from "@auth0/nextjs-auth0/client";
 import { ThemeProvider } from "@/components/theme-provider";
+import { AnalyticsProvider } from "@/components/providers/analytics-provider";
+import { QueryProvider } from "@/components/providers/query-provider";
+import { APP_METADATA } from "@/lib/brand";
+import { resolveLocale } from "@/lib/locales";
 import "./globals.css";
 
 const sora = Sora({
@@ -24,13 +27,9 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "LatentGEO.ai — AI & Generative Search Readiness",
-  description:
-    "Autonomous code remediation and AI-native content creation for growth and visibility.",
+  title: APP_METADATA.title,
+  description: APP_METADATA.description,
 };
-
-// Supported locales (used for runtime validation)
-const locales = ["en", "es"];
 
 export default async function RootLayout({
   children,
@@ -41,7 +40,7 @@ export default async function RootLayout({
 }) {
   const resolvedParams = params ? await params : undefined;
   const locale = resolvedParams?.locale;
-  const validLocale = locale && locales.includes(locale) ? locale : "en";
+  const validLocale = resolveLocale(locale);
 
   return (
     <html
@@ -50,16 +49,18 @@ export default async function RootLayout({
       suppressHydrationWarning
     >
       <body className="font-sans antialiased min-h-screen bg-background text-foreground">
-        <ThemeProvider
-          attribute="class"
-          defaultTheme="light"
-          enableSystem={false}
-          storageKey="latentgeo-theme-v2"
-          disableTransitionOnChange={false}
-        >
-          <Auth0Provider>{children}</Auth0Provider>
-        </ThemeProvider>
-        <Analytics />
+        <QueryProvider>
+          <ThemeProvider
+            attribute="class"
+            defaultTheme="light"
+            enableSystem={false}
+            storageKey="latentgeo-theme-v2"
+            disableTransitionOnChange={false}
+          >
+            <Auth0Provider>{children}</Auth0Provider>
+          </ThemeProvider>
+        </QueryProvider>
+        <AnalyticsProvider />
       </body>
     </html>
   );

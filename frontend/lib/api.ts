@@ -1,21 +1,10 @@
 import type { AuditSummary, PageAudit, CompetitorData } from "./types";
 import { fetchWithBackendAuth } from "./backend-auth";
+import { resolveApiBaseUrl } from "./env";
 
-// En el navegador usa localhost, en el servidor usa el nombre del servicio Docker
-const resolveApiUrl = () => {
-  const publicUrl =
-    process.env.NEXT_PUBLIC_API_URL || process.env.NEXT_PUBLIC_BACKEND_URL;
-  const serverUrl = process.env.API_URL || publicUrl;
-  const url = typeof window !== "undefined" ? publicUrl : serverUrl;
-  if (!url) {
-    throw new Error(
-      "API URL is not configured. Set NEXT_PUBLIC_API_URL (browser) and API_URL (server).",
-    );
-  }
-  return url.replace(/\/+$/, "");
-};
-
-export const API_URL = resolveApiUrl();
+// DEPRECATED: use "@/lib/api-client/*" for new code.
+// This module is kept temporarily to avoid a large flag-day migration.
+export const API_URL = resolveApiBaseUrl();
 
 class APIService {
   private baseUrl = API_URL;

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { RefreshCw, Play, ExternalLink } from "lucide-react";
 import { API_URL } from "@/lib/api";
 import { fetchWithBackendAuth } from "@/lib/backend-auth";
+import { withLocale } from "@/lib/locale-routing";
 
 interface HubSpotPage {
   id: string;
@@ -25,6 +26,7 @@ interface Connection {
 
 export default function HubSpotPages() {
   const router = useRouter();
+  const pathname = usePathname();
   const [connection, setConnection] = useState<Connection | null>(null);
   const [pages, setPages] = useState<HubSpotPage[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -123,7 +125,7 @@ export default function HubSpotPages() {
       );
 
       // Redirect to the audits list or dashboard after initiating all audits
-      router.push("/audits");
+      router.push(withLocale(pathname, "/audits"));
     } catch (error) {
       console.error(error);
     } finally {
@@ -139,7 +141,11 @@ export default function HubSpotPages() {
     return (
       <div className="container mx-auto py-20 text-center">
         <h1 className="text-2xl font-bold mb-4">No HubSpot Connection Found</h1>
-        <Button onClick={() => router.push("/integrations/hubspot/connect")}>
+        <Button
+          onClick={() =>
+            router.push(withLocale(pathname, "/integrations/hubspot/connect"))
+          }
+        >
           Connect HubSpot
         </Button>
       </div>

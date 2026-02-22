@@ -1,3 +1,5 @@
+import { resolveApiBaseUrl } from "./env";
+
 type BackendTokenResponse = {
   token?: string;
   access_token?: string;
@@ -8,20 +10,7 @@ let cachedToken: string | null = null;
 let cachedExpiry = 0;
 let pendingTokenRequest: Promise<string | null> | null = null;
 
-const resolveApiUrl = () => {
-  const publicUrl =
-    process.env.NEXT_PUBLIC_API_URL || process.env.NEXT_PUBLIC_BACKEND_URL;
-  const serverUrl = process.env.API_URL || publicUrl;
-  const url = typeof window !== "undefined" ? publicUrl : serverUrl;
-  if (!url) {
-    throw new Error(
-      "API URL is not configured. Set NEXT_PUBLIC_API_URL and API_URL.",
-    );
-  }
-  return url.replace(/\/+$/, "");
-};
-
-const BACKEND_API_URL = resolveApiUrl();
+const BACKEND_API_URL = resolveApiBaseUrl();
 
 const isTokenFresh = () => {
   if (!cachedToken) return false;

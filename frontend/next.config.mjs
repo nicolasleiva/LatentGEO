@@ -1,14 +1,18 @@
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
 /** @type {import('next').NextConfig} */
 const isProd =
   process.env.NODE_ENV === "production" ||
   process.env.ENVIRONMENT === "production";
 const strictBuild = process.env.STRICT_BUILD === "1";
+const configDir = path.dirname(fileURLToPath(import.meta.url));
 
 const rawApiUrl =
   process.env.NEXT_PUBLIC_API_URL ||
   process.env.API_URL ||
   process.env.NEXT_PUBLIC_BACKEND_URL ||
-  "";
+  "http://localhost:8000";
 const apiOrigin = (() => {
   try {
     return rawApiUrl ? new URL(rawApiUrl).origin : "";
@@ -22,7 +26,7 @@ const auth0Origin = process.env.AUTH0_DOMAIN
   ? `https://${process.env.AUTH0_DOMAIN}`
   : "";
 
-if (isProd && !apiOrigin) {
+if (isProd && strictBuild && !apiOrigin) {
   throw new Error(
     "NEXT_PUBLIC_API_URL or API_URL is required to build for production",
   );
@@ -43,24 +47,11 @@ const nextConfig = {
   // ===== DOCKER OPTIMIZATION =====
   // Standalone output for minimal production image
   output: "standalone",
-
-  // ===== MEMORY OPTIMIZATIONS =====
-  // Reduce memory usage in Docker containers
-  experimental: {
-    // Optimize file watching to prevent ENOMEM errors
-    turbotrace: {
-      logLevel: "error",
-    },
-  },
+  outputFileTracingRoot: configDir,
 
   // Local builds can skip expensive checks. CI sets STRICT_BUILD=1.
   typescript: {
     ignoreBuildErrors: !strictBuild,
-  },
-
-  // Local builds can skip expensive checks. CI sets STRICT_BUILD=1.
-  eslint: {
-    ignoreDuringBuilds: !strictBuild,
   },
 
   // Webpack memory optimization

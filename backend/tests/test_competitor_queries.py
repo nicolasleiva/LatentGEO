@@ -1,3 +1,5 @@
+import logging
+
 import pytest
 from app.services.pipeline_service import PipelineService, run_initial_audit
 
@@ -95,6 +97,28 @@ def test_filter_competitor_urls_does_not_block_dealer_by_dea_substring():
     assert "https://www.gibson.com/" in competitors
 
 
+def test_normalize_token_root_strips_accents_and_plural_noise():
+    assert PipelineService._normalize_token_root("transformación") == "transformacion"
+    assert PipelineService._normalize_token_root("consultorías") == "consultoria"
+
+
+def test_filter_competitor_urls_matches_consultora_with_consulting_variants():
+    items = [
+        {
+            "link": "https://example-consulting.com/services",
+            "title": "Digital transformation consulting firm",
+            "snippet": "Enterprise consulting for large-scale transformation programs.",
+        }
+    ]
+    competitors = PipelineService.filter_competitor_urls(
+        items,
+        target_domain="ceibo.digital",
+        core_terms=["consultora", "transformación"],
+        limit=5,
+    )
+    assert "https://example-consulting.com/" in competitors
+
+
 def test_extract_competitor_urls_falls_back_to_anchor_terms_when_core_terms_are_noisy():
     target = _make_target_audit(
         "https://v0-guitar-store-one.vercel.app/",
@@ -150,6 +174,69 @@ def test_extract_competitor_urls_falls_back_to_anchor_terms_when_core_terms_are_
 
     assert urls
     assert any("themusiczoo.com" in url for url in urls)
+
+
+def test_filter_competitor_urls_excludes_research_paths_from_competitors():
+    items = [
+        {
+            "link": "https://www.hfsresearch.com/research/nearshore-technology-arbitrage/",
+            "title": "Nearshore technology arbitrage",
+            "snippet": "Digital transformation teams in LATAM.",
+        },
+        {
+            "link": "https://mismo.team/",
+            "title": "Nearshore digital transformation teams",
+            "snippet": "Agile consulting and engineering squads.",
+        },
+    ]
+
+    competitors = PipelineService.filter_competitor_urls(
+        items,
+        target_domain="ceibo.digital",
+        core_terms=["nearshore", "transformation", "consulting"],
+        anchor_terms=["nearshore", "transformation"],
+        limit=5,
+    )
+
+    assert all("hfsresearch.com" not in url for url in competitors)
+
+
+def test_filter_competitor_urls_excludes_directory_sites():
+    items = [
+        {
+            "link": "https://clutch.co/ar/consulting/digital-transformation",
+            "title": "Top digital transformation consulting firms",
+            "snippet": "Compare consulting providers in Argentina.",
+        },
+        {
+            "link": "https://www.example-consulting.com/",
+            "title": "Digital transformation consulting services",
+            "snippet": "Consulting for enterprise modernization.",
+        },
+    ]
+
+    competitors = PipelineService.filter_competitor_urls(
+        items,
+        target_domain="ceibo.digital",
+        core_terms=["digital", "transformation", "consulting"],
+        limit=5,
+    )
+
+    assert all("clutch.co" not in url for url in competitors)
+    assert "https://www.example-consulting.com/" in competitors
+
+
+def test_extract_anchor_terms_requires_repeated_signal():
+    queries = [
+        {"query": "agile coaching fintech latam"},
+        {"query": "nearshore digital transformation teams paraguay"},
+    ]
+
+    anchors = PipelineService._extract_anchor_terms_from_queries(
+        queries, market_hint=None
+    )
+
+    assert anchors == []
 
 
 def test_sanitize_context_label_removes_nuestro_token():
@@ -560,6 +647,83 @@ async def test_agent1_does_not_inject_primary_query_when_llm_queries_are_invalid
             mode="full",
             retry_policy={"max_retries": 0, "timeout_seconds": 10},
         )
+
+
+@pytest.mark.asyncio
+async def test_agent1_uses_pruned_queries_when_strict_core_filter_empties(
+    monkeypatch, caplog
+):
+    service = PipelineService()
+    target = _make_target_audit(
+        "https://ceibo.digital/",
+        "Ceibo | Digital Transformation",
+        "Technology consulting for enterprise teams",
+        "Digital Transformation Consulting",
+    )
+    target["language"] = "en"
+    target["market"] = "Mexico"
+
+    async def fake_llm(*, system_prompt: str, user_prompt: str) -> str:
+        return """
+        {
+          "category": "Professional Services",
+          "queries_to_run": [
+            {"id": "q1", "query": "consultoría transformación digital México", "purpose": "competitor discovery"},
+            {"id": "q2", "query": "agile transformation consulting firms Mexico", "purpose": "competitor discovery"},
+            {"id": "q3", "query": "digital customer experience consultancy LATAM", "purpose": "competitor discovery"},
+            {"id": "q4", "query": "nearshore digital talent services Argentina", "purpose": "competitor discovery"},
+            {"id": "q5", "query": "fintech digital transformation consultant Mexico", "purpose": "competitor discovery"}
+          ],
+          "business_type": "SERVICES"
+        }
+        """
+
+    def fake_build_core_profile(target_audit, max_terms=6):
+        return {
+            "core_terms": ["bootcamp", "education"],
+            "outlier_terms": [],
+            "confidence": 1.0,
+            "vertical_hint": "services",
+            "market_terms": [],
+            "source_support": {"bootcamp": ["h1"]},
+        }
+
+    def passthrough_prune(
+        queries,
+        target_audit,
+        llm_category=None,
+        llm_subcategory=None,
+        market_hint=None,
+        core_profile=None,
+    ):
+        return queries
+
+    monkeypatch.setattr(
+        PipelineService,
+        "_build_core_business_profile",
+        staticmethod(fake_build_core_profile),
+    )
+    monkeypatch.setattr(
+        PipelineService,
+        "_prune_competitor_queries",
+        staticmethod(passthrough_prune),
+    )
+
+    caplog.set_level(logging.INFO, logger="app.services.pipeline_service")
+    external_intel, queries = await service.analyze_external_intelligence(
+        target,
+        llm_function=fake_llm,
+        mode="full",
+        retry_policy={"max_retries": 0, "timeout_seconds": 10},
+    )
+
+    assert external_intel.get("status") == "ok"
+    assert external_intel.get("query_source") == "agent1"
+    assert isinstance(external_intel.get("queries_to_run"), list)
+    assert len(queries) == 5
+    assert queries[0]["query"] == "consultoría transformación digital México"
+    assert any("aplicando bypass permisivo" in r.message for r in caplog.records)
+    assert any("bypass_used=True" in r.message for r in caplog.records)
 
 
 @pytest.mark.asyncio

@@ -195,8 +195,7 @@ def verify_env_variables():
 
     vars_to_check = [
         ("GOOGLE_PAGESPEED_API_KEY", settings.GOOGLE_PAGESPEED_API_KEY),
-        ("GOOGLE_API_KEY", settings.GOOGLE_API_KEY),
-        ("CSE_ID", settings.CSE_ID),
+        ("SERPER_API_KEY", settings.SERPER_API_KEY),
         ("NVIDIA_API_KEY", settings.NVIDIA_API_KEY),
         ("NV_API_KEY", settings.NV_API_KEY),
     ]

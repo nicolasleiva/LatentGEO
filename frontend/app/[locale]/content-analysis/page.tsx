@@ -1,16 +1,18 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { KeywordGapChart } from "@/components/keyword-gap-chart";
 import { IssuesHeatmap } from "@/components/issues-heatmap";
+import { withLocale } from "@/lib/locale-routing";
 import { Loader2, ArrowLeft, BarChart2, Layers, Copy } from "lucide-react";
 
 export default function ContentAnalysisPage() {
   const router = useRouter();
+  const pathname = usePathname();
   const [yourUrl, setYourUrl] = useState("");
   const [compUrl, setCompUrl] = useState("");
   const [loading, setLoading] = useState(false);
@@ -43,7 +45,7 @@ export default function ContentAnalysisPage() {
       <nav className="flex items-center gap-4 mb-12 max-w-7xl mx-auto">
         <Button
           variant="ghost"
-          onClick={() => router.push("/")}
+          onClick={() => router.push(withLocale(pathname, "/"))}
           className="text-muted-foreground hover:text-foreground hover:bg-muted/50 rounded-full px-4"
         >
           <ArrowLeft className="h-4 w-4 mr-2" /> Back

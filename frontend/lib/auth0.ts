@@ -38,10 +38,8 @@ const getAuth0Client = () => {
 
 export const auth0 = {
   middleware: (request: NextRequest) => getAuth0Client().middleware(request),
-  getSession: (request?: NextRequest) => {
-    const getSessionFn = getAuth0Client().getSession as (
-      req?: NextRequest,
-    ) => ReturnType<Auth0Client["getSession"]>;
-    return getSessionFn(request);
-  },
+  getSession: (request?: NextRequest) =>
+    request
+      ? getAuth0Client().getSession(request)
+      : getAuth0Client().getSession(),
 };

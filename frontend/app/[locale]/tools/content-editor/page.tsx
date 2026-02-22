@@ -1,10 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { withLocale } from "@/lib/locale-routing";
 import {
   Loader2,
   CheckCircle,
@@ -29,6 +30,7 @@ interface AnalysisResult {
 
 export default function ContentEditorPage() {
   const router = useRouter();
+  const pathname = usePathname();
   const [content, setContent] = useState("");
   const [keyword, setKeyword] = useState("");
   const [loading, setLoading] = useState(false);
@@ -59,7 +61,10 @@ export default function ContentEditorPage() {
       {/* Header */}
       <div className="h-16 border-b border-border flex items-center justify-between px-6 glass-card z-10 shrink-0">
         <div className="flex items-center gap-4">
-          <Button variant="ghost" onClick={() => router.push("/")}>
+          <Button
+            variant="ghost"
+            onClick={() => router.push(withLocale(pathname, "/"))}
+          >
             <ArrowLeft className="h-4 w-4 mr-2" /> Back
           </Button>
           <div className="h-6 w-px bg-border" />
