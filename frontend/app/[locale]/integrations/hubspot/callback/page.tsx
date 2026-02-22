@@ -1,14 +1,16 @@
 "use client";
 
 import { useEffect, useState, Suspense } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Loader2 } from "lucide-react";
 import { API_URL } from "@/lib/api";
 import { fetchWithBackendAuth } from "@/lib/backend-auth";
+import { withLocale } from "@/lib/locale-routing";
 
 function CallbackContent() {
   const router = useRouter();
+  const pathname = usePathname();
   const searchParams = useSearchParams();
   const code = searchParams.get("code");
   const [status, setStatus] = useState("Processing...");
@@ -35,7 +37,7 @@ function CallbackContent() {
 
         // Redirect to pages list
         setTimeout(() => {
-          router.push("/integrations/hubspot/pages");
+          router.push(withLocale(pathname, "/integrations/hubspot/pages"));
         }, 1500);
       } catch (err) {
         console.error(err);
@@ -48,7 +50,7 @@ function CallbackContent() {
     } else {
       setError("No authorization code found");
     }
-  }, [code, router]);
+  }, [code, pathname, router]);
 
   return (
     <Card className="w-full max-w-md text-center">

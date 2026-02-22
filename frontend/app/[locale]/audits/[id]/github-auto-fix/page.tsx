@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, usePathname, useRouter } from "next/navigation";
 import { Header } from "@/components/header";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import { API_URL } from "@/lib/api";
 import { fetchWithBackendAuth } from "@/lib/backend-auth";
+import { withLocale } from "@/lib/locale-routing";
 import type {
   FixInputField,
   FixInputGroup,
@@ -44,6 +45,7 @@ type ChatStep = {
 export default function GitHubAutoFixPage() {
   const params = useParams();
   const router = useRouter();
+  const pathname = usePathname();
   const auditId = params.id as string;
 
   const [audit, setAudit] = useState<any>(null);
@@ -130,6 +132,7 @@ export default function GitHubAutoFixPage() {
     fetchAudit();
     fetchMissingInputs();
     fetchConnections();
+    // Intentional bootstrap on mount only.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -139,7 +142,6 @@ export default function GitHubAutoFixPage() {
     setCurrentStepIndex(0);
     setChatHistory([]);
     setStepError(null);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [missingInputs]);
 
   const fetchAudit = async () => {
@@ -351,6 +353,7 @@ export default function GitHubAutoFixPage() {
     const step = chatSteps[currentStepIndex];
     if (!step || step.assistantMessage || step.loading) return;
     fetchChatSuggestion(step, currentStepIndex);
+    // Suggestions are intentionally fetched for the active step only.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentStepIndex, chatSteps]);
 
@@ -450,21 +453,20 @@ export default function GitHubAutoFixPage() {
         {/* Back button */}
         <Button
           variant="ghost"
-          onClick={() => router.push(`/audits/${auditId}`)}
+          onClick={() => router.push(withLocale(pathname, `/audits/${auditId}`))}
           className="mb-8 text-muted-foreground hover:text-foreground hover:bg-muted/50 pl-0"
         >
           <ArrowLeft className="h-4 w-4 mr-2" />
-          Back to Audit
+          Back to Audit Summary
         </Button>
 
         {/* Header */}
         <div className="mb-8">
           <h1 className="text-3xl md:text-4xl font-semibold tracking-tight mb-2">
-            GitHub Auto-Fix
+            GitHub Delivery Agent
           </h1>
           <p className="text-muted-foreground">
-            Automatically create a Pull Request with AI-powered SEO/GEO fixes
-            for your repository
+            Translate audit findings into implementation-ready pull requests for your repository.
           </p>
         </div>
 
@@ -481,16 +483,14 @@ export default function GitHubAutoFixPage() {
                 Connect GitHub
               </h2>
               <p className="text-muted-foreground mb-8">
-                To use Auto-Fix, you need to connect your GitHub account.
-                We&apos;ll create Pull Requests with AI-generated fixes for all
-                detected SEO/GEO issues.
+                Connect your GitHub account to enable PR generation from validated SEO/GEO findings.
               </p>
               <Button
                 onClick={connectGitHub}
                 className="bg-brand text-brand-foreground hover:bg-brand/90 px-8 py-6 text-lg"
               >
                 <Github className="h-5 w-5 mr-2" />
-                Connect GitHub Account
+                Connect GitHub Workspace
               </Button>
             </div>
           </Card>
@@ -511,7 +511,7 @@ export default function GitHubAutoFixPage() {
                       GitHub Connected
                     </h3>
                     <p className="text-sm text-muted-foreground">
-                      You&apos;re connected as{" "}
+                      Active identity{" "}
                       <span className="text-foreground font-medium">
                         {connections[0].github_username}
                       </span>
@@ -527,14 +527,14 @@ export default function GitHubAutoFixPage() {
             {/* Configuration */}
             <Card className="glass-card p-8 border border-border">
               <h3 className="text-xl font-semibold text-foreground mb-6">
-                Configure Auto-Fix
+                Configure Delivery
               </h3>
 
               <div className="space-y-6">
                 {/* Connection Selector */}
                 <div>
                   <label className="block text-sm font-medium text-muted-foreground mb-3">
-                    GitHub Account
+                    Source Account
                   </label>
                   <select
                     value={selectedConnection || ""}
@@ -566,8 +566,7 @@ export default function GitHubAutoFixPage() {
                   ) : repositories.length === 0 ? (
                     <div className="flex items-center gap-2 text-muted-foreground py-3">
                       <AlertCircle className="h-4 w-4" />
-                      No repositories found. Please sync your repositories
-                      first.
+                      No repositories found. Sync repositories first.
                     </div>
                   ) : (
                     <select
@@ -576,7 +575,7 @@ export default function GitHubAutoFixPage() {
                       className="glass-input w-full px-4 py-3"
                     >
                       <option value="" className="bg-gray-900">
-                        Select a repository...
+                        Select repository...
                       </option>
                       {repositories.map((repo) => (
                         <option
@@ -595,7 +594,7 @@ export default function GitHubAutoFixPage() {
                 {audit && (
                   <div className="glass-panel border border-border rounded-xl p-6">
                     <h4 className="text-sm font-semibold text-foreground mb-4">
-                      What will be fixed:
+                      Planned issue scope
                     </h4>
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                       <div className="bg-muted/50 p-4 rounded-lg border border-border">
@@ -603,7 +602,7 @@ export default function GitHubAutoFixPage() {
                           {audit.critical_issues || 0}
                         </div>
                         <div className="text-xs text-muted-foreground">
-                          Critical Issues
+                          Critical issues
                         </div>
                       </div>
                       <div className="bg-muted/50 p-4 rounded-lg border border-border">
@@ -611,7 +610,7 @@ export default function GitHubAutoFixPage() {
                           {audit.high_issues || 0}
                         </div>
                         <div className="text-xs text-muted-foreground">
-                          High Priority Issues
+                          High-priority issues
                         </div>
                       </div>
                       <div className="bg-muted/50 p-4 rounded-lg border border-border">
@@ -619,7 +618,7 @@ export default function GitHubAutoFixPage() {
                           {audit.medium_issues || 0}
                         </div>
                         <div className="text-xs text-muted-foreground">
-                          Medium Priority Issues
+                          Medium-priority issues
                         </div>
                       </div>
                     </div>
@@ -633,11 +632,10 @@ export default function GitHubAutoFixPage() {
                 >
                   <div>
                     <h4 className="text-sm font-semibold text-foreground">
-                      Guided inputs (Kimi)
+                      Guided Inputs (Kimi)
                     </h4>
                     <p className="text-xs text-muted-foreground mt-1">
-                      Kimi will guide you with audit-based suggestions. Required
-                      fields block PR creation until saved.
+                      Kimi proposes audit-grounded values. Required fields must be saved before PR creation.
                     </p>
                   </div>
 
@@ -648,7 +646,7 @@ export default function GitHubAutoFixPage() {
                     </div>
                   ) : missingInputs.length === 0 ? (
                     <div className="text-sm text-emerald-600">
-                      All required inputs are complete. You can create the PR.
+                      All required inputs are complete. You can generate the PR.
                     </div>
                   ) : (
                     <div className="space-y-6">
@@ -694,7 +692,7 @@ export default function GitHubAutoFixPage() {
                                   {step.loading ? (
                                     <div className="flex items-center gap-2 text-muted-foreground text-sm">
                                       <Clock className="h-4 w-4 animate-spin" />
-                                      Thinking...
+                                      Generating suggestion...
                                     </div>
                                   ) : (
                                     <p className="text-sm text-foreground">
@@ -720,7 +718,7 @@ export default function GitHubAutoFixPage() {
                                           }
                                           className="mt-2"
                                         >
-                                          Use suggestion
+                                          Apply suggestion
                                         </Button>
                                       )}
                                     </div>
@@ -776,14 +774,14 @@ export default function GitHubAutoFixPage() {
                                       className="bg-foreground text-background hover:bg-foreground/90"
                                     >
                                       {index === chatSteps.length - 1
-                                        ? "Finish"
-                                        : "Next"}
+                                        ? "Finish Step"
+                                        : "Next Step"}
                                     </Button>
                                   </div>
                                 </div>
                               ) : (
                                 <div className="mt-4 text-xs text-muted-foreground">
-                                  Your answer: {value || "Skipped"}
+                                  Saved response: {value || "Skipped"}
                                 </div>
                               )}
                             </div>
@@ -800,10 +798,10 @@ export default function GitHubAutoFixPage() {
                             {inputsSaving ? (
                               <>
                                 <Clock className="h-4 w-4 mr-2 animate-spin" />
-                                Saving data...
+                                Saving inputs...
                               </>
                             ) : (
-                              "Save data"
+                              "Save Inputs"
                             )}
                           </Button>
                         )}
@@ -820,12 +818,12 @@ export default function GitHubAutoFixPage() {
                   {creating ? (
                     <>
                       <Clock className="h-5 w-5 mr-2 animate-spin" />
-                      Creating Pull Request...
+                      Creating pull request...
                     </>
                   ) : (
                     <>
                       <GitPullRequest className="h-5 w-5 mr-2" />
-                      Create Auto-Fix Pull Request
+                      Create Delivery PR
                     </>
                   )}
                 </Button>
@@ -847,11 +845,11 @@ export default function GitHubAutoFixPage() {
                       <CheckCircle2 className="h-8 w-8 text-emerald-500" />
                       <div>
                         <h3 className="text-xl font-bold text-emerald-600">
-                          Pull Request Created Successfully!
+                          Pull Request Created
                         </h3>
                         <p className="text-muted-foreground mt-1">
-                          {prResult.data.files_modified} files modified with{" "}
-                          {prResult.data.fixes_applied} AI-powered fixes
+                          {prResult.data.files_modified} files updated with{" "}
+                          {prResult.data.fixes_applied} generated fixes
                         </p>
                       </div>
                     </div>
@@ -865,7 +863,7 @@ export default function GitHubAutoFixPage() {
                           className="bg-emerald-600 hover:bg-emerald-700 text-white"
                         >
                           <ExternalLink className="h-4 w-4 mr-2" />
-                          View Pull Request on GitHub
+                          Open Pull Request
                         </Button>
                       </div>
                     )}
@@ -875,7 +873,7 @@ export default function GitHubAutoFixPage() {
                     <XCircle className="h-8 w-8 text-red-500 flex-shrink-0 mt-1" />
                     <div>
                       <h3 className="text-xl font-bold text-red-500 mb-2">
-                        Error Creating Pull Request
+                        Pull Request Creation Failed
                       </h3>
                       <p className="text-muted-foreground">{prResult.error}</p>
                     </div>

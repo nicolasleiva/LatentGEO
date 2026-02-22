@@ -25,6 +25,7 @@ class Settings(BaseSettings):
     GOOGLE_API_KEY: Optional[str] = None
     GOOGLE_PAGESPEED_API_KEY: Optional[str] = None
     CSE_ID: Optional[str] = None
+    SERPER_API_KEY: Optional[str] = None
 
     # NVIDIA/LLM Configuration
     NVIDIA_API_KEY: Optional[str] = None
@@ -143,7 +144,7 @@ class Settings(BaseSettings):
     # LLM output limits (report generation)
     NV_MAX_TOKENS_REPORT: int = int(os.getenv("NV_MAX_TOKENS_REPORT", "8192"))
     REPORT_LENGTH_STRICT: bool = (
-        os.getenv("REPORT_LENGTH_STRICT", "True").lower() == "true"
+        os.getenv("REPORT_LENGTH_STRICT", "False").lower() == "true"
     )
     REPORT_MIN_WORDS: int = int(os.getenv("REPORT_MIN_WORDS", "8000"))
     REPORT_MIN_SECTION_WORDS: int = int(os.getenv("REPORT_MIN_SECTION_WORDS", "400"))
@@ -190,7 +191,7 @@ class Settings(BaseSettings):
         if self.PROJECT_NAME and self.PROJECT_NAME != "Auditor":
             self.APP_NAME = self.PROJECT_NAME
 
-        # Reutilizar la key de PageSpeed para Google CSE si no se definió una key dedicada
+        # Reutilizar la key de PageSpeed para integraciones legacy de Google
         if not self.GOOGLE_API_KEY and self.GOOGLE_PAGESPEED_API_KEY:
             self.GOOGLE_API_KEY = self.GOOGLE_PAGESPEED_API_KEY
 

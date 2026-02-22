@@ -1,12 +1,13 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, usePathname, useRouter } from "next/navigation";
 import { api } from "@/lib/api";
 import { Header } from "@/components/header";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { withLocale } from "@/lib/locale-routing";
 import {
   Loader2,
   ArrowLeft,
@@ -18,6 +19,7 @@ import {
 
 export default function AuditAnalyticsPage() {
   const router = useRouter();
+  const pathname = usePathname();
   const params = useParams<{ id: string }>();
   const auditId = parseInt(params?.id || "0");
   const [loading, setLoading] = useState(true);
@@ -62,7 +64,7 @@ export default function AuditAnalyticsPage() {
             Analytics Not Available
           </h3>
           <Button
-            onClick={() => router.push(`/audits/${auditId}`)}
+            onClick={() => router.push(withLocale(pathname, `/audits/${auditId}`))}
             className="glass-button-primary"
           >
             Back to Audit
@@ -95,7 +97,9 @@ export default function AuditAnalyticsPage() {
           <div className="flex items-center gap-4 mb-2">
             <Button
               variant="ghost"
-              onClick={() => router.push(`/audits/${auditId}`)}
+              onClick={() =>
+                router.push(withLocale(pathname, `/audits/${auditId}`))
+              }
               className="text-muted-foreground hover:text-foreground hover:bg-muted/50"
             >
               <ArrowLeft className="h-4 w-4 mr-2" /> Back to Audit

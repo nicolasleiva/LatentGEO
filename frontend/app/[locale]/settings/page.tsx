@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useUser } from "@auth0/nextjs-auth0/client";
+import { useTheme } from "next-themes";
 import Image from "next/image";
 import { Header } from "@/components/header";
 import { Button } from "@/components/ui/button";
@@ -10,7 +11,6 @@ import {
   User,
   Bell,
   Key,
-  Globe,
   Palette,
   Shield,
   Save,
@@ -20,19 +20,86 @@ import {
   Check,
 } from "lucide-react";
 
+type NotificationPreferences = {
+  email: boolean;
+  auditComplete: boolean;
+  weeklyReport: boolean;
+};
+
+const DEFAULT_NOTIFICATIONS: NotificationPreferences = {
+  email: true,
+  auditComplete: true,
+  weeklyReport: false,
+};
+
 export default function SettingsPage() {
   const { user, isLoading } = useUser();
-  const [theme, setTheme] = useState<"dark" | "light" | "system">("light");
-  const [notifications, setNotifications] = useState({
-    email: true,
-    auditComplete: true,
-    weeklyReport: false,
-  });
+  const { theme, setTheme } = useTheme();
+  const [displayName, setDisplayName] = useState("");
+  const [notifications, setNotifications] =
+    useState<NotificationPreferences>(DEFAULT_NOTIFICATIONS);
   const [saved, setSaved] = useState(false);
 
+  const storagePrefix = useMemo(() => {
+    const userKey = user?.sub || user?.email || "anonymous";
+    return `latentgeo:settings:${userKey}`;
+  }, [user?.email, user?.sub]);
+
+  useEffect(() => {
+    if (!user) return;
+
+    const storedName = localStorage.getItem(`${storagePrefix}:displayName`);
+    const storedNotifications = localStorage.getItem(
+      `${storagePrefix}:notifications`,
+    );
+
+    setDisplayName(storedName || user.name || "");
+
+    if (storedNotifications) {
+      try {
+        const parsed = JSON.parse(storedNotifications) as NotificationPreferences;
+        setNotifications({
+          email: Boolean(parsed.email),
+          auditComplete: Boolean(parsed.auditComplete),
+          weeklyReport: Boolean(parsed.weeklyReport),
+        });
+      } catch {
+        setNotifications(DEFAULT_NOTIFICATIONS);
+      }
+    } else {
+      setNotifications(DEFAULT_NOTIFICATIONS);
+    }
+  }, [storagePrefix, user]);
+
   const handleSave = () => {
+    localStorage.setItem(`${storagePrefix}:displayName`, displayName.trim());
+    localStorage.setItem(
+      `${storagePrefix}:notifications`,
+      JSON.stringify(notifications),
+    );
+
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
+  };
+
+  const handleCancel = () => {
+    const storedName = localStorage.getItem(`${storagePrefix}:displayName`);
+    const storedNotifications = localStorage.getItem(
+      `${storagePrefix}:notifications`,
+    );
+
+    setDisplayName(storedName || user?.name || "");
+    if (storedNotifications) {
+      try {
+        setNotifications(
+          JSON.parse(storedNotifications) as NotificationPreferences,
+        );
+      } catch {
+        setNotifications(DEFAULT_NOTIFICATIONS);
+      }
+    } else {
+      setNotifications(DEFAULT_NOTIFICATIONS);
+    }
   };
 
   if (isLoading) {
@@ -75,9 +142,9 @@ export default function SettingsPage() {
 
       <main className="max-w-4xl mx-auto px-6 py-12">
         <div className="mb-8">
-          <h1 className="text-3xl font-bold mb-2">Settings</h1>
+          <h1 className="text-3xl font-bold mb-2">Workspace Settings</h1>
           <p className="text-muted-foreground">
-            Manage your account and preferences
+            Configure identity, appearance, and notification behavior.
           </p>
         </div>
 
@@ -86,7 +153,7 @@ export default function SettingsPage() {
           <section className="p-6 glass-card border border-border rounded-2xl">
             <div className="flex items-center gap-3 mb-6">
               <User className="w-5 h-5 text-brand" />
-              <h2 className="text-lg font-semibold">Profile</h2>
+              <h2 className="text-lg font-semibold">Profile & Workspace Identity</h2>
             </div>
 
             <div className="flex items-center gap-6 mb-6">
@@ -109,7 +176,7 @@ export default function SettingsPage() {
                 <h3 className="text-xl font-medium">{user.name || "User"}</h3>
                 <p className="text-muted-foreground">{user.email}</p>
                 <Badge className="mt-2 bg-emerald-500/10 text-emerald-600 border-emerald-500/20">
-                  Free Plan
+                  Growth-ready workspace
                 </Badge>
               </div>
             </div>
@@ -121,7 +188,8 @@ export default function SettingsPage() {
                 </label>
                 <input
                   type="text"
-                  defaultValue={user.name || ""}
+                  value={displayName}
+                  onChange={(event) => setDisplayName(event.target.value)}
                   className="w-full px-4 py-3 glass-panel border border-border rounded-xl text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-border/80"
                   placeholder="Your name"
                 />
@@ -144,7 +212,7 @@ export default function SettingsPage() {
           <section className="p-6 glass-card border border-border rounded-2xl">
             <div className="flex items-center gap-3 mb-6">
               <Palette className="w-5 h-5 text-brand" />
-              <h2 className="text-lg font-semibold">Appearance</h2>
+              <h2 className="text-lg font-semibold">Appearance Mode</h2>
             </div>
 
             <div className="flex gap-4">
@@ -196,7 +264,7 @@ export default function SettingsPage() {
                 <div>
                   <p className="font-medium">Email Notifications</p>
                   <p className="text-sm text-muted-foreground">
-                    Receive updates via email
+                    Receive product and workflow updates by email
                   </p>
                 </div>
                 <input
@@ -216,7 +284,7 @@ export default function SettingsPage() {
                 <div>
                   <p className="font-medium">Audit Complete</p>
                   <p className="text-sm text-muted-foreground">
-                    Notify when an audit finishes
+                    Notify when a queued audit reaches completion
                   </p>
                 </div>
                 <input
@@ -236,7 +304,7 @@ export default function SettingsPage() {
                 <div>
                   <p className="font-medium">Weekly Report</p>
                   <p className="text-sm text-muted-foreground">
-                    Get a summary of your audits
+                    Receive a weekly summary of your audit activity
                   </p>
                 </div>
                 <input
@@ -254,27 +322,48 @@ export default function SettingsPage() {
             </div>
           </section>
 
+          <section className="p-6 glass-card border border-border rounded-2xl">
+            <div className="flex items-center gap-3 mb-6">
+              <Shield className="w-5 h-5 text-brand" />
+              <h2 className="text-lg font-semibold">Security & Access</h2>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="p-4 glass-panel rounded-xl border border-border">
+                <p className="text-sm text-muted-foreground mb-1">
+                  Authentication Provider
+                </p>
+                <p className="font-medium">Auth0</p>
+              </div>
+              <div className="p-4 glass-panel rounded-xl border border-border">
+                <p className="text-sm text-muted-foreground mb-1">Session</p>
+                <p className="font-medium">Managed securely by provider</p>
+              </div>
+            </div>
+          </section>
+
           {/* API Keys Section */}
           <section className="p-6 glass-card border border-border rounded-2xl">
             <div className="flex items-center gap-3 mb-6">
               <Key className="w-5 h-5 text-green-500" />
-              <h2 className="text-lg font-semibold">API Keys</h2>
+              <h2 className="text-lg font-semibold">Developer Access</h2>
               <Badge className="bg-brand/10 text-brand border-brand/20">
-                Coming Soon
+                Private Beta
               </Badge>
             </div>
 
             <p className="text-muted-foreground mb-4">
-              Generate API keys to integrate LatentGEO.ai with your
-              applications.
+              Request access to typed API tokens for CI integrations and internal tooling.
             </p>
 
-            <Button disabled>Generate API Key</Button>
+            <Button disabled>Request API Access</Button>
           </section>
 
           {/* Save Button */}
           <div className="flex justify-end gap-4">
-            <Button variant="outline">Cancel</Button>
+            <Button variant="outline" onClick={handleCancel}>
+              Revert
+            </Button>
             <Button
               onClick={handleSave}
               className={`${saved ? "bg-emerald-500" : "bg-brand"} text-brand-foreground hover:opacity-90 transition-all`}
@@ -282,12 +371,12 @@ export default function SettingsPage() {
               {saved ? (
                 <>
                   <Check className="w-4 h-4 mr-2" />
-                  Saved!
+                  Preferences Saved
                 </>
               ) : (
                 <>
                   <Save className="w-4 h-4 mr-2" />
-                  Save Changes
+                  Save Preferences
                 </>
               )}
             </Button>

@@ -4,13 +4,13 @@ process.env.API_URL = "http://localhost:8000";
 import { api } from "@/lib/api";
 import { fetchWithBackendAuth } from "@/lib/backend-auth";
 
-jest.mock("@/lib/backend-auth", () => ({
-  fetchWithBackendAuth: jest.fn(),
+vi.mock("@/lib/backend-auth", () => ({
+  fetchWithBackendAuth: vi.fn(),
 }));
 
 describe("APIService error propagation", () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
   });
 
   it("propagates backend detail.message for Kimi failures", async () => {
@@ -31,3 +31,4 @@ describe("APIService error propagation", () => {
     ).rejects.toThrow("Kimi provider is not configured");
   });
 });
+

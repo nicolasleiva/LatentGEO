@@ -35,6 +35,7 @@ import {
 } from "@/components/ui/select";
 import { API_URL } from "@/lib/api";
 import { fetchWithBackendAuth } from "@/lib/backend-auth";
+import { withLocale } from "@/lib/locale-routing";
 import {
   CitationsTableSkeleton,
   HistorySkeleton,
@@ -133,21 +134,25 @@ const getCacheKey = (auditId: string) => `geo-dashboard-${auditId}`;
 const DEFAULT_TAB = "opportunities";
 
 const TAB_OPTIONS = [
-  { value: "opportunities", label: "Top Opportunities", group: "Visibility" },
-  { value: "citations", label: "Recent Citations", group: "Visibility" },
-  { value: "history", label: "Citation History", group: "Visibility" },
-  { value: "query", label: "Query Discovery", group: "Intelligence" },
-  { value: "competitors", label: "Competitors", group: "Intelligence" },
-  { value: "commerce", label: "Ecommerce Query Analyzer", group: "Growth" },
+  {
+    value: "opportunities",
+    label: "Priority Opportunities",
+    group: "Visibility",
+  },
+  { value: "citations", label: "Live Citations", group: "Visibility" },
+  { value: "history", label: "Trend History", group: "Visibility" },
+  { value: "query", label: "Prompt Discovery", group: "Intelligence" },
+  { value: "competitors", label: "Benchmark", group: "Intelligence" },
+  { value: "commerce", label: "Commerce Query Analyzer", group: "Growth" },
   { value: "article-engine", label: "Article Engine", group: "Growth" },
-  { value: "schema", label: "Schema Generator", group: "Structured Data" },
+  { value: "schema", label: "Schema Builder", group: "Structured Data" },
   {
     value: "schema-multiple",
-    label: "Schema Multiple",
+    label: "Schema Variants",
     group: "Structured Data",
   },
-  { value: "templates", label: "Content Templates", group: "Content" },
-  { value: "content-analyze", label: "Analyze Content", group: "Content" },
+  { value: "templates", label: "Template Library", group: "Content" },
+  { value: "content-analyze", label: "Content Analyzer", group: "Content" },
 ] as const;
 
 const TAB_SET: ReadonlySet<string> = new Set(
@@ -162,6 +167,7 @@ export default function GEODashboardPage() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const auditId = params.id as string;
+  const auditDetailHref = withLocale(pathname, `/audits/${auditId}`);
 
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState<GEODashboardData | null>(null);
@@ -332,23 +338,23 @@ export default function GEODashboardPage() {
       >
         {/* Header */}
         <div className="mb-12">
-          <Link href={`/audits/${auditId}`}>
+          <Link href={auditDetailHref}>
             <Button
               variant="ghost"
               className="text-muted-foreground hover:text-foreground hover:bg-muted/40 mb-6 pl-0"
             >
               <ArrowLeft className="w-4 h-4 mr-2" />
-              Back to Audit
+              Back to Audit Summary
             </Button>
           </Link>
 
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
             <div>
               <h1 className="text-4xl md:text-5xl font-semibold mb-2 text-foreground">
-                GEO Dashboard
+                GEO Command Center
               </h1>
               <p className="text-lg text-muted-foreground">
-                Generative Engine Optimization analytics for LLM visibility.
+                Operate citation visibility, prompt discovery, and structured remediation from one workspace.
               </p>
             </div>
 
@@ -357,15 +363,14 @@ export default function GEODashboardPage() {
               className="glass-button-primary px-8 py-6 text-lg"
             >
               <Sparkles className="w-5 h-5 mr-3" />
-              Start Tracking
+              Start Citation Tracking
             </Button>
           </div>
         </div>
 
         {error && (
           <div className="mb-6 rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-700 dark:text-amber-300">
-            Dashboard summary is still loading. You can use all GEO tools while
-            we retry.
+            Summary data is still syncing. You can continue using tools while retry runs in background.
           </div>
         )}
 
@@ -382,7 +387,7 @@ export default function GEODashboardPage() {
               {citationRate.toFixed(1)}%
             </div>
             <p className="text-xs text-muted-foreground">
-              of queries mention you
+              of tracked prompts mention your brand
             </p>
           </div>
 
@@ -404,13 +409,13 @@ export default function GEODashboardPage() {
               <Search className="w-24 h-24 text-sky-600" />
             </div>
             <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wider mb-2">
-              Opportunities
+              Priority Gaps
             </h3>
             <div className="text-4xl font-bold text-sky-600 mb-1">
               {opportunities.length}
             </div>
             <p className="text-xs text-muted-foreground">
-              high potential queries
+              high-impact prompts lacking visibility
             </p>
           </div>
 
@@ -467,11 +472,11 @@ export default function GEODashboardPage() {
         >
           <div className="w-full md:max-w-md">
             <p className="text-xs text-muted-foreground uppercase tracking-wider mb-2">
-              Tool menu
+              Tool suite
             </p>
             <Select value={activeTab} onValueChange={handleTabChange}>
               <SelectTrigger className="w-full bg-muted/40 border-border rounded-xl">
-                <SelectValue placeholder="Select a GEO tool" />
+                <SelectValue placeholder="Select a command module" />
               </SelectTrigger>
               <SelectContent className="bg-popover border-border/70">
                 {[
@@ -507,11 +512,10 @@ export default function GEODashboardPage() {
                 </div>
                 <div>
                   <h2 className="text-2xl font-bold text-foreground">
-                    Query Opportunities
+                    Priority Query Opportunities
                   </h2>
                   <p className="text-muted-foreground">
-                    Queries that don&apos;t mention you yet but have high
-                    potential
+                    Prompts where your brand is absent but commercial intent is strong.
                   </p>
                 </div>
               </div>
@@ -519,14 +523,13 @@ export default function GEODashboardPage() {
               {loading && !data ? (
                 <div className="text-center py-12 bg-muted/30 rounded-2xl border border-dashed border-border">
                   <p className="text-muted-foreground">
-                    Loading opportunities...
+                    Loading opportunity queue...
                   </p>
                 </div>
               ) : opportunities.length === 0 ? (
                 <div className="text-center py-12 bg-muted/30 rounded-2xl border border-dashed border-border">
                   <p className="text-muted-foreground">
-                    No opportunities discovered yet. Run Query Discovery to find
-                    them.
+                    No opportunities yet. Run prompt discovery to populate this queue.
                   </p>
                 </div>
               ) : (
@@ -574,10 +577,10 @@ export default function GEODashboardPage() {
                 </div>
                 <div>
                   <h2 className="text-2xl font-bold text-foreground">
-                    Recent Citations
+                    Live Citations
                   </h2>
                   <p className="text-muted-foreground">
-                    Where your brand was mentioned in LLM responses
+                    Latest assistant responses that cite your brand.
                   </p>
                 </div>
               </div>
@@ -599,10 +602,10 @@ export default function GEODashboardPage() {
                 </div>
                 <div>
                   <h2 className="text-2xl font-bold text-foreground">
-                    Citation History
+                    Citation Trend History
                   </h2>
                   <p className="text-muted-foreground">
-                    Aggregated history for monthly tracking
+                    Aggregated visibility movement for longitudinal tracking.
                   </p>
                 </div>
               </div>
@@ -624,10 +627,10 @@ export default function GEODashboardPage() {
                 </div>
                 <div>
                   <h2 className="text-2xl font-bold text-foreground">
-                    Query Discovery
+                    Prompt Discovery
                   </h2>
                   <p className="text-muted-foreground">
-                    Discover queries and opportunities for LLM citations
+                    Discover new prompts and intent clusters for citation growth.
                   </p>
                 </div>
               </div>
@@ -649,10 +652,10 @@ export default function GEODashboardPage() {
                 </div>
                 <div>
                   <h2 className="text-2xl font-bold text-foreground">
-                    Competitor Analysis
+                    Competitor Benchmark
                   </h2>
                   <p className="text-muted-foreground">
-                    Run analysis and benchmark against competitors
+                    Benchmark share-of-citation and positioning against peers.
                   </p>
                 </div>
               </div>
@@ -675,11 +678,10 @@ export default function GEODashboardPage() {
                 </div>
                 <div>
                   <h2 className="text-2xl font-bold text-foreground">
-                    Ecommerce Query Analyzer
+                    Commerce Query Analyzer
                   </h2>
                   <p className="text-muted-foreground">
-                    Analyze one query at a time and learn how to beat the
-                    current #1 result.
+                    Evaluate one commerce prompt at a time and close the gap to the current leader.
                   </p>
                 </div>
               </div>
@@ -705,8 +707,7 @@ export default function GEODashboardPage() {
                     Article Engine
                   </h2>
                   <p className="text-muted-foreground">
-                    Generate X GEO/SEO articles grounded in your audit and
-                    competitor gaps.
+                    Generate audit-grounded article batches focused on citation and conversion outcomes.
                   </p>
                 </div>
               </div>
@@ -728,10 +729,10 @@ export default function GEODashboardPage() {
                 </div>
                 <div>
                   <h2 className="text-2xl font-bold text-foreground">
-                    Schema.org Generator
+                    Schema Builder
                   </h2>
                   <p className="text-muted-foreground">
-                    Generate optimized Schema.org for better LLM understanding
+                    Build optimized schema payloads for stronger entity interpretation.
                   </p>
                 </div>
               </div>
@@ -750,10 +751,10 @@ export default function GEODashboardPage() {
                 </div>
                 <div>
                   <h2 className="text-2xl font-bold text-foreground">
-                    Multiple Schemas
+                    Schema Variants
                   </h2>
                   <p className="text-muted-foreground">
-                    Generate multiple suggested schemas for a page
+                    Generate multiple schema options for testing and rollout.
                   </p>
                 </div>
               </div>
@@ -772,10 +773,10 @@ export default function GEODashboardPage() {
                 </div>
                 <div>
                   <h2 className="text-2xl font-bold text-foreground">
-                    Content Templates
+                    Template Library
                   </h2>
                   <p className="text-muted-foreground">
-                    GEO-optimized content templates for maximum visibility
+                    Reusable templates aligned to GEO structure and intent clarity.
                   </p>
                 </div>
               </div>
@@ -794,10 +795,10 @@ export default function GEODashboardPage() {
                 </div>
                 <div>
                   <h2 className="text-2xl font-bold text-foreground">
-                    Analyze Content for GEO
+                    Content Analyzer
                   </h2>
                   <p className="text-muted-foreground">
-                    Analyze freeform content to identify GEO gaps.
+                    Analyze freeform copy to surface GEO and credibility gaps.
                   </p>
                 </div>
               </div>

@@ -1,14 +1,16 @@
 "use client";
 
 import { useEffect, useState, Suspense } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Loader2, CheckCircle2, XCircle } from "lucide-react";
 import { API_URL } from "@/lib/api";
 import { fetchWithBackendAuth } from "@/lib/backend-auth";
+import { withLocale } from "@/lib/locale-routing";
 
 function CallbackContent() {
   const router = useRouter();
+  const pathname = usePathname();
   const searchParams = useSearchParams();
   const [status, setStatus] = useState<"loading" | "success" | "error">(
     "loading",
@@ -54,7 +56,7 @@ function CallbackContent() {
 
         // Guardar connection_id si es necesario o simplemente redirigir
         setTimeout(() => {
-          router.push("/audits");
+          router.push(withLocale(pathname, "/audits"));
         }, 2000);
       } catch (err) {
         console.error(err);
@@ -64,7 +66,7 @@ function CallbackContent() {
     };
 
     exchangeCode();
-  }, [searchParams, router]);
+  }, [pathname, searchParams, router]);
 
   return (
     <Card className="w-[400px]">

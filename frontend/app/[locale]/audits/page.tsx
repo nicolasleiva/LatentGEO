@@ -1,13 +1,14 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useState } from "react";
+import { usePathname, useRouter } from "next/navigation";
 import { useUser } from "@auth0/nextjs-auth0/client";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Header } from "@/components/header";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { API_URL } from "@/lib/api";
-import { fetchWithBackendAuth } from "@/lib/backend-auth";
+import { deleteAudit as deleteAuditApi, listAudits } from "@/lib/api-client";
+import { withLocale } from "@/lib/locale-routing";
 import {
   RefreshCw,
   Globe,
@@ -15,8 +16,10 @@ import {
   ArrowRight,
   Plus,
   Search,
-  Filter,
-  ChevronDown,
+  CheckCircle2,
+  AlertTriangle,
+  Activity,
+  ListChecks,
 } from "lucide-react";
 
 interface Audit {
@@ -31,30 +34,29 @@ interface Audit {
 
 export default function AuditsListPage() {
   const router = useRouter();
+  const pathname = usePathname();
   const { user } = useUser();
-  const [audits, setAudits] = useState<Audit[]>([]);
-  const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
   const [filter, setFilter] = useState<
     "all" | "completed" | "running" | "pending" | "failed"
   >("all");
   const [searchQuery, setSearchQuery] = useState("");
 
-  const backendUrl = API_URL;
+  const auditsQuery = useQuery({
+    queryKey: ["audits", "list"],
+    queryFn: listAudits,
+    enabled: Boolean(user),
+  });
 
-  useEffect(() => {
-    const fetchAudits = async () => {
-      try {
-        const response = await fetchWithBackendAuth(`${backendUrl}/api/audits`);
-        const data = await response.json();
-        setAudits(Array.isArray(data) ? data : []);
-      } catch (err) {
-        console.error(err);
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchAudits();
-  }, [backendUrl, user]);
+  const audits = (auditsQuery.data as Audit[] | undefined) ?? [];
+  const loading = auditsQuery.isLoading;
+
+  const deleteAuditMutation = useMutation({
+    mutationFn: deleteAuditApi,
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["audits"] });
+    },
+  });
 
   const deleteAudit = async (auditId: number) => {
     const confirmed = window.confirm(
@@ -62,12 +64,7 @@ export default function AuditsListPage() {
     );
     if (!confirmed) return;
     try {
-      const res = await fetchWithBackendAuth(
-        `${backendUrl}/api/audits/${auditId}`,
-        { method: "DELETE" },
-      );
-      if (!res.ok) throw new Error(`Failed to delete audit: ${res.status}`);
-      setAudits((prev) => prev.filter((a) => a.id !== auditId));
+      await deleteAuditMutation.mutateAsync(auditId);
     } catch (err) {
       console.error(err);
       alert("Failed to delete the audit.");
@@ -85,6 +82,13 @@ export default function AuditsListPage() {
       (a, b) =>
         new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
     );
+
+  const summary = {
+    total: audits.length,
+    completed: audits.filter((audit) => audit.status === "completed").length,
+    running: audits.filter((audit) => audit.status === "running").length,
+    attention: audits.filter((audit) => audit.status === "failed").length,
+  };
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -107,22 +111,69 @@ export default function AuditsListPage() {
         {/* Header */}
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
           <div>
-            <h1 className="text-3xl font-bold">Your Audits</h1>
+            <h1 className="text-3xl font-bold">Audit Operations</h1>
             <p className="text-muted-foreground mt-1">
-              {audits.length} total audits
+              Manage your visibility queue, reruns, and completion flow.
             </p>
           </div>
           <div className="flex gap-3">
             <Button
               variant="outline"
               size="sm"
-              onClick={() => window.location.reload()}
+              onClick={() =>
+                queryClient.invalidateQueries({ queryKey: ["audits"] })
+              }
             >
-              <RefreshCw className="h-4 w-4 mr-2" /> Refresh
+              <RefreshCw className="h-4 w-4 mr-2" /> Sync
             </Button>
-            <Button onClick={() => router.push("/")}>
-              <Plus className="h-4 w-4 mr-2" /> New Audit
+            <Button onClick={() => router.push(withLocale(pathname, "/"))}>
+              <Plus className="h-4 w-4 mr-2" /> Run Audit
             </Button>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+          <div className="glass-card border border-border/70 p-4">
+            <div className="flex items-center justify-between">
+              <p className="text-xs uppercase tracking-wider text-muted-foreground">
+                Total
+              </p>
+              <ListChecks className="h-4 w-4 text-brand" />
+            </div>
+            <p className="mt-2 text-3xl font-semibold">{summary.total}</p>
+          </div>
+          <div className="glass-card border border-border/70 p-4">
+            <div className="flex items-center justify-between">
+              <p className="text-xs uppercase tracking-wider text-muted-foreground">
+                Completed
+              </p>
+              <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+            </div>
+            <p className="mt-2 text-3xl font-semibold text-emerald-600">
+              {summary.completed}
+            </p>
+          </div>
+          <div className="glass-card border border-border/70 p-4">
+            <div className="flex items-center justify-between">
+              <p className="text-xs uppercase tracking-wider text-muted-foreground">
+                Running
+              </p>
+              <Activity className="h-4 w-4 text-amber-500" />
+            </div>
+            <p className="mt-2 text-3xl font-semibold text-amber-600">
+              {summary.running}
+            </p>
+          </div>
+          <div className="glass-card border border-border/70 p-4">
+            <div className="flex items-center justify-between">
+              <p className="text-xs uppercase tracking-wider text-muted-foreground">
+                Needs Attention
+              </p>
+              <AlertTriangle className="h-4 w-4 text-red-500" />
+            </div>
+            <p className="mt-2 text-3xl font-semibold text-red-600">
+              {summary.attention}
+            </p>
           </div>
         </div>
 
@@ -132,7 +183,7 @@ export default function AuditsListPage() {
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
             <input
               type="text"
-              placeholder="Search audits..."
+              placeholder="Search by domain or URL..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full pl-12 pr-4 py-3 glass-panel border border-border rounded-xl text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-border/80"
@@ -151,7 +202,14 @@ export default function AuditsListPage() {
                     : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
                 }`}
               >
-                {status === "running" ? "processing" : status}
+                {status === "running" ? "running" : status}
+                <span className="ml-1.5 text-xs opacity-70">
+                  (
+                  {status === "all"
+                    ? audits.length
+                    : audits.filter((audit) => audit.status === status).length}
+                  )
+                </span>
               </button>
             ))}
           </div>
@@ -170,7 +228,9 @@ export default function AuditsListPage() {
             {filteredAudits.map((audit) => (
               <div
                 key={audit.id}
-                onClick={() => router.push(`/audits/${audit.id}`)}
+                onClick={() =>
+                  router.push(withLocale(pathname, `/audits/${audit.id}`))
+                }
                 className="group p-6 glass-card border border-border rounded-2xl cursor-pointer hover:bg-muted/50 hover:border-border/80 transition-all"
               >
                 <div className="flex items-center justify-between">
@@ -195,6 +255,9 @@ export default function AuditsListPage() {
                       <p className="text-sm text-muted-foreground mt-1">
                         {audit.url}
                       </p>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Audit #{audit.id}
+                      </p>
                     </div>
                   </div>
 
@@ -213,9 +276,9 @@ export default function AuditsListPage() {
                     <Badge
                       variant="outline"
                       className={getStatusColor(audit.status)}
-                    >
-                      {audit.status === "running" ? "processing" : audit.status}
-                    </Badge>
+                      >
+                        {audit.status === "running" ? "running" : audit.status}
+                      </Badge>
 
                     <Button
                       variant="ghost"
@@ -234,6 +297,9 @@ export default function AuditsListPage() {
                       <p className="text-sm text-foreground flex items-center gap-1">
                         <Clock className="w-3 h-3" />
                         {new Date(audit.created_at).toLocaleDateString()}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {audit.total_pages ?? 0} pages analyzed
                       </p>
                     </div>
 
@@ -254,17 +320,17 @@ export default function AuditsListPage() {
                 ? "No audits found"
                 : "No audits yet"}
             </h3>
-            <p className="text-muted-foreground/70 mb-6">
-              {searchQuery || filter !== "all"
-                ? "Try adjusting your search or filters"
-                : "Start your first GEO audit to see results here"}
-            </p>
-            <Button onClick={() => router.push("/")}>
-              <Plus className="w-4 h-4 mr-2" />
-              Start New Audit
-            </Button>
-          </div>
-        )}
+                <p className="text-muted-foreground/70 mb-6">
+                  {searchQuery || filter !== "all"
+                ? "Try adjusting the query or status filter."
+                : "Run your first audit to build an AI visibility baseline."}
+                </p>
+                <Button onClick={() => router.push(withLocale(pathname, "/"))}>
+                  <Plus className="w-4 h-4 mr-2" />
+              Run New Audit
+                </Button>
+              </div>
+            )}
       </main>
     </div>
   );

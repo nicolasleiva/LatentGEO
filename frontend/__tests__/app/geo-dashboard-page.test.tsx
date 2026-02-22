@@ -8,14 +8,14 @@ import {
 } from "next/navigation";
 import { fetchWithBackendAuth } from "@/lib/backend-auth";
 
-jest.mock("next/navigation", () => ({
-  useParams: jest.fn(),
-  usePathname: jest.fn(),
-  useRouter: jest.fn(),
-  useSearchParams: jest.fn(),
+vi.mock("next/navigation", () => ({
+  useParams: vi.fn(),
+  usePathname: vi.fn(),
+  useRouter: vi.fn(),
+  useSearchParams: vi.fn(),
 }));
 
-jest.mock("next/dynamic", () => ({
+vi.mock("next/dynamic", () => ({
   __esModule: true,
   default: () => {
     const DynamicStub = () => <div data-testid="dynamic-stub" />;
@@ -23,19 +23,19 @@ jest.mock("next/dynamic", () => ({
   },
 }));
 
-jest.mock("@/components/header", () => ({
+vi.mock("@/components/header", () => ({
   Header: () => <div data-testid="header">Header</div>,
 }));
 
-jest.mock("@/lib/api", () => ({
+vi.mock("@/lib/api", () => ({
   API_URL: "http://localhost:8000",
 }));
 
-jest.mock("@/lib/backend-auth", () => ({
-  fetchWithBackendAuth: jest.fn(),
+vi.mock("@/lib/backend-auth", () => ({
+  fetchWithBackendAuth: vi.fn(),
 }));
 
-const mockReplace = jest.fn();
+const mockReplace = vi.fn();
 
 const dashboardPayload = {
   audit_id: 3,
@@ -54,7 +54,7 @@ const dashboardPayload = {
 
 describe("GEO dashboard page", () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
     window.localStorage.clear();
     (useParams as jest.Mock).mockReturnValue({ id: "3" });
     (usePathname as jest.Mock).mockReturnValue("/en/audits/3/geo");
@@ -96,7 +96,10 @@ describe("GEO dashboard page", () => {
       ).toBeInTheDocument();
     });
     expect(
-      screen.getByText(/generate x geo\/seo articles/i),
+      screen.getByText(
+        /generate audit-grounded article batches focused on citation and conversion outcomes/i,
+      ),
     ).toBeInTheDocument();
   });
 });
+

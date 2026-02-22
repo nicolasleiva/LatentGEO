@@ -40,6 +40,7 @@ import {
 import { useAuditSSE } from "@/hooks/useAuditSSE";
 import { API_URL } from "@/lib/api";
 import { fetchWithBackendAuth } from "@/lib/backend-auth";
+import { getExternalIntelligenceBanner } from "@/lib/external-intelligence-status";
 
 // Dynamic imports for heavy components
 const CoreWebVitalsChart = dynamic(
@@ -121,6 +122,10 @@ const normalizeCategory = (value?: string) => {
 };
 
 const GEO_DASHBOARD_CACHE_PREFIX = "geo-dashboard-";
+const REPORT_NOT_READY_MESSAGE =
+  "Narrative report not ready yet. Generate the PDF once to materialize it.";
+const FIX_PLAN_NOT_READY_MESSAGE =
+  "Execution plan will be available after the PDF generation step completes.";
 type GeoWarmTab = "commerce" | "article-engine";
 
 export default function AuditDetailPage() {
@@ -158,8 +163,10 @@ export default function AuditDetailPage() {
     [audit],
   );
   const languageDisplay = audit?.language || "en";
-  const externalIntelUnavailable =
-    audit?.external_intelligence?.status === "unavailable";
+  const externalIntelBanner = useMemo(
+    () => getExternalIntelligenceBanner(audit?.external_intelligence),
+    [audit?.external_intelligence],
+  );
   const geoRoutes = useMemo(() => {
     const toolsBase = `${localePrefix}/audits/${auditId}`;
     return {
@@ -263,9 +270,7 @@ export default function AuditDetailPage() {
       }
       if (res.status === 404) {
         setReportMarkdown("");
-        setReportMessage(
-          "Report not generated. Click Generate PDF to build it.",
-        );
+        setReportMessage(REPORT_NOT_READY_MESSAGE);
         return;
       }
 
@@ -282,18 +287,16 @@ export default function AuditDetailPage() {
       }
       if (fallbackRes.status === 404) {
         setReportMarkdown("");
-        setReportMessage(
-          "Report not generated. Click Generate PDF to build it.",
-        );
+        setReportMessage(REPORT_NOT_READY_MESSAGE);
         return;
       }
 
       setReportMarkdown("");
-      setReportMessage("Report not generated. Click Generate PDF to build it.");
+      setReportMessage(REPORT_NOT_READY_MESSAGE);
     } catch (err) {
       console.error(err);
       setReportMarkdown("");
-      setReportMessage("Report not generated. Click Generate PDF to build it.");
+      setReportMessage(REPORT_NOT_READY_MESSAGE);
     } finally {
       setReportLoading(false);
     }
@@ -309,9 +312,7 @@ export default function AuditDetailPage() {
       );
       if (!res.ok) {
         setFixPlan([]);
-        setFixPlanMessage(
-          "Fix plan will be created when you generate the PDF report.",
-        );
+        setFixPlanMessage(FIX_PLAN_NOT_READY_MESSAGE);
         return;
       }
       const data = await res.json();
@@ -325,18 +326,14 @@ export default function AuditDetailPage() {
       if (data?.message) {
         setFixPlanMessage(data.message);
       } else if (!Array.isArray(data?.fix_plan) || data.fix_plan.length === 0) {
-        setFixPlanMessage(
-          "Fix plan will be created when you generate the PDF report.",
-        );
+        setFixPlanMessage(FIX_PLAN_NOT_READY_MESSAGE);
       } else {
         setFixPlanMessage(null);
       }
     } catch (err) {
       console.error(err);
       setFixPlan([]);
-      setFixPlanMessage(
-        "Fix plan will be created when you generate the PDF report.",
-      );
+      setFixPlanMessage(FIX_PLAN_NOT_READY_MESSAGE);
     } finally {
       setFixPlanLoading(false);
     }
@@ -684,7 +681,7 @@ export default function AuditDetailPage() {
           className="mb-8 text-muted-foreground hover:text-foreground pl-0"
         >
           <ArrowLeft className="h-4 w-4 mr-2" />
-          Back to Audits
+          Back to Queue
         </Button>
 
         {/* Header card */}
@@ -749,17 +746,20 @@ export default function AuditDetailPage() {
               )}
               {audit?.status === "failed" && !audit?.error_message && (
                 <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-700">
-                  This audit failed before completion. Check backend logs for
-                  the detailed error.
+                  This run stopped before completion. Review backend logs for
+                  diagnostic details.
                 </div>
               )}
-              {externalIntelUnavailable && (
-                <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-700 flex items-start gap-2">
+              {externalIntelBanner && (
+                <div
+                  className={`rounded-xl px-4 py-3 text-sm flex items-start gap-2 ${
+                    externalIntelBanner.severity === "error"
+                      ? "border border-amber-500/30 bg-amber-500/10 text-amber-700"
+                      : "border border-blue-500/30 bg-blue-500/10 text-blue-700"
+                  }`}
+                >
                   <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
-                  <span>
-                    External intelligence no disponible (timeout/proveedor). No
-                    se generaron competidores automáticos.
-                  </span>
+                  <span>{externalIntelBanner.message}</span>
                 </div>
               )}
             </div>
@@ -769,7 +769,7 @@ export default function AuditDetailPage() {
                 {audit.source === "hubspot" && (
                   <Button
                     onClick={() =>
-                      router.push(`/audits/${auditId}/hubspot-apply`)
+                      router.push(`${localePrefix}/audits/${auditId}/hubspot-apply`)
                     }
                     className="bg-[#ff7a59] hover:bg-[#ff7a59]/90 text-white px-6"
                   >
@@ -787,7 +787,7 @@ export default function AuditDetailPage() {
                   ) : (
                     <Clock className="h-4 w-4 mr-2" />
                   )}
-                  Analyze PageSpeed
+                  Run PageSpeed
                 </Button>
                 <Button
                   onClick={generatePDF}
@@ -799,7 +799,7 @@ export default function AuditDetailPage() {
                   ) : (
                     <Download className="h-4 w-4 mr-2" />
                   )}
-                  {pdfGenerating ? "Generating PDF..." : "PDF Report"}
+                  {pdfGenerating ? "Building PDF..." : "Export PDF"}
                 </Button>
                 <Button
                   data-testid="open-geo-dashboard-button"
@@ -812,7 +812,7 @@ export default function AuditDetailPage() {
                   className="glass-button-primary px-6"
                 >
                   <ExternalLink className="h-4 w-4 mr-2" />
-                  Open GEO Dashboard
+                  Open GEO Command Center
                 </Button>
               </div>
             )}
@@ -824,7 +824,7 @@ export default function AuditDetailPage() {
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
             <div className="glass-panel p-5 rounded-2xl">
               <div className="text-xs uppercase tracking-wide text-muted-foreground mb-2">
-                Market Context
+                Context
               </div>
               <div className="text-lg font-semibold text-foreground">
                 {categoryDisplay}
@@ -837,7 +837,7 @@ export default function AuditDetailPage() {
             </div>
             <div className="glass-panel p-5 rounded-2xl">
               <div className="text-xs uppercase tracking-wide text-muted-foreground mb-2">
-                Data Coverage
+                Coverage
               </div>
               <div className="flex flex-wrap gap-2">
                 {coverageBadges.map((badge) => (
@@ -856,7 +856,7 @@ export default function AuditDetailPage() {
             </div>
             <div className="glass-panel p-5 rounded-2xl">
               <div className="text-xs uppercase tracking-wide text-muted-foreground mb-2">
-                Signals
+                Execution Signals
               </div>
               <div className="space-y-2 text-sm">
                 <div className="flex items-center justify-between">
@@ -913,9 +913,9 @@ export default function AuditDetailPage() {
           }}
         >
           <TabsList className="mb-8">
-            <TabsTrigger value="overview">Overview</TabsTrigger>
-            <TabsTrigger value="report">Report</TabsTrigger>
-            <TabsTrigger value="fix-plan">Fix Plan</TabsTrigger>
+            <TabsTrigger value="overview">Summary</TabsTrigger>
+            <TabsTrigger value="report">Narrative</TabsTrigger>
+            <TabsTrigger value="fix-plan">Execution Plan</TabsTrigger>
           </TabsList>
 
           <TabsContent value="overview">
@@ -1399,7 +1399,7 @@ export default function AuditDetailPage() {
             {audit?.status === "completed" && (
               <div className="glass-card p-8 mb-8">
                 <h2 className="text-2xl font-bold text-foreground mb-6">
-                  SEO & GEO Tools
+                  Execution Tool Suite
                 </h2>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   {/* GEO Dashboard */}
@@ -1419,7 +1419,7 @@ export default function AuditDetailPage() {
                       GEO Dashboard
                     </h3>
                     <p className="text-sm text-muted-foreground">
-                      Citation tracking, query discovery, and LLM optimization
+                      Monitor citations, discovery opportunities, and assistant-facing visibility.
                     </p>
                   </Link>
 
@@ -1436,10 +1436,10 @@ export default function AuditDetailPage() {
                       <ExternalLink className="w-5 h-5 text-muted-foreground group-hover:text-foreground transition-colors" />
                     </div>
                     <h3 className="text-lg font-semibold text-foreground mb-2">
-                      Keywords Research
+                      Keyword Discovery
                     </h3>
                     <p className="text-sm text-muted-foreground">
-                      Discover and track relevant keywords for your niche
+                      Map prompts and queries aligned to demand capture.
                     </p>
                   </Link>
 
@@ -1456,10 +1456,10 @@ export default function AuditDetailPage() {
                       <ExternalLink className="w-5 h-5 text-muted-foreground group-hover:text-foreground transition-colors" />
                     </div>
                     <h3 className="text-lg font-semibold text-foreground mb-2">
-                      Backlinks
+                      Backlink Intelligence
                     </h3>
                     <p className="text-sm text-muted-foreground">
-                      Analyze your backlink profile and opportunities
+                      Evaluate authority signals and high-value linking opportunities.
                     </p>
                   </Link>
 
@@ -1479,7 +1479,7 @@ export default function AuditDetailPage() {
                       Rank Tracking
                     </h3>
                     <p className="text-sm text-muted-foreground">
-                      Monitor your rankings across search engines
+                      Track ranking movement and visibility drift over time.
                     </p>
                   </Link>
 
@@ -1498,7 +1498,7 @@ export default function AuditDetailPage() {
                       Content Editor
                     </h3>
                     <p className="text-sm text-muted-foreground">
-                      AI-powered content optimization for better visibility
+                      Refine page messaging for clarity, intent match, and conversion context.
                     </p>
                   </Link>
 
@@ -1515,10 +1515,10 @@ export default function AuditDetailPage() {
                       <ExternalLink className="w-5 h-5 text-muted-foreground group-hover:text-foreground transition-colors" />
                     </div>
                     <h3 className="text-lg font-semibold text-foreground mb-2">
-                      AI Content Ideas
+                      AI Content Angles
                     </h3>
                     <p className="text-sm text-muted-foreground">
-                      Generate content suggestions based on your audit
+                      Generate editorial angles based on audit findings and gaps.
                     </p>
                   </Link>
 
@@ -1536,11 +1536,10 @@ export default function AuditDetailPage() {
                       <ExternalLink className="w-5 h-5 text-muted-foreground group-hover:text-foreground transition-colors" />
                     </div>
                     <h3 className="text-lg font-semibold text-foreground mb-2">
-                      Ecommerce LLM
+                      Ecommerce Query Analyzer
                     </h3>
                     <p className="text-sm text-muted-foreground">
-                      Optimize product pages to win AI citations, qualified
-                      clicks, and sales
+                      Analyze commerce prompts to improve citation share and buying-intent traffic.
                     </p>
                   </Link>
 
@@ -1564,8 +1563,7 @@ export default function AuditDetailPage() {
                       Article Engine
                     </h3>
                     <p className="text-sm text-muted-foreground">
-                      Generate audit-driven GEO/SEO articles to outrank
-                      competitors in AI answers
+                      Generate audit-grounded articles designed to close citation and intent gaps.
                     </p>
                   </Link>
 
@@ -1585,7 +1583,7 @@ export default function AuditDetailPage() {
                       GitHub Auto-Fix
                     </h3>
                     <p className="text-sm text-muted-foreground">
-                      Create Pull Requests with AI-powered SEO/GEO fixes
+                      Create implementation-ready PRs with scoped SEO/GEO changes.
                     </p>
                   </Link>
 
@@ -1603,7 +1601,7 @@ export default function AuditDetailPage() {
                           HubSpot Auto-Apply
                         </h3>
                         <p className="text-sm text-muted-foreground">
-                          Apply SEO/GEO recommendations directly to HubSpot CMS
+                          Push selected recommendations directly into HubSpot CMS pages.
                         </p>
                       </button>
                     </DialogTrigger>
@@ -1624,13 +1622,13 @@ export default function AuditDetailPage() {
             {/* Pages analysis */}
             <div className="glass-card p-8 mb-8">
               <h2 className="text-2xl font-bold text-foreground mb-6">
-                Analyzed Pages
+                Page-Level Findings
               </h2>
               <div className="space-y-4">
                 {pages.length === 0 ? (
                   <div className="rounded-2xl border border-dashed border-border bg-muted/30 p-6 text-sm text-muted-foreground">
-                    No pages analyzed yet. Once the crawl completes, page-level
-                    insights will appear here.
+                    No page diagnostics yet. Once crawling finishes, detailed
+                    findings will appear here.
                   </div>
                 ) : (
                   pages.map((page: any) => {
@@ -1761,10 +1759,10 @@ export default function AuditDetailPage() {
               <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
                 <div>
                   <h2 className="text-2xl font-bold text-foreground">
-                    Competitive Analysis
+                    Competitive Benchmark
                   </h2>
                   <p className="text-sm text-muted-foreground">
-                    Benchmark GEO performance against peer domains.
+                    Compare your AI visibility posture against peer domains.
                   </p>
                 </div>
                 <span className="text-xs uppercase tracking-wide text-muted-foreground border border-border px-3 py-1 rounded-full">
@@ -1776,8 +1774,8 @@ export default function AuditDetailPage() {
                 <div className="rounded-2xl border border-dashed border-border bg-muted/30 p-6 text-sm text-muted-foreground space-y-2">
                   <div>No competitors identified yet.</div>
                   <div>
-                    We’ll surface competitors as soon as discovery queries
-                    return results.
+                    Competitor candidates will appear once discovery queries
+                    return reliable matches.
                   </div>
                   <div className="text-xs">
                     Category:{" "}
@@ -1820,7 +1818,7 @@ export default function AuditDetailPage() {
 
                   <div className="overflow-x-auto">
                     <h3 className="text-lg font-semibold text-foreground/80 mb-4">
-                      Detailed Benchmark
+                      Detailed Benchmark Table
                     </h3>
                     <table className="w-full text-sm text-left">
                       <thead>
@@ -1958,7 +1956,7 @@ export default function AuditDetailPage() {
               <div className="flex items-center justify-between gap-4 mb-6">
                 <h2 className="text-2xl font-bold text-foreground flex items-center gap-3">
                   <FileText className="w-6 h-6 text-brand" />
-                  Report (Markdown)
+                  Narrative Report (Markdown)
                 </h2>
                 <Button
                   variant="outline"
@@ -1968,14 +1966,14 @@ export default function AuditDetailPage() {
                   }}
                 >
                   <RefreshCw className="h-4 w-4 mr-2" />
-                  Reload
+                  Refresh
                 </Button>
               </div>
 
               {reportLoading ? (
                 <div className="flex items-center gap-2 text-muted-foreground">
                   <RefreshCw className="h-4 w-4 animate-spin" />
-                  Loading report...
+                  Loading narrative report...
                 </div>
               ) : reportMarkdown ? (
                 <pre className="whitespace-pre-wrap break-words text-sm bg-muted/40 border border-border rounded-xl p-4 overflow-auto max-h-[70vh]">
@@ -1983,8 +1981,7 @@ export default function AuditDetailPage() {
                 </pre>
               ) : (
                 <div className="text-muted-foreground">
-                  {reportMessage ||
-                    "Report not generated. Click Generate PDF to build it."}
+                  {reportMessage || REPORT_NOT_READY_MESSAGE}
                 </div>
               )}
             </div>
@@ -1995,7 +1992,7 @@ export default function AuditDetailPage() {
               <div className="flex items-center justify-between gap-4 mb-6">
                 <h2 className="text-2xl font-bold text-foreground flex items-center gap-3">
                   <Target className="w-6 h-6 text-brand" />
-                  Fix Plan
+                  Execution Plan
                 </h2>
                 <Button
                   variant="outline"
@@ -2005,14 +2002,14 @@ export default function AuditDetailPage() {
                   }}
                 >
                   <RefreshCw className="h-4 w-4 mr-2" />
-                  Reload
+                  Refresh
                 </Button>
               </div>
 
               {fixPlanLoading ? (
                 <div className="flex items-center gap-2 text-muted-foreground">
                   <RefreshCw className="h-4 w-4 animate-spin" />
-                  Loading fix plan...
+                  Loading execution plan...
                 </div>
               ) : fixPlan && fixPlan.length > 0 ? (
                 <div className="space-y-3">
@@ -2058,8 +2055,7 @@ export default function AuditDetailPage() {
                 </div>
               ) : (
                 <div className="text-muted-foreground">
-                  {fixPlanMessage ||
-                    "Fix plan will be created when you generate the PDF report."}
+                  {fixPlanMessage || FIX_PLAN_NOT_READY_MESSAGE}
                 </div>
               )}
             </div>

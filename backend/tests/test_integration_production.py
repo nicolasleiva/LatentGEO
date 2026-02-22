@@ -42,9 +42,9 @@ def _require_llm():
         pytest.fail("NVIDIA/NV API key required for keyword integration tests.")
 
 
-def _require_google_cse():
-    if not settings.GOOGLE_API_KEY or not settings.CSE_ID:
-        pytest.fail("GOOGLE_API_KEY and CSE_ID are required for rank tracking tests.")
+def _require_serper():
+    if not settings.SERPER_API_KEY:
+        pytest.fail("SERPER_API_KEY is required for rank tracking tests.")
 
 
 class TestKeywordsServiceProduction:
@@ -215,7 +215,7 @@ class TestRankTrackingServiceProduction:
         """
         Test generating rankings from real keywords
         """
-        _require_google_cse()
+        _require_serper()
         domain = _domain_from_url(prod_test_audit.url)
         service = RankTrackerService(prod_db_session)
         rankings = await service.track_rankings(
@@ -243,7 +243,7 @@ class TestRankTrackingServiceProduction:
         """
         Verify ranking fields are valid
         """
-        _require_google_cse()
+        _require_serper()
         domain = _domain_from_url(prod_test_audit.url)
         service = RankTrackerService(prod_db_session)
         rankings = await service.track_rankings(

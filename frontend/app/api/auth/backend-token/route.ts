@@ -1,5 +1,5 @@
 import { createHmac } from "crypto";
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 
 import { auth0 } from "@/lib/auth0";
 
@@ -32,8 +32,8 @@ const signJwt = (payload: Record<string, unknown>, secret: string) => {
   return `${signingInput}.${signature}`;
 };
 
-export async function GET() {
-  const session = await auth0.getSession();
+export async function GET(request: NextRequest) {
+  const session = await auth0.getSession(request);
   const user = session?.user;
   if (!user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

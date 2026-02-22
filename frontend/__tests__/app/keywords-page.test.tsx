@@ -4,25 +4,25 @@ import KeywordsPage from "@/app/[locale]/audits/[id]/keywords/page";
 import { useParams } from "next/navigation";
 import { api } from "@/lib/api";
 
-jest.mock("next/navigation", () => ({
-  useParams: jest.fn(),
+vi.mock("next/navigation", () => ({
+  useParams: vi.fn(),
 }));
 
-jest.mock("@/components/header", () => ({
+vi.mock("@/components/header", () => ({
   Header: () => <div data-testid="header">Header</div>,
 }));
 
-jest.mock("@/lib/api", () => ({
+vi.mock("@/lib/api", () => ({
   api: {
-    getKeywords: jest.fn(),
-    getAudit: jest.fn(),
-    researchKeywords: jest.fn(),
+    getKeywords: vi.fn(),
+    getAudit: vi.fn(),
+    researchKeywords: vi.fn(),
   },
 }));
 
 describe("KeywordsPage", () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
     (useParams as jest.Mock).mockReturnValue({ id: "1" });
     (api.getKeywords as jest.Mock).mockResolvedValue([]);
     (api.getAudit as jest.Mock).mockResolvedValue({
@@ -53,3 +53,4 @@ describe("KeywordsPage", () => {
     expect(screen.queryByText(/OpenAI\/Gemini/i)).not.toBeInTheDocument();
   });
 });
+
