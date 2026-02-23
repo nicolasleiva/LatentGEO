@@ -8,11 +8,11 @@ import json
 from typing import AsyncGenerator
 
 from app.core.access_control import ensure_audit_access
-from app.core.auth import AuthUser, get_user_from_bearer_token
+from app.core.auth import AuthUser, get_current_user
 from app.core.config import settings
 from app.core.logger import get_logger
 from app.services.audit_service import AuditService
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
 
 logger = get_logger(__name__)
@@ -99,15 +99,12 @@ async def audit_progress_stream(
 @router.get("/audits/{audit_id}/progress")
 async def stream_audit_progress(
     audit_id: int,
-    token: str = Query(..., description="Internal bearer token"),
+    current_user: AuthUser = Depends(get_current_user),
 ):
     """
     SSE endpoint for streaming audit progress updates.
-    EventSource cannot send custom Authorization headers, so a short-lived token
-    is provided as query parameter.
+    Requires standard Authorization: Bearer header.
     """
-    current_user = get_user_from_bearer_token(token)
-
     # Ownership check before opening stream
     from app.core.database import SessionLocal
 

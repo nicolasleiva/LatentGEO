@@ -52,8 +52,9 @@ def _pdf_lock_key(audit_id: int) -> str:
 
 def _acquire_pdf_generation_lock(audit_id: int) -> tuple[bool, str | None, str | None]:
     """
-    Acquire PDF lock using Redis (distributed) with local fallback.
-    Returns (acquired, token, mode["redis"|"local"]).
+    Acquire PDF lock using Redis (distributed).
+    In production this is fail-closed when Redis is unavailable.
+    Returns (acquired, token, mode["redis"|"local"|"unavailable"]).
     """
     token = str(uuid.uuid4())
     ttl_seconds = max(30, int(settings.PDF_LOCK_TTL_SECONDS or 900))
@@ -72,12 +73,22 @@ def _acquire_pdf_generation_lock(audit_id: int) -> tuple[bool, str | None, str |
                 return True, token, "redis"
             return False, None, "redis"
         except Exception as exc:
+            if not settings.DEBUG:
+                logger.error(
+                    f"Redis PDF lock unavailable for audit {audit_id}; refusing generation in production: {exc}"
+                )
+                return False, None, "unavailable"
             logger.warning(
-                f"Redis PDF lock unavailable for audit {audit_id}; falling back to local lock: {exc}"
+                f"Redis PDF lock unavailable for audit {audit_id}; falling back to local lock in debug: {exc}"
             )
     else:
+        if not settings.DEBUG:
+            logger.error(
+                f"Redis PDF lock disabled for audit {audit_id}; refusing generation in production"
+            )
+            return False, None, "unavailable"
         logger.warning(
-            f"Redis PDF lock disabled for audit {audit_id}; using local in-memory lock"
+            f"Redis PDF lock disabled for audit {audit_id}; using local in-memory lock in debug"
         )
 
     if audit_id in _pdf_generation_in_progress:
@@ -807,6 +818,18 @@ async def generate_audit_pdf(
 
     acquired_lock, lock_token, lock_mode = _acquire_pdf_generation_lock(audit_id)
     if not acquired_lock:
+        if lock_mode == "unavailable":
+            return JSONResponse(
+                status_code=503,
+                content={
+                    "success": False,
+                    "generation_in_progress": False,
+                    "message": (
+                        "Distributed PDF lock backend is unavailable. "
+                        "Redis is required to generate PDFs in production."
+                    ),
+                },
+            )
         return JSONResponse(
             status_code=409,
             content={

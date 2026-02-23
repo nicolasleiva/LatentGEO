@@ -13,6 +13,11 @@ import httpx
 from openai import AsyncOpenAI
 
 from ..core.config import settings
+from ..core.external_resilience import (
+    ExternalCircuitOpenError,
+    ExternalServiceTimeout,
+    run_external_call,
+)
 from ..core.logger import get_logger
 
 logger = get_logger(__name__)
@@ -53,6 +58,17 @@ def _safe_close_message(exc: Exception) -> bool:
 
 
 def _classify_kimi_generation_error(exc: BaseException) -> tuple[str, str]:
+    if isinstance(exc, ExternalServiceTimeout):
+        return (
+            "KIMI_TIMEOUT",
+            "Kimi request timed out while waiting for provider response.",
+        )
+    if isinstance(exc, ExternalCircuitOpenError):
+        return (
+            "KIMI_CIRCUIT_OPEN",
+            "Kimi circuit breaker is open due to repeated provider failures.",
+        )
+
     timeout_errors = (
         asyncio.TimeoutError,
         TimeoutError,
@@ -214,10 +230,11 @@ async def kimi_function(
 
     client = None
     try:
+        provider_timeout = float(settings.NVIDIA_TIMEOUT_SECONDS)
         client = AsyncOpenAI(
             base_url=settings.NV_BASE_URL,
             api_key=api_key,
-            timeout=300.0,
+            timeout=provider_timeout,
             max_retries=2,
         )
 
@@ -240,13 +257,17 @@ async def kimi_function(
         logger.info(
             f"Llamando a KIMI (Modelo: {settings.NV_MODEL_ANALYSIS}). Max tokens: {max_tokens_value}"
         )
-        completion = await client.chat.completions.create(
-            model=settings.NV_MODEL_ANALYSIS,
-            messages=messages,
-            temperature=0.0,
-            top_p=1.0,
-            max_tokens=max_tokens_value,
-            stream=False,
+        completion = await run_external_call(
+            "nvidia-kimi-generation",
+            lambda: client.chat.completions.create(
+                model=settings.NV_MODEL_ANALYSIS,
+                messages=messages,
+                temperature=0.0,
+                top_p=1.0,
+                max_tokens=max_tokens_value,
+                stream=False,
+            ),
+            timeout_seconds=provider_timeout,
         )
 
         content = completion.choices[0].message.content
@@ -326,7 +347,11 @@ async def kimi_search_serp(
                 if hl:
                     payload["hl"] = hl
 
-                resp = await client.post(endpoint, headers=headers, json=payload)
+                resp = await run_external_call(
+                    "serper-search",
+                    lambda: client.post(endpoint, headers=headers, json=payload),
+                    timeout_seconds=float(settings.SERPER_TIMEOUT_SECONDS),
+                )
                 if resp.status_code != 200:
                     raise KimiSearchError(
                         f"Serper error {resp.status_code}: {resp.text}"
@@ -404,33 +429,41 @@ async def kimi_search_serp(
 
         # Attempt Responses API first.
         try:
-            response = await client.responses.create(
-                model=settings.NV_KIMI_SEARCH_MODEL,
-                input=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": prompt},
-                ],
-                tools=[{"type": "web_search"}],
-                temperature=0.0,
-                top_p=1.0,
-                max_output_tokens=4096,
+            response = await run_external_call(
+                "nvidia-kimi-search",
+                lambda: client.responses.create(
+                    model=settings.NV_KIMI_SEARCH_MODEL,
+                    input=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": prompt},
+                    ],
+                    tools=[{"type": "web_search"}],
+                    temperature=0.0,
+                    top_p=1.0,
+                    max_output_tokens=4096,
+                ),
+                timeout_seconds=float(settings.NV_KIMI_SEARCH_TIMEOUT),
             )
             raw_text = _extract_response_text(response)
         except Exception as response_exc:
             logger.warning(
                 f"Kimi responses API search call failed, retrying via chat tools: {response_exc}"
             )
-            completion = await client.chat.completions.create(
-                model=settings.NV_KIMI_SEARCH_MODEL,
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": prompt},
-                ],
-                tools=[{"type": "web_search"}],
-                temperature=0.0,
-                top_p=1.0,
-                max_tokens=4096,
-                stream=False,
+            completion = await run_external_call(
+                "nvidia-kimi-search",
+                lambda: client.chat.completions.create(
+                    model=settings.NV_KIMI_SEARCH_MODEL,
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": prompt},
+                    ],
+                    tools=[{"type": "web_search"}],
+                    temperature=0.0,
+                    top_p=1.0,
+                    max_tokens=4096,
+                    stream=False,
+                ),
+                timeout_seconds=float(settings.NV_KIMI_SEARCH_TIMEOUT),
             )
             raw_text = (
                 completion.choices[0].message.content

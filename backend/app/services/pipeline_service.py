@@ -31,6 +31,7 @@ from urllib.parse import urlparse
 import aiohttp
 
 from ..core.config import settings
+from ..core.external_resilience import run_external_call
 
 # Importar PromptLoader
 from .prompt_loader import get_prompt_loader
@@ -5831,53 +5832,63 @@ class PipelineService:
                         f"PIPELINE: Serper Search página {page + 1}/{max_pages} (num=10)"
                     )
 
-                    async with session.post(
-                        endpoint, json=payload, headers=headers, timeout=15
-                    ) as resp:
-                        if resp.status != 200:
-                            error_text = await resp.text()
-                            last_error = (
-                                f"Serper API Error {resp.status} en página {page + 1}: {error_text}"
-                            )
-                            logger.error(
-                                f"PIPELINE: {last_error}"
-                            )
-                            break
+                    async def _fetch_serper_page():
+                        async with session.post(
+                            endpoint,
+                            json=payload,
+                            headers=headers,
+                            timeout=float(settings.SERPER_TIMEOUT_SECONDS),
+                        ) as resp:
+                            if resp.status == 200:
+                                return resp.status, await resp.json()
+                            return resp.status, await resp.text()
 
-                        data = await resp.json()
-                        organic = data.get("organic", [])
-                        if not organic:
-                            logger.warning(
-                                f"PIPELINE: Serper no devolvió más resultados en la página {page + 1}"
-                            )
-                            break
-
-                        page_items: List[Dict[str, Any]] = []
-                        for entry in organic:
-                            link = str(entry.get("link", "")).strip()
-                            if not link or link in seen_links:
-                                continue
-                            seen_links.add(link)
-                            page_items.append(
-                                {
-                                    "title": entry.get("title", ""),
-                                    "link": link,
-                                    "snippet": entry.get("snippet", ""),
-                                }
-                            )
-                            if len(all_items) + len(page_items) >= num_results:
-                                break
-
-                        if not page_items:
-                            logger.warning(
-                                "PIPELINE: Serper devolvió resultados duplicados o inválidos; finalizando paginación."
-                            )
-                            break
-
-                        all_items.extend(page_items)
-                        logger.info(
-                            f"PIPELINE: Serper Search página {page + 1} obtuvo {len(page_items)} items. Total acumulado: {len(all_items)}"
+                    status_code, body = await run_external_call(
+                        "serper-search",
+                        _fetch_serper_page,
+                        timeout_seconds=float(settings.SERPER_TIMEOUT_SECONDS),
+                    )
+                    if status_code != 200:
+                        last_error = (
+                            f"Serper API Error {status_code} en página {page + 1}: {body}"
                         )
+                        logger.error(f"PIPELINE: {last_error}")
+                        break
+
+                    data = body if isinstance(body, dict) else {}
+                    organic = data.get("organic", [])
+                    if not organic:
+                        logger.warning(
+                            f"PIPELINE: Serper no devolvió más resultados en la página {page + 1}"
+                        )
+                        break
+
+                    page_items: List[Dict[str, Any]] = []
+                    for entry in organic:
+                        link = str(entry.get("link", "")).strip()
+                        if not link or link in seen_links:
+                            continue
+                        seen_links.add(link)
+                        page_items.append(
+                            {
+                                "title": entry.get("title", ""),
+                                "link": link,
+                                "snippet": entry.get("snippet", ""),
+                            }
+                        )
+                        if len(all_items) + len(page_items) >= num_results:
+                            break
+
+                    if not page_items:
+                        logger.warning(
+                            "PIPELINE: Serper devolvió resultados duplicados o inválidos; finalizando paginación."
+                        )
+                        break
+
+                    all_items.extend(page_items)
+                    logger.info(
+                        f"PIPELINE: Serper Search página {page + 1} obtuvo {len(page_items)} items. Total acumulado: {len(all_items)}"
+                    )
 
             trimmed_items = all_items[:num_results]
             logger.info(

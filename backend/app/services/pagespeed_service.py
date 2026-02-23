@@ -3,6 +3,9 @@ from typing import Dict, Optional
 
 import aiohttp
 
+from ..core.config import settings
+from ..core.external_resilience import run_external_call
+
 logger = logging.getLogger(__name__)
 
 
@@ -47,56 +50,70 @@ class PageSpeedService:
                     }
 
                     logger.info(f"Calling PageSpeed API: {PageSpeedService.BASE_URL}")
-                    async with session.get(
-                        PageSpeedService.BASE_URL,
-                        params=params,
-                        timeout=aiohttp.ClientTimeout(total=180),
-                    ) as resp:
-                        logger.info(f"PageSpeed API response status: {resp.status}")
-                        if resp.status == 200:
-                            data = await resp.json()
-                            lighthouse = data.get("lighthouseResult", {})
-                            categories = lighthouse.get("categories", {})
-                            audits = lighthouse.get("audits", {})
 
-                            def get_score(cat_key: str) -> float:
-                                score = categories.get(cat_key, {}).get("score")
-                                return round(score * 100, 2) if score is not None else 0
+                    async def _fetch_pagespeed():
+                        async with session.get(
+                            PageSpeedService.BASE_URL,
+                            params=params,
+                            timeout=aiohttp.ClientTimeout(
+                                total=float(settings.PAGESPEED_TIMEOUT_SECONDS)
+                            ),
+                        ) as resp:
+                            if resp.status == 200:
+                                return resp.status, await resp.json()
+                            return resp.status, await resp.text()
 
-                            def get_audit_value(audit_key: str) -> float:
-                                val = audits.get(audit_key, {}).get("numericValue")
-                                return float(val) if val is not None else 0
+                    status_code, payload = await run_external_call(
+                        "google-pagespeed",
+                        _fetch_pagespeed,
+                        timeout_seconds=float(settings.PAGESPEED_TIMEOUT_SECONDS),
+                    )
 
-                            def get_audit_data(audit_key: str) -> Dict:
-                                audit = audits.get(audit_key, {})
-                                return {
-                                    "score": audit.get("score"),
-                                    "displayValue": audit.get("displayValue", ""),
-                                    "numericValue": audit.get("numericValue"),
-                                    "title": audit.get("title", ""),
-                                }
+                    logger.info(f"PageSpeed API response status: {status_code}")
+                    if status_code == 200:
+                        data = payload
+                        lighthouse = data.get("lighthouseResult", {})
+                        categories = lighthouse.get("categories", {})
+                        audits = lighthouse.get("audits", {})
 
-                            # Metadata
-                            fetch_time = lighthouse.get("fetchTime", "")
-                            user_agent = lighthouse.get("userAgent", "")
-                            environment = lighthouse.get("environment", {})
+                        def get_score(cat_key: str) -> float:
+                            score = categories.get(cat_key, {}).get("score")
+                            return round(score * 100, 2) if score is not None else 0
 
-                            # Screenshots
-                            screenshots = []
-                            screenshot_thumbnails = (
-                                audits.get("screenshot-thumbnails", {})
-                                .get("details", {})
-                                .get("items", [])
-                            )
-                            for thumb in screenshot_thumbnails[:8]:
-                                screenshots.append(
-                                    {
-                                        "data": thumb.get("data", ""),
-                                        "timestamp": thumb.get("timing", 0),
-                                    }
-                                )
+                        def get_audit_value(audit_key: str) -> float:
+                            val = audits.get(audit_key, {}).get("numericValue")
+                            return float(val) if val is not None else 0
 
+                        def get_audit_data(audit_key: str) -> Dict:
+                            audit = audits.get(audit_key, {})
                             return {
+                                "score": audit.get("score"),
+                                "displayValue": audit.get("displayValue", ""),
+                                "numericValue": audit.get("numericValue"),
+                                "title": audit.get("title", ""),
+                            }
+
+                        # Metadata
+                        fetch_time = lighthouse.get("fetchTime", "")
+                        user_agent = lighthouse.get("userAgent", "")
+                        environment = lighthouse.get("environment", {})
+
+                        # Screenshots
+                        screenshots = []
+                        screenshot_thumbnails = (
+                            audits.get("screenshot-thumbnails", {})
+                            .get("details", {})
+                            .get("items", [])
+                        )
+                        for thumb in screenshot_thumbnails[:8]:
+                            screenshots.append(
+                                {
+                                    "data": thumb.get("data", ""),
+                                    "timestamp": thumb.get("timing", 0),
+                                }
+                            )
+
+                        return {
                                 "url": url,
                                 "strategy": strategy,
                                 "performance_score": get_score("performance"),
@@ -343,23 +360,24 @@ class PageSpeedService:
                                     "charset": get_audit_data("charset"),
                                 },
                             }
-                        elif resp.status in [429, 500, 502, 503, 504]:
-                            logger.warning(
-                                f"PageSpeed API error {resp.status}, retrying ({attempt+1}/{max_retries})..."
-                            )
-                            if attempt < max_retries - 1:
-                                await asyncio.sleep(retry_delay * (attempt + 1))
-                                continue
-                            else:
-                                text = await resp.text()
-                                logger.error(
-                                    f"PageSpeed API error {resp.status} after retries: {text}"
-                                )
-                                return {"error": f"API error: {resp.status}"}
-                        else:
-                            text = await resp.text()
-                            logger.error(f"PageSpeed API error {resp.status}: {text}")
-                            return {"error": f"API error: {resp.status}"}
+                    elif status_code in [429, 500, 502, 503, 504]:
+                        logger.warning(
+                            f"PageSpeed API error {status_code}, retrying ({attempt+1}/{max_retries})..."
+                        )
+                        if attempt < max_retries - 1:
+                            await asyncio.sleep(retry_delay * (attempt + 1))
+                            continue
+                        response_text = payload if isinstance(payload, str) else str(payload)
+                        logger.error(
+                            f"PageSpeed API error {status_code} after retries: {response_text}"
+                        )
+                        return {"error": f"API error: {status_code}"}
+                    else:
+                        response_text = payload if isinstance(payload, str) else str(payload)
+                        logger.error(
+                            f"PageSpeed API error {status_code}: {response_text}"
+                        )
+                        return {"error": f"API error: {status_code}"}
 
             except Exception as e:
                 logger.error(f"PageSpeed exception (attempt {attempt+1}): {e}")
@@ -371,8 +389,6 @@ class PageSpeedService:
     @staticmethod
     async def analyze_both_strategies(url: str, api_key: Optional[str] = None) -> Dict:
         """Analiza desktop y mobile"""
-        from ..core.config import settings
-
         if not settings.ENABLE_PAGESPEED or not api_key:
             logger.info("PageSpeed analysis disabled or no API key. Skipping.")
             return {}

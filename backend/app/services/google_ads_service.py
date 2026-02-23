@@ -19,6 +19,7 @@ import logging
 from typing import Any, Dict, List
 
 from ..core.config import settings
+from ..core.external_resilience import run_external_call_sync
 
 logger = logging.getLogger(__name__)
 
@@ -93,7 +94,13 @@ class GoogleAdsService:
             # pero GenerateKeywordIdeas es la forma estándar.
             # Filtraremos los resultados para matchear nuestras keywords.
 
-            response = keyword_plan_idea_service.generate_keyword_ideas(request=request)
+            response = run_external_call_sync(
+                "google-ads-keyword-ideas",
+                lambda: keyword_plan_idea_service.generate_keyword_ideas(
+                    request=request
+                ),
+                timeout_seconds=float(settings.GOOGLE_ADS_TIMEOUT_SECONDS),
+            )
 
             metrics_map = {}
 

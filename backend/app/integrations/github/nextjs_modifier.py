@@ -13,6 +13,7 @@ from typing import Dict, List, Optional
 from openai import OpenAI
 
 from ...core.config import settings
+from ...core.external_resilience import run_external_call_sync
 
 logger = logging.getLogger(__name__)
 
@@ -399,13 +400,17 @@ IMPORTANT: Return the ENTIRE modified file. Do not truncate.
                 f"Calling Devstral (code-optimized) for JSX transformation of {file_path}"
             )
 
-            response = client.chat.completions.create(
-                model=settings.NV_MODEL_CODE,  # mistralai/devstral-2-123b-instruct-2512
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0.0,  # Deterministic output for production
-                top_p=0.95,
-                max_tokens=settings.NV_MAX_TOKENS_CODE,  # 8192
-                seed=42,  # Reproducible outputs
+            response = run_external_call_sync(
+                "nvidia-devstral-jsx",
+                lambda: client.chat.completions.create(
+                    model=settings.NV_MODEL_CODE,  # mistralai/devstral-2-123b-instruct-2512
+                    messages=[{"role": "user", "content": prompt}],
+                    temperature=0.0,  # Deterministic output for production
+                    top_p=0.95,
+                    max_tokens=settings.NV_MAX_TOKENS_CODE,  # 8192
+                    seed=42,  # Reproducible outputs
+                ),
+                timeout_seconds=float(settings.CODE_LLM_TIMEOUT_SECONDS),
             )
 
             modified_code = response.choices[0].message.content.strip()
@@ -618,13 +623,17 @@ Respond ONLY with valid JSON, no markdown:
             )
             client = OpenAI(api_key=api_key, base_url=settings.NV_BASE_URL)
 
-            response = client.chat.completions.create(
-                model=settings.NV_MODEL_CODE,  # Devstral para código
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0.0,
-                top_p=0.95,
-                max_tokens=300,
-                seed=42,
+            response = run_external_call_sync(
+                "nvidia-devstral-metadata",
+                lambda: client.chat.completions.create(
+                    model=settings.NV_MODEL_CODE,  # Devstral para código
+                    messages=[{"role": "user", "content": prompt}],
+                    temperature=0.0,
+                    top_p=0.95,
+                    max_tokens=300,
+                    seed=42,
+                ),
+                timeout_seconds=float(settings.CODE_LLM_TIMEOUT_SECONDS),
             )
 
             response_content = response.choices[0].message.content.strip()

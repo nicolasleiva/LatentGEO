@@ -2284,8 +2284,7 @@ export interface paths {
         /**
          * Stream Audit Progress
          * @description SSE endpoint for streaming audit progress updates.
-         *     EventSource cannot send custom Authorization headers, so a short-lived token
-         *     is provided as query parameter.
+         *     Requires standard Authorization: Bearer header.
          */
         get: operations["stream_audit_progress_api_v1_sse_audits__audit_id__progress_get"];
         put?: never;
@@ -4576,8 +4575,7 @@ export interface paths {
         /**
          * Stream Audit Progress
          * @description SSE endpoint for streaming audit progress updates.
-         *     EventSource cannot send custom Authorization headers, so a short-lived token
-         *     is provided as query parameter.
+         *     Requires standard Authorization: Bearer header.
          */
         get: operations["stream_audit_progress_api_sse_audits__audit_id__progress_get"];
         put?: never;
@@ -9387,10 +9385,7 @@ export interface operations {
     };
     stream_audit_progress_api_v1_sse_audits__audit_id__progress_get: {
         parameters: {
-            query: {
-                /** @description Internal bearer token */
-                token: string;
-            };
+            query?: never;
             header?: never;
             path: {
                 audit_id: number;
@@ -13240,10 +13235,7 @@ export interface operations {
     };
     stream_audit_progress_api_sse_audits__audit_id__progress_get: {
         parameters: {
-            query: {
-                /** @description Internal bearer token */
-                token: string;
-            };
+            query?: never;
             header?: never;
             path: {
                 audit_id: number;

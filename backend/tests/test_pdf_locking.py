@@ -1,4 +1,5 @@
 from app.api.routes import audits as audits_route
+from app.core.config import settings
 from app.services.cache_service import cache
 
 
@@ -20,6 +21,7 @@ class FakeRedis:
 
 
 def test_pdf_lock_local_fallback_when_redis_disabled(monkeypatch):
+    monkeypatch.setattr(settings, "DEBUG", True, raising=False)
     monkeypatch.setattr(cache, "enabled", False, raising=False)
     monkeypatch.setattr(cache, "redis_client", None, raising=False)
     audits_route._pdf_generation_in_progress.clear()
@@ -47,6 +49,7 @@ def test_pdf_lock_local_fallback_when_redis_disabled(monkeypatch):
 
 
 def test_pdf_lock_redis_distributed_lock(monkeypatch):
+    monkeypatch.setattr(settings, "DEBUG", False, raising=False)
     fake_redis = FakeRedis()
     monkeypatch.setattr(cache, "enabled", True, raising=False)
     monkeypatch.setattr(cache, "redis_client", fake_redis, raising=False)
@@ -67,6 +70,8 @@ def test_pdf_lock_redis_distributed_lock(monkeypatch):
 
 
 def test_pdf_lock_falls_back_to_local_when_redis_errors(monkeypatch):
+    monkeypatch.setattr(settings, "DEBUG", True, raising=False)
+
     class BrokenRedis:
         def set(self, *args, **kwargs):
             raise RuntimeError("redis down")
@@ -82,3 +87,16 @@ def test_pdf_lock_falls_back_to_local_when_redis_errors(monkeypatch):
     assert mode == "local"
 
     audits_route._release_pdf_generation_lock(303, token, mode)
+
+
+def test_pdf_lock_returns_unavailable_when_redis_disabled_in_production(monkeypatch):
+    monkeypatch.setattr(settings, "DEBUG", False, raising=False)
+    monkeypatch.setattr(cache, "enabled", False, raising=False)
+    monkeypatch.setattr(cache, "redis_client", None, raising=False)
+    audits_route._pdf_generation_in_progress.clear()
+    audits_route._pdf_generation_tokens.clear()
+
+    acquired, token, mode = audits_route._acquire_pdf_generation_lock(404)
+    assert acquired is False
+    assert token is None
+    assert mode == "unavailable"

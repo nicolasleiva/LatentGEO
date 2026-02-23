@@ -9,6 +9,7 @@ import httpx
 from cryptography.fernet import Fernet
 
 from ...core.config import settings
+from ...core.external_resilience import run_external_call
 from ...core.logger import get_logger
 
 logger = get_logger(__name__)
@@ -64,17 +65,22 @@ class GitHubOAuth:
         Raises:
             Exception si el exchange falla
         """
-        async with httpx.AsyncClient() as client:
+        timeout_seconds = float(settings.GITHUB_API_TIMEOUT_SECONDS)
+        async with httpx.AsyncClient(timeout=timeout_seconds) as client:
             try:
-                response = await client.post(
-                    "https://github.com/login/oauth/access_token",
-                    data={
-                        "client_id": settings.GITHUB_CLIENT_ID,
-                        "client_secret": settings.GITHUB_CLIENT_SECRET,
-                        "code": code,
-                        "redirect_uri": settings.GITHUB_REDIRECT_URI,
-                    },
-                    headers={"Accept": "application/json"},
+                response = await run_external_call(
+                    "github-oauth-exchange",
+                    lambda: client.post(
+                        "https://github.com/login/oauth/access_token",
+                        data={
+                            "client_id": settings.GITHUB_CLIENT_ID,
+                            "client_secret": settings.GITHUB_CLIENT_SECRET,
+                            "code": code,
+                            "redirect_uri": settings.GITHUB_REDIRECT_URI,
+                        },
+                        headers={"Accept": "application/json"},
+                    ),
+                    timeout_seconds=timeout_seconds,
                 )
                 response.raise_for_status()
                 data = response.json()
@@ -102,14 +108,19 @@ class GitHubOAuth:
         Returns:
             Dict con info del usuario
         """
-        async with httpx.AsyncClient() as client:
-            response = await client.get(
-                "https://api.github.com/user",
-                headers={
-                    "Authorization": f"Bearer {access_token}",
-                    "Accept": "application/vnd.github+json",
-                    "X-GitHub-Api-Version": "2022-11-28",
-                },
+        timeout_seconds = float(settings.GITHUB_API_TIMEOUT_SECONDS)
+        async with httpx.AsyncClient(timeout=timeout_seconds) as client:
+            response = await run_external_call(
+                "github-user-info",
+                lambda: client.get(
+                    "https://api.github.com/user",
+                    headers={
+                        "Authorization": f"Bearer {access_token}",
+                        "Accept": "application/vnd.github+json",
+                        "X-GitHub-Api-Version": "2022-11-28",
+                    },
+                ),
+                timeout_seconds=timeout_seconds,
             )
             response.raise_for_status()
             return response.json()
@@ -141,7 +152,8 @@ class GitHubOAuth:
         Returns:
             True si fue exitoso
         """
-        async with httpx.AsyncClient() as client:
+        timeout_seconds = float(settings.GITHUB_API_TIMEOUT_SECONDS)
+        async with httpx.AsyncClient(timeout=timeout_seconds) as client:
             try:
                 # GitHub requiere autenticación básica para revocar tokens
                 import base64
@@ -150,13 +162,17 @@ class GitHubOAuth:
                     f"{settings.GITHUB_CLIENT_ID}:{settings.GITHUB_CLIENT_SECRET}".encode()
                 ).decode()
 
-                response = await client.delete(
-                    f"https://api.github.com/applications/{settings.GITHUB_CLIENT_ID}/token",
-                    headers={
-                        "Authorization": f"Basic {auth}",
-                        "Accept": "application/vnd.github+json",
-                    },
-                    json={"access_token": access_token},
+                response = await run_external_call(
+                    "github-token-revoke",
+                    lambda: client.delete(
+                        f"https://api.github.com/applications/{settings.GITHUB_CLIENT_ID}/token",
+                        headers={
+                            "Authorization": f"Basic {auth}",
+                            "Accept": "application/vnd.github+json",
+                        },
+                        json={"access_token": access_token},
+                    ),
+                    timeout_seconds=timeout_seconds,
                 )
 
                 return response.status_code == 204

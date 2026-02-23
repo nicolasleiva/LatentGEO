@@ -132,13 +132,16 @@ def test_sse_endpoint(created_audit_id, auth_context):
     print("=" * 60)
 
     try:
-        sse_url = (
-            f"{BASE_URL}/sse/audits/{audit_id}/progress?token={auth_context['token']}"
-        )
+        sse_url = f"{BASE_URL}/sse/audits/{audit_id}/progress"
         print_info(f"SSE URL: {sse_url}")
 
         # Basic smoke: endpoint exists (GET should not be 500)
-        with requests.get(sse_url, timeout=5, stream=True) as resp:
+        with requests.get(
+            sse_url,
+            timeout=5,
+            stream=True,
+            headers={"Authorization": f"Bearer {auth_context['token']}"},
+        ) as resp:
             assert resp.status_code < 500, f"SSE endpoint returned {resp.status_code}"
             content_type = resp.headers.get("content-type", "")
             assert (
