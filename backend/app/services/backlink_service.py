@@ -9,6 +9,7 @@ from bs4 import BeautifulSoup
 from sqlalchemy.orm import Session
 
 from ..core.config import settings
+from ..core.external_resilience import run_external_call
 from ..core.llm_kimi import get_llm_function
 from ..models import Audit, Backlink
 from .crawler_service import CrawlerService
@@ -367,35 +368,48 @@ class BacklinkService:
                         break
 
                     payload = {"q": query, "num": 10, "page": page + 1}
-                    async with session.post(
-                        endpoint, json=payload, headers=headers, timeout=15
-                    ) as resp:
-                        if resp.status != 200:
-                            error_text = await resp.text()
-                            logger.warning(
-                                f"Serper search error {resp.status} for query '{query}': {error_text}"
-                            )
-                            break
 
-                        data = await resp.json()
-                        organic = data.get("organic", [])
-                        if not organic:
-                            break
+                    async def _fetch_backlink_page():
+                        async with session.post(
+                            endpoint,
+                            json=payload,
+                            headers=headers,
+                            timeout=float(settings.SERPER_TIMEOUT_SECONDS),
+                        ) as resp:
+                            if resp.status == 200:
+                                return resp.status, await resp.json()
+                            return resp.status, await resp.text()
 
-                        for item in organic:
-                            link = str(item.get("link") or "").strip()
-                            if not link or link in seen_links:
-                                continue
-                            seen_links.add(link)
-                            all_items.append(
-                                {
-                                    "title": item.get("title", ""),
-                                    "link": link,
-                                    "snippet": item.get("snippet", ""),
-                                }
-                            )
-                            if len(all_items) >= num_results:
-                                break
+                    status_code, payload_body = await run_external_call(
+                        "serper-backlinks",
+                        _fetch_backlink_page,
+                        timeout_seconds=float(settings.SERPER_TIMEOUT_SECONDS),
+                    )
+                    if status_code != 200:
+                        logger.warning(
+                            f"Serper search error {status_code} for query '{query}': {payload_body}"
+                        )
+                        break
+
+                    data = payload_body if isinstance(payload_body, dict) else {}
+                    organic = data.get("organic", [])
+                    if not organic:
+                        break
+
+                    for item in organic:
+                        link = str(item.get("link") or "").strip()
+                        if not link or link in seen_links:
+                            continue
+                        seen_links.add(link)
+                        all_items.append(
+                            {
+                                "title": item.get("title", ""),
+                                "link": link,
+                                "snippet": item.get("snippet", ""),
+                            }
+                        )
+                        if len(all_items) >= num_results:
+                            break
         except Exception as exc:
             logger.error(f"Error running Serper search for backlinks: {exc}")
 

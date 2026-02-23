@@ -7,6 +7,7 @@ from openai import AsyncOpenAI
 from sqlalchemy.orm import Session
 
 from ..core.config import settings
+from ..core.external_resilience import run_external_call
 from ..core.llm_kimi import (
     KimiGenerationError,
     KimiUnavailableError,
@@ -26,7 +27,9 @@ class KeywordService:
         self.nvidia_api_key = resolve_kimi_api_key()
         if self.nvidia_api_key:
             self.client = AsyncOpenAI(
-                api_key=self.nvidia_api_key, base_url=settings.NV_BASE_URL
+                api_key=self.nvidia_api_key,
+                base_url=settings.NV_BASE_URL,
+                timeout=float(settings.NVIDIA_TIMEOUT_SECONDS),
             )
             logger.info("Kimi/NVIDIA API configurada para keywords")
         else:
@@ -57,12 +60,16 @@ class KeywordService:
         try:
             prompt = self._get_prompt(domain, seeds)
 
-            response = await self.client.chat.completions.create(
-                model=settings.NV_MODEL,
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0.0,
-                top_p=1.0,
-                max_tokens=settings.NV_MAX_TOKENS,
+            response = await run_external_call(
+                "nvidia-keyword-service",
+                lambda: self.client.chat.completions.create(
+                    model=settings.NV_MODEL,
+                    messages=[{"role": "user", "content": prompt}],
+                    temperature=0.0,
+                    top_p=1.0,
+                    max_tokens=settings.NV_MAX_TOKENS,
+                ),
+                timeout_seconds=float(settings.NVIDIA_TIMEOUT_SECONDS),
             )
 
             content = response.choices[0].message.content.strip()

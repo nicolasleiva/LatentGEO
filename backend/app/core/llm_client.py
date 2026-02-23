@@ -1,6 +1,7 @@
 import logging
 
 from app.core.config import settings
+from app.core.external_resilience import run_external_call
 from openai import AsyncOpenAI
 
 logger = logging.getLogger(__name__)
@@ -20,8 +21,9 @@ async def call_kimi_api(name: str, system_prompt: str, user_message: str) -> str
 
     client = None
     try:
+        provider_timeout = float(settings.NVIDIA_TIMEOUT_SECONDS)
         client = AsyncOpenAI(
-            base_url=settings.NV_BASE_URL, api_key=api_key, timeout=300.0
+            base_url=settings.NV_BASE_URL, api_key=api_key, timeout=provider_timeout
         )
 
         logger.info(
@@ -33,13 +35,17 @@ async def call_kimi_api(name: str, system_prompt: str, user_message: str) -> str
             {"role": "user", "content": user_message},
         ]
 
-        completion = await client.chat.completions.create(
-            model=settings.NV_MODEL_ANALYSIS,
-            messages=messages,
-            temperature=0.0,
-            top_p=1.0,
-            max_tokens=settings.NV_MAX_TOKENS,
-            stream=False,
+        completion = await run_external_call(
+            "nvidia-kimi-client",
+            lambda: client.chat.completions.create(
+                model=settings.NV_MODEL_ANALYSIS,
+                messages=messages,
+                temperature=0.0,
+                top_p=1.0,
+                max_tokens=settings.NV_MAX_TOKENS,
+                stream=False,
+            ),
+            timeout_seconds=provider_timeout,
         )
 
         content = completion.choices[0].message.content

@@ -5462,8 +5462,13 @@
           "sse"
         ],
         "summary": "Stream Audit Progress",
-        "description": "SSE endpoint for streaming audit progress updates.\nEventSource cannot send custom Authorization headers, so a short-lived token\nis provided as query parameter.",
+        "description": "SSE endpoint for streaming audit progress updates.\nRequires standard Authorization: Bearer header.",
         "operationId": "stream_audit_progress_api_v1_sse_audits__audit_id__progress_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "parameters": [
           {
             "name": "audit_id",
@@ -5473,17 +5478,6 @@
               "type": "integer",
               "title": "Audit Id"
             }
-          },
-          {
-            "name": "token",
-            "in": "query",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "description": "Internal bearer token",
-              "title": "Token"
-            },
-            "description": "Internal bearer token"
           }
         ],
         "responses": {
@@ -10959,8 +10953,13 @@
           "sse"
         ],
         "summary": "Stream Audit Progress",
-        "description": "SSE endpoint for streaming audit progress updates.\nEventSource cannot send custom Authorization headers, so a short-lived token\nis provided as query parameter.",
+        "description": "SSE endpoint for streaming audit progress updates.\nRequires standard Authorization: Bearer header.",
         "operationId": "stream_audit_progress_api_sse_audits__audit_id__progress_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "parameters": [
           {
             "name": "audit_id",
@@ -10970,17 +10969,6 @@
               "type": "integer",
               "title": "Audit Id"
             }
-          },
-          {
-            "name": "token",
-            "in": "query",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "description": "Internal bearer token",
-              "title": "Token"
-            },
-            "description": "Internal bearer token"
           }
         ],
         "responses": {

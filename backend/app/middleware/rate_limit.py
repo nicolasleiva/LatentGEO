@@ -51,11 +51,24 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             )
 
     def _get_rate_limit(self, path: str) -> Tuple[int, int]:
-        if path.startswith("/auth"):
+        normalized = self._normalize_path(path)
+        if normalized.startswith("/api/auth"):
             return (settings.RATE_LIMIT_AUTH, 60)
-        elif "/pagespeed" in path or "/generate-pdf" in path:
+        if "/pagespeed" in normalized or "/generate-pdf" in normalized:
             return (settings.RATE_LIMIT_HEAVY, 60)
+        if normalized.startswith("/api/webhooks"):
+            return (1000, 60)
+        if normalized.startswith("/api/github/webhook"):
+            return (100, 60)
         return (settings.RATE_LIMIT_DEFAULT, 60)
+
+    @staticmethod
+    def _normalize_path(path: str) -> str:
+        if path == "/api/v1":
+            return "/api"
+        if path.startswith("/api/v1/"):
+            return "/api/" + path[len("/api/v1/") :]
+        return path
 
     def _get_client_key(self, request: Request) -> str:
         user_id = request.headers.get("X-User-ID")
@@ -117,10 +130,11 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
     async def dispatch(self, request: Request, call_next):
         # Skip rate limit for health, docs, and metrics
-        if request.url.path in ["/health", "/docs", "/openapi.json"]:
+        if request.url.path in ["/health", "/api/health", "/docs", "/openapi.json"]:
             return await call_next(request)
 
-        max_requests, window = self._get_rate_limit(request.url.path)
+        normalized_path = self._normalize_path(request.url.path)
+        max_requests, window = self._get_rate_limit(normalized_path)
         client_key = self._get_client_key(request)
         rate_limit_mode = "memory-fallback"
 
@@ -146,7 +160,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             rate_limit_mode = "memory-fallback"
 
         if not allowed:
-            logger.warning(f"Rate limit exceeded: {client_key} on {request.url.path}")
+            logger.warning(f"Rate limit exceeded: {client_key} on {normalized_path}")
             return JSONResponse(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
                 content={

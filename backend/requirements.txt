@@ -42,6 +42,7 @@ httpx==0.28.1  # Required for webhook service
 
 # Security
 PyJWT>=2.8.0  # JWT token handling
+pybreaker>=1.4.0  # Circuit breaker for external providers
 
 # Monitoring & Logging (Level 2/3)
 sentry-sdk[fastapi]>=1.40.0

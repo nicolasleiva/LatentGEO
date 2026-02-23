@@ -2,6 +2,9 @@ from typing import Dict, List
 
 import httpx
 
+from ...core.config import settings
+from ...core.external_resilience import run_external_call
+
 
 class HubSpotClient:
     """Cliente para interactuar con la API de HubSpot"""
@@ -10,13 +13,14 @@ class HubSpotClient:
 
     def __init__(self, access_token: str):
         self.access_token = access_token
+        timeout_seconds = float(settings.HUBSPOT_API_TIMEOUT_SECONDS)
         self.client = httpx.AsyncClient(
             base_url=self.BASE_URL,
             headers={
                 "Authorization": f"Bearer {access_token}",
                 "Content-Type": "application/json",
             },
-            timeout=30.0,
+            timeout=timeout_seconds,
         )
 
     async def get_all_pages(self, limit: int = 100) -> List[Dict]:
@@ -34,7 +38,11 @@ class HubSpotClient:
                 params["after"] = after
 
             try:
-                response = await self.client.get(url, params=params)
+                response = await run_external_call(
+                    "hubspot-pages-list",
+                    lambda: self.client.get(url, params=params),
+                    timeout_seconds=float(settings.HUBSPOT_API_TIMEOUT_SECONDS),
+                )
 
                 # Handle token expiration or other errors gracefully
                 if response.status_code == 401:
@@ -63,7 +71,11 @@ class HubSpotClient:
     async def get_page(self, page_id: str) -> Dict:
         """Obtiene una página específica por ID"""
         url = f"/cms/v3/pages/site-pages/{page_id}"
-        response = await self.client.get(url)
+        response = await run_external_call(
+            "hubspot-page-get",
+            lambda: self.client.get(url),
+            timeout_seconds=float(settings.HUBSPOT_API_TIMEOUT_SECONDS),
+        )
         response.raise_for_status()
         return response.json()
 
@@ -78,7 +90,11 @@ class HubSpotClient:
         url = f"/cms/v3/pages/site-pages/{page_id}"
 
         try:
-            response = await self.client.patch(url, json=data)
+            response = await run_external_call(
+                "hubspot-page-update",
+                lambda: self.client.patch(url, json=data),
+                timeout_seconds=float(settings.HUBSPOT_API_TIMEOUT_SECONDS),
+            )
             response.raise_for_status()
             return True
         except httpx.HTTPStatusError as e:
