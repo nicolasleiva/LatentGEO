@@ -3,6 +3,7 @@ Configuración de Base de Datos con SQLAlchemy
 """
 
 import asyncio
+import re
 
 from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.orm import declarative_base, sessionmaker
@@ -43,6 +44,16 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 Base = declarative_base()
 
+_SQL_IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+_ALLOWED_COLUMN_SQL = {
+    "VARCHAR(255)",
+    "VARCHAR(500)",
+    "VARCHAR(50)",
+    "TEXT",
+    "INTEGER",
+    "BOOLEAN",
+}
+
 
 def get_db():
     """Dependency para obtener la sesión de base de datos"""
@@ -59,6 +70,14 @@ def create_all_tables():
 
 
 def _ensure_column_exists(connection, table: str, column: str, column_sql: str) -> None:
+    if not _SQL_IDENTIFIER_RE.fullmatch(table):
+        raise ValueError(f"Unsafe table identifier: {table}")
+    if not _SQL_IDENTIFIER_RE.fullmatch(column):
+        raise ValueError(f"Unsafe column identifier: {column}")
+    normalized_column_sql = (column_sql or "").strip().upper()
+    if normalized_column_sql not in _ALLOWED_COLUMN_SQL:
+        raise ValueError(f"Unsafe column definition: {column_sql}")
+
     inspector = inspect(connection)
     if table not in inspector.get_table_names():
         return
@@ -67,7 +86,9 @@ def _ensure_column_exists(connection, table: str, column: str, column_sql: str) 
         return
 
     logger.info(f"[DB] Migrando: agregando columna '{column}' en '{table}'...")
-    connection.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {column_sql}"))
+    connection.execute(
+        text(f"ALTER TABLE {table} ADD COLUMN {column} {normalized_column_sql}")
+    )
     connection.commit()
     logger.info(f"[DB] Columna '{column}' agregada en '{table}'.")
 

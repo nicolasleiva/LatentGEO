@@ -55,6 +55,9 @@ class Settings(BaseSettings):
     GOOGLE_PAGESPEED_API_KEY: Optional[str] = None
     CSE_ID: Optional[str] = None
     SERPER_API_KEY: Optional[str] = None
+    EXTERNAL_HTTP_TIMEOUT_SECONDS: float = float(
+        os.getenv("EXTERNAL_HTTP_TIMEOUT_SECONDS", "30")
+    )
 
     # NVIDIA/LLM Configuration
     NVIDIA_API_KEY: Optional[str] = None
@@ -77,6 +80,7 @@ class Settings(BaseSettings):
     )
     NV_MAX_CONTEXT_TOKENS: int = int(os.getenv("NV_MAX_CONTEXT_TOKENS", "262144"))
     NV_CONTEXT_SAFETY_RATIO: float = float(os.getenv("NV_CONTEXT_SAFETY_RATIO", "0.7"))
+    NVIDIA_TIMEOUT_SECONDS: float = float(os.getenv("NVIDIA_TIMEOUT_SECONDS", "300"))
     NV_KIMI_SEARCH_ENABLED: bool = (
         os.getenv("NV_KIMI_SEARCH_ENABLED", "False").lower() == "true"
     )
@@ -121,6 +125,9 @@ class Settings(BaseSettings):
     NV_MODEL_CODE: str = "moonshotai/kimi-k2-instruct-0905"
     NV_API_KEY_CODE: Optional[str] = None  # Puede ser diferente
     NV_MAX_TOKENS_CODE: int = 8192
+    CODE_LLM_TIMEOUT_SECONDS: float = float(
+        os.getenv("CODE_LLM_TIMEOUT_SECONDS", "120")
+    )
 
     # Google Ads Configuration
     GOOGLE_ADS_DEVELOPER_TOKEN: str = os.getenv("GOOGLE_ADS_DEVELOPER_TOKEN", "")
@@ -129,11 +136,17 @@ class Settings(BaseSettings):
     GOOGLE_ADS_REFRESH_TOKEN: str = os.getenv("GOOGLE_ADS_REFRESH_TOKEN", "")
     GOOGLE_ADS_CUSTOMER_ID: str = os.getenv("GOOGLE_ADS_CUSTOMER_ID", "")
     GOOGLE_ADS_LOGIN_CUSTOMER_ID: str = os.getenv("GOOGLE_ADS_LOGIN_CUSTOMER_ID", "")
+    GOOGLE_ADS_TIMEOUT_SECONDS: float = float(
+        os.getenv("GOOGLE_ADS_TIMEOUT_SECONDS", "30")
+    )
 
     # HubSpot Configuration
     HUBSPOT_CLIENT_ID: Optional[str] = os.getenv("HUBSPOT_CLIENT_ID")
     HUBSPOT_CLIENT_SECRET: Optional[str] = os.getenv("HUBSPOT_CLIENT_SECRET")
     HUBSPOT_REDIRECT_URI: Optional[str] = os.getenv("HUBSPOT_REDIRECT_URI")
+    HUBSPOT_API_TIMEOUT_SECONDS: float = float(
+        os.getenv("HUBSPOT_API_TIMEOUT_SECONDS", "30")
+    )
     ENCRYPTION_KEY: str = os.getenv("ENCRYPTION_KEY", "CHANGE_ME_IN_PRODUCTION")
 
     # GitHub Configuration
@@ -141,6 +154,9 @@ class Settings(BaseSettings):
     GITHUB_CLIENT_SECRET: Optional[str] = os.getenv("GITHUB_CLIENT_SECRET")
     GITHUB_REDIRECT_URI: Optional[str] = os.getenv("GITHUB_REDIRECT_URI")
     GITHUB_WEBHOOK_SECRET: Optional[str] = os.getenv("GITHUB_WEBHOOK_SECRET")
+    GITHUB_API_TIMEOUT_SECONDS: float = float(
+        os.getenv("GITHUB_API_TIMEOUT_SECONDS", "30")
+    )
 
     # Redis (Docker service name is 'redis')
     REDIS_URL: Optional[str] = os.getenv("REDIS_URL")
@@ -202,6 +218,23 @@ class Settings(BaseSettings):
     LOG_DIR: str = os.getenv("LOG_DIR", "logs")
     PIPELINE_JSON_PARSE_MAX_CHARS: int = int(
         os.getenv("PIPELINE_JSON_PARSE_MAX_CHARS") or "200000"
+    )
+    WEBHOOK_TIMEOUT_SECONDS: float = float(os.getenv("WEBHOOK_TIMEOUT_SECONDS", "30"))
+    SERPER_TIMEOUT_SECONDS: float = float(os.getenv("SERPER_TIMEOUT_SECONDS", "15"))
+    PAGESPEED_TIMEOUT_SECONDS: float = float(
+        os.getenv("PAGESPEED_TIMEOUT_SECONDS", "180")
+    )
+
+    # External resilience
+    CIRCUIT_BREAKER_ENABLED: bool = (
+        os.getenv("CIRCUIT_BREAKER_ENABLED", "True").lower() == "true"
+    )
+    CIRCUIT_BREAKER_FAIL_MAX: int = int(os.getenv("CIRCUIT_BREAKER_FAIL_MAX", "5"))
+    CIRCUIT_BREAKER_RESET_TIMEOUT_SECONDS: int = int(
+        os.getenv("CIRCUIT_BREAKER_RESET_TIMEOUT_SECONDS", "60")
+    )
+    CIRCUIT_BREAKER_SUCCESS_THRESHOLD: int = int(
+        os.getenv("CIRCUIT_BREAKER_SUCCESS_THRESHOLD", "2")
     )
 
     # HTTPS redirect (enable in production with SSL)

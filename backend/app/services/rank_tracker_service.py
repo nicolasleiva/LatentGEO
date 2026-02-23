@@ -5,6 +5,7 @@ import aiohttp
 from sqlalchemy.orm import Session
 
 from ..core.config import settings
+from ..core.external_resilience import run_external_call
 from ..models import RankTracking
 
 logger = logging.getLogger(__name__)
@@ -38,35 +39,48 @@ class RankTrackerService:
                         break
 
                     payload = {"q": query, "num": 10, "page": page + 1}
-                    async with session.post(
-                        endpoint, json=payload, headers=headers, timeout=15
-                    ) as resp:
-                        if resp.status != 200:
-                            error_text = await resp.text()
-                            logger.error(
-                                f"Serper rank search error {resp.status}: {error_text}"
-                            )
-                            break
 
-                        data = await resp.json()
-                        organic = data.get("organic", [])
-                        if not organic:
-                            break
+                    async def _fetch_rank_page():
+                        async with session.post(
+                            endpoint,
+                            json=payload,
+                            headers=headers,
+                            timeout=float(settings.SERPER_TIMEOUT_SECONDS),
+                        ) as resp:
+                            if resp.status == 200:
+                                return resp.status, await resp.json()
+                            return resp.status, await resp.text()
 
-                        for entry in organic:
-                            link = str(entry.get("link") or "").strip()
-                            if not link or link in seen_links:
-                                continue
-                            seen_links.add(link)
-                            all_items.append(
-                                {
-                                    "title": entry.get("title", ""),
-                                    "link": link,
-                                    "snippet": entry.get("snippet", ""),
-                                }
-                            )
-                            if len(all_items) >= num_results:
-                                break
+                    status_code, payload_body = await run_external_call(
+                        "serper-rank-tracking",
+                        _fetch_rank_page,
+                        timeout_seconds=float(settings.SERPER_TIMEOUT_SECONDS),
+                    )
+                    if status_code != 200:
+                        logger.error(
+                            f"Serper rank search error {status_code}: {payload_body}"
+                        )
+                        break
+
+                    data = payload_body if isinstance(payload_body, dict) else {}
+                    organic = data.get("organic", [])
+                    if not organic:
+                        break
+
+                    for entry in organic:
+                        link = str(entry.get("link") or "").strip()
+                        if not link or link in seen_links:
+                            continue
+                        seen_links.add(link)
+                        all_items.append(
+                            {
+                                "title": entry.get("title", ""),
+                                "link": link,
+                                "snippet": entry.get("snippet", ""),
+                            }
+                        )
+                        if len(all_items) >= num_results:
+                            break
         except Exception as exc:
             logger.error(f"Rank search error: {exc}")
             return []

@@ -11,6 +11,8 @@ from .core.database import init_db
 from .core.logger import get_logger
 from .core.middleware import configure_security_middleware
 
+logger = get_logger(__name__)
+
 # Import rate limiting
 try:
     from .middleware.rate_limit import RateLimitMiddleware
@@ -18,7 +20,6 @@ try:
     RATE_LIMIT_AVAILABLE = True
 except ImportError:
     RATE_LIMIT_AVAILABLE = False
-    logger = get_logger(__name__)
     logger.warning("Rate limiting middleware not available")
 
 # Initialize Monitoring (Level 2/3)
@@ -67,8 +68,6 @@ except Exception:
 
 from contextlib import asynccontextmanager
 
-logger = get_logger(__name__)
-
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -90,6 +89,7 @@ async def lifespan(app: FastAPI):
         logger.info("OK: Conexion con Base de Datos establecida")
     except Exception as e:
         logger.critical(f"ERR: Fallo critico al inicializar la base de datos: {e}")
+        raise RuntimeError(f"Database initialization failed: {e}") from e
 
     logger.info(f"INFO: Modo Debug: {settings.DEBUG}")
     logger.info("INFO: Documentacion: http://localhost:8000/docs")
@@ -131,10 +131,14 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
+    rate_limit_enabled = not settings.DEBUG
+    use_distributed_rate_limit = rate_limit_enabled and RATE_LIMIT_AVAILABLE
+    use_fallback_rate_limit = rate_limit_enabled and not RATE_LIMIT_AVAILABLE
+
     configure_security_middleware(
         app,
         settings,
-        enable_rate_limiting=(not settings.DEBUG and not RATE_LIMIT_AVAILABLE),
+        enable_rate_limiting=use_fallback_rate_limit,
     )
 
     # Add ProxyHeaders middleware to get real IP behind Nginx/ALB
@@ -144,10 +148,14 @@ def create_app() -> FastAPI:
         ProxyHeadersMiddleware, trusted_hosts=settings.FORWARDED_ALLOW_IPS
     )
 
-    # Add rate limiting (production)
-    if RATE_LIMIT_AVAILABLE and not settings.DEBUG:
+    # Add distributed Redis-backed rate limiting in production.
+    if use_distributed_rate_limit:
         app.add_middleware(RateLimitMiddleware)
-        logger.info("Rate limiting enabled")
+        logger.info("Rate limiting enabled (mode=redis-distributed)")
+    elif use_fallback_rate_limit:
+        logger.info("Rate limiting enabled (mode=core-fallback)")
+    else:
+        logger.info("Rate limiting disabled (mode=disabled-debug)")
 
     # ===== VERSIONAMIENTO (Level 3) =====
     v1 = APIRouter(prefix="/api/v1")

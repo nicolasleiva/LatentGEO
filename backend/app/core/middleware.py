@@ -72,6 +72,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
     def _get_limit_for_path(self, path: str) -> Tuple[int, int]:
         """Get rate limit and window for specific path"""
+        path = self._normalize_api_path(path)
         # Check exact matches first
         if path in self.endpoint_limits:
             return self.endpoint_limits[path]
@@ -82,6 +83,14 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                 return limits
 
         return (self.default_limit, self.default_window)
+
+    @staticmethod
+    def _normalize_api_path(path: str) -> str:
+        if path == "/api/v1":
+            return "/api"
+        if path.startswith("/api/v1/"):
+            return "/api/" + path[len("/api/v1/") :]
+        return path
 
     def _check_rate_limit(
         self, client_key: str, path: str, current_time: float
@@ -128,21 +137,21 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         client_key = self._get_client_key(request)
 
         # Use more permissive rate limit only for polling-style audit GET endpoints.
-        path_for_limit = request.url.path
+        path_for_limit = self._normalize_api_path(request.url.path)
         is_polling_get = bool(
             request.method == "GET"
             and re.fullmatch(
                 r"/api/audits/\d+(?:/(?:pages|competitors|report|fix_plan|status))?",
-                request.url.path,
+                path_for_limit,
             )
         )
         if is_polling_get:
             path_for_limit = "/api/audits"
-        elif request.method == "POST" and request.url.path.endswith("/generate-pdf"):
+        elif request.method == "POST" and path_for_limit.endswith("/generate-pdf"):
             path_for_limit = "/api/audits/generate-pdf"
         elif request.method == "POST" and (
-            request.url.path.endswith("/run-pagespeed")
-            or request.url.path.endswith("/pagespeed")
+            path_for_limit.endswith("/run-pagespeed")
+            or path_for_limit.endswith("/pagespeed")
         ):
             path_for_limit = "/api/audits/run-pagespeed"
 

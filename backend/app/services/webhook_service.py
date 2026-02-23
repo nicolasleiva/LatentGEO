@@ -13,6 +13,7 @@ from typing import Any, Dict, Optional
 
 import httpx
 from app.core.config import settings
+from app.core.external_resilience import run_external_call
 from app.core.logger import get_logger
 from sqlalchemy.orm import Session
 
@@ -57,7 +58,7 @@ class WebhookService:
 
     MAX_RETRIES = 3
     RETRY_DELAYS = [5, 30, 300]  # 5s, 30s, 5min
-    TIMEOUT = 30  # seconds
+    TIMEOUT = float(settings.WEBHOOK_TIMEOUT_SECONDS)
 
     @staticmethod
     def generate_signature(payload: str, secret: str) -> str:
@@ -152,8 +153,12 @@ class WebhookService:
         for attempt in range(WebhookService.MAX_RETRIES):
             try:
                 async with httpx.AsyncClient(timeout=WebhookService.TIMEOUT) as client:
-                    response = await client.post(
-                        url, content=payload_json, headers=request_headers
+                    response = await run_external_call(
+                        "webhook-outbound",
+                        lambda: client.post(
+                            url, content=payload_json, headers=request_headers
+                        ),
+                        timeout_seconds=WebhookService.TIMEOUT,
                     )
 
                     if response.status_code in [200, 201, 202, 204]:

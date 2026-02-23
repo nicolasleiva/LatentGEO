@@ -1,9 +1,6 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import logger from "@/lib/logger";
-import {
-  buildAuthenticatedSseUrl,
-  fetchWithBackendAuth,
-} from "@/lib/backend-auth";
+import { fetchWithBackendAuth } from "@/lib/backend-auth";
 
 interface AuditProgress {
   audit_id: number;
@@ -135,12 +132,9 @@ export function useAuditSSE(
     terminalNotifiedRef.current = false;
     cleanup(false);
 
-    const sseUrl = await buildAuthenticatedSseUrl(
-      backendUrl,
-      `/api/sse/audits/${auditId}/progress`,
-    );
+    const sseUrl = `/api/sse/audits/${auditId}/progress`;
 
-    logger.log(`[SSE] Connecting to: ${sseUrl}`);
+    logger.log(`[SSE] Connecting to proxy: ${sseUrl}`);
 
     try {
       const eventSource = new EventSource(sseUrl);

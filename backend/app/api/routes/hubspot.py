@@ -184,8 +184,6 @@ async def sync_pages(
         return {"status": "success", "synced_count": len(pages)}
     except HTTPException:
         raise
-    except HTTPException:
-        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

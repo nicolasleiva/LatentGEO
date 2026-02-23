@@ -4,6 +4,7 @@ import httpx
 from cryptography.fernet import Fernet
 
 from ...core.config import settings
+from ...core.external_resilience import run_external_call
 
 
 class HubSpotAuth:
@@ -33,16 +34,21 @@ class HubSpotAuth:
     @staticmethod
     async def exchange_code(code: str) -> Dict:
         """Intercambia código de autorización por access token"""
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                "https://api.hubapi.com/oauth/v1/token",
-                data={
-                    "grant_type": "authorization_code",
-                    "client_id": settings.HUBSPOT_CLIENT_ID,
-                    "client_secret": settings.HUBSPOT_CLIENT_SECRET,
-                    "redirect_uri": settings.HUBSPOT_REDIRECT_URI,
-                    "code": code,
-                },
+        timeout_seconds = float(settings.HUBSPOT_API_TIMEOUT_SECONDS)
+        async with httpx.AsyncClient(timeout=timeout_seconds) as client:
+            response = await run_external_call(
+                "hubspot-oauth-exchange",
+                lambda: client.post(
+                    "https://api.hubapi.com/oauth/v1/token",
+                    data={
+                        "grant_type": "authorization_code",
+                        "client_id": settings.HUBSPOT_CLIENT_ID,
+                        "client_secret": settings.HUBSPOT_CLIENT_SECRET,
+                        "redirect_uri": settings.HUBSPOT_REDIRECT_URI,
+                        "code": code,
+                    },
+                ),
+                timeout_seconds=timeout_seconds,
             )
             response.raise_for_status()
             return response.json()
@@ -50,15 +56,20 @@ class HubSpotAuth:
     @staticmethod
     async def refresh_token(refresh_token: str) -> Dict:
         """Refresca el access token usando el refresh token"""
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                "https://api.hubapi.com/oauth/v1/token",
-                data={
-                    "grant_type": "refresh_token",
-                    "client_id": settings.HUBSPOT_CLIENT_ID,
-                    "client_secret": settings.HUBSPOT_CLIENT_SECRET,
-                    "refresh_token": refresh_token,
-                },
+        timeout_seconds = float(settings.HUBSPOT_API_TIMEOUT_SECONDS)
+        async with httpx.AsyncClient(timeout=timeout_seconds) as client:
+            response = await run_external_call(
+                "hubspot-oauth-refresh",
+                lambda: client.post(
+                    "https://api.hubapi.com/oauth/v1/token",
+                    data={
+                        "grant_type": "refresh_token",
+                        "client_id": settings.HUBSPOT_CLIENT_ID,
+                        "client_secret": settings.HUBSPOT_CLIENT_SECRET,
+                        "refresh_token": refresh_token,
+                    },
+                ),
+                timeout_seconds=timeout_seconds,
             )
             response.raise_for_status()
             return response.json()
