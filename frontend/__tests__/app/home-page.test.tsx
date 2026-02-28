@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import HomePage from "@/app/[locale]/page";
 import { usePathname, useRouter } from "next/navigation";
-import { useUser } from "@auth0/nextjs-auth0/client";
+import { useCombinedProfile, useRequireAppAuth } from "@/lib/app-auth";
 import { createAudit, listAudits } from "@/lib/api-client";
 
 vi.mock("next/navigation", () => ({
@@ -11,8 +11,9 @@ vi.mock("next/navigation", () => ({
   usePathname: vi.fn(),
 }));
 
-vi.mock("@auth0/nextjs-auth0/client", () => ({
-  useUser: vi.fn(),
+vi.mock("@/lib/app-auth", () => ({
+  useRequireAppAuth: vi.fn(),
+  useCombinedProfile: vi.fn(),
 }));
 
 vi.mock("@/lib/api-client", () => ({
@@ -48,7 +49,18 @@ describe("HomePage", () => {
     window.sessionStorage.clear();
     (useRouter as jest.Mock).mockReturnValue({ push: mockPush });
     (usePathname as jest.Mock).mockReturnValue("/en");
-    (useUser as jest.Mock).mockReturnValue({ user: null, isLoading: false });
+    (useRequireAppAuth as jest.Mock).mockReturnValue({
+      loading: false,
+      ready: true,
+      supabase_ok: true,
+      auth0_ok: true,
+    });
+    (useCombinedProfile as jest.Mock).mockReturnValue({
+      id: "user-1",
+      email: "test@example.com",
+      name: "Test User",
+      picture: null,
+    });
     (listAudits as jest.Mock).mockResolvedValue([]);
     (createAudit as jest.Mock).mockResolvedValue({ id: 99 });
   });
@@ -118,9 +130,11 @@ describe("HomePage", () => {
 
   it("accepts a domain without protocol and normalizes it to https", async () => {
     const user = userEvent.setup();
-    (useUser as jest.Mock).mockReturnValue({
-      user: { sub: "auth0|user-456", email: "test@example.com" },
-      isLoading: false,
+    (useCombinedProfile as jest.Mock).mockReturnValue({
+      id: "auth0|user-456",
+      email: "test@example.com",
+      name: "Test User",
+      picture: null,
     });
 
     renderPage();
@@ -138,9 +152,11 @@ describe("HomePage", () => {
   });
 
   it("loads recent audits for authenticated users", async () => {
-    (useUser as jest.Mock).mockReturnValue({
-      user: { sub: "auth0|user-123", email: "test@example.com" },
-      isLoading: false,
+    (useCombinedProfile as jest.Mock).mockReturnValue({
+      id: "auth0|user-123",
+      email: "test@example.com",
+      name: "Test User",
+      picture: null,
     });
     (listAudits as jest.Mock).mockResolvedValue([
       {

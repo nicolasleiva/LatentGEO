@@ -1076,6 +1076,13 @@ async def github_webhook(
     - pull_request: Actualizar estado del PR
     - installation: Manejar instalación de la app
     """
+    webhook_secret = (settings.GITHUB_WEBHOOK_SECRET or "").strip()
+    if not webhook_secret and not settings.DEBUG:
+        raise HTTPException(
+            status_code=503,
+            detail="GitHub webhook secret is not configured on server",
+        )
+
     # 1. Verificar firma del webhook
     body = await request.body()
 
@@ -1125,13 +1132,18 @@ async def github_webhook(
 # Helper functions
 
 
-def _verify_webhook_signature(payload_body: bytes, signature_header: str) -> bool:
+def _verify_webhook_signature(
+    payload_body: bytes, signature_header: Optional[str]
+) -> bool:
     """Verifica la firma del webhook de GitHub"""
-    if not signature_header or not settings.GITHUB_WEBHOOK_SECRET:
-        return True  # Skip verification in development
+    webhook_secret = (settings.GITHUB_WEBHOOK_SECRET or "").strip()
+    if not webhook_secret:
+        return settings.DEBUG
+    if not signature_header:
+        return False
 
     hash_object = hmac.new(
-        settings.GITHUB_WEBHOOK_SECRET.encode(),
+        webhook_secret.encode(),
         msg=payload_body,
         digestmod=hashlib.sha256,
     )

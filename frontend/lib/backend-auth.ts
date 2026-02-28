@@ -1,276 +1,194 @@
+import { getAccessToken } from "@auth0/nextjs-auth0/client";
+
 import { resolveApiBaseUrl } from "./env";
 
-type BackendTokenResponse = {
-  token?: string;
-  access_token?: string;
-  expires_at?: number;
-};
-
-type BackendTokenBroadcastMessage =
-  | {
-      type: "token_refreshed";
-      token: string;
-      expiry: number;
-    }
-  | {
-      type: "token_cleared";
-    };
-
-type RefreshLockPayload = {
-  owner: string;
-  expires_at: number;
-};
-
-let cachedToken: string | null = null;
-let cachedExpiry = 0;
-let pendingTokenRequest: Promise<string | null> | null = null;
-let tokenChannel: BroadcastChannel | null = null;
-
-const tokenWaiters = new Set<(token: string | null) => void>();
-
-const TOKEN_CHANNEL_NAME = "backend-auth-token";
-const TOKEN_REFRESH_LOCK_KEY = "backend-auth-token-refresh-lock";
-const TOKEN_REFRESH_LOCK_TTL_MS = 10_000;
-const TOKEN_BROADCAST_WAIT_MS = 1_500;
-const TOKEN_LOCK_POLL_MS = 150;
-const TAB_ID = `tab-${Math.random().toString(36).slice(2)}`;
-
 const BACKEND_API_URL = resolveApiBaseUrl();
+const REAUTH_REDIRECT_STORAGE_KEY = "reauth_redirect_at";
+const REAUTH_REDIRECT_COOLDOWN_MS = 5_000;
+const TOKEN_REFRESH_LOCK_STORAGE_KEY = "backend-auth-token-refresh-lock";
+const TOKEN_BROADCAST_CHANNEL = "backend-auth-token";
+const PEER_TOKEN_WAIT_MS = 1_200;
 
-const isBrowser = () => typeof window !== "undefined";
+const AUTH0_API_AUDIENCE =
+  process.env.NEXT_PUBLIC_AUTH0_API_AUDIENCE?.trim() || "";
+const AUTH0_API_SCOPES =
+  process.env.NEXT_PUBLIC_AUTH0_API_SCOPES?.trim() || "read:app";
+let audienceMissingLogged = false;
 
-const isTokenFresh = () => {
-  if (!cachedToken) return false;
-  // Refresh one minute before expiry.
-  return Date.now() < cachedExpiry - 60_000;
-};
+let auth0AccessTokenCache: { token: string; expiresAtMs: number } | null = null;
+const TOKEN_EXPIRY_SAFETY_MS = 5_000;
 
-const notifyTokenWaiters = (token: string | null) => {
-  tokenWaiters.forEach((resolveWaiter) => resolveWaiter(token));
-  tokenWaiters.clear();
-};
-
-const ensureTokenChannel = () => {
-  if (!isBrowser() || typeof BroadcastChannel === "undefined") {
-    return null;
-  }
-  if (tokenChannel) {
-    return tokenChannel;
-  }
-
-  tokenChannel = new BroadcastChannel(TOKEN_CHANNEL_NAME);
-  tokenChannel.onmessage = (event: MessageEvent<BackendTokenBroadcastMessage>) => {
-    const message = event.data;
-    if (!message || typeof message !== "object") {
-      return;
-    }
-
-    if (message.type === "token_refreshed") {
-      cachedToken = message.token;
-      cachedExpiry = Number(message.expiry || 0);
-      notifyTokenWaiters(cachedToken);
-      return;
-    }
-
-    if (message.type === "token_cleared") {
-      resetBackendTokenCache(false);
-    }
-  };
-
-  return tokenChannel;
-};
-
-const broadcastTokenMessage = (message: BackendTokenBroadcastMessage) => {
-  const channel = ensureTokenChannel();
-  if (channel) {
-    channel.postMessage(message);
-  }
-};
-
-const parseRefreshLock = (raw: string | null): RefreshLockPayload | null => {
-  if (!raw) return null;
+const shouldAttachBackendAuth = (requestUrl: URL) => {
   try {
-    const parsed = JSON.parse(raw) as RefreshLockPayload;
-    if (
-      !parsed ||
-      typeof parsed.owner !== "string" ||
-      typeof parsed.expires_at !== "number"
-    ) {
+    const backendOrigin = new URL(BACKEND_API_URL).origin;
+    return (
+      requestUrl.origin === backendOrigin ||
+      requestUrl.href.startsWith(BACKEND_API_URL)
+    );
+  } catch {
+    return false;
+  }
+};
+
+const shouldRedirectToLogin = () => {
+  if (typeof window === "undefined") return false;
+  const path = window.location.pathname || "/";
+  return !path.startsWith("/auth/") && !path.startsWith("/signin");
+};
+
+const canTriggerReauthRedirect = () => {
+  if (typeof window === "undefined") return false;
+  const rawTs = window.sessionStorage.getItem(REAUTH_REDIRECT_STORAGE_KEY) || "0";
+  const lastTs = Number(rawTs);
+  const now = Date.now();
+  if (Number.isFinite(lastTs) && now - lastTs < REAUTH_REDIRECT_COOLDOWN_MS) {
+    return false;
+  }
+  window.sessionStorage.setItem(REAUTH_REDIRECT_STORAGE_KEY, String(now));
+  return true;
+};
+
+const redirectToLogin = () => {
+  if (typeof window === "undefined") return;
+  if (!shouldRedirectToLogin()) return;
+  if (!canTriggerReauthRedirect()) return;
+
+  const returnTo = `${window.location.pathname}${window.location.search}`;
+  window.location.href = `/auth/login?returnTo=${encodeURIComponent(returnTo)}`;
+};
+
+const hasActiveAuth0Session = async (): Promise<boolean> => {
+  try {
+    const response = await fetch("/auth/profile", {
+      method: "GET",
+      credentials: "include",
+      cache: "no-store",
+    });
+    return response.ok;
+  } catch {
+    return false;
+  }
+};
+
+const getActiveRefreshLock = () => {
+  if (typeof window === "undefined") return null;
+  const raw = window.localStorage.getItem(TOKEN_REFRESH_LOCK_STORAGE_KEY);
+  if (!raw) return null;
+
+  try {
+    const parsed = JSON.parse(raw) as { expires_at?: number };
+    const expiresAt = Number(parsed?.expires_at);
+    if (!Number.isFinite(expiresAt) || expiresAt <= Date.now()) {
       return null;
     }
-    return parsed;
+    return { expiresAt };
   } catch {
     return null;
   }
 };
 
-const tryAcquireRefreshLock = () => {
-  if (!isBrowser()) return true;
-
-  try {
-    const now = Date.now();
-    const current = parseRefreshLock(
-      window.localStorage.getItem(TOKEN_REFRESH_LOCK_KEY),
-    );
-    if (current && current.expires_at > now && current.owner !== TAB_ID) {
-      return false;
-    }
-
-    const nextLock: RefreshLockPayload = {
-      owner: TAB_ID,
-      expires_at: now + TOKEN_REFRESH_LOCK_TTL_MS,
-    };
-    window.localStorage.setItem(TOKEN_REFRESH_LOCK_KEY, JSON.stringify(nextLock));
-    return true;
-  } catch {
-    return true;
-  }
-};
-
-const releaseRefreshLock = () => {
-  if (!isBrowser()) return;
-
-  try {
-    const current = parseRefreshLock(
-      window.localStorage.getItem(TOKEN_REFRESH_LOCK_KEY),
-    );
-    if (current?.owner === TAB_ID) {
-      window.localStorage.removeItem(TOKEN_REFRESH_LOCK_KEY);
-    }
-  } catch {
-    // noop
-  }
-};
-
-const waitForTokenBroadcast = async (timeoutMs: number): Promise<string | null> => {
-  if (!isBrowser() || typeof BroadcastChannel === "undefined") {
+const waitForBroadcastedToken = async (): Promise<string | null> => {
+  if (typeof window === "undefined" || typeof BroadcastChannel === "undefined") {
     return null;
   }
 
-  ensureTokenChannel();
-
-  return new Promise<string | null>((resolve) => {
-    const waiter = (token: string | null) => {
-      clearTimeout(timer);
-      tokenWaiters.delete(waiter);
-      resolve(token);
-    };
-
-    const timer = window.setTimeout(() => {
-      tokenWaiters.delete(waiter);
+  return new Promise((resolve) => {
+    const channel = new BroadcastChannel(TOKEN_BROADCAST_CHANNEL);
+    const timeoutId = window.setTimeout(() => {
+      channel.close();
       resolve(null);
-    }, timeoutMs);
+    }, PEER_TOKEN_WAIT_MS);
 
-    tokenWaiters.add(waiter);
+    channel.onmessage = (event: MessageEvent) => {
+      const payload = event?.data as
+        | { type?: string; token?: string; expiry?: number }
+        | undefined;
+      if (payload?.type !== "token_refreshed" || !payload.token) {
+        return;
+      }
+
+      const expiry = Number(payload.expiry);
+      auth0AccessTokenCache = {
+        token: payload.token,
+        expiresAtMs: Number.isFinite(expiry) ? expiry : Date.now() + 50_000,
+      };
+      window.clearTimeout(timeoutId);
+      channel.close();
+      resolve(payload.token);
+    };
   });
 };
 
-const waitForRefreshLockRelease = async (timeoutMs: number) => {
-  if (!isBrowser()) return;
-
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    const current = parseRefreshLock(
-      window.localStorage.getItem(TOKEN_REFRESH_LOCK_KEY),
-    );
-    if (!current || current.expires_at <= Date.now()) {
-      return;
-    }
-    await new Promise((resolve) => setTimeout(resolve, TOKEN_LOCK_POLL_MS));
+const broadcastTokenRefresh = (token: string, expiresAtMs: number) => {
+  if (typeof window === "undefined" || typeof BroadcastChannel === "undefined") {
+    return;
   }
-};
 
-const resetBackendTokenCache = (broadcast = true) => {
-  cachedToken = null;
-  cachedExpiry = 0;
-  pendingTokenRequest = null;
-  notifyTokenWaiters(null);
-
-  if (broadcast) {
-    broadcastTokenMessage({ type: "token_cleared" });
-  }
-};
-
-export const clearBackendTokenCache = () => {
-  resetBackendTokenCache(true);
+  const channel = new BroadcastChannel(TOKEN_BROADCAST_CHANNEL);
+  channel.postMessage({
+    type: "token_refreshed",
+    token,
+    expiry: expiresAtMs,
+  });
+  channel.close();
 };
 
 export const getBackendAccessToken = async (
   forceRefresh = false,
 ): Promise<string | null> => {
-  if (!forceRefresh && isTokenFresh()) {
-    return cachedToken;
+  if (
+    !forceRefresh &&
+    auth0AccessTokenCache &&
+    auth0AccessTokenCache.expiresAtMs > Date.now() + TOKEN_EXPIRY_SAFETY_MS
+  ) {
+    return auth0AccessTokenCache.token;
   }
 
-  if (pendingTokenRequest) {
-    return pendingTokenRequest;
-  }
-
-  ensureTokenChannel();
-
-  pendingTokenRequest = (async () => {
-    let lockAcquired = false;
-    try {
-      lockAcquired = tryAcquireRefreshLock();
-      if (!lockAcquired) {
-        const broadcastToken = await waitForTokenBroadcast(TOKEN_BROADCAST_WAIT_MS);
-        if (!forceRefresh && broadcastToken && isTokenFresh()) {
-          return broadcastToken;
-        }
-        await waitForRefreshLockRelease(TOKEN_BROADCAST_WAIT_MS);
-        lockAcquired = tryAcquireRefreshLock();
-      }
-
-      if (!forceRefresh && isTokenFresh()) {
-        return cachedToken;
-      }
-
-      const res = await fetch("/api/auth/backend-token", {
-        method: "GET",
-        credentials: "include",
-        headers: { Accept: "application/json" },
-      });
-      if (!res.ok) {
-        resetBackendTokenCache(true);
-        return null;
-      }
-
-      const payload = (await res.json()) as BackendTokenResponse;
-      const token = payload.token || payload.access_token || null;
-      if (!token) {
-        resetBackendTokenCache(true);
-        return null;
-      }
-
-      cachedToken = token;
-      cachedExpiry = Number(payload.expires_at || Date.now() + 5 * 60_000);
-      broadcastTokenMessage({
-        type: "token_refreshed",
-        token: cachedToken,
-        expiry: cachedExpiry,
-      });
-      notifyTokenWaiters(cachedToken);
-      return cachedToken;
-    } catch {
-      resetBackendTokenCache(true);
-      return null;
-    } finally {
-      if (lockAcquired) {
-        releaseRefreshLock();
-      }
-      pendingTokenRequest = null;
+  if (!forceRefresh && getActiveRefreshLock()) {
+    const sharedToken = await waitForBroadcastedToken();
+    if (sharedToken) {
+      return sharedToken;
     }
-  })();
+  }
 
-  return pendingTokenRequest;
+  try {
+    if (!AUTH0_API_AUDIENCE) {
+      if (!audienceMissingLogged) {
+        console.error(
+          "Missing NEXT_PUBLIC_AUTH0_API_AUDIENCE. Cannot request API access token.",
+        );
+        audienceMissingLogged = true;
+      }
+      return null;
+    }
+
+    const token = await getAccessToken({
+      audience: AUTH0_API_AUDIENCE,
+      scope: AUTH0_API_SCOPES,
+    });
+
+    if (!token) {
+      auth0AccessTokenCache = null;
+      return null;
+    }
+
+    auth0AccessTokenCache = {
+      token,
+      // Access token helper does not expose expiry in browser; keep a short cache.
+      expiresAtMs: Date.now() + 50_000,
+    };
+    broadcastTokenRefresh(token, auth0AccessTokenCache.expiresAtMs);
+
+    return token;
+  } catch (error) {
+    console.error("Error getting Auth0 access token:", error);
+    auth0AccessTokenCache = null;
+    return null;
+  }
 };
 
-const shouldAttachBackendAuth = (requestUrl: URL) => {
-  const backendOrigin = new URL(BACKEND_API_URL).origin;
-  return (
-    requestUrl.origin === backendOrigin &&
-    requestUrl.pathname.startsWith("/api/")
-  );
+export const clearBackendTokenCache = () => {
+  auth0AccessTokenCache = null;
 };
 
 export const fetchWithBackendAuth = async (
@@ -290,42 +208,33 @@ export const fetchWithBackendAuth = async (
     return fetch(input, init);
   }
 
-  const token = await getBackendAccessToken();
-  const baseRequest =
-    input instanceof Request ? input : new Request(input, init);
-  const headers = new Headers(baseRequest.headers);
+  let token = await getBackendAccessToken();
 
-  if (init?.headers) {
-    const initHeaders = new Headers(init.headers);
-    initHeaders.forEach((value, key) => headers.set(key, value));
-  }
-
-  if (token && !headers.has("Authorization")) {
+  const headers = new Headers(init?.headers);
+  if (token) {
     headers.set("Authorization", `Bearer ${token}`);
   }
 
-  const credentials = init?.credentials ?? baseRequest.credentials ?? "include";
+  let response = await fetch(input, { ...init, headers });
 
-  const buildRequest = (authHeaders: Headers) =>
-    new Request(baseRequest, {
-      ...init,
-      headers: authHeaders,
-      credentials,
-    });
+  // Retry one time with forced token refresh on 401.
+  if (response.status === 401) {
+    token = await getBackendAccessToken(true);
+    const retryHeaders = new Headers(init?.headers);
+    if (token) {
+      retryHeaders.set("Authorization", `Bearer ${token}`);
+    }
 
-  let response = await fetch(buildRequest(headers));
+    response = await fetch(input, { ...init, headers: retryHeaders });
 
-  // Token may be expired/rotated; refresh once and retry transparently.
-  if (response.status === 401 && token) {
-    clearBackendTokenCache();
-    const refreshedToken = await getBackendAccessToken(true);
-    if (refreshedToken) {
-      const retryHeaders = new Headers(headers);
-      retryHeaders.set("Authorization", `Bearer ${refreshedToken}`);
-      response = await fetch(buildRequest(retryHeaders));
+    if (response.status === 401) {
+      // Redirect only if Auth0 session is actually missing/expired.
+      const sessionActive = await hasActiveAuth0Session();
+      if (!sessionActive) {
+        redirectToLogin();
+      }
     }
   }
 
   return response;
 };
-

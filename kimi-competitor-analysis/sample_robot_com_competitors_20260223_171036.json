@@ -1,0 +1,38 @@
+{
+  "target_company": "robot.com",
+  "competitors": [
+    {
+      "name": "Boston Dynamics",
+      "url": "https://www.bostondynamics.com",
+      "description": "Leading robotics company specializing in advanced mobile robots for industrial applications, including Spot, Stretch, and Atlas robots.",
+      "position": 1
+    },
+    {
+      "name": "iRobot Corporation",
+      "url": "https://www.irobot.com",
+      "description": "Consumer robotics company known for Roomba vacuum cleaners and Braava mopping robots, focusing on home automation.",
+      "position": 2
+    },
+    {
+      "name": "ABB Robotics",
+      "url": "https://new.abb.com/products/robotics",
+      "description": "Industrial robotics and automation technology company providing robot arms, controllers, and software for manufacturing.",
+      "position": 3
+    },
+    {
+      "name": "KUKA Robotics",
+      "url": "https://www.kuka.com",
+      "description": "German manufacturer of industrial robots and automation solutions for automotive, aerospace, and general industries.",
+      "position": 4
+    },
+    {
+      "name": "Universal Robots",
+      "url": "https://www.universal-robots.com",
+      "description": "Danish company specializing in collaborative robots (cobots) for small and medium-sized businesses.",
+      "position": 5
+    }
+  ],
+  "extraction_date": "2026-02-23T17:10:36.367894",
+  "total_results": 127,
+  "search_provider": "serper+kimi"
+}

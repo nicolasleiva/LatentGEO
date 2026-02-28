@@ -5,6 +5,7 @@ Genera recomendaciones de contenido basadas en keywords y gaps.
 
 import json
 import logging
+from datetime import datetime
 from typing import Any, Dict, List
 
 from sqlalchemy.orm import Session
@@ -63,8 +64,9 @@ class AIContentService:
             )
 
         try:
+            current_year = datetime.now().year
             prompt = f"""
-            Actúa como experto en Content Marketing y SEO.
+            Actúa como experto en Content Marketing y SEO. Año actual: {current_year}.
             
             **CONTEXTO DEL NEGOCIO:**
             - Sitio web: {domain}

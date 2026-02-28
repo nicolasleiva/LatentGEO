@@ -1,12 +1,12 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useUser } from "@auth0/nextjs-auth0/client";
 import { useTheme } from "next-themes";
 import Image from "next/image";
 import { Header } from "@/components/header";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { useCombinedProfile, useRequireAppAuth } from "@/lib/app-auth";
 import {
   User,
   Bell,
@@ -33,7 +33,10 @@ const DEFAULT_NOTIFICATIONS: NotificationPreferences = {
 };
 
 export default function SettingsPage() {
-  const { user, isLoading } = useUser();
+  const auth = useRequireAppAuth();
+  const profile = useCombinedProfile(auth);
+  const user = auth.ready ? profile : null;
+  const isLoading = auth.loading || !auth.ready;
   const { theme, setTheme } = useTheme();
   const [displayName, setDisplayName] = useState("");
   const [notifications, setNotifications] =
@@ -41,9 +44,9 @@ export default function SettingsPage() {
   const [saved, setSaved] = useState(false);
 
   const storagePrefix = useMemo(() => {
-    const userKey = user?.sub || user?.email || "anonymous";
+    const userKey = user?.id || user?.email || "anonymous";
     return `latentgeo:settings:${userKey}`;
-  }, [user?.email, user?.sub]);
+  }, [user?.email, user?.id]);
 
   useEffect(() => {
     if (!user) return;
@@ -333,7 +336,7 @@ export default function SettingsPage() {
                 <p className="text-sm text-muted-foreground mb-1">
                   Authentication Provider
                 </p>
-                <p className="font-medium">Auth0</p>
+                <p className="font-medium">Supabase + Auth0 (Google)</p>
               </div>
               <div className="p-4 glass-panel rounded-xl border border-border">
                 <p className="text-sm text-muted-foreground mb-1">Session</p>

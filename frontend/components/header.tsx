@@ -4,7 +4,6 @@ import { useCallback, useMemo, type ComponentType } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useUser } from "@auth0/nextjs-auth0/client";
 import {
   Sparkles,
   LayoutDashboard,
@@ -33,6 +32,11 @@ import {
 import { cn } from "@/lib/utils";
 import { withLocale } from "@/lib/locale-routing";
 import { isKnownLocale } from "@/lib/locales";
+import {
+  logoutAllSessions,
+  useAppAuthState,
+  useCombinedProfile,
+} from "@/lib/app-auth";
 
 type NavItem = {
   href: string;
@@ -54,7 +58,10 @@ const appNavItems: NavItem[] = [
 
 export function Header() {
   const pathname = usePathname();
-  const { user, isLoading } = useUser();
+  const auth = useAppAuthState();
+  const profile = useCombinedProfile(auth);
+  const user = auth.ready ? profile : null;
+  const isLoading = auth.loading;
 
   const pathWithoutLocale = useMemo(() => {
     if (!pathname) return "/";
@@ -176,15 +183,15 @@ export function Header() {
               </div>
 
               <Button
-                asChild
                 variant="ghost"
                 size="sm"
                 className="rounded-xl text-red-500 hover:text-red-600 hover:bg-red-500/10"
+                onClick={() => {
+                  void logoutAllSessions();
+                }}
               >
-                <a href="/auth/logout">
-                  <LogOut className="h-4 w-4" />
-                  Logout
-                </a>
+                <LogOut className="h-4 w-4" />
+                Logout
               </Button>
             </div>
           ) : (
@@ -260,13 +267,16 @@ export function Header() {
                       </Link>
                     </SheetClose>
                     <SheetClose asChild>
-                      <a
-                        href="/auth/logout"
+                      <button
+                        type="button"
+                        onClick={() => {
+                          void logoutAllSessions();
+                        }}
                         className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg border border-red-500/20 bg-transparent px-4 text-sm font-medium text-red-600 hover:bg-red-500/10"
                       >
                         <LogOut className="h-4 w-4" />
                         Logout
-                      </a>
+                      </button>
                     </SheetClose>
                   </div>
                 ) : (

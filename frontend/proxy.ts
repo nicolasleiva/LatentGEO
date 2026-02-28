@@ -16,8 +16,29 @@ export async function proxy(request: NextRequest) {
       return await auth0.middleware(request);
     } catch (error) {
       console.error("Auth0 middleware error:", error);
-      return NextResponse.next();
+      if (pathname === "/auth/login") {
+        return NextResponse.json(
+          { error: "Auth middleware failed on /auth/login" },
+          { status: 500 },
+        );
+      }
+
+      const loginUrl = request.nextUrl.clone();
+      loginUrl.pathname = "/auth/login";
+      loginUrl.search = "";
+      const returnTo = pathname.startsWith("/auth/")
+        ? "/"
+        : `${pathname}${request.nextUrl.search || ""}`;
+      if (returnTo.startsWith("/") && !returnTo.startsWith("//")) {
+        loginUrl.searchParams.set("returnTo", returnTo);
+      }
+      return NextResponse.redirect(loginUrl, 302);
     }
+  }
+
+  // Keep /signin outside locale prefixes to avoid auth redirect loops.
+  if (pathname === "/signin" || pathname.startsWith("/signin/")) {
+    return NextResponse.next();
   }
 
   // 2. Skip middleware for static files and internal paths
@@ -66,4 +87,3 @@ export const config = {
     "/((?!_next/static|_next/image|favicon.ico|sitemap.xml|robots.txt).*)",
   ],
 };
-

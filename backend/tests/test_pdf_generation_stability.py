@@ -102,28 +102,8 @@ def test_create_comprehensive_pdf_prefers_page_files_and_ignores_noise(
 
 
 @pytest.mark.asyncio
-async def test_generate_comprehensive_pdf_cleans_stale_pages_and_competitors(
-    tmp_path, monkeypatch
-):
-    reports_base = tmp_path / "reports"
-    reports_base.mkdir()
-    monkeypatch.setattr(
-        "app.services.pdf_service.settings.REPORTS_BASE_DIR", str(reports_base)
-    )
-
+async def test_generate_comprehensive_pdf_uploads_to_supabase(monkeypatch):
     audit_id = 42
-    reports_dir = reports_base / f"audit_{audit_id}"
-    pages_dir = reports_dir / "pages"
-    competitors_dir = reports_dir / "competitors"
-    pages_dir.mkdir(parents=True)
-    competitors_dir.mkdir(parents=True)
-
-    stale_page = pages_dir / "stale_old.json"
-    stale_comp = competitors_dir / "stale_old.json"
-    stale_pdf = reports_dir / "Reporte_Consolidado_stale.pdf"
-    stale_page.write_text("{}", encoding="utf-8")
-    stale_comp.write_text("{}", encoding="utf-8")
-    stale_pdf.write_bytes(b"%PDF-1.4 stale")
 
     def _fake_create_pdf(folder_path: str, metadata=None):
         output = Path(folder_path) / "Reporte_Consolidado_audit_42.pdf"
@@ -131,6 +111,13 @@ async def test_generate_comprehensive_pdf_cleans_stale_pages_and_competitors(
 
     monkeypatch.setattr(
         "app.services.pdf_service.create_comprehensive_pdf", _fake_create_pdf
+    )
+    monkeypatch.setattr(
+        "app.services.pdf_service.PDFService._upload_pdf_to_supabase",
+        lambda audit_id, pdf_file_path: (
+            f"supabase://audits/{audit_id}/report.pdf",
+            17,
+        ),
     )
 
     audit = SimpleNamespace(
@@ -148,12 +135,8 @@ async def test_generate_comprehensive_pdf_cleans_stale_pages_and_competitors(
         competitors=competitors,
     )
 
-    assert os.path.exists(pdf_path)
-    assert not stale_page.exists()
-    assert not stale_comp.exists()
-    assert not stale_pdf.exists()
-    assert (pages_dir / "page_1.json").exists()
-    assert (competitors_dir / "competitor_1.json").exists()
+    assert pdf_path == "supabase://audits/42/report.pdf"
+    assert getattr(audit, "_generated_pdf_size_bytes", None) == 17
 
 
 @pytest.mark.asyncio

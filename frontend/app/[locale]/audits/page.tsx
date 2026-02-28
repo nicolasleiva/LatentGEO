@@ -2,12 +2,12 @@
 
 import { useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { useUser } from "@auth0/nextjs-auth0/client";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Header } from "@/components/header";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { deleteAudit as deleteAuditApi, listAudits } from "@/lib/api-client";
+import { useRequireAppAuth } from "@/lib/app-auth";
 import { withLocale } from "@/lib/locale-routing";
 import {
   RefreshCw,
@@ -35,7 +35,8 @@ interface Audit {
 export default function AuditsListPage() {
   const router = useRouter();
   const pathname = usePathname();
-  const { user } = useUser();
+  const auth = useRequireAppAuth();
+  const user = auth.ready ? auth.supabase_user || auth.auth0_user : null;
   const queryClient = useQueryClient();
   const [filter, setFilter] = useState<
     "all" | "completed" | "running" | "pending" | "failed"
@@ -57,6 +58,17 @@ export default function AuditsListPage() {
       await queryClient.invalidateQueries({ queryKey: ["audits"] });
     },
   });
+
+  if (auth.loading || !auth.ready) {
+    return (
+      <div className="min-h-screen bg-background">
+        <Header />
+        <div className="flex items-center justify-center h-[60vh]">
+          <RefreshCw className="h-8 w-8 animate-spin text-muted-foreground" />
+        </div>
+      </div>
+    );
+  }
 
   const deleteAudit = async (auditId: number) => {
     const confirmed = window.confirm(
