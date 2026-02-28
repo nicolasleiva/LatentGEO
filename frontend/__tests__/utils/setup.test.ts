@@ -8,9 +8,9 @@ describe("Frontend Utilities", () => {
 
     it("should have proper API endpoints configured", () => {
       const endpoints = {
-        audits: "/api/audits",
-        analytics: "/api/analytics",
-        exports: "/api/exports",
+        audits: "/api/v1/audits",
+        analytics: "/api/v1/analytics",
+        exports: "/api/v1/exports",
       };
 
       expect(endpoints.audits).toBeTruthy();
@@ -60,4 +60,5 @@ describe("Frontend Utilities", () => {
     });
   });
 });
+
 

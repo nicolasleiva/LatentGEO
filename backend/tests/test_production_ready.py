@@ -115,7 +115,7 @@ class TestInputValidation:
 
 class TestWebhookEndpoints:
     def test_webhook_health(self, client):
-        response = client.get("/api/webhooks/health")
+        response = client.get("/api/v1/webhooks/health")
         assert response.status_code == 200
         assert response.json()["status"] == "healthy"
 
@@ -130,7 +130,7 @@ class TestWebhookEndpoints:
         with patch.object(settings, "GITHUB_WEBHOOK_SECRET", secret):
             signature = "sha256=" + WebhookService.generate_signature(body, secret)
             response = client.post(
-                "/api/webhooks/github/incoming",
+                "/api/v1/webhooks/github/incoming",
                 data=body,
                 headers={
                     "X-GitHub-Event": "ping",
@@ -166,3 +166,4 @@ class TestMiddlewareIntegration:
         response = client.get("/health")
         assert "X-Response-Time" in response.headers
         assert response.status_code == 200
+

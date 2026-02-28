@@ -32,12 +32,12 @@ def unauthenticated_client(db_session):
 
 def test_integration_endpoints_require_bearer_auth(unauthenticated_client):
     requests = [
-        ("get", "/api/github/auth-url", None),
-        ("get", "/api/github/connections", None),
-        ("post", "/api/github/callback", {"code": "x", "state": "y"}),
-        ("get", "/api/hubspot/auth-url", None),
-        ("get", "/api/hubspot/connections", None),
-        ("post", "/api/hubspot/callback", {"code": "x", "state": "y"}),
+        ("get", "/api/v1/github/auth-url", None),
+        ("get", "/api/v1/github/connections", None),
+        ("post", "/api/v1/github/callback", {"code": "x", "state": "y"}),
+        ("get", "/api/v1/hubspot/auth-url", None),
+        ("get", "/api/v1/hubspot/connections", None),
+        ("post", "/api/v1/hubspot/callback", {"code": "x", "state": "y"}),
     ]
     for method, path, payload in requests:
         if method == "get":
@@ -79,10 +79,10 @@ def test_github_cross_user_connection_is_forbidden(client, db_session):
     db_session.refresh(other_repo)
     other_repo_id = other_repo.id
 
-    repos_res = client.get(f"/api/github/repos/{other_connection.id}")
+    repos_res = client.get(f"/api/v1/github/repos/{other_connection.id}")
     assert repos_res.status_code == 403
 
-    prs_res = client.get(f"/api/github/prs/{other_repo_id}")
+    prs_res = client.get(f"/api/v1/github/prs/{other_repo_id}")
     assert prs_res.status_code == 403
 
 
@@ -109,10 +109,10 @@ def test_hubspot_cross_user_connection_is_forbidden(client, db_session):
     db_session.add(page)
     db_session.commit()
 
-    pages_res = client.get(f"/api/hubspot/pages/{other_connection.id}")
+    pages_res = client.get(f"/api/v1/hubspot/pages/{other_connection.id}")
     assert pages_res.status_code == 403
 
-    sync_res = client.post(f"/api/hubspot/sync/{other_connection.id}")
+    sync_res = client.post(f"/api/v1/hubspot/sync/{other_connection.id}")
     assert sync_res.status_code == 403
 
 
@@ -186,13 +186,13 @@ def test_oauth_state_validation_rejects_user_mismatch():
 
 
 def test_github_callback_rejects_missing_state(client):
-    response = client.post("/api/github/callback", json={"code": "dummy"})
+    response = client.post("/api/v1/github/callback", json={"code": "dummy"})
     assert response.status_code == 400
     assert "state" in response.json().get("detail", "").lower()
 
 
 def test_hubspot_callback_rejects_missing_state(client):
-    response = client.post("/api/hubspot/callback", json={"code": "dummy"})
+    response = client.post("/api/v1/hubspot/callback", json={"code": "dummy"})
     assert response.status_code == 400
     assert "state" in response.json().get("detail", "").lower()
 
@@ -260,3 +260,4 @@ def test_health_unhealthy_returns_503_when_db_fails_even_if_redis_fails(
 
     assert response.status_code == 503
     assert response.json()["status"] == "unhealthy"
+

@@ -60,7 +60,7 @@ export default function HubSpotApplyRecommendations({
   const fetchRecommendations = useCallback(async () => {
     try {
       const response = await fetchWithBackendAuth(
-        `${API_URL}/api/hubspot/recommendations/${auditId}`,
+        `${API_URL}/api/v1/hubspot/recommendations/${auditId}`,
       );
       const data = await response.json();
       setRecommendations(data.recommendations);
@@ -115,7 +115,7 @@ export default function HubSpotApplyRecommendations({
       );
 
       const response = await fetchWithBackendAuth(
-        `${API_URL}/api/hubspot/apply-recommendations`,
+        `${API_URL}/api/v1/hubspot/apply-recommendations`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -415,3 +415,4 @@ export default function HubSpotApplyRecommendations({
     </div>
   );
 }
+

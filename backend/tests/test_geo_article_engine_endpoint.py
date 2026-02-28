@@ -39,7 +39,7 @@ def test_article_engine_generate_returns_422_when_data_pack_incomplete(
     )
 
     response = client.post(
-        "/api/geo/article-engine/generate",
+        "/api/v1/geo/article-engine/generate",
         json={
             "audit_id": audit_id,
             "article_count": 1,
@@ -94,7 +94,7 @@ def test_article_engine_async_generate_and_status_endpoint(
     )
 
     response = client.post(
-        "/api/geo/article-engine/generate",
+        "/api/v1/geo/article-engine/generate",
         json={
             "audit_id": audit_id,
             "article_count": 2,
@@ -109,8 +109,9 @@ def test_article_engine_async_generate_and_status_endpoint(
     assert payload["status"] == "processing"
     assert payload["summary"]["task_id"] == "celery-task-123"
 
-    status_res = client.get(f"/api/geo/article-engine/status/{payload['batch_id']}")
+    status_res = client.get(f"/api/v1/geo/article-engine/status/{payload['batch_id']}")
     assert status_res.status_code == 200
     status_payload = status_res.json()
     assert status_payload["has_data"] is True
     assert status_payload["status"] == "processing"
+

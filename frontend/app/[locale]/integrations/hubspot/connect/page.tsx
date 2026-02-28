@@ -19,7 +19,7 @@ export default function HubSpotConnect() {
     setLoading(true);
     try {
       const response = await fetchWithBackendAuth(
-        `${API_URL}/api/hubspot/auth-url`,
+        `${API_URL}/api/v1/hubspot/auth-url`,
       );
       const data = await response.json();
       window.location.href = data.url;
@@ -66,3 +66,4 @@ export default function HubSpotConnect() {
     </div>
   );
 }
+

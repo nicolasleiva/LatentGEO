@@ -82,7 +82,7 @@ export function HubSpotIntegration({
   const fetchConnections = async () => {
     try {
       const res = await fetchWithBackendAuth(
-        `${backendUrl}/api/hubspot/connections`,
+        `${backendUrl}/api/v1/hubspot/connections`,
       );
       if (res.ok) {
         const data = await res.json();
@@ -101,7 +101,7 @@ export function HubSpotIntegration({
     setLoading(true);
     try {
       const res = await fetchWithBackendAuth(
-        `${backendUrl}/api/hubspot/pages/${connectionId}`,
+        `${backendUrl}/api/v1/hubspot/pages/${connectionId}`,
       );
       if (res.ok) {
         const data = await res.json();
@@ -120,7 +120,7 @@ export function HubSpotIntegration({
     setLoading(true);
     try {
       const res = await fetchWithBackendAuth(
-        `${backendUrl}/api/hubspot/recommendations/${auditId}`,
+        `${backendUrl}/api/v1/hubspot/recommendations/${auditId}`,
       );
       if (res.ok) {
         const data = await res.json();
@@ -159,7 +159,7 @@ export function HubSpotIntegration({
 
     try {
       const res = await fetchWithBackendAuth(
-        `${backendUrl}/api/hubspot/apply-recommendations`,
+        `${backendUrl}/api/v1/hubspot/apply-recommendations`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -209,7 +209,7 @@ export function HubSpotIntegration({
 
   const connectHubSpot = async () => {
     try {
-      const res = await fetchWithBackendAuth(`${backendUrl}/api/hubspot/auth-url`);
+      const res = await fetchWithBackendAuth(`${backendUrl}/api/v1/hubspot/auth-url`);
       const data = await res.json();
       if (!res.ok || !data?.url) {
         throw new Error(data?.detail || "Failed to get HubSpot auth URL");
@@ -415,3 +415,4 @@ export function HubSpotIntegration({
     </Card>
   );
 }
+

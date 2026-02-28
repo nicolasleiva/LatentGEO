@@ -64,7 +64,7 @@ export default function WebhooksOpsPage() {
               disabled={loading}
               onClick={() =>
                 run("GET /webhooks/events", async () => {
-                  const res = await fetch(`${API_URL}/api/webhooks/events`);
+                  const res = await fetch(`${API_URL}/api/v1/webhooks/events`);
                   const data = await res.json().catch(() => ({}));
                   if (!res.ok)
                     throw new Error(data?.detail || `HTTP ${res.status}`);
@@ -114,7 +114,7 @@ export default function WebhooksOpsPage() {
                   onClick={() =>
                     run("POST /webhooks/config", async () => {
                       const res = await fetch(
-                        `${API_URL}/api/webhooks/config`,
+                        `${API_URL}/api/v1/webhooks/config`,
                         {
                           method: "POST",
                           headers: { "Content-Type": "application/json" },
@@ -155,7 +155,7 @@ export default function WebhooksOpsPage() {
                   disabled={loading || !configUrl}
                   onClick={() =>
                     run("POST /webhooks/test", async () => {
-                      const res = await fetch(`${API_URL}/api/webhooks/test`, {
+                      const res = await fetch(`${API_URL}/api/v1/webhooks/test`, {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
                         body: JSON.stringify({
@@ -178,7 +178,7 @@ export default function WebhooksOpsPage() {
                   disabled={loading}
                   onClick={() =>
                     run("GET /webhooks/health", async () => {
-                      const res = await fetch(`${API_URL}/api/webhooks/health`);
+                      const res = await fetch(`${API_URL}/api/v1/webhooks/health`);
                       const data = await res.json().catch(() => ({}));
                       if (!res.ok)
                         throw new Error(data?.detail || `HTTP ${res.status}`);
@@ -206,3 +206,4 @@ export default function WebhooksOpsPage() {
     </div>
   );
 }
+

@@ -62,7 +62,7 @@ export default function ContentTemplates({
 
     try {
       const res = await fetchWithBackendAuth(
-        `${backendUrl}/api/geo/content-templates?category=${category}`,
+        `${backendUrl}/api/v1/geo/content-templates?category=${category}`,
       );
       if (!res.ok) throw new Error("Failed to fetch templates");
       const data = await res.json();
@@ -221,3 +221,4 @@ export default function ContentTemplates({
     </div>
   );
 }
+

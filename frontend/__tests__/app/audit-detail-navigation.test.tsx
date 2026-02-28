@@ -60,7 +60,7 @@ describe("Audit detail GEO tools navigation", () => {
       prefetch: mockPrefetch,
     });
     (fetchWithBackendAuth as jest.Mock).mockImplementation((url: string) => {
-      if (url.endsWith("/api/audits/6")) {
+      if (url.endsWith("/api/v1/audits/6")) {
         return Promise.resolve({
           ok: true,
           status: 200,
@@ -84,14 +84,14 @@ describe("Audit detail GEO tools navigation", () => {
           }),
         });
       }
-      if (url.endsWith("/api/audits/6/pages")) {
+      if (url.endsWith("/api/v1/audits/6/pages")) {
         return Promise.resolve({
           ok: true,
           status: 200,
           json: async () => [],
         });
       }
-      if (url.endsWith("/api/audits/6/competitors")) {
+      if (url.endsWith("/api/v1/audits/6/competitors")) {
         return Promise.resolve({
           ok: true,
           status: 200,
@@ -140,4 +140,5 @@ describe("Audit detail GEO tools navigation", () => {
     });
   });
 });
+
 

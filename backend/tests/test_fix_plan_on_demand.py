@@ -119,7 +119,7 @@ def test_audit_to_fixes_generates_fix_plan(client, db_session, monkeypatch):
 
     monkeypatch.setattr(AuditService, "ensure_fix_plan", fake_ensure_fix_plan)
 
-    response = client.get(f"/api/github/audit-to-fixes/{audit.id}")
+    response = client.get(f"/api/v1/github/audit-to-fixes/{audit.id}")
     assert response.status_code == 200
     payload = response.json()
     assert payload["total_fixes"] == 1
@@ -226,3 +226,4 @@ def test_get_fix_plan_missing_inputs_and_apply(db_session, monkeypatch, tmp_path
 
     fix_plan_path = os.path.join(str(tmp_path), f"audit_{audit.id}", "fix_plan.json")
     assert os.path.exists(fix_plan_path)
+

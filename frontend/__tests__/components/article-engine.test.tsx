@@ -96,7 +96,7 @@ describe("ArticleEngine component", () => {
 
     await waitFor(() => {
       expect(fetchWithBackendAuth).toHaveBeenCalledWith(
-        "http://localhost:8000/api/geo/article-engine/latest/3",
+        "http://localhost:8000/api/v1/geo/article-engine/latest/3",
       );
     });
 
@@ -111,4 +111,5 @@ describe("ArticleEngine component", () => {
     ).toBeInTheDocument();
   });
 });
+
 

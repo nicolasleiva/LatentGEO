@@ -77,7 +77,7 @@ describe("Commerce query analyzer", () => {
 
     await waitFor(() => {
       expect(fetchWithBackendAuth).toHaveBeenCalledWith(
-        "http://localhost:8000/api/geo/commerce-query/latest/3",
+        "http://localhost:8000/api/v1/geo/commerce-query/latest/3",
       );
     });
 
@@ -112,4 +112,5 @@ describe("Commerce query analyzer", () => {
     ).toBeInTheDocument();
   });
 });
+
 

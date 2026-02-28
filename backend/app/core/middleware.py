@@ -72,7 +72,6 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
     def _get_limit_for_path(self, path: str) -> Tuple[int, int]:
         """Get rate limit and window for specific path"""
-        path = self._normalize_api_path(path)
         # Check exact matches first
         if path in self.endpoint_limits:
             return self.endpoint_limits[path]
@@ -83,14 +82,6 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                 return limits
 
         return (self.default_limit, self.default_window)
-
-    @staticmethod
-    def _normalize_api_path(path: str) -> str:
-        if path == "/api/v1":
-            return "/api"
-        if path.startswith("/api/v1/"):
-            return "/api/" + path[len("/api/v1/") :]
-        return path
 
     def _check_rate_limit(
         self, client_key: str, path: str, current_time: float
@@ -120,10 +111,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
         # Skip rate limiting for health checks and SSE only
-        if (
-            request.url.path in ["/health", "/api/health", "/"]
-            or "/sse/" in request.url.path
-        ):
+        if request.url.path in ["/health", "/health/live", "/health/ready", "/"] or "/sse/" in request.url.path:
             return await call_next(request)
 
         # Skip for trusted IPs
@@ -137,23 +125,23 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         client_key = self._get_client_key(request)
 
         # Use more permissive rate limit only for polling-style audit GET endpoints.
-        path_for_limit = self._normalize_api_path(request.url.path)
+        path_for_limit = request.url.path
         is_polling_get = bool(
             request.method == "GET"
             and re.fullmatch(
-                r"/api/audits/\d+(?:/(?:pages|competitors|report|fix_plan|status))?",
+                r"/api/v1/audits/\d+(?:/(?:pages|competitors|report|fix_plan|status))?",
                 path_for_limit,
             )
         )
         if is_polling_get:
-            path_for_limit = "/api/audits"
+            path_for_limit = "/api/v1/audits"
         elif request.method == "POST" and path_for_limit.endswith("/generate-pdf"):
-            path_for_limit = "/api/audits/generate-pdf"
+            path_for_limit = "/api/v1/audits/generate-pdf"
         elif request.method == "POST" and (
             path_for_limit.endswith("/run-pagespeed")
             or path_for_limit.endswith("/pagespeed")
         ):
-            path_for_limit = "/api/audits/run-pagespeed"
+            path_for_limit = "/api/v1/audits/run-pagespeed"
 
         is_allowed, remaining, reset_time = self._check_rate_limit(
             client_key, path_for_limit, current_time
@@ -294,7 +282,7 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
         duration = time.time() - start_time
 
         # Log request (skip health checks)
-        if request.url.path not in ["/health", "/api/health"]:
+        if request.url.path not in {"/health", "/health/live", "/health/ready"}:
             logger.info(
                 f"{request.method} {request.url.path} "
                 f"- {response.status_code} "
@@ -321,18 +309,21 @@ def configure_security_middleware(app, settings, enable_rate_limiting: bool = Tr
     # Define endpoint-specific rate limits
     endpoint_limits = {
         # Auth endpoints - stricter limits to prevent brute force
-        "/api/auth": (10, 60),  # 10 requests per minute
+        "/api/v1/auth": (10, 60),  # 10 requests per minute
         # Audit creation - moderate limits (POST only)
-        "/api/audits": (600, 60),  # 600 requests per minute (10 per second) for polling
+        "/api/v1/audits": (
+            600,
+            60,
+        ),  # 600 requests per minute (10 per second) for polling
         # Heavy operations - stricter limits
-        "/api/audits/generate-pdf": (10, 60),  # 10 per minute
-        "/api/audits/run-pagespeed": (10, 60),  # 10 per minute
+        "/api/v1/audits/generate-pdf": (10, 60),  # 10 per minute
+        "/api/v1/audits/run-pagespeed": (10, 60),  # 10 per minute
         # Search endpoints - moderate limits
-        "/api/search": (30, 60),  # 30 per minute
+        "/api/v1/search": (30, 60),  # 30 per minute
         # Webhooks - unlimited (internal use)
-        "/api/webhooks": (1000, 60),  # Essentially unlimited
+        "/api/v1/webhooks": (1000, 60),  # Essentially unlimited
         # GitHub webhooks - high limit
-        "/api/github/webhook": (100, 60),  # 100 per minute
+        "/api/v1/github/webhook": (100, 60),  # 100 per minute
     }
 
     # Get trusted hosts from settings or default

@@ -215,6 +215,9 @@ class Settings(BaseSettings):
     APP_NAME: str = "Auditor"
     APP_VERSION: str = "1.0.0"
     DEBUG: bool = os.getenv("DEBUG", "False").lower() == "true"
+    LEGACY_API_REDIRECT_ENABLED: bool = (
+        os.getenv("LEGACY_API_REDIRECT_ENABLED", "False").lower() == "true"
+    )
     debug: Optional[str] = None
     secret_key: str = os.getenv("SECRET_KEY", "CHANGE_ME_IN_PRODUCTION")
     OAUTH_STATE_SECRET: Optional[str] = os.getenv("OAUTH_STATE_SECRET")

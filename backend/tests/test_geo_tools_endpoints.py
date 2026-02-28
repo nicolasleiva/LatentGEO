@@ -120,7 +120,7 @@ def test_generate_commerce_campaign_and_latest(client, db_session):
     audit_id = _seed_audit(db_session)
 
     response = client.post(
-        "/api/geo/commerce-campaign/generate",
+        "/api/v1/geo/commerce-campaign/generate",
         json={
             "audit_id": audit_id,
             "market": "US",
@@ -136,7 +136,7 @@ def test_generate_commerce_campaign_and_latest(client, db_session):
     assert payload["payload"]["kpis"]["primary_kpi"] == "Citation Share"
     assert len(payload["payload"]["opportunities"]) >= 3
 
-    latest = client.get(f"/api/geo/commerce-campaign/latest/{audit_id}")
+    latest = client.get(f"/api/v1/geo/commerce-campaign/latest/{audit_id}")
     assert latest.status_code == 200
     latest_json = latest.json()
     assert latest_json["has_data"] is True
@@ -239,7 +239,7 @@ def test_generate_article_engine_batch_and_latest(client, db_session, monkeypatc
     )
 
     response = client.post(
-        "/api/geo/article-engine/generate",
+        "/api/v1/geo/article-engine/generate",
         json={
             "audit_id": audit_id,
             "article_count": 2,
@@ -260,7 +260,7 @@ def test_generate_article_engine_batch_and_latest(client, db_session, monkeypatc
     assert body["articles"][0]["keyword_strategy"]["primary_keyword"]
     assert "competitor_gap_map" in body["articles"][0]
 
-    latest = client.get(f"/api/geo/article-engine/latest/{audit_id}")
+    latest = client.get(f"/api/v1/geo/article-engine/latest/{audit_id}")
     assert latest.status_code == 200
     latest_json = latest.json()
     assert latest_json["has_data"] is True
@@ -270,29 +270,30 @@ def test_generate_article_engine_batch_and_latest(client, db_session, monkeypatc
 def test_geo_legacy_endpoints_shapes(client, db_session):
     audit_id = _seed_audit(db_session)
 
-    citations = client.get(f"/api/geo/citations/{audit_id}?limit=10")
+    citations = client.get(f"/api/v1/geo/citations/{audit_id}?limit=10")
     assert citations.status_code == 200
     citations_json = citations.json()
     assert "citations" in citations_json
     assert isinstance(citations_json["citations"], list)
 
-    history = client.get(f"/api/geo/citation-history/{audit_id}")
+    history = client.get(f"/api/v1/geo/citation-history/{audit_id}")
     assert history.status_code == 200
     history_json = history.json()
     assert "history" in history_json
     assert isinstance(history_json["history"], list)
 
-    templates = client.get("/api/geo/content-templates?category=blog")
+    templates = client.get("/api/v1/geo/content-templates?category=blog")
     assert templates.status_code == 200
     templates_json = templates.json()
     assert "templates" in templates_json
     assert isinstance(templates_json["templates"], list)
 
     analyze = client.post(
-        "/api/geo/analyze-content",
+        "/api/v1/geo/analyze-content",
         json={"content": "## FAQ\nHow to cite sources?\nUse trusted references."},
     )
     assert analyze.status_code == 200
     analyze_json = analyze.json()
     assert "score" in analyze_json
     assert "geo_readiness" in analyze_json
+

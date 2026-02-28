@@ -24,3 +24,4 @@ API_URL=http://backend:8000
 
 # Backend runtime policy (set in root .env)
 # AUDIT_LOCAL_ARTIFACTS_ENABLED=false
+# LEGACY_API_REDIRECT_ENABLED=false
