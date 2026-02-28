@@ -1,8 +1,8 @@
 export const DEFAULT_LOCALE = "en" as const;
-export const ACTIVE_LOCALES = [DEFAULT_LOCALE] as const;
-export const LEGACY_LOCALES = ["es"] as const;
+const ACTIVE_LOCALES = [DEFAULT_LOCALE] as const;
+const LEGACY_LOCALES = ["es"] as const;
 
-export type AppLocale = (typeof ACTIVE_LOCALES)[number];
+type AppLocale = (typeof ACTIVE_LOCALES)[number];
 
 const knownLocales = new Set<string>([...ACTIVE_LOCALES, ...LEGACY_LOCALES]);
 
@@ -22,4 +22,3 @@ export function resolveLocale(locale?: string | null): AppLocale {
   if (isActiveLocale(locale)) return locale;
   return DEFAULT_LOCALE;
 }
-

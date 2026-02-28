@@ -8,7 +8,7 @@ type ExternalIntelligencePayload = {
   warning_message?: string | null;
 };
 
-export type ExternalIntelligenceBanner =
+type ExternalIntelligenceBanner =
   | {
       severity: BannerSeverity;
       code: string;

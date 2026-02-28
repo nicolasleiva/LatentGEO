@@ -187,7 +187,7 @@ export const getBackendAccessToken = async (
   }
 };
 
-export const clearBackendTokenCache = () => {
+const clearBackendTokenCache = () => {
   auth0AccessTokenCache = null;
 };
 

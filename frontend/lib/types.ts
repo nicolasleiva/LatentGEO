@@ -59,7 +59,7 @@ export interface Issue {
   fixPlan?: FixStep[];
 }
 
-export interface FixStep {
+interface FixStep {
   step: number;
   action: string;
   code?: string;
@@ -77,7 +77,7 @@ export interface CompetitorData {
   };
 }
 
-export interface ConversationMessage {
+interface ConversationMessage {
   id: string;
   role: "user" | "assistant";
   content: string;
@@ -137,7 +137,7 @@ export interface AIContentSuggestion {
   created_at: string;
 }
 
-export interface ReportItem {
+interface ReportItem {
   id: number;
   audit_id: number;
   report_type?: string;
@@ -145,19 +145,19 @@ export interface ReportItem {
   created_at?: string;
 }
 
-export interface WebhookEventDescriptor {
+interface WebhookEventDescriptor {
   event: string;
   description: string;
 }
 
-export interface WebhookTestResponse {
+interface WebhookTestResponse {
   success: boolean;
   status_code?: number;
   response_time_ms?: number;
   error?: string;
 }
 
-export interface GitHubConnection {
+interface GitHubConnection {
   id: string;
   provider?: string;
   account_login?: string;
@@ -165,7 +165,7 @@ export interface GitHubConnection {
   is_active?: boolean;
 }
 
-export interface GitHubRepository {
+interface GitHubRepository {
   id: string;
   connection_id: string;
   name?: string;
@@ -175,7 +175,7 @@ export interface GitHubRepository {
   is_active?: boolean;
 }
 
-export interface GitHubPullRequest {
+interface GitHubPullRequest {
   id?: string;
   pr_number: number;
   title?: string;
@@ -208,7 +208,7 @@ export interface FixInputsResponse {
   missing_required: number;
 }
 
-export interface FixInputsSubmit {
+interface FixInputsSubmit {
   inputs: Array<{
     id: string;
     issue_code: string;
@@ -217,12 +217,12 @@ export interface FixInputsSubmit {
   }>;
 }
 
-export interface FixInputChatMessage {
+interface FixInputChatMessage {
   role: "user" | "assistant";
   content: string;
 }
 
-export interface FixInputChatRequest {
+interface FixInputChatRequest {
   issue_code: string;
   field_key: string;
   field_label?: string;

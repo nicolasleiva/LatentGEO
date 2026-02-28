@@ -3,11 +3,11 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 
-export const SIGNIN_PATH = "/auth/login";
+const SIGNIN_PATH = "/auth/login";
 const REAUTH_REDIRECT_STORAGE_KEY = "reauth_redirect_at";
 const REAUTH_REDIRECT_COOLDOWN_MS = 5_000;
 
-export type Auth0UserSummary = {
+type Auth0UserSummary = {
   sub?: string;
   email?: string;
   name?: string;
@@ -19,7 +19,7 @@ type Auth0StatusResponse = {
   user: Auth0UserSummary | null;
 };
 
-export type AppAuthState = {
+type AppAuthState = {
   loading: boolean;
   // Legacy alias kept to avoid broad UI churn after dual-auth removal.
   supabase_ok: boolean;
@@ -61,7 +61,7 @@ const canTriggerReauthRedirect = () => {
   return true;
 };
 
-export const buildAuth0LoginUrl = (returnTo?: string): string => {
+const buildAuth0LoginUrl = (returnTo?: string): string => {
   const rt = safeReturnTo(returnTo);
   return `/auth/login?returnTo=${encodeURIComponent(rt)}`;
 };
