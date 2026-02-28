@@ -93,7 +93,7 @@ export default function CompetitorAnalysis({
 
         <div className="space-y-3 mb-4">
           {competitors.map((comp, idx) => (
-            <div key={idx} className="flex gap-2">
+            <div key={`competitor-input-${comp}`} className="flex gap-2">
               <Input
                 placeholder={`Competitor ${idx + 1} (URL or name)`}
                 value={comp}
@@ -176,9 +176,9 @@ export default function CompetitorAnalysis({
               <h3 className="font-semibold text-foreground">
                 Competitor Analysis
               </h3>
-              {results.competitors.map((comp, idx) => (
+              {results.competitors.map((comp) => (
                 <div
-                  key={idx}
+                  key={`${comp.name}-${comp.citations}-${comp.citation_rate}`}
                   className="bg-muted/30 border border-border rounded-xl p-6"
                 >
                   <div className="flex justify-between items-start mb-4">
@@ -267,9 +267,9 @@ export default function CompetitorAnalysis({
                     Gaps to Address
                   </h3>
                   <ul className="space-y-2">
-                    {results.gaps.map((gap, idx) => (
+                    {results.gaps.map((gap) => (
                       <li
-                        key={idx}
+                        key={gap}
                         className="text-muted-foreground text-sm flex items-start gap-2"
                       >
                         <span className="text-red-400">•</span> {gap}
@@ -285,9 +285,9 @@ export default function CompetitorAnalysis({
                     Opportunities
                   </h3>
                   <ul className="space-y-2">
-                    {results.opportunities.map((opp, idx) => (
+                    {results.opportunities.map((opp) => (
                       <li
-                        key={idx}
+                        key={opp}
                         className="text-muted-foreground text-sm flex items-start gap-2"
                       >
                         <CheckCircle className="w-4 h-4 text-green-400 mt-0.5" />

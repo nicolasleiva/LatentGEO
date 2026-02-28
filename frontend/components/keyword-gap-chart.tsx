@@ -9,7 +9,7 @@ import {
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
-} from "recharts";
+} from "@/components/recharts-dynamic";
 
 interface KeywordGapProps {
   data: {
@@ -106,9 +106,9 @@ export function KeywordGapChart({ data }: KeywordGapProps) {
           Top Opportunities
         </h3>
         <div className="space-y-2 flex-1 overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-border scrollbar-track-transparent">
-          {gap_analysis.opportunities.slice(0, 15).map((opp, i) => (
+          {gap_analysis.opportunities.slice(0, 15).map((opp) => (
             <div
-              key={i}
+              key={opp.keyword}
               className="flex items-center justify-between p-3 glass-panel rounded-xl border border-border hover:bg-muted/50 transition-colors group"
             >
               <span className="font-medium text-foreground/80 group-hover:text-foreground transition-colors">
@@ -127,3 +127,4 @@ export function KeywordGapChart({ data }: KeywordGapProps) {
     </div>
   );
 }
+

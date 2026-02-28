@@ -25,8 +25,7 @@ const steps = [
 
 export function AuditChatFlow({ auditId, onComplete }: AuditChatFlowProps) {
   const [messages, setMessages] = useState<Message[]>([]);
-  const [input, setInput] = useState("");
-  const [isTyping, setIsTyping] = useState(false);
+  const [chatUi, setChatUi] = useState({ input: "", isTyping: false });
   const [config, setConfig] = useState({
     competitors: [] as string[],
     market: "",
@@ -59,7 +58,7 @@ export function AuditChatFlow({ auditId, onComplete }: AuditChatFlowProps) {
   }, [messages]);
 
   const sendAIMessage = (content: string) => {
-    setIsTyping(true);
+    setChatUi((prev) => ({ ...prev, isTyping: true }));
     setMessages((prev) => [
       ...prev,
       { role: "assistant", content, typing: true },
@@ -74,16 +73,16 @@ export function AuditChatFlow({ auditId, onComplete }: AuditChatFlowProps) {
         }
         return newMessages;
       });
-      setIsTyping(false);
+      setChatUi((prev) => ({ ...prev, isTyping: false }));
     }, 300);
   };
 
   const handleSend = async () => {
-    if (!input.trim() || isTyping) return;
+    if (!chatUi.input.trim() || chatUi.isTyping) return;
 
-    const userMessage = input.trim();
+    const userMessage = chatUi.input.trim();
     setMessages((prev) => [...prev, { role: "user", content: userMessage }]);
-    setInput("");
+    setChatUi((prev) => ({ ...prev, input: "" }));
 
     if (step === "competitors") {
       if (
@@ -240,9 +239,9 @@ export function AuditChatFlow({ auditId, onComplete }: AuditChatFlowProps) {
           ref={messagesContainerRef}
           className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-4"
         >
-          {messages.map((msg, idx) => (
+          {messages.map((msg) => (
             <div
-              key={idx}
+              key={`${msg.role}-${msg.content}`}
               className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
             >
               <div
@@ -265,16 +264,18 @@ export function AuditChatFlow({ auditId, onComplete }: AuditChatFlowProps) {
           <div className="border-t border-border/70 p-4 sm:p-5">
             <div className="flex gap-2">
               <Input
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
+                value={chatUi.input}
+                onChange={(e) =>
+                  setChatUi((prev) => ({ ...prev, input: e.target.value }))
+                }
                 onKeyDown={(e) => e.key === "Enter" && handleSend()}
                 placeholder="Type your response..."
-                disabled={isTyping}
+                disabled={chatUi.isTyping}
                 className="flex-1 bg-background min-h-[44px]"
               />
               <button
                 onClick={handleSend}
-                disabled={isTyping || !input.trim()}
+                disabled={chatUi.isTyping || !chatUi.input.trim()}
                 className="px-4 py-2 min-w-[48px] bg-brand text-brand-foreground rounded-lg hover:bg-brand/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
                 <Send className="h-4 w-4" />

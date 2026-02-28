@@ -104,9 +104,9 @@ export default function QueryDiscovery({
           <p className="text-muted-foreground mb-4">
             Found {results.length} opportunities:
           </p>
-          {results.map((opp, idx) => (
+          {results.map((opp) => (
             <div
-              key={idx}
+              key={opp.query}
               className="bg-muted/30 border border-border rounded-xl p-6"
             >
               <div className="flex justify-between items-start mb-3">
