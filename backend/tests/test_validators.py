@@ -86,8 +86,9 @@ class TestAPIKeyInputValidator:
 
     def test_valid_api_key(self):
         """Test that valid API keys are accepted"""
-        input_data = APIKeyInput(api_key="REDACTED_OPENAI_API_KEY")
-        assert input_data.api_key == "REDACTED_OPENAI_API_KEY"
+        safe_test_key = "demo_api_token_1234567890"
+        input_data = APIKeyInput(api_key=safe_test_key)
+        assert input_data.api_key == safe_test_key
 
     def test_key_too_short(self):
         """Test that short keys are rejected"""
