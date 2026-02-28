@@ -1,6 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Loader2, Lock } from "lucide-react";
@@ -38,9 +39,9 @@ export function AdminGate({
             Sign in to access this section.
           </div>
           <div className="mt-6">
-            <a href="/auth/login">
+            <Link href="/auth/login">
               <Button>Sign in</Button>
-            </a>
+            </Link>
           </div>
         </Card>
       </div>

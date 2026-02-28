@@ -1258,10 +1258,13 @@ export default function AuditDetailPage() {
                           Page Screenshots
                         </h3>
                         <div className="grid grid-cols-3 md:grid-cols-6 gap-2">
-                          {psData.screenshots.map(
-                            (screenshot: any, idx: number) => (
+                          {psData.screenshots.map((screenshot: any) => (
                               <div
-                                key={idx}
+                                key={
+                                  screenshot.timestamp ??
+                                  screenshot.data ??
+                                  JSON.stringify(screenshot)
+                                }
                                 className="rounded-lg border border-border overflow-hidden bg-muted/50"
                               >
                                 <div className="text-[10px] text-muted-foreground p-1 text-center">
@@ -1273,13 +1276,13 @@ export default function AuditDetailPage() {
                                       src={screenshot.data}
                                       alt={`Screenshot at ${screenshot.timestamp}ms`}
                                       fill
+                                      sizes="160px"
                                       className="object-cover object-top"
                                     />
                                   </div>
                                 )}
                               </div>
-                            ),
-                          )}
+                            ))}
                         </div>
                       </div>
                     )}
@@ -1354,10 +1357,13 @@ export default function AuditDetailPage() {
                                             <div className="space-y-1">
                                               {audit.details.items
                                                 .slice(0, 3)
-                                                .map(
-                                                  (item: any, idx: number) => (
+                                                .map((item: any) => (
                                                     <div
-                                                      key={idx}
+                                                      key={
+                                                        item.url ??
+                                                        item.source ??
+                                                        JSON.stringify(item)
+                                                      }
                                                       className="text-xs"
                                                     >
                                                       •{" "}
@@ -1367,8 +1373,7 @@ export default function AuditDetailPage() {
                                                           item,
                                                         ).substring(0, 100)}
                                                     </div>
-                                                  ),
-                                                )}
+                                                  ))}
                                               {audit.details.items.length >
                                                 3 && (
                                                 <div className="text-xs">
@@ -1730,9 +1735,9 @@ export default function AuditDetailPage() {
 
                         {issues.length > 0 && (
                           <div className="space-y-2">
-                            {issues.map((issue, idx) => (
+                            {issues.map((issue) => (
                               <div
-                                key={idx}
+                                key={`${issue.severity}-${issue.msg}`}
                                 className={`text-sm p-3 rounded-xl border flex items-center gap-2 ${
                                   issue.severity === "critical"
                                     ? "bg-red-500/10 text-red-600 border-red-500/20"
@@ -1888,7 +1893,7 @@ export default function AuditDetailPage() {
                             /10
                           </td>
                         </tr>
-                        {competitors.map((comp: any, idx: number) => {
+                        {competitors.map((comp: any) => {
                           const domain =
                             safeHostname(comp.url) ||
                             comp.domain ||
@@ -1899,7 +1904,7 @@ export default function AuditDetailPage() {
                               : 0;
                           return (
                             <tr
-                              key={idx}
+                              key={comp.url ?? comp.domain ?? JSON.stringify(comp)}
                               className="hover:bg-muted/20 transition-colors"
                             >
                               <td className="p-4 text-muted-foreground">
@@ -2015,7 +2020,7 @@ export default function AuditDetailPage() {
                 <div className="space-y-3">
                   {fixPlan.map((item: any, idx: number) => (
                     <div
-                      key={idx}
+                      key={item?.title ?? item?.issue ?? JSON.stringify(item)}
                       className="bg-muted/40 border border-border rounded-xl p-4"
                     >
                       <div className="flex items-start justify-between gap-4">

@@ -289,6 +289,14 @@ export default function AnalyticsPage() {
                   onClick={() =>
                     router.push(withLocale(pathname, `/audits/${audit.id}`))
                   }
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      router.push(withLocale(pathname, `/audits/${audit.id}`));
+                    }
+                  }}
+                  role="button"
+                  tabIndex={0}
                 >
                   <div className="flex-1">
                     <div className="flex items-center gap-3 mb-1">

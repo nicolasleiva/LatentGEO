@@ -466,8 +466,11 @@ export default function HomePage() {
 
           {loading ? (
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              {[1, 2, 3].map((i) => (
-                <div key={i} className="glass-card h-48 animate-pulse" />
+              {[1, 2, 3].map((skeletonId) => (
+                <div
+                  key={`recent-audit-skeleton-${skeletonId}`}
+                  className="glass-card h-48 animate-pulse"
+                />
               ))}
             </div>
           ) : audits.length === 0 ? (
@@ -488,6 +491,14 @@ export default function HomePage() {
                   onClick={() =>
                     router.push(localePath(`/audits/${audit.id}`))
                   }
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      router.push(localePath(`/audits/${audit.id}`));
+                    }
+                  }}
+                  role="button"
+                  tabIndex={0}
                   className="p-6 glass-card cursor-pointer group hover:-translate-y-1"
                 >
                   <div className="flex items-center justify-between mb-4">

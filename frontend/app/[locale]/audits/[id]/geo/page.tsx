@@ -5,7 +5,6 @@ import {
   useParams,
   usePathname,
   useRouter,
-  useSearchParams,
 } from "next/navigation";
 import Link from "next/link";
 import dynamic from "next/dynamic";
@@ -165,26 +164,33 @@ export default function GEODashboardPage() {
   const params = useParams();
   const router = useRouter();
   const pathname = usePathname();
-  const searchParams = useSearchParams();
   const auditId = params.id as string;
   const auditDetailHref = withLocale(pathname, `/audits/${auditId}`);
 
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState<GEODashboardData | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState(() =>
-    getSafeTab(searchParams.get("tab")),
-  );
+  const [activeTab, setActiveTab] = useState(DEFAULT_TAB);
   const hasPreloaded = useRef(false);
   const requestIdRef = useRef(0);
 
   const backendUrl = API_URL;
 
-  // A) Sync active tab with URL param.
+  // A) Sync active tab with URL param on load and browser navigation.
   useEffect(() => {
-    const nextTab = getSafeTab(searchParams.get("tab"));
-    setActiveTab((prev) => (prev === nextTab ? prev : nextTab));
-  }, [searchParams]);
+    if (typeof window === "undefined") return;
+
+    const syncTabFromUrl = () => {
+      const nextTab = getSafeTab(
+        new URLSearchParams(window.location.search).get("tab"),
+      );
+      setActiveTab((prev) => (prev === nextTab ? prev : nextTab));
+    };
+
+    syncTabFromUrl();
+    window.addEventListener("popstate", syncTabFromUrl);
+    return () => window.removeEventListener("popstate", syncTabFromUrl);
+  }, []);
 
   // Pre-load components after initial render for instant tab switching
   useEffect(() => {
@@ -290,7 +296,9 @@ export default function GEODashboardPage() {
     const safeTab = TAB_SET.has(nextTab) ? nextTab : DEFAULT_TAB;
     setActiveTab(safeTab);
 
-    const params = new URLSearchParams(searchParams.toString());
+    const params = new URLSearchParams(
+      typeof window === "undefined" ? "" : window.location.search,
+    );
     params.set("tab", safeTab);
     router.replace(`${pathname}?${params.toString()}`, { scroll: false });
   };
@@ -536,7 +544,7 @@ export default function GEODashboardPage() {
                 <div className="grid gap-4">
                   {opportunities.map((opp, idx) => (
                     <div
-                      key={idx}
+                      key={`${opp.query}-${opp.intent}`}
                       className="group bg-muted/30 hover:bg-muted/50 border border-border rounded-2xl p-6 transition-all duration-300"
                     >
                       <div className="flex justify-between items-start mb-3">
