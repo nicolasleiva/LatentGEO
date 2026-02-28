@@ -1,10 +1,10 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { useUser } from "@auth0/nextjs-auth0/client";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Loader2, Lock } from "lucide-react";
+import { useRequireAppAuth } from "@/lib/app-auth";
 
 export function AdminGate({
   children,
@@ -13,9 +13,9 @@ export function AdminGate({
   children: ReactNode;
   title?: string;
 }) {
-  const { user, isLoading } = useUser();
+  const auth = useRequireAppAuth();
 
-  if (isLoading) {
+  if (auth.loading) {
     return (
       <div className="max-w-4xl mx-auto px-6 py-12">
         <Card className="glass-card p-10 text-center">
@@ -26,7 +26,7 @@ export function AdminGate({
     );
   }
 
-  if (!user) {
+  if (!auth.ready) {
     return (
       <div className="max-w-4xl mx-auto px-6 py-12">
         <Card className="glass-card p-10 text-center">

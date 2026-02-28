@@ -7,7 +7,11 @@ import asyncio
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
+from ...core.access_control import ensure_audit_access
+from ...core.auth import get_user_from_bearer_token
+from ...core.database import SessionLocal
 from ...core.logger import get_logger
+from ...services.audit_service import AuditService
 
 logger = get_logger(__name__)
 
@@ -44,8 +48,36 @@ class ConnectionManager:
 manager = ConnectionManager()
 
 
+def _extract_ws_bearer_token(websocket: WebSocket) -> str | None:
+    authorization = websocket.headers.get("authorization", "")
+    if authorization.lower().startswith("bearer "):
+        return authorization.split(" ", 1)[1].strip()
+
+    token = websocket.query_params.get("access_token", "").strip()
+    return token or None
+
+
 @router.websocket("/ws/progress/{audit_id}")
 async def websocket_endpoint(websocket: WebSocket, audit_id: int):
+    token = _extract_ws_bearer_token(websocket)
+    if not token:
+        await websocket.accept()
+        await websocket.close(code=4401)
+        return
+
+    try:
+        current_user = get_user_from_bearer_token(token)
+        db = SessionLocal()
+        try:
+            audit = AuditService.get_audit(db, audit_id)
+            ensure_audit_access(audit, current_user)
+        finally:
+            db.close()
+    except Exception:
+        await websocket.accept()
+        await websocket.close(code=4403)
+        return
+
     await manager.connect(websocket, audit_id)
 
     # Level 3: Redis Listener for the specific audit

@@ -49,6 +49,13 @@ class Settings(BaseSettings):
     SQLALCHEMY_ECHO: bool = False
     DB_RETRIES: int = 5
     DB_RETRY_DELAY: int = 2
+    DB_POOL_SIZE: int = int(os.getenv("DB_POOL_SIZE", "5"))
+    DB_MAX_OVERFLOW: int = int(os.getenv("DB_MAX_OVERFLOW", "5"))
+    DB_POOL_TIMEOUT: int = int(os.getenv("DB_POOL_TIMEOUT", "15"))
+    DB_POOL_RECYCLE: int = int(os.getenv("DB_POOL_RECYCLE", "900"))
+    DB_CONNECT_TIMEOUT_SECONDS: int = int(
+        os.getenv("DB_CONNECT_TIMEOUT_SECONDS", "5")
+    )
 
     # APIs externas
     GOOGLE_API_KEY: Optional[str] = None
@@ -172,6 +179,9 @@ class Settings(BaseSettings):
     # Directorios
     REPORTS_DIR: str = "reports"
     REPORTS_BASE_DIR: str = "reports"
+    AUDIT_LOCAL_ARTIFACTS_ENABLED: bool = (
+        os.getenv("AUDIT_LOCAL_ARTIFACTS_ENABLED", "False").lower() == "true"
+    )
 
     # Configuración de auditoría
     MAX_CRAWL_PAGES: int = int(os.getenv("MAX_CRAWL_PAGES", "50"))
@@ -209,6 +219,17 @@ class Settings(BaseSettings):
     secret_key: str = os.getenv("SECRET_KEY", "CHANGE_ME_IN_PRODUCTION")
     OAUTH_STATE_SECRET: Optional[str] = os.getenv("OAUTH_STATE_SECRET")
     OAUTH_STATE_TTL_SECONDS: int = int(os.getenv("OAUTH_STATE_TTL_SECONDS", "600"))
+    AUTH0_DOMAIN: Optional[str] = os.getenv("AUTH0_DOMAIN")
+    AUTH0_ISSUER_BASE_URL: Optional[str] = os.getenv("AUTH0_ISSUER_BASE_URL")
+    AUTH0_API_AUDIENCE: Optional[str] = os.getenv("AUTH0_API_AUDIENCE")
+    AUTH0_API_SCOPES: str = os.getenv("AUTH0_API_SCOPES", "read:app")
+    AUTH0_EXPECTED_CLIENT_ID: Optional[str] = os.getenv("AUTH0_EXPECTED_CLIENT_ID")
+    AUTH0_JWKS_CACHE_TTL_SECONDS: int = int(
+        os.getenv("AUTH0_JWKS_CACHE_TTL_SECONDS", "21600")
+    )
+    AUTH0_JWKS_FETCH_TIMEOUT_MS: int = int(
+        os.getenv("AUTH0_JWKS_FETCH_TIMEOUT_MS", "2000")
+    )
     cors_origins: Optional[str] = None
     CORS_ORIGINS: list[str] = []
 
@@ -244,6 +265,16 @@ class Settings(BaseSettings):
     RATE_LIMIT_DEFAULT: int = 100  # requests per minute
     RATE_LIMIT_AUTH: int = 10  # auth endpoints per minute
     RATE_LIMIT_HEAVY: int = 5  # heavy operations per minute
+
+    # ===== SUPABASE INTEGRATION =====
+    SUPABASE_URL: Optional[str] = os.getenv("SUPABASE_URL")
+    SUPABASE_KEY: Optional[str] = os.getenv("SUPABASE_KEY")  # Anon/Public key
+    SUPABASE_SERVICE_ROLE_KEY: Optional[str] = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+    SUPABASE_JWT_SECRET: Optional[str] = os.getenv("SUPABASE_JWT_SECRET")
+    SUPABASE_STORAGE_BUCKET: str = os.getenv("SUPABASE_STORAGE_BUCKET", "audit-reports")
+    SUPABASE_TIMEOUT_SECONDS: float = float(
+        os.getenv("SUPABASE_TIMEOUT_SECONDS", "30")
+    )
 
     # ===== WEBHOOK SETTINGS =====
     SENTRY_DSN: Optional[str] = os.getenv("SENTRY_DSN")
@@ -316,7 +347,17 @@ def validate_environment():
     errors = []
 
     is_production = settings.ENVIRONMENT.lower() == "production"
-    strict = settings.STRICT_CONFIG or is_production
+    is_non_dev = settings.ENVIRONMENT.lower() not in {
+        "development",
+        "dev",
+        "local",
+        "test",
+    }
+    strict = (
+        settings.STRICT_CONFIG
+        or is_production
+        or not settings.AUDIT_LOCAL_ARTIFACTS_ENABLED
+    )
 
     def require(value, name):
         if not value:
@@ -334,6 +375,20 @@ def validate_environment():
     require(settings.DATABASE_URL, "DATABASE_URL")
     if is_production and settings.DATABASE_URL and "sqlite" in settings.DATABASE_URL:
         errors.append("DATABASE_URL cannot be sqlite in production.")
+    if is_non_dev and settings.DATABASE_URL and "supabase" not in settings.DATABASE_URL:
+        errors.append("DATABASE_URL must point to Supabase in non-dev environments.")
+    if (
+        not settings.AUDIT_LOCAL_ARTIFACTS_ENABLED
+        and settings.DATABASE_URL
+        and "supabase" not in settings.DATABASE_URL.lower()
+    ):
+        errors.append(
+            "DATABASE_URL must point to Supabase when AUDIT_LOCAL_ARTIFACTS_ENABLED=false."
+        )
+    if not settings.AUDIT_LOCAL_ARTIFACTS_ENABLED:
+        require(settings.SUPABASE_URL, "SUPABASE_URL")
+        require(settings.SUPABASE_SERVICE_ROLE_KEY, "SUPABASE_SERVICE_ROLE_KEY")
+        require(settings.SUPABASE_STORAGE_BUCKET, "SUPABASE_STORAGE_BUCKET")
 
     # 2. Redis/Celery
     if not settings.REDIS_URL:
@@ -387,6 +442,31 @@ def validate_environment():
         settings.ENCRYPTION_KEY == "CHANGE_ME_IN_PRODUCTION"
     ):
         errors.append("INSECURE: Define real ENCRYPTION_KEY for integration tokens!")
+
+    # 6. Auth0 API token validation requirements outside development-like environments
+    if is_non_dev:
+        require(settings.AUTH0_API_AUDIENCE, "AUTH0_API_AUDIENCE")
+        if not (settings.AUTH0_ISSUER_BASE_URL or settings.AUTH0_DOMAIN):
+            errors.append("AUTH0_ISSUER_BASE_URL or AUTH0_DOMAIN is missing!")
+
+    if strict:
+        require(settings.AUTH0_API_AUDIENCE, "AUTH0_API_AUDIENCE")
+        if not (settings.AUTH0_ISSUER_BASE_URL or settings.AUTH0_DOMAIN):
+            errors.append("AUTH0_ISSUER_BASE_URL or AUTH0_DOMAIN is missing!")
+        if settings.AUTH0_JWKS_FETCH_TIMEOUT_MS <= 0:
+            errors.append("AUTH0_JWKS_FETCH_TIMEOUT_MS must be > 0.")
+        if settings.AUTH0_JWKS_CACHE_TTL_SECONDS <= 0:
+            errors.append("AUTH0_JWKS_CACHE_TTL_SECONDS must be > 0.")
+        if settings.DB_POOL_SIZE <= 0:
+            errors.append("DB_POOL_SIZE must be > 0.")
+        if settings.DB_MAX_OVERFLOW < 0:
+            errors.append("DB_MAX_OVERFLOW must be >= 0.")
+        if settings.DB_POOL_TIMEOUT <= 0:
+            errors.append("DB_POOL_TIMEOUT must be > 0.")
+        if settings.DB_POOL_RECYCLE <= 0:
+            errors.append("DB_POOL_RECYCLE must be > 0.")
+        if settings.DB_CONNECT_TIMEOUT_SECONDS <= 0:
+            errors.append("DB_CONNECT_TIMEOUT_SECONDS must be > 0.")
 
     # AI Keys
     if not any(

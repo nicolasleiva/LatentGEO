@@ -17,6 +17,7 @@ router = APIRouter(tags=["health"])
 
 
 @router.get("/health")
+@router.get("/api/health", include_in_schema=False)
 async def health_check(db: Session = Depends(get_db)):
     """
     Health check endpoint para load balancers.
@@ -51,6 +52,7 @@ async def health_check(db: Session = Depends(get_db)):
 
 
 @router.get("/health/ready")
+@router.get("/api/health/ready", include_in_schema=False)
 async def readiness_check(db: Session = Depends(get_db)):
     """
     Readiness check - verifica si la app puede recibir tráfico.
@@ -66,6 +68,7 @@ async def readiness_check(db: Session = Depends(get_db)):
 
 
 @router.get("/health/live")
+@router.get("/api/health/live", include_in_schema=False)
 async def liveness_check():
     """
     Liveness check - verifica si la app está viva (no colgada).

@@ -12,6 +12,7 @@ from app.services.audit_service import AuditService
 @pytest.mark.asyncio
 async def test_save_audit_files_persists_sanitized_fix_plan_once(tmp_path, monkeypatch, caplog):
     monkeypatch.setattr(settings, "REPORTS_DIR", str(tmp_path), raising=False)
+    monkeypatch.setattr(settings, "AUDIT_LOCAL_ARTIFACTS_ENABLED", True, raising=False)
     caplog.set_level("ERROR")
 
     class NonSerializable:
@@ -48,6 +49,7 @@ def test_safe_fs_name_removes_windows_invalid_chars():
 
 def test_save_page_audit_creates_windows_safe_file(db_session, tmp_path, monkeypatch):
     monkeypatch.setattr(settings, "REPORTS_DIR", str(tmp_path), raising=False)
+    monkeypatch.setattr(settings, "AUDIT_LOCAL_ARTIFACTS_ENABLED", True, raising=False)
 
     audit = Audit(
         url="https://example.com",
@@ -75,3 +77,27 @@ def test_save_page_audit_creates_windows_safe_file(db_session, tmp_path, monkeyp
     for file_path in files:
         assert not re.search(r'[<>:"/\\|?*]', file_path.name)
         assert os.path.exists(file_path)
+
+
+@pytest.mark.asyncio
+async def test_save_audit_files_skips_disk_when_local_artifacts_disabled(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setattr(settings, "REPORTS_DIR", str(tmp_path), raising=False)
+    monkeypatch.setattr(settings, "AUDIT_LOCAL_ARTIFACTS_ENABLED", False, raising=False)
+
+    await AuditService._save_audit_files(
+        audit_id=88,
+        target_audit={"url": "https://example.com"},
+        external_intelligence={},
+        search_results={},
+        competitor_audits=[],
+        fix_plan=[{"priority": "HIGH"}],
+        pagespeed_data={},
+        keywords=[],
+        backlinks=[],
+        rankings=[],
+        llm_visibility=[],
+    )
+
+    assert not (tmp_path / "audit_88").exists()

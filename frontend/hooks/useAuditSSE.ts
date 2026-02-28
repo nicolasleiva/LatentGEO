@@ -18,6 +18,8 @@ interface UseAuditSSEOptions {
   enabled?: boolean;
 }
 
+const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
+
 /**
  * Hook para recibir actualizaciones en tiempo real de auditorías usando Server-Sent Events (SSE).
  * Incluye fallback automático a polling si SSE falla.
@@ -51,9 +53,6 @@ export function useAuditSSE(
   const maxReconnectAttempts = 3;
   const enabled = options.enabled ?? true;
 
-  const backendUrl =
-    process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
-
   const cleanup = useCallback((intentional = true) => {
     intentionallyClosedRef.current = intentional;
     if (eventSourceRef.current) {
@@ -81,7 +80,7 @@ export function useAuditSSE(
     const poll = async () => {
       try {
         const res = await fetchWithBackendAuth(
-          `${backendUrl}/api/audits/${auditId}/status`,
+          `${BACKEND_URL}/api/audits/${auditId}/status`,
         );
         if (!res.ok) {
           if (res.status === 401 || res.status === 403) {
@@ -123,7 +122,7 @@ export function useAuditSSE(
     // Poll every 3 seconds
     poll();
     pollingIntervalRef.current = setInterval(poll, 3000);
-  }, [auditId, backendUrl, cleanup, enabled]);
+  }, [auditId, cleanup, enabled]);
 
   const connect = useCallback(async () => {
     if (!auditId || !enabled) return;
@@ -216,7 +215,7 @@ export function useAuditSSE(
       console.error("[SSE] Failed to create EventSource:", err);
       startPolling();
     }
-  }, [auditId, backendUrl, cleanup, startPolling, enabled]);
+  }, [auditId, cleanup, startPolling, enabled]);
 
   useEffect(() => {
     if (!auditId || !enabled) {

@@ -257,16 +257,20 @@ async def kimi_function(
         logger.info(
             f"Llamando a KIMI (Modelo: {settings.NV_MODEL_ANALYSIS}). Max tokens: {max_tokens_value}"
         )
-        completion = await run_external_call(
-            "nvidia-kimi-generation",
-            lambda: client.chat.completions.create(
+
+        async def _call_kimi_generation():
+            return await client.chat.completions.create(
                 model=settings.NV_MODEL_ANALYSIS,
                 messages=messages,
                 temperature=0.0,
                 top_p=1.0,
                 max_tokens=max_tokens_value,
                 stream=False,
-            ),
+            )
+
+        completion = await run_external_call(
+            "nvidia-kimi-generation",
+            _call_kimi_generation,
             timeout_seconds=provider_timeout,
         )
 
@@ -429,9 +433,8 @@ async def kimi_search_serp(
 
         # Attempt Responses API first.
         try:
-            response = await run_external_call(
-                "nvidia-kimi-search",
-                lambda: client.responses.create(
+            async def _call_kimi_responses_search():
+                return await client.responses.create(
                     model=settings.NV_KIMI_SEARCH_MODEL,
                     input=[
                         {"role": "system", "content": system_prompt},
@@ -441,7 +444,11 @@ async def kimi_search_serp(
                     temperature=0.0,
                     top_p=1.0,
                     max_output_tokens=4096,
-                ),
+                )
+
+            response = await run_external_call(
+                "nvidia-kimi-search",
+                _call_kimi_responses_search,
                 timeout_seconds=float(settings.NV_KIMI_SEARCH_TIMEOUT),
             )
             raw_text = _extract_response_text(response)
@@ -449,9 +456,8 @@ async def kimi_search_serp(
             logger.warning(
                 f"Kimi responses API search call failed, retrying via chat tools: {response_exc}"
             )
-            completion = await run_external_call(
-                "nvidia-kimi-search",
-                lambda: client.chat.completions.create(
+            async def _call_kimi_chat_search():
+                return await client.chat.completions.create(
                     model=settings.NV_KIMI_SEARCH_MODEL,
                     messages=[
                         {"role": "system", "content": system_prompt},
@@ -462,7 +468,11 @@ async def kimi_search_serp(
                     top_p=1.0,
                     max_tokens=4096,
                     stream=False,
-                ),
+                )
+
+            completion = await run_external_call(
+                "nvidia-kimi-search",
+                _call_kimi_chat_search,
                 timeout_seconds=float(settings.NV_KIMI_SEARCH_TIMEOUT),
             )
             raw_text = (

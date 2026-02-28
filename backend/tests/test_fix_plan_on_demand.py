@@ -84,6 +84,9 @@ def test_ensure_fix_plan_generates_and_persists(db_session, monkeypatch, tmp_pat
 
     monkeypatch.setattr("app.core.llm_kimi.get_llm_function", lambda: fake_llm)
     monkeypatch.setattr(settings, "REPORTS_DIR", str(tmp_path), raising=False)
+    monkeypatch.setattr(
+        settings, "AUDIT_LOCAL_ARTIFACTS_ENABLED", True, raising=False
+    )
 
     fix_plan = asyncio.run(AuditService.ensure_fix_plan(db_session, audit.id))
 
@@ -181,6 +184,9 @@ def _seed_fix_plan_audit(db_session, tmp_path) -> Audit:
 
 def test_get_fix_plan_missing_inputs_and_apply(db_session, monkeypatch, tmp_path):
     monkeypatch.setattr(settings, "REPORTS_DIR", str(tmp_path), raising=False)
+    monkeypatch.setattr(
+        settings, "AUDIT_LOCAL_ARTIFACTS_ENABLED", True, raising=False
+    )
     audit = _seed_fix_plan_audit(db_session, tmp_path)
 
     missing_inputs = asyncio.run(

@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import { Manrope, Sora, JetBrains_Mono } from "next/font/google";
-import { Auth0Provider } from "@auth0/nextjs-auth0/client";
 import { ThemeProvider } from "@/components/theme-provider";
 import { AnalyticsProvider } from "@/components/providers/analytics-provider";
 import { QueryProvider } from "@/components/providers/query-provider";
@@ -57,7 +56,7 @@ export default async function RootLayout({
             storageKey="latentgeo-theme-v2"
             disableTransitionOnChange={false}
           >
-            <Auth0Provider>{children}</Auth0Provider>
+            {children}
           </ThemeProvider>
         </QueryProvider>
         <AnalyticsProvider />

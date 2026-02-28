@@ -29,15 +29,17 @@ if settings.DATABASE_URL.startswith("sqlite"):
         echo=settings.SQLALCHEMY_ECHO,
     )
 else:
+    connect_timeout = max(1, int(settings.DB_CONNECT_TIMEOUT_SECONDS))
     engine = create_engine(
         settings.DATABASE_URL,
         echo=settings.SQLALCHEMY_ECHO,
         pool_pre_ping=True,
-        # Production Pool Configuration
-        pool_size=10,  # Conexiones mantenidas abiertas
-        max_overflow=20,  # Conexiones adicionales bajo demanda
-        pool_timeout=30,  # Segundos antes de timeout
-        pool_recycle=1800,  # Reciclar conexiones cada 30min
+        # Pool configurable por entorno (Supabase pooler-friendly)
+        pool_size=max(1, int(settings.DB_POOL_SIZE)),
+        max_overflow=max(0, int(settings.DB_MAX_OVERFLOW)),
+        pool_timeout=max(1, int(settings.DB_POOL_TIMEOUT)),
+        pool_recycle=max(1, int(settings.DB_POOL_RECYCLE)),
+        connect_args={"connect_timeout": connect_timeout},
     )
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)

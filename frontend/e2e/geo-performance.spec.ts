@@ -55,7 +55,7 @@ const ensureAuthenticated = async (basePath: string, page: Page) => {
     );
   }
 
-  await page.goto("/api/auth/login", { waitUntil: "domcontentloaded" });
+  await page.goto("/signin", { waitUntil: "domcontentloaded" });
   const emailInput = page
     .locator('input[type="email"], input[name="email"], input[name="username"]')
     .first();

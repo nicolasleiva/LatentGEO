@@ -633,6 +633,9 @@ class PipelineService:
             system_prompt += "\nContext includes ai_content_suggestions."
         if "PageSpeed" not in system_prompt and "pagespeed" not in system_prompt:
             system_prompt += "\nContext includes PageSpeed data."
+        
+        current_year = datetime.now().year
+        system_prompt += f"\nCurrent year is {current_year}."
 
         minimized_context, user_prompt = self._shrink_context_to_budget(
             context, system_prompt
@@ -8252,6 +8255,48 @@ async def run_initial_audit(
             analysis_mode=external_intel_mode,
         )
         search_queries = []
+
+    # Fallback: generate search queries from target_audit when Agent 1 fails
+    if not search_queries and base_url:
+        try:
+            target_domain = base_host or urlparse(base_url).netloc.replace("www.", "")
+            brand_name = target_domain.split(".")[0] if target_domain else ""
+
+            # Extract category/title for more relevant queries
+            fallback_category = ""
+            if isinstance(external_intelligence, dict):
+                fallback_category = external_intelligence.get("category", "") or ""
+            if not fallback_category or fallback_category.lower() in (
+                "unclassified", "unknown category", "none", "",
+            ):
+                content_data = normalized_target.get("content", {})
+                if isinstance(content_data, dict):
+                    fallback_category = (
+                        content_data.get("meta_keywords", "")
+                        or content_data.get("title", "")
+                        or ""
+                    )
+
+            fallback_queries = []
+            if brand_name:
+                fallback_queries.append({"query": f"{brand_name} competidores"})
+                fallback_queries.append({"query": f"{brand_name} alternativas"})
+            if fallback_category and brand_name:
+                # Use only the first few words of category to keep query focused
+                cat_short = " ".join(str(fallback_category).split()[:4])
+                fallback_queries.append({"query": f"{cat_short} mejores sitios"})
+            if target_domain:
+                fallback_queries.append({"query": f"sitios similares a {target_domain}"})
+
+            if fallback_queries:
+                search_queries = fallback_queries
+                logger.info(
+                    f"run_initial_audit: Agent 1 unavailable, using {len(search_queries)} fallback search queries"
+                )
+        except Exception as fallback_err:
+            logger.warning(
+                f"run_initial_audit: fallback search query generation failed: {fallback_err}"
+            )
 
     # 2) Competitor search results (Serper)
     search_results: Dict[str, Any] = {}

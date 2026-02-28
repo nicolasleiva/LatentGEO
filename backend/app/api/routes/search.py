@@ -4,6 +4,7 @@ API Endpoints para búsqueda AI
 
 import re
 
+from app.core.auth import AuthUser, get_current_user
 from app.core.database import get_db
 from app.core.logger import get_logger
 from app.schemas import AuditCreate
@@ -45,6 +46,7 @@ async def search_ai(
     request: SearchRequest,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
+    current_user: AuthUser = Depends(get_current_user),
 ):
     """
     Endpoint de búsqueda AI que procesa consultas y puede iniciar auditorías
@@ -60,6 +62,8 @@ async def search_ai(
                 url=url,
                 max_crawl=30,  # Crawlear 30 páginas
                 max_audit=3,  # Auditar 3 páginas en detalle
+                user_id=current_user.user_id,
+                user_email=current_user.email,
             )
             audit = AuditService.create_audit(db, audit_create)
 

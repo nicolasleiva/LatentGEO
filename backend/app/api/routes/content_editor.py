@@ -1,7 +1,8 @@
 from typing import Any, Dict, List
 
+from app.core.auth import AuthUser, get_current_user
 from app.services.content_editor_service import ContentEditorService
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 router = APIRouter(prefix="/tools/content-editor", tags=["content-editor"])
@@ -22,7 +23,10 @@ class AnalyzeResponse(BaseModel):
 
 
 @router.post("/analyze", response_model=AnalyzeResponse)
-async def analyze_content(request: AnalyzeRequest):
+async def analyze_content(
+    request: AnalyzeRequest,
+    _current_user: AuthUser = Depends(get_current_user),
+):
     try:
         result = await service.analyze_content(request.text, request.keyword)
         return result

@@ -344,7 +344,9 @@ def get_citation_history_legacy(
 
 @router.post("/query-discovery/discover")
 async def discover_queries(
-    request: QueryDiscoveryRequest, db: Session = Depends(get_db)
+    request: QueryDiscoveryRequest,
+    db: Session = Depends(get_db),
+    _current_user: AuthUser = Depends(get_current_user),
 ):
     """Descubre queries relevantes para el nicho."""
     try:
@@ -626,7 +628,10 @@ async def analyze_competitor_citations_legacy(
 
 
 @router.post("/schema/generate")
-async def generate_schema(request: SchemaGeneratorRequest):
+async def generate_schema(
+    request: SchemaGeneratorRequest,
+    _current_user: AuthUser = Depends(get_current_user),
+):
     """Genera Schema.org optimizado para la página."""
     try:
         backend_llm = get_llm_function()
@@ -652,7 +657,10 @@ async def generate_schema(request: SchemaGeneratorRequest):
 
 
 @router.post("/schema/multiple")
-async def generate_multiple_schemas(request: SchemaGeneratorRequest):
+async def generate_multiple_schemas(
+    request: SchemaGeneratorRequest,
+    _current_user: AuthUser = Depends(get_current_user),
+):
     """Genera múltiples schemas si la página lo amerita."""
     try:
         schemas = SchemaOptimizerService.generate_multiple_schemas(
@@ -667,7 +675,10 @@ async def generate_multiple_schemas(request: SchemaGeneratorRequest):
 
 
 @router.post("/schema-generator")
-async def generate_schema_legacy(request: SchemaGeneratorLegacyRequest):
+async def generate_schema_legacy(
+    request: SchemaGeneratorLegacyRequest,
+    _current_user: AuthUser = Depends(get_current_user),
+):
     """Legacy schema generator endpoint used by current frontend component."""
     try:
         backend_llm = get_llm_function()
@@ -698,7 +709,10 @@ async def generate_schema_legacy(request: SchemaGeneratorLegacyRequest):
 
 
 @router.post("/schema-multiple")
-async def generate_multiple_schemas_legacy(request: SchemaGeneratorLegacyRequest):
+async def generate_multiple_schemas_legacy(
+    request: SchemaGeneratorLegacyRequest,
+    _current_user: AuthUser = Depends(get_current_user),
+):
     """Legacy multiple-schema endpoint used by current frontend component."""
     try:
         schemas = SchemaOptimizerService.generate_multiple_schemas(
@@ -731,7 +745,9 @@ async def generate_multiple_schemas_legacy(request: SchemaGeneratorLegacyRequest
 
 
 @router.get("/content-templates/list")
-def list_content_templates():
+def list_content_templates(
+    _current_user: AuthUser = Depends(get_current_user),
+):
     """Lista todos los templates disponibles."""
     try:
         templates = ContentTemplateService.get_all_templates()
@@ -742,7 +758,10 @@ def list_content_templates():
 
 
 @router.get("/content-templates")
-def list_content_templates_legacy(category: str = "all"):
+def list_content_templates_legacy(
+    category: str = "all",
+    _current_user: AuthUser = Depends(get_current_user),
+):
     """Legacy endpoint used by current GEO UI card."""
     try:
         category_map = {
@@ -777,7 +796,10 @@ def list_content_templates_legacy(category: str = "all"):
 
 
 @router.post("/content-templates/generate")
-async def generate_content_template(request: ContentTemplateRequest):
+async def generate_content_template(
+    request: ContentTemplateRequest,
+    _current_user: AuthUser = Depends(get_current_user),
+):
     """Genera un template de contenido personalizado."""
     try:
         backend_llm = get_llm_function()
@@ -805,18 +827,35 @@ async def generate_content_template(request: ContentTemplateRequest):
 
 
 @router.post("/content-templates/analyze")
-def analyze_content(content: str):
+def analyze_content(
+    payload: Any = Body(...),
+    _current_user: AuthUser = Depends(get_current_user),
+):
     """Analiza contenido existente y sugiere mejoras para GEO."""
     try:
+        content = ""
+        if isinstance(payload, str):
+            content = payload.strip()
+        elif isinstance(payload, dict):
+            content = str(payload.get("content", "")).strip()
+
+        if not content:
+            raise HTTPException(status_code=422, detail="content is required")
+
         analysis = ContentTemplateService.analyze_content_for_geo(content)
         return analysis
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error analyzing content: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/analyze-content")
-def analyze_content_legacy(payload: Dict[str, Any] = Body(...)):
+def analyze_content_legacy(
+    payload: Dict[str, Any] = Body(...),
+    _current_user: AuthUser = Depends(get_current_user),
+):
     """Legacy endpoint for freeform content GEO analysis card."""
     try:
         content = str(payload.get("content", "")).strip()

@@ -3,10 +3,13 @@ Webhook Routes for receiving and configuring webhooks.
 """
 
 import hmac
+import ipaddress
 import json
 from datetime import datetime, timezone
 from typing import List, Optional
+from urllib.parse import urlparse
 
+from app.core.auth import AuthUser, get_current_user
 from app.core.config import settings
 from app.core.database import get_db
 from app.core.logger import get_logger
@@ -18,6 +21,43 @@ from sqlalchemy.orm import Session
 logger = get_logger(__name__)
 
 router = APIRouter(prefix="/webhooks", tags=["webhooks"])
+
+
+def _is_private_or_local_ip(host: str) -> bool:
+    try:
+        ip_value = ipaddress.ip_address(host)
+    except ValueError:
+        return False
+    return (
+        ip_value.is_private
+        or ip_value.is_loopback
+        or ip_value.is_link_local
+        or ip_value.is_multicast
+        or ip_value.is_reserved
+        or ip_value.is_unspecified
+    )
+
+
+def _validate_outbound_webhook_url(raw_url: str) -> None:
+    parsed = urlparse(raw_url)
+    scheme = (parsed.scheme or "").lower()
+    host = (parsed.hostname or "").strip().lower()
+
+    if scheme not in {"http", "https"}:
+        raise HTTPException(status_code=400, detail="Webhook URL scheme must be http or https")
+    if not settings.DEBUG and scheme != "https":
+        raise HTTPException(
+            status_code=400,
+            detail="Webhook URL must use https outside debug mode",
+        )
+    if not host:
+        raise HTTPException(status_code=400, detail="Webhook URL host is required")
+    if host == "localhost":
+        raise HTTPException(status_code=400, detail="Webhook URL host is not allowed")
+    if host.endswith((".local", ".localhost", ".internal")):
+        raise HTTPException(status_code=400, detail="Webhook URL host is not allowed")
+    if _is_private_or_local_ip(host):
+        raise HTTPException(status_code=400, detail="Webhook URL host is not allowed")
 
 
 # ==================== Pydantic Models ====================
@@ -78,7 +118,9 @@ class WebhookTestResponse(BaseModel):
 
 @router.post("/config", response_model=dict, status_code=status.HTTP_201_CREATED)
 async def create_webhook_config(
-    config: WebhookConfigCreate, db: Session = Depends(get_db)
+    config: WebhookConfigCreate,
+    db: Session = Depends(get_db),
+    _current_user: AuthUser = Depends(get_current_user),
 ):
     """
     Create a new webhook configuration.
@@ -102,6 +144,7 @@ async def create_webhook_config(
                 status_code=400,
                 detail=f"Invalid event type: {event}. Valid types: {valid_events}",
             )
+    _validate_outbound_webhook_url(str(config.url))
 
     # In a full implementation, this would save to database
     # For now, we use environment-based configuration
@@ -117,7 +160,10 @@ async def create_webhook_config(
 
 
 @router.post("/test", response_model=WebhookTestResponse)
-async def test_webhook(request: WebhookTestRequest):
+async def test_webhook(
+    request: WebhookTestRequest,
+    _current_user: AuthUser = Depends(get_current_user),
+):
     """
     Test a webhook endpoint by sending a test event.
 
@@ -134,6 +180,7 @@ async def test_webhook(request: WebhookTestRequest):
         raise HTTPException(
             status_code=400, detail=f"Invalid event type: {request.event_type}"
         )
+    _validate_outbound_webhook_url(str(request.url))
 
     test_payload = {
         "audit_id": 0,
@@ -161,7 +208,7 @@ async def test_webhook(request: WebhookTestRequest):
 
 
 @router.get("/events", response_model=List[dict])
-async def list_webhook_events():
+async def list_webhook_events(_current_user: AuthUser = Depends(get_current_user)):
     """
     List all available webhook event types.
     """
@@ -213,8 +260,16 @@ async def handle_github_webhook(
     body_str = body.decode("utf-8")
 
     # Verify signature if secret is configured
-    webhook_secret = settings.GITHUB_WEBHOOK_SECRET
-    if webhook_secret:
+    webhook_secret = (settings.GITHUB_WEBHOOK_SECRET or "").strip()
+    if not webhook_secret:
+        if settings.DEBUG:
+            logger.warning("GITHUB_WEBHOOK_SECRET not configured; allowing webhook in debug mode")
+        else:
+            raise HTTPException(
+                status_code=503,
+                detail="GitHub webhook secret is not configured on server",
+            )
+    else:
         if not x_hub_signature_256:
             raise HTTPException(
                 status_code=401, detail="Missing X-Hub-Signature-256 header"
@@ -332,7 +387,7 @@ async def handle_hubspot_webhook(request: Request, db: Session = Depends(get_db)
 
 
 @router.get("/health")
-async def webhook_health():
+async def webhook_health(_current_user: AuthUser = Depends(get_current_user)):
     """Check webhook service health status."""
     return {
         "status": "healthy",

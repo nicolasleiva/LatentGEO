@@ -1,5 +1,5 @@
-"""
-Servicio de Auditoría - Lógica principal
+﻿"""
+Servicio de AuditorÃ­a - LÃ³gica principal
 """
 
 import json
@@ -25,7 +25,11 @@ logger = get_logger(__name__)
 
 
 class AuditService:
-    """Servicio para gestionar auditorías"""
+    @staticmethod
+    def _local_artifacts_enabled() -> bool:
+        return bool(getattr(settings, "AUDIT_LOCAL_ARTIFACTS_ENABLED", False))
+
+    """Servicio para gestionar auditorÃ­as"""
 
     @staticmethod
     def _build_owner_filter(user_id: Optional[str], user_email: Optional[str]):
@@ -40,7 +44,7 @@ class AuditService:
 
     @staticmethod
     def create_audit(db: Session, audit_create: AuditCreate) -> Audit:
-        """Crear nueva auditoría con prevención de duplicados (Level 3)"""
+        """Crear nueva auditorÃ­a con prevenciÃ³n de duplicados (Level 3)"""
         url = str(audit_create.url)
 
         # Level 3: Idempotency - Check for active audits for this URL
@@ -91,13 +95,13 @@ class AuditService:
             cache.delete(f"audits_list_{audit.user_email}")
 
         logger.info(
-            f"Auditoría creada: {audit.id} para {url}, user: {audit_create.user_email}"
+            f"AuditorÃ­a creada: {audit.id} para {url}, user: {audit_create.user_email}"
         )
         return audit
 
     @staticmethod
     def get_audit(db: Session, audit_id: int) -> Optional[Audit]:
-        """Obtener auditoría por ID con caching (Level 2)"""
+        """Obtener auditorÃ­a por ID con caching (Level 2)"""
         # Level 2 Caching: Use CacheService for frequent reads
 
         # We can't easily cache SQLAlchemy models, so we only cache if COMPLETED/FAILED
@@ -123,7 +127,7 @@ class AuditService:
         user_email: Optional[str] = None,
         user_id: Optional[str] = None,
     ) -> List[Audit]:
-        """Obtener lista de auditorías con paginación y filtro opcional por usuario"""
+        """Obtener lista de auditorÃ­as con paginaciÃ³n y filtro opcional por usuario"""
         query = db.query(Audit)
 
         # Filtrar por usuario si se proporciona
@@ -133,7 +137,7 @@ class AuditService:
 
         audits = query.order_by(desc(Audit.created_at)).offset(skip).limit(limit).all()
 
-        # Optimización: Cargar PDFs en una sola query
+        # OptimizaciÃ³n: Cargar PDFs en una sola query
         if audits:
             audit_ids = [a.id for a in audits]
             pdf_reports = (
@@ -156,7 +160,7 @@ class AuditService:
 
     @staticmethod
     def get_audits_count(db: Session) -> int:
-        """Obtener total de auditorías"""
+        """Obtener total de auditorÃ­as"""
         return db.query(Audit).count()
 
     @staticmethod
@@ -166,7 +170,7 @@ class AuditService:
         user_email: Optional[str] = None,
         user_id: Optional[str] = None,
     ) -> List[Audit]:
-        """Obtener auditorías por estado"""
+        """Obtener auditorÃ­as por estado"""
         query = db.query(Audit).filter(Audit.status == status)
         owner_filter = AuditService._build_owner_filter(user_id, user_email)
         if owner_filter is not None:
@@ -181,7 +185,7 @@ class AuditService:
         status: Optional[AuditStatus] = None,
         error_message: Optional[str] = None,
     ):
-        """Actualizar progreso de auditoría"""
+        """Actualizar progreso de auditorÃ­a"""
         audit = db.query(Audit).filter(Audit.id == audit_id).first()
         if not audit:
             return None
@@ -222,7 +226,7 @@ class AuditService:
 
     @staticmethod
     def set_audit_task_id(db: Session, audit_id: int, task_id: str):
-        """Guardar el ID de la tarea de Celery en la auditoría"""
+        """Guardar el ID de la tarea de Celery en la auditorÃ­a"""
         audit = db.query(Audit).filter(Audit.id == audit_id).first()
         if not audit:
             return None
@@ -308,7 +312,7 @@ class AuditService:
         rankings: List[Dict[str, Any]] = None,
         llm_visibility: List[Dict[str, Any]] = None,
     ):
-        """Guardar resultados de auditoría completa (Async version)"""
+        """Guardar resultados de auditorÃ­a completa (Async version)"""
         audit = db.query(Audit).filter(Audit.id == audit_id).first()
         if not audit:
             return None
@@ -355,7 +359,7 @@ class AuditService:
 
         # Calcular y guardar GEO Score para el target audit
         try:
-            # CompetitorService ya está definido en este archivo (línea 914)
+            # CompetitorService ya estÃ¡ definido en este archivo (lÃ­nea 914)
             geo_score = CompetitorService._calculate_geo_score(target_audit)
             audit.geo_score = geo_score
             logger.info(f"GEO Score calculado para audit {audit_id}: {geo_score}")
@@ -382,7 +386,7 @@ class AuditService:
                 if core_terms:
                     category_value = " ".join(core_terms).title()
             except Exception as e:
-                logger.warning(f"No se pudo inferir categoría desde core terms: {e}")
+                logger.warning(f"No se pudo inferir categorÃ­a desde core terms: {e}")
         if not category_value:
             category_value = "Unclassified"
         if isinstance(category_value, dict):
@@ -407,7 +411,7 @@ class AuditService:
         except Exception as e:
             logger.warning(f"No se pudo inferir mercado para audit {audit_id}: {e}")
 
-        # Contar issues reales desde las páginas auditadas (Más preciso para el dashboard)
+        # Contar issues reales desde las pÃ¡ginas auditadas (MÃ¡s preciso para el dashboard)
         saved_pages = (
             db.query(AuditedPage).filter(AuditedPage.audit_id == audit_id).all()
         )
@@ -419,10 +423,10 @@ class AuditService:
             audit.medium_issues = sum(p.medium_issues for p in saved_pages)
             audit.low_issues = sum(p.low_issues for p in saved_pages)
             logger.info(
-                f"Issues calculados desde {len(saved_pages)} páginas: C={audit.critical_issues}, H={audit.high_issues}"
+                f"Issues calculados desde {len(saved_pages)} pÃ¡ginas: C={audit.critical_issues}, H={audit.high_issues}"
             )
         else:
-            # Fallback a fix_plan si no hay páginas guardadas
+            # Fallback a fix_plan si no hay pÃ¡ginas guardadas
             fix_plan_list = fix_plan if isinstance(fix_plan, list) else []
             audit.critical_issues = len(
                 [f for f in fix_plan_list if f.get("priority") == "CRITICAL"]
@@ -441,12 +445,12 @@ class AuditService:
         for comp_data in safe_competitor_audits:
             if isinstance(comp_data, dict) and comp_data.get("url"):
                 try:
-                    # CompetitorService ya está definido en este archivo (línea 914)
+                    # CompetitorService ya estÃ¡ definido en este archivo (lÃ­nea 914)
                     CompetitorService.add_competitor(
                         db=db,
                         audit_id=audit_id,
                         url=comp_data.get("url"),
-                        geo_score=0,  # Se calculará automáticamente
+                        geo_score=0,  # Se calcularÃ¡ automÃ¡ticamente
                         audit_data=comp_data,
                     )
                 except Exception as e:
@@ -471,51 +475,25 @@ class AuditService:
 
         db.commit()
         db.refresh(audit)
-        logger.info(f"Resultados guardados para auditoría {audit_id}")
+        logger.info(f"Resultados guardados para auditorÃ­a {audit_id}")
         return audit
 
     @staticmethod
-    async def _save_audit_files(
+    def _write_audit_files_sync(
         audit_id: int,
-        target_audit: Dict[str, Any],
-        external_intelligence: Dict[str, Any],
-        search_results: Dict[str, Any],
-        competitor_audits: List[Dict[str, Any]],
-        fix_plan: List[Dict[str, Any]],
-        pagespeed_data: Dict[str, Any] = None,
-        keywords: List[Dict[str, Any]] = None,
-        backlinks: List[Dict[str, Any]] = None,
-        rankings: List[Dict[str, Any]] = None,
-        llm_visibility: List[Dict[str, Any]] = None,
+        safe_target_audit: Dict[str, Any],
+        safe_external_intelligence: Dict[str, Any],
+        safe_search_results: Dict[str, Any],
+        safe_competitor_audits: List[Dict[str, Any]],
+        safe_fix_plan: List[Dict[str, Any]],
+        safe_pagespeed_data: Dict[str, Any],
+        safe_keywords: List[Dict[str, Any]],
+        safe_backlinks: List[Dict[str, Any]],
+        safe_rankings: List[Dict[str, Any]],
+        safe_llm_visibility: List[Dict[str, Any]],
     ):
-        """Guardar archivos JSON de auditoría como en ag2_pipeline.py"""
+        """Sincrona: Escribir archivos JSON al disco"""
         try:
-            safe_target_audit = AuditService._sanitize_json_value(target_audit)
-            safe_external_intelligence = AuditService._sanitize_json_value(
-                external_intelligence or {}
-            )
-            safe_search_results = AuditService._sanitize_json_value(
-                search_results or {}
-            )
-            safe_competitor_audits = AuditService._sanitize_json_value(
-                competitor_audits or []
-            )
-            safe_fix_plan = AuditService._sanitize_json_value(fix_plan or [])
-            safe_pagespeed_data = AuditService._sanitize_json_value(
-                pagespeed_data or {}
-            )
-            safe_keywords = AuditService._sanitize_json_value(keywords or [])
-            safe_backlinks = AuditService._sanitize_json_value(backlinks or [])
-            safe_rankings = AuditService._sanitize_json_value(rankings or [])
-            safe_llm_visibility = AuditService._sanitize_json_value(
-                llm_visibility or []
-            )
-
-            if not isinstance(safe_competitor_audits, list):
-                safe_competitor_audits = []
-            if not isinstance(safe_fix_plan, list):
-                safe_fix_plan = []
-
             # Crear directorio de reportes
             reports_dir = os.path.join(
                 settings.REPORTS_DIR or "reports", f"audit_{audit_id}"
@@ -537,31 +515,31 @@ class AuditService:
                 json.dump(safe_fix_plan, f, ensure_ascii=False, indent=2)
 
             # Guardar PageSpeed
-            if pagespeed_data:
+            if safe_pagespeed_data:
                 pagespeed_path = os.path.join(reports_dir, "pagespeed.json")
                 with open(pagespeed_path, "w", encoding="utf-8") as f:
                     json.dump(safe_pagespeed_data, f, ensure_ascii=False, indent=2)
 
             # Guardar Keywords
-            if keywords:
+            if safe_keywords:
                 keywords_path = os.path.join(reports_dir, "keywords.json")
                 with open(keywords_path, "w", encoding="utf-8") as f:
                     json.dump(safe_keywords, f, ensure_ascii=False, indent=2)
 
             # Guardar Backlinks
-            if backlinks:
+            if safe_backlinks:
                 backlinks_path = os.path.join(reports_dir, "backlinks.json")
                 with open(backlinks_path, "w", encoding="utf-8") as f:
                     json.dump(safe_backlinks, f, ensure_ascii=False, indent=2)
 
             # Guardar Rankings
-            if rankings:
+            if safe_rankings:
                 rankings_path = os.path.join(reports_dir, "rankings.json")
                 with open(rankings_path, "w", encoding="utf-8") as f:
                     json.dump(safe_rankings, f, ensure_ascii=False, indent=2)
 
             # Guardar LLM Visibility
-            if llm_visibility:
+            if safe_llm_visibility:
                 visibility_path = os.path.join(reports_dir, "llm_visibility.json")
                 with open(visibility_path, "w", encoding="utf-8") as f:
                     json.dump(safe_llm_visibility, f, ensure_ascii=False, indent=2)
@@ -604,8 +582,66 @@ class AuditService:
             logger.info(f"Archivos JSON guardados en {reports_dir}")
         except Exception as e:
             logger.error(
-                f"Error guardando archivos JSON para auditoría {audit_id}: {e}"
+                f"Error guardando archivos JSON para auditorÃ­a {audit_id}: {e}"
             )
+
+    @staticmethod
+    async def _save_audit_files(
+        audit_id: int,
+        target_audit: Dict[str, Any],
+        external_intelligence: Dict[str, Any],
+        search_results: Dict[str, Any],
+        competitor_audits: List[Dict[str, Any]],
+        fix_plan: List[Dict[str, Any]],
+        pagespeed_data: Dict[str, Any] = None,
+        keywords: List[Dict[str, Any]] = None,
+        backlinks: List[Dict[str, Any]] = None,
+        rankings: List[Dict[str, Any]] = None,
+        llm_visibility: List[Dict[str, Any]] = None,
+    ):
+        """Guardar archivos JSON de auditorÃ­a (Async wrapper)"""
+        if not AuditService._local_artifacts_enabled():
+            logger.info(
+                f"Skipping local audit artifacts for audit {audit_id} (Supabase-only mode)."
+            )
+            return
+
+        safe_target_audit = AuditService._sanitize_json_value(target_audit)
+        safe_external_intelligence = AuditService._sanitize_json_value(
+            external_intelligence or {}
+        )
+        safe_search_results = AuditService._sanitize_json_value(search_results or {})
+        safe_competitor_audits = AuditService._sanitize_json_value(
+            competitor_audits or []
+        )
+        safe_fix_plan = AuditService._sanitize_json_value(fix_plan or [])
+        safe_pagespeed_data = AuditService._sanitize_json_value(pagespeed_data or {})
+        safe_keywords = AuditService._sanitize_json_value(keywords or [])
+        safe_backlinks = AuditService._sanitize_json_value(backlinks or [])
+        safe_rankings = AuditService._sanitize_json_value(rankings or [])
+        safe_llm_visibility = AuditService._sanitize_json_value(llm_visibility or [])
+
+        if not isinstance(safe_competitor_audits, list):
+            safe_competitor_audits = []
+        if not isinstance(safe_fix_plan, list):
+            safe_fix_plan = []
+
+        from starlette.concurrency import run_in_threadpool
+
+        await run_in_threadpool(
+            AuditService._write_audit_files_sync,
+            audit_id,
+            safe_target_audit,
+            safe_external_intelligence,
+            safe_search_results,
+            safe_competitor_audits,
+            safe_fix_plan,
+            safe_pagespeed_data,
+            safe_keywords,
+            safe_backlinks,
+            safe_rankings,
+            safe_llm_visibility,
+        )
 
     @staticmethod
     def save_page_audit(
@@ -615,32 +651,9 @@ class AuditService:
         audit_data: Dict[str, Any],
         page_index: int = 0,
     ) -> AuditedPage:
-        """Guardar auditoría de página individual como en ag2_pipeline.py"""
+        """Guarda una pagina auditada en DB y opcionalmente en archivo local."""
         try:
             safe_audit_data = AuditService._sanitize_json_value(audit_data or {})
-
-            # Crear directorio de páginas
-            reports_dir = os.path.join(
-                settings.REPORTS_DIR or "reports", f"audit_{audit_id}"
-            )
-            pages_dir = os.path.join(reports_dir, "pages")
-            os.makedirs(pages_dir, exist_ok=True)
-
-            # Generar nombre de archivo seguro
-            raw_filename = (
-                str(page_url or "").replace("https://", "").replace("http://", "")
-            )
-            safe_filename = AuditService._safe_fs_name(raw_filename)
-            page_json_path = os.path.join(
-                pages_dir, f"report_{page_index}_{safe_filename}.json"
-            )
-
-            # Guardar JSON de la página
-            with open(page_json_path, "w", encoding="utf-8") as f:
-                json.dump(safe_audit_data, f, ensure_ascii=False, indent=2)
-
-            # Extraer path de la URL
-            from urllib.parse import urlparse
 
             parsed_url = urlparse(page_url)
             path = parsed_url.path or "/"
@@ -658,16 +671,35 @@ class AuditService:
                 overall_score=overall_score,
             )
 
-            logger.info(f"Página auditada guardada: {page_url} -> {page_json_path}")
+            if AuditService._local_artifacts_enabled():
+                reports_dir = os.path.join(
+                    settings.REPORTS_DIR or "reports", f"audit_{audit_id}"
+                )
+                pages_dir = os.path.join(reports_dir, "pages")
+                os.makedirs(pages_dir, exist_ok=True)
+                raw_filename = (
+                    str(page_url or "").replace("https://", "").replace("http://", "")
+                )
+                safe_filename = AuditService._safe_fs_name(raw_filename)
+                page_json_path = os.path.join(
+                    pages_dir, f"report_{page_index}_{safe_filename}.json"
+                )
+                with open(page_json_path, "w", encoding="utf-8") as f:
+                    json.dump(safe_audit_data, f, ensure_ascii=False, indent=2)
+                logger.info(f"Pagina auditada guardada: {page_url} -> {page_json_path}")
+            else:
+                logger.info(
+                    f"Pagina auditada guardada en DB sin artefacto local: {page_url}"
+                )
             return audited_page
 
         except Exception as e:
-            logger.error(f"Error guardando auditoría de página {page_url}: {e}")
+            logger.error(f"Error guardando auditoria de pagina {page_url}: {e}")
             raise
 
     @staticmethod
     def _calculate_overall_score(audit_data: Dict[str, Any]) -> float:
-        """Calcular score general de la página basado en los datos de auditoría"""
+        """Calcular score general de la pÃ¡gina basado en los datos de auditorÃ­a"""
         try:
             # Usar los extractores individuales para obtener scores de 0-100
             h1 = AuditService._extract_h1_score(audit_data)
@@ -707,7 +739,7 @@ class AuditService:
         audit_data: Dict[str, Any],
         overall_score: float,
     ):
-        """Añadir página auditada"""
+        """AÃ±adir pÃ¡gina auditada"""
         audit_data = AuditService._sanitize_json_value(audit_data or {})
         # Extraer scores individuales
         h1_score = AuditService._extract_h1_score(audit_data)
@@ -815,11 +847,11 @@ class AuditService:
                 # Usar schema_types que es lo que devuelve AuditLocalService
                 types = schema_data.get("schema_types", [])
                 if not types:
-                    # Fallback si por alguna razón no está en schema_types pero hay bloques
+                    # Fallback si por alguna razÃ³n no estÃ¡ en schema_types pero hay bloques
                     types = schema_data.get("types", [])
 
                 types_count = len(types)
-                return min(100, max(20, types_count * 20))  # Mínimo 20 si está presente
+                return min(100, max(20, types_count * 20))  # MÃ­nimo 20 si estÃ¡ presente
             return 0.0
         except Exception:
             return 0.0
@@ -875,29 +907,29 @@ class AuditService:
             if img_status == "missing_alts":
                 medium += 1
 
-            # 6. PageSpeed (si está disponible en datos de auditoría local simulados)
-            # Por ahora no se incluye aquí porque viene por separado, pero si existiera:
+            # 6. PageSpeed (si estÃ¡ disponible en datos de auditorÃ­a local simulados)
+            # Por ahora no se incluye aquÃ­ porque viene por separado, pero si existiera:
             pass
 
         except Exception as e:
-            logger.error(f"Error contando issues de página: {e}")
+            logger.error(f"Error contando issues de pÃ¡gina: {e}")
 
         return critical, high, medium, low
 
     @staticmethod
     def get_audited_pages(db: Session, audit_id: int) -> List[AuditedPage]:
-        """Obtener páginas auditadas"""
+        """Obtener pÃ¡ginas auditadas"""
         return db.query(AuditedPage).filter(AuditedPage.audit_id == audit_id).all()
 
     @staticmethod
     def delete_audit(db: Session, audit_id: int) -> bool:
-        """Eliminar una auditoría y sus datos asociados"""
+        """Eliminar una auditorÃ­a y sus datos asociados"""
         audit = db.query(Audit).filter(Audit.id == audit_id).first()
         if not audit:
             return False
         db.delete(audit)
         db.commit()
-        logger.info(f"Auditoría {audit_id} eliminada")
+        logger.info(f"AuditorÃ­a {audit_id} eliminada")
         return True
 
     @staticmethod
@@ -906,7 +938,7 @@ class AuditService:
         user_email: Optional[str] = None,
         user_id: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Obtener resumen de estadísticas de auditorías"""
+        """Obtener resumen de estadÃ­sticas de auditorÃ­as"""
         base_query = db.query(Audit)
         owner_filter = AuditService._build_owner_filter(user_id, user_email)
         if owner_filter is not None:
@@ -1232,16 +1264,17 @@ class AuditService:
         db.commit()
         db.refresh(audit)
 
-        try:
-            reports_dir = os.path.join(
-                settings.REPORTS_DIR or "reports", f"audit_{audit_id}"
-            )
-            os.makedirs(reports_dir, exist_ok=True)
-            fix_plan_path = os.path.join(reports_dir, "fix_plan.json")
-            with open(fix_plan_path, "w", encoding="utf-8") as f:
-                json.dump(audit.fix_plan or [], f, ensure_ascii=False, indent=2)
-        except Exception as e:
-            logger.warning(f"Failed to persist fix_plan.json: {e}")
+        if AuditService._local_artifacts_enabled():
+            try:
+                reports_dir = os.path.join(
+                    settings.REPORTS_DIR or "reports", f"audit_{audit_id}"
+                )
+                os.makedirs(reports_dir, exist_ok=True)
+                fix_plan_path = os.path.join(reports_dir, "fix_plan.json")
+                with open(fix_plan_path, "w", encoding="utf-8") as f:
+                    json.dump(audit.fix_plan or [], f, ensure_ascii=False, indent=2)
+            except Exception as e:
+                logger.warning(f"Failed to persist fix_plan.json: {e}")
 
         return audit.fix_plan or []
 
@@ -1539,7 +1572,7 @@ class AuditService:
                         "issue_code": "FAQ_MISSING",
                         "page_path": "ALL_PAGES",
                         "required": False,
-                        "prompt": "Optional: add 2–3 FAQ Q&A pairs grounded in your audited content.",
+                        "prompt": "Optional: add 2â€“3 FAQ Q&A pairs grounded in your audited content.",
                         "fields": [
                             {
                                 "key": "faq_q1",
@@ -1722,16 +1755,17 @@ class AuditService:
         db.commit()
         db.refresh(audit)
 
-        try:
-            reports_dir = os.path.join(
-                settings.REPORTS_DIR or "reports", f"audit_{audit_id}"
-            )
-            os.makedirs(reports_dir, exist_ok=True)
-            fix_plan_path = os.path.join(reports_dir, "fix_plan.json")
-            with open(fix_plan_path, "w", encoding="utf-8") as f:
-                json.dump(audit.fix_plan or [], f, ensure_ascii=False, indent=2)
-        except Exception as e:
-            logger.warning(f"Failed to persist fix_plan.json: {e}")
+        if AuditService._local_artifacts_enabled():
+            try:
+                reports_dir = os.path.join(
+                    settings.REPORTS_DIR or "reports", f"audit_{audit_id}"
+                )
+                os.makedirs(reports_dir, exist_ok=True)
+                fix_plan_path = os.path.join(reports_dir, "fix_plan.json")
+                with open(fix_plan_path, "w", encoding="utf-8") as f:
+                    json.dump(audit.fix_plan or [], f, ensure_ascii=False, indent=2)
+            except Exception as e:
+                logger.warning(f"Failed to persist fix_plan.json: {e}")
 
         return audit.fix_plan or []
 
@@ -1741,18 +1775,22 @@ class ReportService:
 
     @staticmethod
     def create_report(
-        db: Session, audit_id: int, report_type: str, file_path: Optional[str] = None
+        db: Session,
+        audit_id: int,
+        report_type: str,
+        file_path: Optional[str] = None,
+        file_size: Optional[int] = None,
     ) -> Report:
         """Crear nuevo reporte"""
-        file_size = None
-        if file_path and os.path.exists(file_path):
-            file_size = os.path.getsize(file_path)
+        resolved_file_size = file_size
+        if resolved_file_size is None and file_path and os.path.exists(file_path):
+            resolved_file_size = os.path.getsize(file_path)
 
         report = Report(
             audit_id=audit_id,
             report_type=report_type,
             file_path=file_path,
-            file_size=file_size,
+            file_size=resolved_file_size,
         )
         db.add(report)
         db.commit()
@@ -1762,7 +1800,7 @@ class ReportService:
 
     @staticmethod
     def get_reports_by_audit(db: Session, audit_id: int) -> List[Report]:
-        """Obtener reportes de auditoría"""
+        """Obtener reportes de auditorÃ­a"""
         return (
             db.query(Report)
             .filter(Report.audit_id == audit_id)
@@ -1777,16 +1815,30 @@ class ReportService:
 
     @staticmethod
     def delete_old_reports(db: Session, audit_id: int) -> int:
-        """Eliminar reportes antiguos de una auditoría"""
+        """Eliminar reportes antiguos de una auditorÃ­a"""
         reports = db.query(Report).filter(Report.audit_id == audit_id).all()
         deleted = 0
         for report in reports:
-            if report.file_path and os.path.exists(report.file_path):
-                try:
-                    os.remove(report.file_path)
-                    deleted += 1
-                except Exception as e:
-                    logger.warning(f"No se pudo eliminar {report.file_path}: {e}")
+            if report.file_path:
+                if str(report.file_path).startswith("supabase://"):
+                    try:
+                        from .supabase_service import SupabaseService
+
+                        storage_path = str(report.file_path).replace("supabase://", "", 1)
+                        SupabaseService.delete_file(
+                            bucket=settings.SUPABASE_STORAGE_BUCKET, path=storage_path
+                        )
+                        deleted += 1
+                    except Exception as e:
+                        logger.warning(
+                            f"No se pudo eliminar archivo Supabase {report.file_path}: {e}"
+                        )
+                elif os.path.exists(report.file_path):
+                    try:
+                        os.remove(report.file_path)
+                        deleted += 1
+                    except Exception as e:
+                        logger.warning(f"No se pudo eliminar {report.file_path}: {e}")
             db.delete(report)
         db.commit()
         return deleted
@@ -1797,10 +1849,10 @@ class CompetitorService:
 
     @staticmethod
     def _calculate_geo_score(audit_data: Dict[str, Any]) -> float:
-        """Calcular GEO score basado en datos de auditoría (0-100).
+        """Calcular GEO score basado en datos de auditorÃ­a (0-100).
 
-        - Usa solo señales disponibles (no penaliza por ausencia de datos).
-        - Normaliza métricas a 0-100 y aplica pesos.
+        - Usa solo seÃ±ales disponibles (no penaliza por ausencia de datos).
+        - Normaliza mÃ©tricas a 0-100 y aplica pesos.
         """
         try:
             weights = []
@@ -1968,7 +2020,7 @@ class CompetitorService:
         geo_score: float,
         audit_data: Dict[str, Any],
     ) -> Competitor:
-        """Añadir competidor analizado"""
+        """AÃ±adir competidor analizado"""
         domain = url.replace("https://", "").replace("http://", "").split("/")[0]
 
         # Si no se proporciona geo_score, calcularlo
@@ -1978,42 +2030,34 @@ class CompetitorService:
 
         safe_audit_data = AuditService._sanitize_json_value(raw_audit_data)
 
-        # NUEVO: Guardar archivo JSON del competidor
-        try:
-            from datetime import datetime
-
-            reports_dir = os.path.join(
-                settings.REPORTS_DIR or "reports", f"audit_{audit_id}"
-            )
-            competitors_dir = os.path.join(reports_dir, "competitors")
-            os.makedirs(competitors_dir, exist_ok=True)
-
-            # Generar nombre de archivo seguro
-            import re
-
-            safe_domain = re.sub(r"[^\w\-_.]", "_", domain)
-            competitor_json_path = os.path.join(
-                competitors_dir, f"competitor_{safe_domain}.json"
-            )
-
-            # Preparar datos completos del competidor
-            competitor_full_data = {
-                "url": url,
-                "domain": domain,
-                "geo_score": geo_score,
-                "audit_data": safe_audit_data,
-                "analyzed_at": datetime.now().isoformat(),
-            }
-
-            # Guardar JSON
-            with open(competitor_json_path, "w", encoding="utf-8") as f:
-                json.dump(competitor_full_data, f, ensure_ascii=False, indent=2)
-
-            logger.info(
-                f"Competidor guardado: {domain} -> {competitor_json_path} (GEO Score: {geo_score})"
-            )
-        except Exception as e:
-            logger.error(f"Error guardando archivo JSON del competidor {domain}: {e}")
+        # Guardar JSON local solo en modo legacy de artefactos.
+        if AuditService._local_artifacts_enabled():
+            try:
+                reports_dir = os.path.join(
+                    settings.REPORTS_DIR or "reports", f"audit_{audit_id}"
+                )
+                competitors_dir = os.path.join(reports_dir, "competitors")
+                os.makedirs(competitors_dir, exist_ok=True)
+                safe_domain = re.sub(r"[^\w\-_.]", "_", domain)
+                competitor_json_path = os.path.join(
+                    competitors_dir, f"competitor_{safe_domain}.json"
+                )
+                competitor_full_data = {
+                    "url": url,
+                    "domain": domain,
+                    "geo_score": geo_score,
+                    "audit_data": safe_audit_data,
+                    "analyzed_at": datetime.now(timezone.utc).isoformat(),
+                }
+                with open(competitor_json_path, "w", encoding="utf-8") as f:
+                    json.dump(competitor_full_data, f, ensure_ascii=False, indent=2)
+                logger.info(
+                    f"Competidor guardado: {domain} -> {competitor_json_path} (GEO Score: {geo_score})"
+                )
+            except Exception as e:
+                logger.error(
+                    f"Error guardando archivo JSON del competidor {domain}: {e}"
+                )
 
         competitor = Competitor(
             audit_id=audit_id,
@@ -2029,7 +2073,7 @@ class CompetitorService:
 
     @staticmethod
     def get_competitors(db: Session, audit_id: int) -> List[Competitor]:
-        """Obtener competidores de auditoría"""
+        """Obtener competidores de auditorÃ­a"""
         return db.query(Competitor).filter(Competitor.audit_id == audit_id).all()
 
     @staticmethod
@@ -2038,3 +2082,4 @@ class CompetitorService:
         return (
             db.query(Competitor).order_by(desc(Competitor.geo_score)).limit(limit).all()
         )
+

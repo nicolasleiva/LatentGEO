@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { useUser } from "@auth0/nextjs-auth0/client";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Search,
@@ -19,11 +18,13 @@ import {
   Rocket,
   GitPullRequest,
   FileText,
+  Loader2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Header } from "@/components/header";
 import { createAudit, listAudits } from "@/lib/api-client";
+import { useCombinedProfile, useRequireAppAuth } from "@/lib/app-auth";
 import { withLocale } from "@/lib/locale-routing";
 import { cn } from "@/lib/utils";
 
@@ -142,7 +143,10 @@ function isLikelyPublicHost(hostname: string): boolean {
 export default function HomePage() {
   const router = useRouter();
   const pathname = usePathname();
-  const { user, isLoading: authLoading } = useUser();
+  const auth = useRequireAppAuth();
+  const profile = useCombinedProfile(auth);
+  const user = auth.ready ? profile : null;
+  const authLoading = auth.loading || !auth.ready;
   const queryClient = useQueryClient();
   const [url, setUrl] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -211,12 +215,6 @@ export default function HomePage() {
       return;
     }
 
-    if (!user) {
-      sessionStorage.setItem("pendingAuditUrl", url.trim());
-      window.location.href = "/auth/login";
-      return;
-    }
-
     setSubmitting(true);
     try {
       const newAudit = await createAuditMutation.mutateAsync({
@@ -240,6 +238,18 @@ export default function HomePage() {
       }
     }
   }, [user, authLoading]);
+
+  // Loading State while checking auth
+  if (authLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  // Only render content if authenticated
+  if (!user) return null;
 
   return (
     <div className="min-h-screen text-foreground">
@@ -327,15 +337,6 @@ export default function HomePage() {
                   )}
                 </div>
               </form>
-
-              {!authLoading && !user && (
-                <p className="text-muted-foreground text-sm">
-                  <a href="/auth/login" className="text-brand hover:underline">
-                    Sign in
-                  </a>{" "}
-                  to save audits, track progress, and share reports.
-                </p>
-              )}
 
               <div
                 className="grid grid-cols-1 sm:grid-cols-3 gap-3"
@@ -447,144 +448,104 @@ export default function HomePage() {
           </div>
         </section>
 
-        {!authLoading && !user && (
-          <section className="mt-14 sm:mt-16 grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="p-6 glass-card border-border/70">
-              <div className="w-12 h-12 bg-brand/10 rounded-xl flex items-center justify-center mb-4 text-brand">
-                <Globe className="w-6 h-6" />
-              </div>
-                <h3 className="text-lg font-semibold mb-2">
-                AI demand capture
-                </h3>
-                <p className="text-muted-foreground text-sm">
-                Prioritize the prompts and questions that shape category-level demand in AI channels.
-                </p>
-              </div>
-              <div className="p-6 glass-card border-border/70">
-              <div className="w-12 h-12 bg-brand/10 rounded-xl flex items-center justify-center mb-4 text-brand">
-                <Zap className="w-6 h-6" />
-              </div>
-                <h3 className="text-lg font-semibold mb-2">
-                Trust-ready pages
-                </h3>
-                <p className="text-muted-foreground text-sm">
-                Strengthen structure, evidence, and intent alignment so assistants cite your pages with confidence.
-                </p>
-              </div>
-              <div className="p-6 glass-card border-border/70">
-              <div className="w-12 h-12 bg-brand/10 rounded-xl flex items-center justify-center mb-4 text-brand">
-                <Rocket className="w-6 h-6" />
-              </div>
-                <h3 className="text-lg font-semibold mb-2">
-                Revenue-linked execution
-                </h3>
-                <p className="text-muted-foreground text-sm">
-                Tie AI visibility gains to qualified sessions, pipeline motion, and commercial outcomes.
-                </p>
-              </div>
-            </section>
-        )}
-
-        {!authLoading && user && (
-          <section className="mt-16 space-y-6">
-            <div className="flex justify-between items-center">
-              <h2 className="text-2xl font-semibold tracking-tight">
-                Recent audit operations
-              </h2>
-              {audits.length > 0 && (
-                <Button
-                  variant="ghost"
-                  className="text-muted-foreground hover:text-foreground"
-                  onClick={() => router.push(localePath("/audits"))}
-                >
-                  View queue
-                </Button>
-              )}
-            </div>
-
-            {loading ? (
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                {[1, 2, 3].map((i) => (
-                  <div key={i} className="glass-card h-48 animate-pulse" />
-                ))}
-              </div>
-            ) : audits.length === 0 ? (
-              <div className="text-center py-16 glass-card">
-                <Globe className="w-12 h-12 text-muted-foreground/50 mx-auto mb-4" />
-                <h3 className="text-xl font-medium text-muted-foreground mb-2">
-                  No audits yet
-                </h3>
-                <p className="text-muted-foreground/70 mb-4">
-                  Submit your first URL to generate an AI visibility baseline.
-                </p>
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {audits.map((audit) => (
-                  <div
-                    key={audit.id}
-                    onClick={() =>
-                      router.push(localePath(`/audits/${audit.id}`))
-                    }
-                    className="p-6 glass-card cursor-pointer group hover:-translate-y-1"
-                  >
-                    <div className="flex items-center justify-between mb-4">
-                      <div className="p-2 bg-muted/50 rounded-lg">
-                        <Globe className="w-5 h-5 text-brand" />
-                      </div>
-                      <Badge
-                        variant="outline"
-                        className={`
-                        ${
-                          audit.status === "completed"
-                            ? "bg-emerald-500/10 text-emerald-600 border-emerald-500/20"
-                            : audit.status === "failed"
-                              ? "bg-red-500/10 text-red-600 border-red-500/20"
-                              : audit.status === "running"
-                                ? "bg-brand/10 text-brand border-brand/20"
-                                : "bg-amber-500/10 text-amber-600 border-amber-500/20"
-                        }
-                      `}
-                      >
-                        {audit.status}
-                      </Badge>
-                    </div>
-
-                    <h3 className="text-lg font-medium truncate mb-1 group-hover:text-brand transition-colors">
-                      {audit.domain ||
-                        (() => {
-                          try {
-                            return new URL(audit.url).hostname.replace(
-                              "www.",
-                              "",
-                            );
-                          } catch {
-                            return audit.url;
-                          }
-                        })()}
-                    </h3>
-                    <p className="text-sm text-muted-foreground truncate mb-4">
-                      {audit.url}
-                    </p>
-
-                    <div className="flex justify-between items-center pt-4 border-t border-border text-sm">
-                      <span className="flex items-center gap-1 text-muted-foreground">
-                        <Clock className="w-3 h-3" />
-                        {new Date(audit.created_at).toLocaleDateString()}
-                      </span>
-                      {audit.status === "completed" && audit.geo_score && (
-                        <span className="text-emerald-600 font-medium">
-                          GEO: {Math.round(audit.geo_score)}%
-                        </span>
-                      )}
-                      <ArrowRight className="w-4 h-4 text-muted-foreground group-hover:text-foreground transition-colors" />
-                    </div>
-                  </div>
-                ))}
-              </div>
+        <section className="mt-16 space-y-6">
+          <div className="flex justify-between items-center">
+            <h2 className="text-2xl font-semibold tracking-tight">
+              Recent audit operations
+            </h2>
+            {audits.length > 0 && (
+              <Button
+                variant="ghost"
+                className="text-muted-foreground hover:text-foreground"
+                onClick={() => router.push(localePath("/audits"))}
+              >
+                View queue
+              </Button>
             )}
-          </section>
-        )}
+          </div>
+
+          {loading ? (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              {[1, 2, 3].map((i) => (
+                <div key={i} className="glass-card h-48 animate-pulse" />
+              ))}
+            </div>
+          ) : audits.length === 0 ? (
+            <div className="text-center py-16 glass-card">
+              <Globe className="w-12 h-12 text-muted-foreground/50 mx-auto mb-4" />
+              <h3 className="text-xl font-medium text-muted-foreground mb-2">
+                No audits yet
+              </h3>
+              <p className="text-muted-foreground/70 mb-4">
+                Submit your first URL to generate an AI visibility baseline.
+              </p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {audits.map((audit) => (
+                <div
+                  key={audit.id}
+                  onClick={() =>
+                    router.push(localePath(`/audits/${audit.id}`))
+                  }
+                  className="p-6 glass-card cursor-pointer group hover:-translate-y-1"
+                >
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="p-2 bg-muted/50 rounded-lg">
+                      <Globe className="w-5 h-5 text-brand" />
+                    </div>
+                    <Badge
+                      variant="outline"
+                      className={`
+                      ${
+                        audit.status === "completed"
+                          ? "bg-emerald-500/10 text-emerald-600 border-emerald-500/20"
+                          : audit.status === "failed"
+                            ? "bg-red-500/10 text-red-600 border-red-500/20"
+                            : audit.status === "running"
+                              ? "bg-brand/10 text-brand border-brand/20"
+                              : "bg-amber-500/10 text-amber-600 border-amber-500/20"
+                      }
+                    `}
+                    >
+                      {audit.status}
+                    </Badge>
+                  </div>
+
+                  <h3 className="text-lg font-medium truncate mb-1 group-hover:text-brand transition-colors">
+                    {audit.domain ||
+                      (() => {
+                        try {
+                          return new URL(audit.url).hostname.replace(
+                            "www.",
+                            "",
+                          );
+                        } catch {
+                          return audit.url;
+                        }
+                      })()}
+                  </h3>
+                  <p className="text-sm text-muted-foreground truncate mb-4">
+                    {audit.url}
+                  </p>
+
+                  <div className="flex justify-between items-center pt-4 border-t border-border text-sm">
+                    <span className="flex items-center gap-1 text-muted-foreground">
+                      <Clock className="w-3 h-3" />
+                      {new Date(audit.created_at).toLocaleDateString()}
+                    </span>
+                    {audit.status === "completed" && audit.geo_score && (
+                      <span className="text-emerald-600 font-medium">
+                        GEO: {Math.round(audit.geo_score)}%
+                      </span>
+                    )}
+                    <ArrowRight className="w-4 h-4 text-muted-foreground group-hover:text-foreground transition-colors" />
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
       </main>
 
       <footer className="border-t border-border mt-20 py-8">

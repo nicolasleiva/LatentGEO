@@ -441,8 +441,13 @@ def run_geo_analysis_task(self, audit_id: int):
                 pdf_file_path = PDFService.create_from_audit(
                     audit=audit, markdown_content=audit.report_markdown
                 )
+                pdf_file_size = getattr(audit, "_generated_pdf_size_bytes", None)
                 ReportService.create_report(
-                    db=db, audit_id=audit_id, report_type="PDF", file_path=pdf_file_path
+                    db=db,
+                    audit_id=audit_id,
+                    report_type="PDF",
+                    file_path=pdf_file_path,
+                    file_size=pdf_file_size,
                 )
             else:
                 logger.info("GEO section already present in report.")
@@ -456,6 +461,11 @@ def run_geo_analysis_task(self, audit_id: int):
 
 def _save_pagespeed_data(audit_id: int, pagespeed_data: dict):
     """Guardar datos de PageSpeed en JSON"""
+    if not settings.AUDIT_LOCAL_ARTIFACTS_ENABLED:
+        logger.info(
+            f"Skipping local pagespeed artifact for audit {audit_id} (Supabase-only mode)."
+        )
+        return
     try:
         import json
         from pathlib import Path
@@ -473,6 +483,11 @@ def _save_pagespeed_data(audit_id: int, pagespeed_data: dict):
 
 
 def _save_pagespeed_analysis(audit_id: int, analysis_md: str):
+    if not settings.AUDIT_LOCAL_ARTIFACTS_ENABLED:
+        logger.info(
+            f"Skipping local pagespeed analysis artifact for audit {audit_id} (Supabase-only mode)."
+        )
+        return
     """Guardar análisis de PageSpeed en Markdown"""
     try:
         from pathlib import Path
@@ -612,8 +627,13 @@ def generate_pdf_task(audit_id: int, report_markdown: str):
             pdf_file_path = PDFService.create_from_audit(
                 audit=audit, markdown_content=report_markdown
             )
+            pdf_file_size = getattr(audit, "_generated_pdf_size_bytes", None)
             ReportService.create_report(
-                db=db, audit_id=audit_id, report_type="PDF", file_path=pdf_file_path
+                db=db,
+                audit_id=audit_id,
+                report_type="PDF",
+                file_path=pdf_file_path,
+                file_size=pdf_file_size,
             )
             logger.info(f"PDF report for audit {audit_id} registered in the database.")
         except Exception as e:
@@ -923,7 +943,12 @@ def generate_full_report_task(audit_id: int):
                     llm_visibility=llm_visibility_data.get("items", []),
                 )
             )
-            logger.info("Audit files persisted to disk successfully.")
+            if settings.AUDIT_LOCAL_ARTIFACTS_ENABLED:
+                logger.info("Audit files persisted to local disk successfully.")
+            else:
+                logger.info(
+                    "Audit local artifact persistence disabled (Supabase-only mode)."
+                )
 
             # Regenerate report markdown with LLM
             new_report_markdown, new_fix_plan = asyncio.run(
@@ -963,11 +988,17 @@ def generate_full_report_task(audit_id: int):
             pdf_file_path = PDFService.create_from_audit(
                 audit=audit, markdown_content=audit.report_markdown
             )
+            pdf_file_size = getattr(audit, "_generated_pdf_size_bytes", None)
             ReportService.create_report(
-                db=db, audit_id=audit_id, report_type="PDF", file_path=pdf_file_path
+                db=db,
+                audit_id=audit_id,
+                report_type="PDF",
+                file_path=pdf_file_path,
+                file_size=pdf_file_size,
             )
             logger.info(f"Final PDF generated: {pdf_file_path}")
 
     except Exception as e:
         logger.error(f"Error generating full report: {e}", exc_info=True)
         raise
+

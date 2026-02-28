@@ -7,7 +7,7 @@ services:
   # Base de Datos - Sin puertos expuestos
   db:
     environment:
-      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD requerido}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-auditor_password}
     ports: []  # No exponer en producción
 
   # Redis - Sin puertos expuestos
@@ -23,6 +23,7 @@ services:
       SECRET_KEY: ${SECRET_KEY}
       ENCRYPTION_KEY: ${ENCRYPTION_KEY}
       CORS_ORIGINS: ${CORS_ORIGINS}
+      AUDIT_LOCAL_ARTIFACTS_ENABLED: ${AUDIT_LOCAL_ARTIFACTS_ENABLED:-false}
     ports:
       - "8000:8000"  # Solo para desarrollo, en AWS usar ALB
 
@@ -40,3 +41,4 @@ services:
   worker:
     environment:
       ENVIRONMENT: production
+      AUDIT_LOCAL_ARTIFACTS_ENABLED: ${AUDIT_LOCAL_ARTIFACTS_ENABLED:-false}

@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import asyncio
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
-from typing import Any, Awaitable, Callable, Dict, TypeVar
+from typing import Awaitable, Callable, Dict, TypeVar
 
 import pybreaker
 

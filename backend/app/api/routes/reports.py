@@ -2,12 +2,8 @@
 API Endpoints para PDF y Reportes
 """
 
-import json
-import os
-from pathlib import Path
-
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
-from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
+from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import JSONResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
 from ...core.access_control import ensure_audit_access
@@ -30,13 +26,6 @@ router = APIRouter(
 def _get_owned_audit(db: Session, audit_id: int, current_user: AuthUser):
     audit = AuditService.get_audit(db, audit_id)
     return ensure_audit_access(audit, current_user)
-
-
-# Importar la lógica de creación de PDF del script heredado
-try:
-    from create_pdf import FPDF_AVAILABLE, create_comprehensive_pdf
-except ImportError:
-    FPDF_AVAILABLE = False
 
 
 @router.get("/audit/{audit_id}", response_model=dict)
@@ -65,56 +54,11 @@ async def get_audit_reports(
         )
 
 
-async def generate_pdf_background(audit_id: int, report_dir: str, db: Session):
-    """
-    Tarea en segundo plano para generar el PDF.
-    """
-    logger.info(
-        f"Iniciando generación de PDF para auditoría {audit_id} en {report_dir}"
-    )
-    try:
-        audit = AuditService.get_audit(db, audit_id)
-        if not audit:
-            logger.error(f"Auditoría {audit_id} no encontrada para generar PDF.")
-            return
-
-        # 1. Guardar los datos de la BD en archivos temporales que create_pdf espera
-        with open(
-            os.path.join(report_dir, "ag2_report.md"), "w", encoding="utf-8"
-        ) as f:
-            f.write(audit.report_markdown or "# Reporte no disponible")
-        with open(
-            os.path.join(report_dir, "fix_plan.json"), "w", encoding="utf-8"
-        ) as f:
-            json.dump(audit.fix_plan or [], f, indent=2, ensure_ascii=False)
-        with open(
-            os.path.join(report_dir, "aggregated_summary.json"), "w", encoding="utf-8"
-        ) as f:
-            json.dump(audit.target_audit or {}, f, indent=2, ensure_ascii=False)
-
-        # 2. Llamar a la función de creación de PDF
-        if FPDF_AVAILABLE:
-            create_comprehensive_pdf(report_dir)
-            pdf_filename = f"Reporte_Consolidado_{os.path.basename(report_dir)}.pdf"
-            pdf_path = os.path.join(report_dir, pdf_filename)
-            if os.path.exists(pdf_path):
-                logger.info(f"PDF generado exitosamente: {pdf_path}")
-                # Aquí podrías actualizar la BD con la ruta del archivo
-            else:
-                logger.error("create_comprehensive_pdf no generó el archivo esperado.")
-        else:
-            logger.error("FPDF no está disponible. No se puede generar el PDF.")
-
-    except Exception as e:
-        logger.error(f"Error en la generación de PDF en segundo plano: {e}")
-
-
 @router.post(
     "/generate-pdf", response_model=None, status_code=status.HTTP_307_TEMPORARY_REDIRECT
 )
 async def generate_pdf(
     pdf_request: PDFRequest,
-    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: AuthUser = Depends(get_current_user),
 ):
@@ -164,17 +108,31 @@ async def download_report(
 
         _get_owned_audit(db, report.audit_id, current_user)
 
-        file_path = Path(report.file_path)
-        if not file_path.exists():
+        if not report.file_path.startswith("supabase://"):
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="Archivo no encontrado"
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    "Legacy local report paths are disabled in Supabase-only mode. "
+                    "Regenera el reporte para moverlo a Supabase."
+                ),
             )
 
-        return FileResponse(
-            path=file_path,
-            filename=file_path.name,
-            media_type="application/octet-stream",
-        )
+        from ...core.config import settings
+        from ...services.supabase_service import SupabaseService
+
+        storage_path = report.file_path.replace("supabase://", "", 1)
+        try:
+            signed_url = SupabaseService.get_signed_url(
+                bucket=settings.SUPABASE_STORAGE_BUCKET,
+                path=storage_path,
+            )
+            return RedirectResponse(url=signed_url, status_code=302)
+        except Exception as e:
+            logger.error(f"Error generating Supabase URL: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Error retrieving file from cloud storage",
+            ) from e
     except HTTPException:
         raise
     except Exception as e:
