@@ -36,8 +36,11 @@ export function GEOSkeleton({ auditId = "" }: { auditId?: string }) {
 
         {/* Key Metrics Grid Skeleton */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-12">
-          {[1, 2, 3, 4].map((i) => (
-            <div key={i} className="glass-card p-6 relative overflow-hidden">
+          {[1, 2, 3, 4].map((skeletonId) => (
+            <div
+              key={`geo-metric-skeleton-${skeletonId}`}
+              className="glass-card p-6 relative overflow-hidden"
+            >
               <div className="absolute top-0 right-0 p-4 opacity-5">
                 <div className="w-24 h-24 bg-muted/40 rounded-full animate-pulse" />
               </div>
@@ -54,9 +57,9 @@ export function GEOSkeleton({ auditId = "" }: { auditId?: string }) {
           <div className="h-4 w-96 bg-muted/30 rounded mb-8 animate-pulse" />
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {[1, 2, 3].map((i) => (
+            {[1, 2, 3].map((skeletonId) => (
               <div
-                key={i}
+                key={`geo-opportunity-skeleton-${skeletonId}`}
                 className="bg-muted/30 rounded-lg p-6 border border-border"
               >
                 <div className="flex justify-between items-start mb-4">
@@ -74,8 +77,11 @@ export function GEOSkeleton({ auditId = "" }: { auditId?: string }) {
         <div className="glass-card p-8 mb-8">
           <div className="h-8 w-48 bg-muted/50 rounded mb-6 animate-pulse" />
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {[1, 2, 3].map((i) => (
-              <div key={i} className="bg-muted/30 rounded-lg p-6 text-center">
+            {[1, 2, 3].map((skeletonId) => (
+              <div
+                key={`geo-benchmark-skeleton-${skeletonId}`}
+                className="bg-muted/30 rounded-lg p-6 text-center"
+              >
                 <div className="h-4 w-24 bg-muted/50 rounded mx-auto mb-2 animate-pulse" />
                 <div className="h-10 w-16 bg-muted/60 rounded mx-auto animate-pulse" />
               </div>

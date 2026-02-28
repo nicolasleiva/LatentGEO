@@ -37,14 +37,19 @@ interface ContentTemplatesProps {
 export default function ContentTemplates({
   backendUrl,
 }: ContentTemplatesProps) {
-  const [category, setCategory] = useState("all");
+  const [selection, setSelection] = useState<{
+    category: string;
+    selectedTemplate: Template | null;
+  }>({
+    category: "all",
+    selectedTemplate: null,
+  });
   const [loading, setLoading] = useState(false);
   const [templates, setTemplates] = useState<Template[]>([]);
-  const [selectedTemplate, setSelectedTemplate] = useState<Template | null>(
-    null,
-  );
-  const [error, setError] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
+  const [ui, setUi] = useState<{ error: string | null; copied: boolean }>({
+    error: null,
+    copied: false,
+  });
 
   const categories = [
     { value: "all", label: "All Categories" },
@@ -58,27 +63,29 @@ export default function ContentTemplates({
 
   const fetchTemplates = async () => {
     setLoading(true);
-    setError(null);
+    setUi((prev) => ({ ...prev, error: null }));
 
     try {
       const res = await fetchWithBackendAuth(
-        `${backendUrl}/api/v1/geo/content-templates?category=${category}`,
+        `${backendUrl}/api/v1/geo/content-templates?category=${selection.category}`,
       );
       if (!res.ok) throw new Error("Failed to fetch templates");
       const data = await res.json();
       setTemplates(data.templates || []);
     } catch (err: any) {
-      setError(err.message);
+      setUi((prev) => ({ ...prev, error: err.message }));
     } finally {
       setLoading(false);
     }
   };
 
   const copyTemplate = () => {
-    if (selectedTemplate) {
-      navigator.clipboard.writeText(selectedTemplate.structure);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+    if (selection.selectedTemplate) {
+      navigator.clipboard.writeText(selection.selectedTemplate.structure);
+      setUi((prev) => ({ ...prev, copied: true }));
+      setTimeout(() => {
+        setUi((prev) => ({ ...prev, copied: false }));
+      }, 2000);
     }
   };
 
@@ -88,7 +95,12 @@ export default function ContentTemplates({
         <div className="space-y-4">
           <div>
             <Label className="text-muted-foreground">Category</Label>
-            <Select value={category} onValueChange={setCategory}>
+            <Select
+              value={selection.category}
+              onValueChange={(value) =>
+                setSelection((prev) => ({ ...prev, category: value }))
+              }
+            >
               <SelectTrigger className="mt-2 bg-muted/30 border-border/70 text-foreground">
                 <SelectValue placeholder="Select category" />
               </SelectTrigger>
@@ -119,14 +131,14 @@ export default function ContentTemplates({
         </div>
       </div>
 
-      {error && (
+      {ui.error && (
         <div className="flex items-center gap-2 text-red-400 py-4">
           <AlertCircle className="w-5 h-5" />
-          <span>Error: {error}</span>
+          <span>Error: {ui.error}</span>
         </div>
       )}
 
-      {templates.length > 0 && !selectedTemplate && (
+      {templates.length > 0 && !selection.selectedTemplate && (
         <div className="space-y-3">
           <p className="text-muted-foreground mb-4">
             Select a template to view:
@@ -134,7 +146,9 @@ export default function ContentTemplates({
           {templates.map((template) => (
             <button
               key={template.id}
-              onClick={() => setSelectedTemplate(template)}
+              onClick={() =>
+                setSelection((prev) => ({ ...prev, selectedTemplate: template }))
+              }
               className="w-full text-left bg-muted/30 border border-border rounded-xl p-4 hover:bg-muted/40 transition-colors"
             >
               <div className="flex justify-between items-start">
@@ -155,21 +169,23 @@ export default function ContentTemplates({
         </div>
       )}
 
-      {selectedTemplate && (
+      {selection.selectedTemplate && (
         <div className="bg-muted/30 border border-border rounded-xl p-6">
           <div className="flex justify-between items-start mb-4">
             <div>
               <h3 className="font-semibold text-foreground text-xl">
-                {selectedTemplate.name}
+                {selection.selectedTemplate.name}
               </h3>
               <p className="text-muted-foreground">
-                {selectedTemplate.description}
+                {selection.selectedTemplate.description}
               </p>
             </div>
             <div className="flex gap-2">
               <Button
                 variant="outline"
-                onClick={() => setSelectedTemplate(null)}
+                onClick={() =>
+                  setSelection((prev) => ({ ...prev, selectedTemplate: null }))
+                }
                 className="border-border/70 text-foreground"
               >
                 Back
@@ -179,7 +195,7 @@ export default function ContentTemplates({
                 onClick={copyTemplate}
                 className="border-border/70 text-foreground"
               >
-                {copied ? (
+                {ui.copied ? (
                   <>
                     <Check className="w-4 h-4 mr-2" /> Copied!
                   </>
@@ -193,21 +209,21 @@ export default function ContentTemplates({
           </div>
 
           <Textarea
-            value={selectedTemplate.structure}
+            value={selection.selectedTemplate.structure}
             readOnly
             className="bg-muted/50 border-border text-foreground font-mono text-sm min-h-[300px] mb-6"
           />
 
-          {selectedTemplate.tips.length > 0 && (
+          {selection.selectedTemplate.tips.length > 0 && (
             <div>
               <h4 className="font-semibold text-foreground mb-3 flex items-center gap-2">
                 <Sparkles className="w-4 h-4 text-yellow-400" />
                 GEO Optimization Tips
               </h4>
               <ul className="space-y-2">
-                {selectedTemplate.tips.map((tip, idx) => (
+                {selection.selectedTemplate.tips.map((tip) => (
                   <li
-                    key={idx}
+                    key={tip}
                     className="text-muted-foreground text-sm flex items-start gap-2"
                   >
                     <span className="text-yellow-400">•</span> {tip}

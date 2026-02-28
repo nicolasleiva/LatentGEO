@@ -180,9 +180,9 @@ export default function ContentEditorPage() {
                 <h3 className="font-medium text-xs uppercase tracking-widest text-muted-foreground">
                   Action Items
                 </h3>
-                {analysis.suggestions.map((s, idx) => (
+                {analysis.suggestions.map((s) => (
                   <div
-                    key={idx}
+                    key={`${s.type}-${s.text}`}
                     className="flex gap-3 items-start p-3 rounded-xl glass-panel border border-border hover:bg-muted/50 transition-colors"
                   >
                     {s.type === "critical" ? (
@@ -204,8 +204,8 @@ export default function ContentEditorPage() {
                     Missing Entities
                   </h3>
                   <div className="flex flex-wrap gap-2">
-                    {analysis.missing_entities.map((entity, idx) => (
-                      <Badge key={idx} variant="outline" className="text-xs">
+                    {analysis.missing_entities.map((entity) => (
+                      <Badge key={entity} variant="outline" className="text-xs">
                         {entity}
                       </Badge>
                     ))}

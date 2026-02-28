@@ -131,9 +131,9 @@ export default function ContentAnalyze({ backendUrl }: ContentAnalyzeProps) {
                   Strengths
                 </h4>
                 <ul className="space-y-2">
-                  {result.strengths.map((strength, idx) => (
+                  {result.strengths.map((strength) => (
                     <li
-                      key={idx}
+                      key={strength}
                       className="text-muted-foreground text-sm flex items-start gap-2"
                     >
                       <span className="text-green-400">•</span> {strength}
@@ -151,9 +151,9 @@ export default function ContentAnalyze({ backendUrl }: ContentAnalyzeProps) {
                   Gaps to Fix
                 </h4>
                 <ul className="space-y-2">
-                  {result.weaknesses.map((weakness, idx) => (
+                  {result.weaknesses.map((weakness) => (
                     <li
-                      key={idx}
+                      key={weakness}
                       className="text-muted-foreground text-sm flex items-start gap-2"
                     >
                       <span className="text-red-400">•</span> {weakness}
@@ -172,9 +172,9 @@ export default function ContentAnalyze({ backendUrl }: ContentAnalyzeProps) {
                 Recommendations
               </h4>
               <ul className="space-y-2">
-                {result.recommendations.map((rec, idx) => (
+                {result.recommendations.map((rec) => (
                   <li
-                    key={idx}
+                    key={rec}
                     className="text-muted-foreground text-sm flex items-start gap-2"
                   >
                     <span className="text-blue-400">•</span> {rec}

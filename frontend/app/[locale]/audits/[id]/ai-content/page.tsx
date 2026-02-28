@@ -21,8 +21,7 @@ export default function AIContentPage() {
   const params = useParams();
   const auditId = params.id as string;
 
-  const [domain, setDomain] = useState("");
-  const [topics, setTopics] = useState("");
+  const [form, setForm] = useState({ domain: "", topics: "" });
   const [loading, setLoading] = useState(false);
   const [suggestions, setSuggestions] = useState<AIContentSuggestion[]>([]);
   const [error, setError] = useState("");
@@ -37,7 +36,7 @@ export default function AIContentPage() {
         const audit = await api.getAudit(auditId);
         if (audit.url) {
           const url = new URL(audit.url);
-          setDomain(url.hostname);
+          setForm((prev) => ({ ...prev, domain: url.hostname }));
         }
       } catch {}
     } catch (e) {
@@ -50,19 +49,19 @@ export default function AIContentPage() {
   }, [loadData]);
 
   async function handleGenerate() {
-    if (!domain || !topics) return;
+    if (!form.domain || !form.topics) return;
 
     setLoading(true);
     setError("");
 
     try {
-      const topicList = topics
+      const topicList = form.topics
         .split(",")
         .map((t) => t.trim())
         .filter((t) => t);
       const newSuggestions = await api.generateAIContent(
         auditId,
-        domain,
+        form.domain,
         topicList,
       );
       setSuggestions((prev) => [...newSuggestions, ...prev]);
@@ -103,23 +102,34 @@ export default function AIContentPage() {
           <CardContent className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
-                <label className="text-sm font-medium">Domain</label>
+                <label htmlFor="ai-content-domain" className="text-sm font-medium">
+                  Domain
+                </label>
                 <Input
+                  id="ai-content-domain"
                   className="glass-input"
                   placeholder="example.com"
-                  value={domain}
-                  onChange={(e) => setDomain(e.target.value)}
+                  value={form.domain}
+                  onChange={(e) =>
+                    setForm((prev) => ({ ...prev, domain: e.target.value }))
+                  }
                 />
               </div>
               <div className="space-y-2">
-                <label className="text-sm font-medium">
+                <label
+                  htmlFor="ai-content-topics"
+                  className="text-sm font-medium"
+                >
                   Target Topics (comma separated)
                 </label>
                 <Input
+                  id="ai-content-topics"
                   className="glass-input"
                   placeholder="e.g. cloud computing, devops"
-                  value={topics}
-                  onChange={(e) => setTopics(e.target.value)}
+                  value={form.topics}
+                  onChange={(e) =>
+                    setForm((prev) => ({ ...prev, topics: e.target.value }))
+                  }
                 />
               </div>
             </div>
@@ -189,11 +199,9 @@ export default function AIContentPage() {
                         Suggested Outline:
                       </p>
                       <ul className="list-disc list-inside text-sm text-muted-foreground">
-                        {sug.content_outline.sections.map(
-                          (sec: string, i: number) => (
-                            <li key={i}>{sec}</li>
-                          ),
-                        )}
+                        {sug.content_outline.sections.map((sec: string) => (
+                          <li key={sec}>{sec}</li>
+                        ))}
                       </ul>
                     </div>
                   )}

@@ -32,14 +32,16 @@ export default function SchemaMultipleGenerator({
   const [url, setUrl] = useState("");
   const [loading, setLoading] = useState(false);
   const [results, setResults] = useState<SchemaSuggestion[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [copiedIdx, setCopiedIdx] = useState<number | null>(null);
+  const [ui, setUi] = useState<{ error: string | null; copiedIdx: number | null }>({
+    error: null,
+    copiedIdx: null,
+  });
 
   const generateSchemas = async () => {
     if (!url.trim()) return;
 
     setLoading(true);
-    setError(null);
+    setUi((prev) => ({ ...prev, error: null }));
 
     try {
       const res = await fetchWithBackendAuth(
@@ -55,7 +57,7 @@ export default function SchemaMultipleGenerator({
       const data = await res.json();
       setResults(data.schemas || []);
     } catch (err: any) {
-      setError(err.message);
+      setUi((prev) => ({ ...prev, error: err.message }));
     } finally {
       setLoading(false);
     }
@@ -63,8 +65,10 @@ export default function SchemaMultipleGenerator({
 
   const copyToClipboard = (idx: number, json: string) => {
     navigator.clipboard.writeText(json);
-    setCopiedIdx(idx);
-    setTimeout(() => setCopiedIdx(null), 2000);
+    setUi((prev) => ({ ...prev, copiedIdx: idx }));
+    setTimeout(() => {
+      setUi((prev) => ({ ...prev, copiedIdx: null }));
+    }, 2000);
   };
 
   const getPriorityColor = (priority: string) => {
@@ -111,10 +115,10 @@ export default function SchemaMultipleGenerator({
         </div>
       </div>
 
-      {error && (
+      {ui.error && (
         <div className="flex items-center gap-2 text-red-400 py-4">
           <AlertCircle className="w-5 h-5" />
-          <span>Error: {error}</span>
+          <span>Error: {ui.error}</span>
         </div>
       )}
 
@@ -135,7 +139,7 @@ export default function SchemaMultipleGenerator({
 
           {results.map((schema, idx) => (
             <div
-              key={idx}
+              key={schema.schema_type || JSON.stringify(schema)}
               className="bg-muted/30 border border-border rounded-xl p-6"
             >
               <div className="flex justify-between items-start mb-4">
@@ -159,7 +163,7 @@ export default function SchemaMultipleGenerator({
                   onClick={() => copyToClipboard(idx, schema.schema_json)}
                   className="border-border/70 text-foreground"
                 >
-                  {copiedIdx === idx ? (
+                  {ui.copiedIdx === idx ? (
                     <>
                       <Check className="w-4 h-4 mr-2" /> Copied!
                     </>

@@ -92,7 +92,7 @@ export function IssuesHeatmap({ data }: HeatmapProps) {
       <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-2">
         {data.slice(0, 6).map((item, i) => (
           <div
-            key={i}
+            key={item.url}
             className="flex items-center gap-3 p-2 rounded-lg hover:bg-muted/50 transition-colors"
           >
             <span className="text-muted-foreground text-xs font-mono w-4 text-right">

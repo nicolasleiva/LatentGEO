@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { FileText, Copy, Check, Sparkles, AlertCircle } from "lucide-react";
+import { Copy, Check, Sparkles, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -26,18 +26,19 @@ interface SchemaGeneratorProps {
 }
 
 export default function SchemaGenerator({ backendUrl }: SchemaGeneratorProps) {
-  const [url, setUrl] = useState("");
-  const [schemaType, setSchemaType] = useState("auto");
+  const [form, setForm] = useState({ url: "", schemaType: "auto" });
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<SchemaResult | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
+  const [ui, setUi] = useState<{ error: string | null; copied: boolean }>({
+    error: null,
+    copied: false,
+  });
 
   const generateSchema = async () => {
-    if (!url.trim()) return;
+    if (!form.url.trim()) return;
 
     setLoading(true);
-    setError(null);
+    setUi((prev) => ({ ...prev, error: null }));
 
     try {
       const res = await fetchWithBackendAuth(
@@ -46,8 +47,8 @@ export default function SchemaGenerator({ backendUrl }: SchemaGeneratorProps) {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            url: url,
-            schema_type: schemaType === "auto" ? null : schemaType,
+            url: form.url,
+            schema_type: form.schemaType === "auto" ? null : form.schemaType,
           }),
         },
       );
@@ -56,7 +57,7 @@ export default function SchemaGenerator({ backendUrl }: SchemaGeneratorProps) {
       const data = await res.json();
       setResult(data);
     } catch (err: any) {
-      setError(err.message);
+      setUi((prev) => ({ ...prev, error: err.message }));
     } finally {
       setLoading(false);
     }
@@ -65,8 +66,10 @@ export default function SchemaGenerator({ backendUrl }: SchemaGeneratorProps) {
   const copyToClipboard = () => {
     if (result?.schema_json) {
       navigator.clipboard.writeText(result.schema_json);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      setUi((prev) => ({ ...prev, copied: true }));
+      setTimeout(() => {
+        setUi((prev) => ({ ...prev, copied: false }));
+      }, 2000);
     }
   };
 
@@ -78,8 +81,10 @@ export default function SchemaGenerator({ backendUrl }: SchemaGeneratorProps) {
             <Label className="text-muted-foreground">Page URL</Label>
             <Input
               placeholder="https://example.com/page"
-              value={url}
-              onChange={(e) => setUrl(e.target.value)}
+              value={form.url}
+              onChange={(e) =>
+                setForm((prev) => ({ ...prev, url: e.target.value }))
+              }
               className="mt-2 bg-muted/30 border-border/70 text-foreground placeholder:text-muted-foreground"
             />
           </div>
@@ -88,7 +93,12 @@ export default function SchemaGenerator({ backendUrl }: SchemaGeneratorProps) {
             <Label className="text-muted-foreground">
               Schema Type (Optional)
             </Label>
-            <Select value={schemaType} onValueChange={setSchemaType}>
+            <Select
+              value={form.schemaType}
+              onValueChange={(value) =>
+                setForm((prev) => ({ ...prev, schemaType: value }))
+              }
+            >
               <SelectTrigger className="mt-2 bg-muted/30 border-border/70 text-foreground">
                 <SelectValue placeholder="Auto-detect" />
               </SelectTrigger>
@@ -113,7 +123,7 @@ export default function SchemaGenerator({ backendUrl }: SchemaGeneratorProps) {
 
           <Button
             onClick={generateSchema}
-            disabled={loading || !url.trim()}
+            disabled={loading || !form.url.trim()}
             className="glass-button-primary w-full"
           >
             {loading ? (
@@ -128,10 +138,10 @@ export default function SchemaGenerator({ backendUrl }: SchemaGeneratorProps) {
         </div>
       </div>
 
-      {error && (
+      {ui.error && (
         <div className="flex items-center gap-2 text-red-400 py-4">
           <AlertCircle className="w-5 h-5" />
-          <span>Error: {error}</span>
+          <span>Error: {ui.error}</span>
         </div>
       )}
 
@@ -151,7 +161,7 @@ export default function SchemaGenerator({ backendUrl }: SchemaGeneratorProps) {
               onClick={copyToClipboard}
               className="border-border/70 text-foreground"
             >
-              {copied ? (
+              {ui.copied ? (
                 <>
                   <Check className="w-4 h-4 mr-2" /> Copied!
                 </>
@@ -175,9 +185,9 @@ export default function SchemaGenerator({ backendUrl }: SchemaGeneratorProps) {
                 Recommendations
               </h4>
               <ul className="space-y-2">
-                {result.recommendations.map((rec, idx) => (
+                {result.recommendations.map((rec) => (
                   <li
-                    key={idx}
+                    key={rec}
                     className="text-muted-foreground text-sm flex items-start gap-2"
                   >
                     <span className="text-blue-400">•</span> {rec}

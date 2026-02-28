@@ -29,11 +29,9 @@ export default function RankTrackingPage() {
   const params = useParams();
   const auditId = params.id as string;
 
-  const [domain, setDomain] = useState("");
-  const [keywords, setKeywords] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [form, setForm] = useState({ domain: "", keywords: "" });
+  const [status, setStatus] = useState({ loading: false, error: "" });
   const [rankings, setRankings] = useState<RankTracking[]>([]);
-  const [error, setError] = useState("");
   const [expandedRows, setExpandedRows] = useState<Set<number>>(new Set());
 
   const toggleExpand = (rankId: number) => {
@@ -54,7 +52,7 @@ export default function RankTrackingPage() {
         const audit = await api.getAudit(auditId);
         if (audit.url) {
           const url = new URL(audit.url);
-          setDomain(url.hostname);
+          const detectedDomain = url.hostname;
 
           // Extract core keywords from audit analysis
           const suggestedKeywords: string[] = [];
@@ -77,7 +75,10 @@ export default function RankTrackingPage() {
 
           // Remove duplicates and take top 5
           const uniqueKeywords = [...new Set(suggestedKeywords)].slice(0, 5);
-          setKeywords(uniqueKeywords.join(", "));
+          setForm({
+            domain: detectedDomain,
+            keywords: uniqueKeywords.join(", "),
+          });
         }
       } catch {}
     } catch (e) {
@@ -90,22 +91,29 @@ export default function RankTrackingPage() {
   }, [loadData]);
 
   async function handleTrack() {
-    if (!domain || !keywords) return;
+    if (!form.domain || !form.keywords) return;
 
-    setLoading(true);
-    setError("");
+    setStatus({ loading: true, error: "" });
 
     try {
-      const keywordList = keywords
+      const keywordList = form.keywords
         .split(",")
         .map((k) => k.trim())
         .filter((k) => k);
-      const newRankings = await api.trackRankings(auditId, domain, keywordList);
+      const newRankings = await api.trackRankings(
+        auditId,
+        form.domain,
+        keywordList,
+      );
       setRankings((prev) => [...newRankings, ...prev]);
     } catch (e) {
-      setError("Failed to track rankings. Ensure Google API keys are set.");
+      setStatus({
+        loading: false,
+        error: "Failed to track rankings. Ensure Google API keys are set.",
+      });
+      return;
     } finally {
-      setLoading(false);
+      setStatus((prev) => ({ ...prev, loading: false }));
     }
   }
 
@@ -135,23 +143,37 @@ export default function RankTrackingPage() {
           <CardContent className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
-                <label className="text-sm font-medium">Domain</label>
+                <label
+                  htmlFor="rank-tracking-domain"
+                  className="text-sm font-medium"
+                >
+                  Domain
+                </label>
                 <Input
+                  id="rank-tracking-domain"
                   className="glass-input"
                   placeholder="example.com"
-                  value={domain}
-                  onChange={(e) => setDomain(e.target.value)}
+                  value={form.domain}
+                  onChange={(e) =>
+                    setForm((prev) => ({ ...prev, domain: e.target.value }))
+                  }
                 />
               </div>
               <div className="space-y-2">
-                <label className="text-sm font-medium">
+                <label
+                  htmlFor="rank-tracking-keywords"
+                  className="text-sm font-medium"
+                >
                   Core Keywords (from site analysis)
                 </label>
                 <Input
+                  id="rank-tracking-keywords"
                   className="glass-input"
                   placeholder="e.g. brand name, main product"
-                  value={keywords}
-                  onChange={(e) => setKeywords(e.target.value)}
+                  value={form.keywords}
+                  onChange={(e) =>
+                    setForm((prev) => ({ ...prev, keywords: e.target.value }))
+                  }
                 />
                 <p className="text-xs text-muted-foreground">
                   Auto-detected from your site content. Edit as needed.
@@ -160,10 +182,10 @@ export default function RankTrackingPage() {
             </div>
             <Button
               onClick={handleTrack}
-              disabled={loading}
+              disabled={status.loading}
               className="w-full md:w-auto glass-button-primary"
             >
-              {loading ? (
+              {status.loading ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Tracking...
                 </>
@@ -173,7 +195,9 @@ export default function RankTrackingPage() {
                 </>
               )}
             </Button>
-            {error && <p className="text-red-500 text-sm">{error}</p>}
+            {status.error && (
+              <p className="text-red-500 text-sm">{status.error}</p>
+            )}
           </CardContent>
         </Card>
 
@@ -239,9 +263,14 @@ export default function RankTrackingPage() {
                           {(expandedRows.has(rank.id)
                             ? (rank as any).top_results
                             : (rank as any).top_results.slice(0, 3)
-                          ).map((result: any, idx: number) => (
+                          ).map((result: any) => (
                             <div
-                              key={idx}
+                              key={
+                                result.url ||
+                                result.domain ||
+                                result.title ||
+                                JSON.stringify(result)
+                              }
                               className="text-xs flex items-center gap-1"
                             >
                               <Badge variant="outline" className="text-xs">
@@ -275,7 +304,7 @@ export default function RankTrackingPage() {
                     </TableCell>
                   </TableRow>
                 ))}
-                {rankings.length === 0 && !loading && (
+                {rankings.length === 0 && !status.loading && (
                   <TableRow>
                     <TableCell
                       colSpan={7}
