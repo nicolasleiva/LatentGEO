@@ -29,7 +29,7 @@ class TestRateLimitMiddleware:
             RateLimitMiddleware,
             default_limit=5,  # Very low for testing
             default_window=60,
-            endpoint_limits={"/api/auth": (2, 60)},
+            endpoint_limits={"/api/v1/auth": (2, 60)},
             trusted_ips=["127.0.0.1"],
         )
 
@@ -37,7 +37,7 @@ class TestRateLimitMiddleware:
         async def test_endpoint():
             return {"status": "ok"}
 
-        @app.get("/api/auth/login")
+        @app.get("/api/v1/auth/login")
         async def auth_endpoint():
             return {"status": "authenticated"}
 
@@ -87,7 +87,7 @@ class TestRateLimitMiddleware:
         # Auth endpoint has stricter limit (2/min)
         for i in range(5):
             response = client.get(
-                "/api/auth/login", headers={"X-Forwarded-For": "8.8.8.8"}
+                "/api/v1/auth/login", headers={"X-Forwarded-For": "8.8.8.8"}
             )
             if i >= 2:
                 assert response.status_code == 429
@@ -256,7 +256,7 @@ class TestFullMiddlewareStack:
 
         configure_security_middleware(app, settings)
 
-        @app.get("/api/test")
+        @app.get("/api/v1/test")
         async def test_endpoint():
             return {"status": "ok"}
 
@@ -269,7 +269,7 @@ class TestFullMiddlewareStack:
     def test_full_stack_request(self, app):
         """Test a request through the full middleware stack"""
         client = TestClient(app)
-        response = client.get("/api/test")
+        response = client.get("/api/v1/test")
 
         assert response.status_code == 200
 
@@ -293,3 +293,4 @@ class TestFullMiddlewareStack:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+

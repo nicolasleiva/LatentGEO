@@ -10,6 +10,7 @@ from .core.config import settings
 from .core.database import init_db
 from .core.logger import get_logger
 from .core.middleware import configure_security_middleware
+from .middleware.legacy_api_redirect import LegacyApiRedirectMiddleware
 
 logger = get_logger(__name__)
 
@@ -113,7 +114,6 @@ def create_app() -> FastAPI:
     )
 
     # ===== MIDDLEWARE =====
-    # ===== MIDDLEWARE =====
     # Always send explicit origins to support credentials (cookies/auth)
     # We avoid "*" even in DEBUG because it conflicts with allow_credentials=True
 
@@ -159,10 +159,15 @@ def create_app() -> FastAPI:
     else:
         logger.info("Rate limiting disabled (mode=disabled-debug)")
 
+    # Add legacy redirect middleware last so it executes first in Starlette stack order.
+    if settings.DEBUG and settings.LEGACY_API_REDIRECT_ENABLED:
+        app.add_middleware(LegacyApiRedirectMiddleware)
+        logger.info("Legacy API redirect enabled (debug-only, /api/* -> /api/v1/*)")
+
     # ===== VERSIONAMIENTO (Level 3) =====
     v1 = APIRouter(prefix="/api/v1")
 
-    # Register once from a shared list to keep /api and /api/v1 surfaces in sync.
+    # Register business routers only under /api/v1.
     api_route_modules = [
         audits,
         reports,
@@ -182,6 +187,8 @@ def create_app() -> FastAPI:
         webhooks,
         sse,
     ]
+    if score_history:
+        api_route_modules.append(score_history)
 
     for module in api_route_modules:
         if module:
@@ -189,13 +196,8 @@ def create_app() -> FastAPI:
 
     app.include_router(v1)
 
-    # Legacy Support /api & Global Routes
-    for module in api_route_modules:
-        if module:
-            app.include_router(module.router, prefix="/api")
+    # Global non-versioned routes
     app.include_router(health.router)
-    if score_history:
-        app.include_router(score_history.router)
     if realtime:
         app.include_router(realtime.router)
 

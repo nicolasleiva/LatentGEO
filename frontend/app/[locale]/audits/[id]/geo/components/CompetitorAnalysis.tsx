@@ -62,7 +62,7 @@ export default function CompetitorAnalysis({
 
     try {
       const res = await fetchWithBackendAuth(
-        `${backendUrl}/api/geo/competitor-analysis`,
+        `${backendUrl}/api/v1/geo/competitor-analysis`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -304,3 +304,4 @@ export default function CompetitorAnalysis({
     </div>
   );
 }
+

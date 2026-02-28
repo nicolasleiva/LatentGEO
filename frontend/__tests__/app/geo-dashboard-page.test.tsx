@@ -70,7 +70,7 @@ describe("GEO dashboard page", () => {
     });
   });
 
-  it("fetches /api/geo/dashboard only once per load (no loop)", async () => {
+  it("fetches /api/v1/geo/dashboard only once per load (no loop)", async () => {
     render(<GEODashboardPage />);
 
     await waitFor(() => {
@@ -80,7 +80,7 @@ describe("GEO dashboard page", () => {
     await new Promise((resolve) => setTimeout(resolve, 50));
     expect(fetchWithBackendAuth).toHaveBeenCalledTimes(1);
     expect(fetchWithBackendAuth).toHaveBeenCalledWith(
-      "http://localhost:8000/api/geo/dashboard/3",
+      "http://localhost:8000/api/v1/geo/dashboard/3",
       expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
   });
@@ -102,4 +102,5 @@ describe("GEO dashboard page", () => {
     ).toBeInTheDocument();
   });
 });
+
 

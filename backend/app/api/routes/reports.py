@@ -64,13 +64,13 @@ async def generate_pdf(
 ):
     """
     Deprecated legacy endpoint.
-    Use `POST /api/audits/{audit_id}/generate-pdf` instead.
+    Use `POST /api/v1/audits/{audit_id}/generate-pdf` instead.
     """
     try:
         audit = _get_owned_audit(db, pdf_request.audit_id, current_user)
-        redirect_to = f"/api/audits/{audit.id}/generate-pdf"
+        redirect_to = f"/api/v1/audits/{audit.id}/generate-pdf"
         logger.warning(
-            "Deprecated endpoint /api/reports/generate-pdf invoked for audit %s. Redirecting to %s",
+            "Deprecated endpoint /api/v1/reports/generate-pdf invoked for audit %s. Redirecting to %s",
             audit.id,
             redirect_to,
         )
@@ -78,7 +78,7 @@ async def generate_pdf(
             url=redirect_to,
             status_code=status.HTTP_307_TEMPORARY_REDIRECT,
             headers={
-                "X-Deprecated-Endpoint": "/api/reports/generate-pdf",
+                "X-Deprecated-Endpoint": "/api/v1/reports/generate-pdf",
                 "X-Replacement-Endpoint": redirect_to,
             },
         )

@@ -58,7 +58,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
 
   const backendBaseUrl = resolveApiBaseUrl();
   const upstreamUrl = new URL(
-    `/api/sse/audits/${encodeURIComponent(context.params.auditId)}/progress`,
+    `/api/v1/sse/audits/${encodeURIComponent(context.params.auditId)}/progress`,
     backendBaseUrl,
   );
 

@@ -180,7 +180,7 @@ export default function CommerceCampaign({
       setLoadingLatest(true);
       try {
         const res = await fetchWithBackendAuth(
-          `${backendUrl}/api/geo/commerce-query/latest/${auditId}`,
+          `${backendUrl}/api/v1/geo/commerce-query/latest/${auditId}`,
         );
         if (!res.ok) {
           throw new Error(`Failed to fetch latest analysis (${res.status})`);
@@ -222,7 +222,7 @@ export default function CommerceCampaign({
     setError(null);
     try {
       const res = await fetchWithBackendAuth(
-        `${backendUrl}/api/geo/commerce-query/analyze`,
+        `${backendUrl}/api/v1/geo/commerce-query/analyze`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -533,3 +533,4 @@ export default function CommerceCampaign({
     </div>
   );
 }
+

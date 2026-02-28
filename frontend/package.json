@@ -6,6 +6,7 @@
   "scripts": {
     "api:generate-types": "node ./scripts/generate-api-client.mjs",
     "build": "next build --webpack",
+    "check:no-legacy-api": "node ./scripts/check-no-legacy-api.mjs",
     "cf:build": "opennextjs-cloudflare build",
     "cf:deploy": "opennextjs-cloudflare deploy",
     "cf:preview": "opennextjs-cloudflare preview",

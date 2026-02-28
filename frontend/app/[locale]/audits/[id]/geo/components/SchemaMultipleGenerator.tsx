@@ -43,7 +43,7 @@ export default function SchemaMultipleGenerator({
 
     try {
       const res = await fetchWithBackendAuth(
-        `${backendUrl}/api/geo/schema-multiple`,
+        `${backendUrl}/api/v1/geo/schema-multiple`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -183,3 +183,4 @@ export default function SchemaMultipleGenerator({
     </div>
   );
 }
+

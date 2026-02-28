@@ -249,7 +249,7 @@ export default function GEODashboardPage() {
     const fetchData = async () => {
       try {
         const res = await fetchWithBackendAuth(
-          `${backendUrl}/api/geo/dashboard/${auditId}`,
+          `${backendUrl}/api/v1/geo/dashboard/${auditId}`,
           {
             signal: controller.signal,
           },
@@ -298,7 +298,7 @@ export default function GEODashboardPage() {
   const startCitationTracking = async () => {
     try {
       const res = await fetchWithBackendAuth(
-        `${backendUrl}/api/geo/citation-tracking/start`,
+        `${backendUrl}/api/v1/geo/citation-tracking/start`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -810,3 +810,4 @@ export default function GEODashboardPage() {
     </div>
   );
 }
+

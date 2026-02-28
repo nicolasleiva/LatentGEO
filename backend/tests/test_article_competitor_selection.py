@@ -282,10 +282,11 @@ def test_audits_competitors_route_filters_social_domains(client, db_session):
         ],
     )
 
-    response = client.get(f"/api/audits/{audit.id}/competitors")
+    response = client.get(f"/api/v1/audits/{audit.id}/competitors")
     assert response.status_code == 200
     payload = response.json()
     assert payload
     domains = [item.get("domain", "") for item in payload]
     assert all("instagram.com" not in d for d in domains)
     assert any("royalcanin.com" in d for d in domains)
+

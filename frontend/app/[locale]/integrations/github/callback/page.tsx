@@ -43,7 +43,7 @@ function CallbackContent() {
     const exchangeCode = async () => {
       try {
         const response = await fetchWithBackendAuth(
-          `${API_URL}/api/github/callback`,
+          `${API_URL}/api/v1/github/callback`,
           {
             method: "POST",
             headers: {
@@ -111,3 +111,4 @@ export default function GitHubCallback() {
     </div>
   );
 }
+

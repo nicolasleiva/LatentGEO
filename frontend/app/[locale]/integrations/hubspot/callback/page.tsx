@@ -21,7 +21,7 @@ function CallbackContent() {
     const exchangeCode = async (authCode: string) => {
       try {
         const response = await fetchWithBackendAuth(
-          `${API_URL}/api/hubspot/callback`,
+          `${API_URL}/api/v1/hubspot/callback`,
           {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -92,3 +92,4 @@ export default function HubSpotCallback() {
     </div>
   );
 }
+

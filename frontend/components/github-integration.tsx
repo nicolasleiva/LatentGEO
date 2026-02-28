@@ -56,7 +56,7 @@ export function GitHubIntegration({
   const fetchConnections = async () => {
     try {
       const res = await fetchWithBackendAuth(
-        `${backendUrl}/api/github/connections`,
+        `${backendUrl}/api/v1/github/connections`,
       );
       if (res.ok) {
         const data = await res.json();
@@ -75,7 +75,7 @@ export function GitHubIntegration({
     setLoading(true);
     try {
       const res = await fetchWithBackendAuth(
-        `${backendUrl}/api/github/repos/${connectionId}`,
+        `${backendUrl}/api/v1/github/repos/${connectionId}`,
       );
       if (res.ok) {
         const data = await res.json();
@@ -102,7 +102,7 @@ export function GitHubIntegration({
 
     try {
       const res = await fetchWithBackendAuth(
-        `${backendUrl}/api/github/create-auto-fix-pr/${selectedConnection}/${selectedRepo}`,
+        `${backendUrl}/api/v1/github/create-auto-fix-pr/${selectedConnection}/${selectedRepo}`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -129,7 +129,7 @@ export function GitHubIntegration({
 
   const connectGitHub = async () => {
     try {
-      const res = await fetchWithBackendAuth(`${backendUrl}/api/github/auth-url`);
+      const res = await fetchWithBackendAuth(`${backendUrl}/api/v1/github/auth-url`);
       const data = await res.json();
       if (!res.ok || !data?.url) {
         throw new Error(data?.detail || "Failed to get GitHub auth URL");
@@ -319,3 +319,4 @@ export function GitHubIntegration({
     </Card>
   );
 }
+

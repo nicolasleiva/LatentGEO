@@ -147,6 +147,7 @@ jobs:
         env:
           STRICT_BUILD: "1"
         run: |
+          pnpm --dir frontend run check:no-legacy-api
           pnpm --dir frontend lint
           pnpm --dir frontend run format:check
           pnpm --dir frontend run type-check

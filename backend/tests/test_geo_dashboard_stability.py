@@ -37,7 +37,7 @@ def test_geo_dashboard_survives_citation_history_failures(
 
     monkeypatch.setattr(CitationTrackerService, "get_citation_history", explode)
 
-    response = client.get(f"/api/geo/dashboard/{audit_id}")
+    response = client.get(f"/api/v1/geo/dashboard/{audit_id}")
     assert response.status_code == 200
 
     payload = response.json()
@@ -45,3 +45,4 @@ def test_geo_dashboard_survives_citation_history_failures(
     assert payload["citation_tracking"]["citation_rate"] == 0
     assert payload["citation_tracking"]["mentions"] == 0
     assert "commerce_query_analyzer" in payload
+

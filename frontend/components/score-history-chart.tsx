@@ -68,10 +68,10 @@ export function ScoreHistoryChart({ domain }: ScoreHistoryProps) {
 
         const [historyRes, comparisonRes] = await Promise.all([
           fetchWithBackendAuth(
-            `${backendUrl}/api/score-history/domain/${encodeURIComponent(domain)}?${params}`,
+            `${backendUrl}/api/v1/score-history/domain/${encodeURIComponent(domain)}?${params}`,
           ),
           fetchWithBackendAuth(
-            `${backendUrl}/api/score-history/domain/${encodeURIComponent(domain)}/comparison`,
+            `${backendUrl}/api/v1/score-history/domain/${encodeURIComponent(domain)}/comparison`,
           ),
         ]);
 
@@ -414,3 +414,4 @@ export function ScoreHistoryChart({ domain }: ScoreHistoryProps) {
     </div>
   );
 }
+

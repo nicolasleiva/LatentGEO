@@ -11,7 +11,7 @@ from ..core.auth import AuthUser, get_current_user
 from ..core.database import get_db
 from ..services.score_history_service import ScoreHistoryService
 
-router = APIRouter(prefix="/api/score-history", tags=["Score History"])
+router = APIRouter(prefix="/score-history", tags=["Score History"])
 
 
 def _owner_ids_from_user(current_user: AuthUser) -> List[str]:

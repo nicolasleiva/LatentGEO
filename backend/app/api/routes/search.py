@@ -5,12 +5,13 @@ API Endpoints para búsqueda AI
 import re
 
 from app.core.auth import AuthUser, get_current_user
+from app.core.config import settings
 from app.core.database import get_db
 from app.core.logger import get_logger
 from app.schemas import AuditCreate
 from app.services.audit_service import AuditService
 from app.workers.tasks import run_audit_task
-from fastapi import APIRouter, BackgroundTasks, Depends
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -73,10 +74,19 @@ async def search_ai(
                 AuditService.set_audit_task_id(db, audit.id, task.id)
                 logger.info(f"Auditoría {audit.id} iniciada para {url}")
             except Exception as e:
-                logger.warning(f"Celery no disponible, usando modo síncrono: {e}")
-                from app.api.routes.audits import run_audit_sync
+                if settings.DEBUG:
+                    logger.warning(f"Celery no disponible, usando modo síncrono: {e}")
+                    from app.api.routes.audits import run_audit_sync
 
-                background_tasks.add_task(run_audit_sync, audit.id)
+                    background_tasks.add_task(run_audit_sync, audit.id)
+                else:
+                    logger.error(
+                        f"Celery no disponible en producción para search audit {audit.id}: {e}"
+                    )
+                    raise HTTPException(
+                        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                        detail="Background worker unavailable. Try again shortly.",
+                    ) from e
 
             return SearchResponse(
                 response=f"¡Perfecto! He iniciado una auditoría completa de {url}. Analizaré hasta 30 páginas y realizaré un análisis detallado de 3 páginas principales. Puedes ver el progreso en tiempo real.",
@@ -89,6 +99,8 @@ async def search_ai(
                 audit_id=audit.id,
                 audit_started=True,
             )
+        except HTTPException:
+            raise
         except Exception as e:
             logger.error(f"Error iniciando auditoría: {e}")
             return SearchResponse(

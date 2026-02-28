@@ -138,7 +138,7 @@ export function AuditChatFlow({ auditId, onComplete }: AuditChatFlowProps) {
         };
 
         if (auditId && isValidId(auditId)) {
-          await fetchWithBackendAuth(`${apiUrl}/api/audits/chat/config`, {
+          await fetchWithBackendAuth(`${apiUrl}/api/v1/audits/chat/config`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -152,7 +152,7 @@ export function AuditChatFlow({ auditId, onComplete }: AuditChatFlowProps) {
           onComplete();
         } else {
           const createResponse = await fetchWithBackendAuth(
-            `${apiUrl}/api/audits`,
+            `${apiUrl}/api/v1/audits`,
             {
               method: "POST",
               headers: { "Content-Type": "application/json" },
@@ -286,3 +286,4 @@ export function AuditChatFlow({ auditId, onComplete }: AuditChatFlowProps) {
     </div>
   );
 }
+

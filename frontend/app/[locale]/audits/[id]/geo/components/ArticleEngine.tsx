@@ -219,7 +219,7 @@ export default function ArticleEngine({
   const fetchBatchStatus = useCallback(
     async (batchId: number) => {
       const res = await fetchWithBackendAuth(
-        `${backendUrl}/api/geo/article-engine/status/${batchId}`,
+        `${backendUrl}/api/v1/geo/article-engine/status/${batchId}`,
       );
       if (res.status === 401) {
         stopPolling();
@@ -266,7 +266,7 @@ export default function ArticleEngine({
       setLoadingLatest(true);
       try {
         const res = await fetchWithBackendAuth(
-          `${backendUrl}/api/geo/article-engine/latest/${auditId}`,
+          `${backendUrl}/api/v1/geo/article-engine/latest/${auditId}`,
         );
         if (res.status === 401) {
           window.location.href = "/auth/login";
@@ -298,7 +298,7 @@ export default function ArticleEngine({
     setError(null);
     try {
       const res = await fetchWithBackendAuth(
-        `${backendUrl}/api/geo/article-engine/generate`,
+        `${backendUrl}/api/v1/geo/article-engine/generate`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -665,3 +665,4 @@ export default function ArticleEngine({
     </div>
   );
 }
+

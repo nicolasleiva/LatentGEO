@@ -42,7 +42,7 @@ export default function HubSpotPages() {
   const fetchConnection = async () => {
     try {
       const res = await fetchWithBackendAuth(
-        `${API_URL}/api/hubspot/connections`,
+        `${API_URL}/api/v1/hubspot/connections`,
       );
       const data = await res.json();
       if (data && data.length > 0) {
@@ -60,7 +60,7 @@ export default function HubSpotPages() {
   const fetchPages = async (connId: string) => {
     try {
       const res = await fetchWithBackendAuth(
-        `${API_URL}/api/hubspot/pages/${connId}`,
+        `${API_URL}/api/v1/hubspot/pages/${connId}`,
       );
       const data = await res.json();
       setPages(data);
@@ -76,7 +76,7 @@ export default function HubSpotPages() {
     setSyncing(true);
     try {
       await fetchWithBackendAuth(
-        `${API_URL}/api/hubspot/sync/${connection.id}`,
+        `${API_URL}/api/v1/hubspot/sync/${connection.id}`,
         { method: "POST" },
       );
       await fetchPages(connection.id);
@@ -105,13 +105,13 @@ export default function HubSpotPages() {
       const selectedPages = pages.filter((p) => selected.has(p.id));
 
       // We need an endpoint to start audit for multiple URLs.
-      // Existing /api/audits takes a single URL usually.
+      // Existing /api/v1/audits takes a single URL usually.
       // Let's assume we create one audit per URL or one audit with multiple pages.
       // The current system seems to support one URL per audit (Audit model has 'url').
       // So we will loop and create multiple audits or create a "project".
       // For simplicity, let's just audit the first one or loop.
       // Wait, the user wants to audit "pages".
-      // Let's create a new endpoint /api/audits/batch or just loop here.
+      // Let's create a new endpoint /api/v1/audits/batch or just loop here.
 
       // Process all selected pages in parallel
       await Promise.all(
@@ -216,3 +216,4 @@ export default function HubSpotPages() {
     </div>
   );
 }
+

@@ -17,7 +17,7 @@
           "audits"
         ],
         "summary": "Create Audit",
-        "description": "Crea auditor\u00eda. Si tiene competitors/market, inicia pipeline.\nSi no, solo crea registro (espera configuraci\u00f3n de chat).\n\nNOTE: PageSpeed is NOT collected here. It runs when user:\n- Clicks \"Analyze PageSpeed\" button\n- Generates the full PDF report\nThis keeps audit creation fast and responsive.\n\nAcepta tanto /api/audits como /api/audits/ para evitar redirecciones 307.",
+        "description": "Crea auditor\u00eda. Si tiene competitors/market, inicia pipeline.\nSi no, solo crea registro (espera configuraci\u00f3n de chat).\n\nNOTE: PageSpeed is NOT collected here. It runs when user:\n- Clicks \"Analyze PageSpeed\" button\n- Generates the full PDF report\nThis keeps audit creation fast and responsive.\n\nAcepta tanto /api/v1/audits como /api/v1/audits/ para evitar redirecciones 307.",
         "operationId": "create_audit_api_v1_audits__post",
         "security": [
           {
@@ -351,6 +351,7 @@
               "application/json": {
                 "schema": {
                   "type": "object",
+                  "additionalProperties": true,
                   "title": "Response Get Audit Report Api V1 Audits  Audit Id  Report Get"
                 }
               }
@@ -403,6 +404,7 @@
               "application/json": {
                 "schema": {
                   "type": "object",
+                  "additionalProperties": true,
                   "title": "Response Get Audit Fix Plan Api V1 Audits  Audit Id  Fix Plan Get"
                 }
               }
@@ -492,6 +494,7 @@
             "content": {
               "application/json": {
                 "schema": {
+                  "additionalProperties": true,
                   "type": "object",
                   "title": "Response Get Audits Summary Api V1 Audits Stats Summary Get"
                 }
@@ -602,6 +605,7 @@
               "application/json": {
                 "schema": {
                   "type": "object",
+                  "additionalProperties": true,
                   "title": "Response Get Page Details Api V1 Audits  Audit Id  Pages  Page Id  Get"
                 }
               }
@@ -1013,6 +1017,7 @@
               "application/json": {
                 "schema": {
                   "type": "object",
+                  "additionalProperties": true,
                   "title": "Response Get Audit Reports Api V1 Reports Audit  Audit Id  Get"
                 }
               }
@@ -1040,7 +1045,7 @@
           "reports"
         ],
         "summary": "Generate Pdf",
-        "description": "Deprecated legacy endpoint.\nUse `POST /api/audits/{audit_id}/generate-pdf` instead.",
+        "description": "Deprecated legacy endpoint.\nUse `POST /api/v1/audits/{audit_id}/generate-pdf` instead.",
         "operationId": "generate_pdf_api_v1_reports_generate_pdf_post",
         "requestBody": {
           "content": {
@@ -1260,6 +1265,7 @@
               "application/json": {
                 "schema": {
                   "type": "object",
+                  "additionalProperties": true,
                   "title": "Response Get Audit Analytics Api V1 Analytics Audit  Audit Id  Get"
                 }
               }
@@ -1312,6 +1318,7 @@
               "application/json": {
                 "schema": {
                   "type": "object",
+                  "additionalProperties": true,
                   "title": "Response Get Competitor Analysis Api V1 Analytics Competitors  Audit Id  Get"
                 }
               }
@@ -1347,6 +1354,7 @@
             "content": {
               "application/json": {
                 "schema": {
+                  "additionalProperties": true,
                   "type": "object",
                   "title": "Response Get Dashboard Data Api V1 Analytics Dashboard Get"
                 }
@@ -1395,6 +1403,7 @@
               "application/json": {
                 "schema": {
                   "type": "object",
+                  "additionalProperties": true,
                   "title": "Response Get Issues By Priority Api V1 Analytics Issues  Audit Id  Get"
                 }
               }
@@ -1455,7 +1464,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
       }
     },
     "/api/v1/search": {
@@ -1497,7 +1511,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
       }
     },
     "/api/v1/pagespeed/analyze": {
@@ -1507,6 +1526,11 @@
         ],
         "summary": "Analyze Pagespeed",
         "operationId": "analyze_pagespeed_api_v1_pagespeed_analyze_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "parameters": [
           {
             "name": "url",
@@ -1561,6 +1585,11 @@
         ],
         "summary": "Compare Strategies",
         "operationId": "compare_strategies_api_v1_pagespeed_compare_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "parameters": [
           {
             "name": "url",
@@ -2263,7 +2292,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
       }
     },
     "/api/v1/content/duplicates": {
@@ -2274,6 +2308,11 @@
         "summary": "Find Duplicates",
         "description": "Encuentra contenido duplicado entre p\u00e1ginas",
         "operationId": "find_duplicates_api_v1_content_duplicates_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "parameters": [
           {
             "name": "threshold",
@@ -2295,7 +2334,8 @@
               "schema": {
                 "type": "array",
                 "items": {
-                  "type": "object"
+                  "type": "object",
+                  "additionalProperties": true
                 },
                 "title": "Pages"
               }
@@ -2332,13 +2372,25 @@
         "summary": "Extract Keywords",
         "description": "Extrae keywords de HTML",
         "operationId": "extract_keywords_api_v1_content_keywords_extract_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "parameters": [
           {
             "name": "html",
             "in": "query",
-            "required": true,
+            "required": false,
             "schema": {
-              "type": "string",
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
               "title": "Html"
             }
           },
@@ -2355,6 +2407,15 @@
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "title": "Payload"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -2414,7 +2475,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
       }
     },
     "/api/v1/content/keywords/compare": {
@@ -2425,6 +2491,11 @@
         "summary": "Compare Keywords",
         "description": "Compara keywords entre dos URLs",
         "operationId": "compare_keywords_api_v1_content_keywords_compare_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "parameters": [
           {
             "name": "your_url",
@@ -2781,7 +2852,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
       }
     },
     "/api/v1/geo/query-discovery": {
@@ -3076,7 +3152,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
       }
     },
     "/api/v1/geo/schema/multiple": {
@@ -3119,7 +3200,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
       }
     },
     "/api/v1/geo/schema-generator": {
@@ -3162,7 +3248,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
       }
     },
     "/api/v1/geo/schema-multiple": {
@@ -3205,7 +3296,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
       }
     },
     "/api/v1/geo/content-templates/list": {
@@ -3228,7 +3324,12 @@
           "404": {
             "description": "Not found"
           }
-        }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
       }
     },
     "/api/v1/geo/content-templates": {
@@ -3239,6 +3340,11 @@
         "summary": "List Content Templates Legacy",
         "description": "Legacy endpoint used by current GEO UI card.",
         "operationId": "list_content_templates_legacy_api_v1_geo_content_templates_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "parameters": [
           {
             "name": "category",
@@ -3316,7 +3422,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
       }
     },
     "/api/v1/geo/content-templates/analyze": {
@@ -3327,17 +3438,16 @@
         "summary": "Analyze Content",
         "description": "Analiza contenido existente y sugiere mejoras para GEO.",
         "operationId": "analyze_content_api_v1_geo_content_templates_analyze_post",
-        "parameters": [
-          {
-            "name": "content",
-            "in": "query",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Content"
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "title": "Payload"
+              }
             }
-          }
-        ],
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -3360,7 +3470,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
       }
     },
     "/api/v1/geo/analyze-content": {
@@ -3375,6 +3490,7 @@
           "content": {
             "application/json": {
               "schema": {
+                "additionalProperties": true,
                 "type": "object",
                 "title": "Payload"
               }
@@ -3404,7 +3520,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
       }
     },
     "/api/v1/geo/commerce-query/analyze": {
@@ -5265,6 +5386,7 @@
             "content": {
               "application/json": {
                 "schema": {
+                  "additionalProperties": true,
                   "type": "object",
                   "title": "Response Create Webhook Config Api V1 Webhooks Config Post"
                 }
@@ -5281,7 +5403,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
       }
     },
     "/api/v1/webhooks/test": {
@@ -5323,7 +5450,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
       }
     },
     "/api/v1/webhooks/events": {
@@ -5341,6 +5473,7 @@
               "application/json": {
                 "schema": {
                   "items": {
+                    "additionalProperties": true,
                     "type": "object"
                   },
                   "type": "array",
@@ -5349,7 +5482,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
       }
     },
     "/api/v1/webhooks/github/incoming": {
@@ -5453,7 +5591,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
       }
     },
     "/api/v1/sse/audits/{audit_id}/progress": {
@@ -5502,5565 +5645,14 @@
         }
       }
     },
-    "/api/audits/": {
-      "post": {
-        "tags": [
-          "audits"
-        ],
-        "summary": "Create Audit",
-        "description": "Crea auditor\u00eda. Si tiene competitors/market, inicia pipeline.\nSi no, solo crea registro (espera configuraci\u00f3n de chat).\n\nNOTE: PageSpeed is NOT collected here. It runs when user:\n- Clicks \"Analyze PageSpeed\" button\n- Generates the full PDF report\nThis keeps audit creation fast and responsive.\n\nAcepta tanto /api/audits como /api/audits/ para evitar redirecciones 307.",
-        "operationId": "create_audit_api_audits__post",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/AuditCreate"
-              }
-            }
-          }
-        },
-        "responses": {
-          "202": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AuditResponse"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "No encontrado"
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      },
-      "get": {
-        "tags": [
-          "audits"
-        ],
-        "summary": "List Audits",
-        "description": "Lista auditor\u00edas con paginaci\u00f3n.\nSi se proporciona user_email, filtra solo las auditor\u00edas de ese usuario.",
-        "operationId": "list_audits_api_audits__get",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "skip",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "default": 0,
-              "title": "Skip"
-            }
-          },
-          {
-            "name": "limit",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "default": 100,
-              "title": "Limit"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/AuditSummary"
-                  },
-                  "title": "Response List Audits Api Audits  Get"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "No encontrado"
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/audits/{audit_id}/progress": {
-      "get": {
-        "tags": [
-          "audits"
-        ],
-        "summary": "Get Audit Status",
-        "description": "Get lightweight audit status for polling.\nOnly returns id, url, status, progress, geo_score, and total_pages.",
-        "operationId": "get_audit_status_api_audits__audit_id__progress_get",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "audit_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "title": "Audit Id"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AuditSummary"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "No encontrado"
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/audits/{audit_id}/status": {
-      "get": {
-        "tags": [
-          "audits"
-        ],
-        "summary": "Get Audit Status",
-        "description": "Get lightweight audit status for polling.\nOnly returns id, url, status, progress, geo_score, and total_pages.",
-        "operationId": "get_audit_status_api_audits__audit_id__status_get",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "audit_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "title": "Audit Id"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AuditSummary"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "No encontrado"
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/audits/{audit_id}": {
-      "get": {
-        "tags": [
-          "audits"
-        ],
-        "summary": "Get Audit",
-        "description": "Get audit details WITHOUT triggering PageSpeed or GEO tools.\n\nThis endpoint loads quickly and returns basic audit information and fix plan.\nFrontend should display \"Generate PDF\" for full analysis.",
-        "operationId": "get_audit_api_audits__audit_id__get",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "audit_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "title": "Audit Id"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AuditResponse"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "No encontrado"
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      },
-      "delete": {
-        "tags": [
-          "audits"
-        ],
-        "summary": "Delete Audit",
-        "description": "Elimina una auditor\u00eda de la base de datos.",
-        "operationId": "delete_audit_api_audits__audit_id__delete",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "audit_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "title": "Audit Id"
-            }
-          }
-        ],
-        "responses": {
-          "204": {
-            "description": "Successful Response"
-          },
-          "404": {
-            "description": "No encontrado"
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/audits/{audit_id}/report": {
-      "get": {
-        "tags": [
-          "audits"
-        ],
-        "summary": "Get Audit Report",
-        "description": "Devuelve el reporte en Markdown de una auditor\u00eda completada.",
-        "operationId": "get_audit_report_api_audits__audit_id__report_get",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "audit_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "title": "Audit Id"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "title": "Response Get Audit Report Api Audits  Audit Id  Report Get"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "No encontrado"
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/audits/{audit_id}/fix_plan": {
-      "get": {
-        "tags": [
-          "audits"
-        ],
-        "summary": "Get Audit Fix Plan",
-        "description": "Devuelve el plan de correcciones (fix plan) en JSON.",
-        "operationId": "get_audit_fix_plan_api_audits__audit_id__fix_plan_get",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "audit_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "title": "Audit Id"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "title": "Response Get Audit Fix Plan Api Audits  Audit Id  Fix Plan Get"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "No encontrado"
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/audits/status/{status}": {
-      "get": {
-        "tags": [
-          "audits"
-        ],
-        "summary": "Get Audits By Status",
-        "description": "Filtra auditor\u00edas por su estado (pending, processing, completed, failed).",
-        "operationId": "get_audits_by_status_api_audits_status__status__get",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "status",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "$ref": "#/components/schemas/AuditStatus"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/AuditSummary"
-                  },
-                  "title": "Response Get Audits By Status Api Audits Status  Status  Get"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "No encontrado"
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/audits/stats/summary": {
-      "get": {
-        "tags": [
-          "audits"
-        ],
-        "summary": "Get Audits Summary",
-        "description": "Obtiene estad\u00edsticas generales sobre las auditor\u00edas.",
-        "operationId": "get_audits_summary_api_audits_stats_summary_get",
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "title": "Response Get Audits Summary Api Audits Stats Summary Get"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "No encontrado"
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ]
-      }
-    },
-    "/api/audits/{audit_id}/pages": {
-      "get": {
-        "tags": [
-          "audits"
-        ],
-        "summary": "Get Audit Pages",
-        "description": "Obtiene todas las p\u00e1ginas auditadas de una auditor\u00eda.",
-        "operationId": "get_audit_pages_api_audits__audit_id__pages_get",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "audit_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "title": "Audit Id"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": {},
-                  "title": "Response Get Audit Pages Api Audits  Audit Id  Pages Get"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "No encontrado"
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/audits/{audit_id}/pages/{page_id}": {
-      "get": {
-        "tags": [
-          "audits"
-        ],
-        "summary": "Get Page Details",
-        "description": "Obtiene detalles de una p\u00e1gina espec\u00edfica.",
-        "operationId": "get_page_details_api_audits__audit_id__pages__page_id__get",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "audit_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "title": "Audit Id"
-            }
-          },
-          {
-            "name": "page_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "title": "Page Id"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "title": "Response Get Page Details Api Audits  Audit Id  Pages  Page Id  Get"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "No encontrado"
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/audits/{audit_id}/competitors": {
-      "get": {
-        "tags": [
-          "audits"
-        ],
-        "summary": "Get Competitors",
-        "description": "Obtiene datos de competidores de una auditor\u00eda con GEO scores calculados.\nLimitado a 10 por defecto para evitar memory issues.",
-        "operationId": "get_competitors_api_audits__audit_id__competitors_get",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "audit_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "title": "Audit Id"
-            }
-          },
-          {
-            "name": "limit",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "default": 5,
-              "title": "Limit"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": {},
-                  "title": "Response Get Competitors Api Audits  Audit Id  Competitors Get"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "No encontrado"
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/audits/{audit_id}/pagespeed": {
-      "post": {
-        "tags": [
-          "audits"
-        ],
-        "summary": "Run Pagespeed Analysis",
-        "description": "Manually trigger PageSpeed analysis and return COMPLETE data.\n\nThis endpoint is called when user clicks \"Run PageSpeed\" button.\nReturns the full PageSpeed Insights output with all metrics, opportunities,\ndiagnostics, accessibility, SEO, and best practices audits.\n\nArgs:\n    audit_id: Audit ID\n    strategy: \"mobile\", \"desktop\", or \"both\" (default)\n\nReturns:\n    Complete PageSpeed data structure with all fields",
-        "operationId": "run_pagespeed_analysis_api_audits__audit_id__pagespeed_post",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "audit_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "title": "Audit Id"
-            }
-          },
-          {
-            "name": "strategy",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string",
-              "default": "both",
-              "title": "Strategy"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "404": {
-            "description": "No encontrado"
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/audits/{audit_id}/run-pagespeed": {
-      "post": {
-        "tags": [
-          "audits"
-        ],
-        "summary": "Run Pagespeed Analysis",
-        "description": "Manually trigger PageSpeed analysis and return COMPLETE data.\n\nThis endpoint is called when user clicks \"Run PageSpeed\" button.\nReturns the full PageSpeed Insights output with all metrics, opportunities,\ndiagnostics, accessibility, SEO, and best practices audits.\n\nArgs:\n    audit_id: Audit ID\n    strategy: \"mobile\", \"desktop\", or \"both\" (default)\n\nReturns:\n    Complete PageSpeed data structure with all fields",
-        "operationId": "run_pagespeed_analysis_api_audits__audit_id__run_pagespeed_post",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "audit_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "title": "Audit Id"
-            }
-          },
-          {
-            "name": "strategy",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string",
-              "default": "both",
-              "title": "Strategy"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "404": {
-            "description": "No encontrado"
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/audits/{audit_id}/generate-pdf": {
-      "post": {
-        "tags": [
-          "audits"
-        ],
-        "summary": "Generate Audit Pdf",
-        "description": "Generate PDF report with automatic PageSpeed analysis.\n\nThis endpoint automatically triggers PageSpeed analysis if:\n- No PageSpeed data exists\n- Cached PageSpeed data is stale (>24 hours old)\n- force_pagespeed_refresh is True\n- force_report_refresh is True (forces report markdown regeneration)\n- force_external_intel_refresh is True (forces Agent 1 external intelligence refresh)\n\nThe PDF includes complete context from ALL features:\n- PageSpeed (mobile + desktop)\n- Keywords\n- Backlinks\n- Rank tracking\n- LLM visibility\n- AI content suggestions",
-        "operationId": "generate_audit_pdf_api_audits__audit_id__generate_pdf_post",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "audit_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "title": "Audit Id"
-            }
-          },
-          {
-            "name": "force_pagespeed_refresh",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "boolean",
-              "default": true,
-              "title": "Force Pagespeed Refresh"
-            }
-          },
-          {
-            "name": "force_report_refresh",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "boolean",
-              "default": false,
-              "title": "Force Report Refresh"
-            }
-          },
-          {
-            "name": "force_external_intel_refresh",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "boolean",
-              "default": false,
-              "title": "Force External Intel Refresh"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "404": {
-            "description": "No encontrado"
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/audits/{audit_id}/download-pdf": {
-      "get": {
-        "tags": [
-          "audits"
-        ],
-        "summary": "Download Audit Pdf",
-        "description": "Descarga el PDF de una auditor\u00eda completada.\nSi el PDF no existe, sugiere generarlo primero.",
-        "operationId": "download_audit_pdf_api_audits__audit_id__download_pdf_get",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "audit_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "title": "Audit Id"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "404": {
-            "description": "No encontrado"
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/audits/chat/config": {
-      "post": {
-        "tags": [
-          "audits"
-        ],
-        "summary": "Configure Audit Chat",
-        "description": "Configura auditor\u00eda y lanza pipeline.",
-        "operationId": "configure_audit_chat_api_audits_chat_config_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/AuditConfigRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ChatMessage"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "No encontrado"
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ]
-      }
-    },
-    "/api/reports/audit/{audit_id}": {
-      "get": {
-        "tags": [
-          "reports"
-        ],
-        "summary": "Get Audit Reports",
-        "description": "Obtener todos los reportes de una auditor\u00eda",
-        "operationId": "get_audit_reports_api_reports_audit__audit_id__get",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "audit_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "title": "Audit Id"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "title": "Response Get Audit Reports Api Reports Audit  Audit Id  Get"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "No encontrado"
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/reports/generate-pdf": {
-      "post": {
-        "tags": [
-          "reports"
-        ],
-        "summary": "Generate Pdf",
-        "description": "Deprecated legacy endpoint.\nUse `POST /api/audits/{audit_id}/generate-pdf` instead.",
-        "operationId": "generate_pdf_api_reports_generate_pdf_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/PDFRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "307": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "404": {
-            "description": "No encontrado"
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ]
-      }
-    },
-    "/api/reports/download/{report_id}": {
-      "get": {
-        "tags": [
-          "reports"
-        ],
-        "summary": "Download Report",
-        "description": "Descargar archivo de reporte",
-        "operationId": "download_report_api_reports_download__report_id__get",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "report_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "title": "Report Id"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "404": {
-            "description": "No encontrado"
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/reports/markdown/{audit_id}": {
-      "get": {
-        "tags": [
-          "reports"
-        ],
-        "summary": "Get Markdown Report",
-        "description": "Obtener reporte en formato Markdown",
-        "operationId": "get_markdown_report_api_reports_markdown__audit_id__get",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "audit_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "title": "Audit Id"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "404": {
-            "description": "No encontrado"
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/reports/json/{audit_id}": {
-      "get": {
-        "tags": [
-          "reports"
-        ],
-        "summary": "Get Json Report",
-        "description": "Obtener reporte en formato JSON",
-        "operationId": "get_json_report_api_reports_json__audit_id__get",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "audit_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "title": "Audit Id"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "404": {
-            "description": "No encontrado"
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/analytics/audit/{audit_id}": {
-      "get": {
-        "tags": [
-          "analytics"
-        ],
-        "summary": "Get Audit Analytics",
-        "description": "Obtener an\u00e1lisis y estad\u00edsticas de auditor\u00eda",
-        "operationId": "get_audit_analytics_api_analytics_audit__audit_id__get",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "audit_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "title": "Audit Id"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "title": "Response Get Audit Analytics Api Analytics Audit  Audit Id  Get"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "No encontrado"
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/analytics/competitors/{audit_id}": {
-      "get": {
-        "tags": [
-          "analytics"
-        ],
-        "summary": "Get Competitor Analysis",
-        "description": "Obtener an\u00e1lisis competitivo",
-        "operationId": "get_competitor_analysis_api_analytics_competitors__audit_id__get",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "audit_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "title": "Audit Id"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "title": "Response Get Competitor Analysis Api Analytics Competitors  Audit Id  Get"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "No encontrado"
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/analytics/dashboard": {
-      "get": {
-        "tags": [
-          "analytics"
-        ],
-        "summary": "Get Dashboard Data",
-        "description": "Obtener datos para dashboard principal",
-        "operationId": "get_dashboard_data_api_analytics_dashboard_get",
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "title": "Response Get Dashboard Data Api Analytics Dashboard Get"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "No encontrado"
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ]
-      }
-    },
-    "/api/analytics/issues/{audit_id}": {
-      "get": {
-        "tags": [
-          "analytics"
-        ],
-        "summary": "Get Issues By Priority",
-        "description": "Obtener issues agrupados por prioridad",
-        "operationId": "get_issues_by_priority_api_analytics_issues__audit_id__get",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "audit_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "title": "Audit Id"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "title": "Response Get Issues By Priority Api Analytics Issues  Audit Id  Get"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "No encontrado"
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/search/": {
-      "post": {
-        "tags": [
-          "search"
-        ],
-        "summary": "Search Ai",
-        "description": "Endpoint de b\u00fasqueda AI que procesa consultas y puede iniciar auditor\u00edas",
-        "operationId": "search_ai_api_search__post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/SearchRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SearchResponse"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/search": {
-      "post": {
-        "tags": [
-          "search"
-        ],
-        "summary": "Search Ai",
-        "description": "Endpoint de b\u00fasqueda AI que procesa consultas y puede iniciar auditor\u00edas",
-        "operationId": "search_ai_api_search_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/SearchRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SearchResponse"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/pagespeed/analyze": {
-      "get": {
-        "tags": [
-          "pagespeed"
-        ],
-        "summary": "Analyze Pagespeed",
-        "operationId": "analyze_pagespeed_api_pagespeed_analyze_get",
-        "parameters": [
-          {
-            "name": "url",
-            "in": "query",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "description": "URL to analyze",
-              "title": "Url"
-            },
-            "description": "URL to analyze"
-          },
-          {
-            "name": "strategy",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string",
-              "description": "mobile or desktop",
-              "default": "mobile",
-              "title": "Strategy"
-            },
-            "description": "mobile or desktop"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/pagespeed/compare": {
-      "get": {
-        "tags": [
-          "pagespeed"
-        ],
-        "summary": "Compare Strategies",
-        "operationId": "compare_strategies_api_pagespeed_compare_get",
-        "parameters": [
-          {
-            "name": "url",
-            "in": "query",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "description": "URL to analyze",
-              "title": "Url"
-            },
-            "description": "URL to analyze"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/backlinks/analyze/{audit_id}": {
-      "post": {
-        "tags": [
-          "backlinks"
-        ],
-        "summary": "Analyze Backlinks",
-        "description": "Analyze backlinks for a given audit and domain",
-        "operationId": "analyze_backlinks_api_backlinks_analyze__audit_id__post",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "audit_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "title": "Audit Id"
-            }
-          },
-          {
-            "name": "domain",
-            "in": "query",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "description": "Domain to analyze",
-              "title": "Domain"
-            },
-            "description": "Domain to analyze"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/BacklinkResponse"
-                  },
-                  "title": "Response Analyze Backlinks Api Backlinks Analyze  Audit Id  Post"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/backlinks/{audit_id}": {
-      "get": {
-        "tags": [
-          "backlinks"
-        ],
-        "summary": "Get Backlinks",
-        "description": "Get stored backlinks for an audit",
-        "operationId": "get_backlinks_api_backlinks__audit_id__get",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "audit_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "title": "Audit Id"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/BacklinkResponse"
-                  },
-                  "title": "Response Get Backlinks Api Backlinks  Audit Id  Get"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/keywords/research/{audit_id}": {
-      "post": {
-        "tags": [
-          "keywords"
-        ],
-        "summary": "Research Keywords",
-        "operationId": "research_keywords_api_keywords_research__audit_id__post",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "audit_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "title": "Audit Id"
-            }
-          },
-          {
-            "name": "domain",
-            "in": "query",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "description": "Domain to research keywords for",
-              "title": "Domain"
-            },
-            "description": "Domain to research keywords for"
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "anyOf": [
-                  {
-                    "type": "array",
-                    "items": {
-                      "type": "string"
-                    }
-                  },
-                  {
-                    "type": "null"
-                  }
-                ],
-                "title": "Seed Keywords"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/KeywordResponse"
-                  },
-                  "title": "Response Research Keywords Api Keywords Research  Audit Id  Post"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/keywords/{audit_id}": {
-      "get": {
-        "tags": [
-          "keywords"
-        ],
-        "summary": "Get Keywords",
-        "operationId": "get_keywords_api_keywords__audit_id__get",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "audit_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "title": "Audit Id"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/KeywordResponse"
-                  },
-                  "title": "Response Get Keywords Api Keywords  Audit Id  Get"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/rank-tracking/track/{audit_id}": {
-      "post": {
-        "tags": [
-          "rank-tracking"
-        ],
-        "summary": "Track Rankings",
-        "operationId": "track_rankings_api_rank_tracking_track__audit_id__post",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "audit_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "title": "Audit Id"
-            }
-          },
-          {
-            "name": "domain",
-            "in": "query",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "description": "Domain to track rankings for",
-              "title": "Domain"
-            },
-            "description": "Domain to track rankings for"
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "array",
-                "items": {
-                  "type": "string"
-                },
-                "title": "Keywords"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/RankTrackingResponse"
-                  },
-                  "title": "Response Track Rankings Api Rank Tracking Track  Audit Id  Post"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/rank-tracking/{audit_id}": {
-      "get": {
-        "tags": [
-          "rank-tracking"
-        ],
-        "summary": "Get Rankings",
-        "operationId": "get_rankings_api_rank_tracking__audit_id__get",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "audit_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "title": "Audit Id"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/RankTrackingResponse"
-                  },
-                  "title": "Response Get Rankings Api Rank Tracking  Audit Id  Get"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/llm-visibility/check/{audit_id}": {
-      "post": {
-        "tags": [
-          "llm-visibility"
-        ],
-        "summary": "Check Visibility",
-        "operationId": "check_visibility_api_llm_visibility_check__audit_id__post",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "audit_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "title": "Audit Id"
-            }
-          },
-          {
-            "name": "brand_name",
-            "in": "query",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "description": "Brand name to check visibility for",
-              "title": "Brand Name"
-            },
-            "description": "Brand name to check visibility for"
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "array",
-                "items": {
-                  "type": "string"
-                },
-                "title": "Queries"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/LLMVisibilityResponse"
-                  },
-                  "title": "Response Check Visibility Api Llm Visibility Check  Audit Id  Post"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/llm-visibility/{audit_id}": {
-      "get": {
-        "tags": [
-          "llm-visibility"
-        ],
-        "summary": "Get Visibility",
-        "operationId": "get_visibility_api_llm_visibility__audit_id__get",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "audit_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "title": "Audit Id"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/LLMVisibilityResponse"
-                  },
-                  "title": "Response Get Visibility Api Llm Visibility  Audit Id  Get"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/ai-content/generate/{audit_id}": {
-      "post": {
-        "tags": [
-          "ai-content"
-        ],
-        "summary": "Generate Suggestions",
-        "operationId": "generate_suggestions_api_ai_content_generate__audit_id__post",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "audit_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "title": "Audit Id"
-            }
-          },
-          {
-            "name": "domain",
-            "in": "query",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "description": "Domain to generate content for",
-              "title": "Domain"
-            },
-            "description": "Domain to generate content for"
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "array",
-                "items": {
-                  "type": "string"
-                },
-                "title": "Topics"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/AIContentSuggestionResponse"
-                  },
-                  "title": "Response Generate Suggestions Api Ai Content Generate  Audit Id  Post"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/ai-content/{audit_id}": {
-      "get": {
-        "tags": [
-          "ai-content"
-        ],
-        "summary": "Get Suggestions",
-        "operationId": "get_suggestions_api_ai_content__audit_id__get",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "audit_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "title": "Audit Id"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/AIContentSuggestionResponse"
-                  },
-                  "title": "Response Get Suggestions Api Ai Content  Audit Id  Get"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/tools/content-editor/analyze": {
-      "post": {
-        "tags": [
-          "content-editor"
-        ],
-        "summary": "Analyze Content",
-        "operationId": "analyze_content_api_tools_content_editor_analyze_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/AnalyzeRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AnalyzeResponse"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/content/duplicates": {
-      "post": {
-        "tags": [
-          "content"
-        ],
-        "summary": "Find Duplicates",
-        "description": "Encuentra contenido duplicado entre p\u00e1ginas",
-        "operationId": "find_duplicates_api_content_duplicates_post",
-        "parameters": [
-          {
-            "name": "threshold",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "number",
-              "maximum": 1.0,
-              "minimum": 0.0,
-              "default": 0.85,
-              "title": "Threshold"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "array",
-                "items": {
-                  "type": "object"
-                },
-                "title": "Pages"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/content/keywords/extract": {
-      "post": {
-        "tags": [
-          "content"
-        ],
-        "summary": "Extract Keywords",
-        "description": "Extrae keywords de HTML",
-        "operationId": "extract_keywords_api_content_keywords_extract_post",
-        "parameters": [
-          {
-            "name": "html",
-            "in": "query",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Html"
-            }
-          },
-          {
-            "name": "top_n",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "maximum": 200,
-              "minimum": 1,
-              "default": 50,
-              "title": "Top N"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/content/keywords/gap": {
-      "post": {
-        "tags": [
-          "content"
-        ],
-        "summary": "Analyze Keyword Gap",
-        "description": "Analiza gap de keywords",
-        "operationId": "analyze_keyword_gap_api_content_keywords_gap_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/Body_analyze_keyword_gap_api_content_keywords_gap_post"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/content/keywords/compare": {
-      "get": {
-        "tags": [
-          "content"
-        ],
-        "summary": "Compare Keywords",
-        "description": "Compara keywords entre dos URLs",
-        "operationId": "compare_keywords_api_content_keywords_compare_get",
-        "parameters": [
-          {
-            "name": "your_url",
-            "in": "query",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Your Url"
-            }
-          },
-          {
-            "name": "competitor_url",
-            "in": "query",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Competitor Url"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/geo/citation-tracking/start": {
-      "post": {
-        "tags": [
-          "GEO Features"
-        ],
-        "summary": "Start Citation Tracking",
-        "description": "Inicia citation tracking para un audit.",
-        "operationId": "start_citation_tracking_api_geo_citation_tracking_start_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CitationTrackingRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "404": {
-            "description": "Not found"
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ]
-      }
-    },
-    "/api/geo/citation-tracking/history/{audit_id}": {
-      "get": {
-        "tags": [
-          "GEO Features"
-        ],
-        "summary": "Get Citation History",
-        "description": "Obtiene historial de citaciones.",
-        "operationId": "get_citation_history_api_geo_citation_tracking_history__audit_id__get",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "audit_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "title": "Audit Id"
-            }
-          },
-          {
-            "name": "days",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "default": 30,
-              "title": "Days"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "404": {
-            "description": "Not found"
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/geo/citation-tracking/recent/{audit_id}": {
-      "get": {
-        "tags": [
-          "GEO Features"
-        ],
-        "summary": "Get Recent Citations",
-        "description": "Obtiene citaciones recientes.",
-        "operationId": "get_recent_citations_api_geo_citation_tracking_recent__audit_id__get",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "audit_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "title": "Audit Id"
-            }
-          },
-          {
-            "name": "limit",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "default": 10,
-              "title": "Limit"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "404": {
-            "description": "Not found"
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/geo/citations/{audit_id}": {
-      "get": {
-        "tags": [
-          "GEO Features"
-        ],
-        "summary": "Get Recent Citations Legacy",
-        "description": "Legacy citations endpoint used by current GEO UI.",
-        "operationId": "get_recent_citations_legacy_api_geo_citations__audit_id__get",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "audit_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "title": "Audit Id"
-            }
-          },
-          {
-            "name": "limit",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "default": 10,
-              "title": "Limit"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "404": {
-            "description": "Not found"
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/geo/citation-history/{audit_id}": {
-      "get": {
-        "tags": [
-          "GEO Features"
-        ],
-        "summary": "Get Citation History Legacy",
-        "description": "Legacy monthly citation history endpoint used by current GEO UI.",
-        "operationId": "get_citation_history_legacy_api_geo_citation_history__audit_id__get",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "audit_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "title": "Audit Id"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "404": {
-            "description": "Not found"
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/geo/query-discovery/discover": {
-      "post": {
-        "tags": [
-          "GEO Features"
-        ],
-        "summary": "Discover Queries",
-        "description": "Descubre queries relevantes para el nicho.",
-        "operationId": "discover_queries_api_geo_query_discovery_discover_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/QueryDiscoveryRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "404": {
-            "description": "Not found"
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/geo/query-discovery": {
-      "post": {
-        "tags": [
-          "GEO Features"
-        ],
-        "summary": "Discover Queries Legacy",
-        "description": "Legacy endpoint used by current GEO UI.\nDiscovers query opportunities from a seed query and stores them for the audit.",
-        "operationId": "discover_queries_legacy_api_geo_query_discovery_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/QueryDiscoveryLegacyRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "404": {
-            "description": "Not found"
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ]
-      }
-    },
-    "/api/geo/query-discovery/opportunities/{audit_id}": {
-      "get": {
-        "tags": [
-          "GEO Features"
-        ],
-        "summary": "Get Query Opportunities",
-        "description": "Obtiene las mejores oportunidades de queries.",
-        "operationId": "get_query_opportunities_api_geo_query_discovery_opportunities__audit_id__get",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "audit_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "title": "Audit Id"
-            }
-          },
-          {
-            "name": "limit",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "default": 10,
-              "title": "Limit"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "404": {
-            "description": "Not found"
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/geo/competitor-analysis/analyze": {
-      "post": {
-        "tags": [
-          "GEO Features"
-        ],
-        "summary": "Analyze Competitor Citations",
-        "description": "Analiza citaciones de competidores.",
-        "operationId": "analyze_competitor_citations_api_geo_competitor_analysis_analyze_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CompetitorAnalysisRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "404": {
-            "description": "Not found"
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ]
-      }
-    },
-    "/api/geo/competitor-analysis/benchmark/{audit_id}": {
-      "get": {
-        "tags": [
-          "GEO Features"
-        ],
-        "summary": "Get Citation Benchmark",
-        "description": "Obtiene benchmark de citaciones vs competidores.",
-        "operationId": "get_citation_benchmark_api_geo_competitor_analysis_benchmark__audit_id__get",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "audit_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "title": "Audit Id"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "404": {
-            "description": "Not found"
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/geo/competitor-analysis": {
-      "post": {
-        "tags": [
-          "GEO Features"
-        ],
-        "summary": "Analyze Competitor Citations Legacy",
-        "description": "Legacy endpoint that returns synchronous competitor analysis for current UI.",
-        "operationId": "analyze_competitor_citations_legacy_api_geo_competitor_analysis_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CompetitorAnalysisLegacyRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "404": {
-            "description": "Not found"
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ]
-      }
-    },
-    "/api/geo/schema/generate": {
-      "post": {
-        "tags": [
-          "GEO Features"
-        ],
-        "summary": "Generate Schema",
-        "description": "Genera Schema.org optimizado para la p\u00e1gina.",
-        "operationId": "generate_schema_api_geo_schema_generate_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/SchemaGeneratorRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "404": {
-            "description": "Not found"
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/geo/schema/multiple": {
-      "post": {
-        "tags": [
-          "GEO Features"
-        ],
-        "summary": "Generate Multiple Schemas",
-        "description": "Genera m\u00faltiples schemas si la p\u00e1gina lo amerita.",
-        "operationId": "generate_multiple_schemas_api_geo_schema_multiple_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/SchemaGeneratorRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "404": {
-            "description": "Not found"
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/geo/schema-generator": {
-      "post": {
-        "tags": [
-          "GEO Features"
-        ],
-        "summary": "Generate Schema Legacy",
-        "description": "Legacy schema generator endpoint used by current frontend component.",
-        "operationId": "generate_schema_legacy_api_geo_schema_generator_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/SchemaGeneratorLegacyRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "404": {
-            "description": "Not found"
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/geo/schema-multiple": {
-      "post": {
-        "tags": [
-          "GEO Features"
-        ],
-        "summary": "Generate Multiple Schemas Legacy",
-        "description": "Legacy multiple-schema endpoint used by current frontend component.",
-        "operationId": "generate_multiple_schemas_legacy_api_geo_schema_multiple_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/SchemaGeneratorLegacyRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "404": {
-            "description": "Not found"
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/geo/content-templates/list": {
-      "get": {
-        "tags": [
-          "GEO Features"
-        ],
-        "summary": "List Content Templates",
-        "description": "Lista todos los templates disponibles.",
-        "operationId": "list_content_templates_api_geo_content_templates_list_get",
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "404": {
-            "description": "Not found"
-          }
-        }
-      }
-    },
-    "/api/geo/content-templates": {
-      "get": {
-        "tags": [
-          "GEO Features"
-        ],
-        "summary": "List Content Templates Legacy",
-        "description": "Legacy endpoint used by current GEO UI card.",
-        "operationId": "list_content_templates_legacy_api_geo_content_templates_get",
-        "parameters": [
-          {
-            "name": "category",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string",
-              "default": "all",
-              "title": "Category"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "404": {
-            "description": "Not found"
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/geo/content-templates/generate": {
-      "post": {
-        "tags": [
-          "GEO Features"
-        ],
-        "summary": "Generate Content Template",
-        "description": "Genera un template de contenido personalizado.",
-        "operationId": "generate_content_template_api_geo_content_templates_generate_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ContentTemplateRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "404": {
-            "description": "Not found"
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/geo/content-templates/analyze": {
-      "post": {
-        "tags": [
-          "GEO Features"
-        ],
-        "summary": "Analyze Content",
-        "description": "Analiza contenido existente y sugiere mejoras para GEO.",
-        "operationId": "analyze_content_api_geo_content_templates_analyze_post",
-        "parameters": [
-          {
-            "name": "content",
-            "in": "query",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Content"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "404": {
-            "description": "Not found"
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/geo/analyze-content": {
-      "post": {
-        "tags": [
-          "GEO Features"
-        ],
-        "summary": "Analyze Content Legacy",
-        "description": "Legacy endpoint for freeform content GEO analysis card.",
-        "operationId": "analyze_content_legacy_api_geo_analyze_content_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "title": "Payload"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "404": {
-            "description": "Not found"
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/geo/commerce-query/analyze": {
-      "post": {
-        "tags": [
-          "GEO Features"
-        ],
-        "summary": "Analyze Commerce Query",
-        "description": "Query-first commerce analyzer:\n- Uses Kimi 2.5 search only (no Google fallback).\n- Explains why audited domain is not #1 and how to beat top result.",
-        "operationId": "analyze_commerce_query_api_geo_commerce_query_analyze_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CommerceQueryAnalyzeRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "404": {
-            "description": "Not found"
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ]
-      }
-    },
-    "/api/geo/commerce-query/latest/{audit_id}": {
-      "get": {
-        "tags": [
-          "GEO Features"
-        ],
-        "summary": "Get Latest Commerce Query Analysis",
-        "description": "Fetch latest query-first ecommerce analysis for the audit.",
-        "operationId": "get_latest_commerce_query_analysis_api_geo_commerce_query_latest__audit_id__get",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "audit_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "title": "Audit Id"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "404": {
-            "description": "Not found"
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/geo/commerce-campaign/generate": {
-      "post": {
-        "tags": [
-          "GEO Features"
-        ],
-        "summary": "Generate Commerce Campaign",
-        "description": "Generate an ecommerce campaign to increase AI citation share.",
-        "operationId": "generate_commerce_campaign_api_geo_commerce_campaign_generate_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CommerceCampaignRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "404": {
-            "description": "Not found"
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ]
-      }
-    },
-    "/api/geo/commerce-campaign/latest/{audit_id}": {
-      "get": {
-        "tags": [
-          "GEO Features"
-        ],
-        "summary": "Get Latest Commerce Campaign",
-        "description": "Fetch latest ecommerce campaign for the audit.",
-        "operationId": "get_latest_commerce_campaign_api_geo_commerce_campaign_latest__audit_id__get",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "audit_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "title": "Audit Id"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "404": {
-            "description": "Not found"
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/geo/article-engine/generate": {
-      "post": {
-        "tags": [
-          "GEO Features"
-        ],
-        "summary": "Generate Article Batch",
-        "description": "Create and process article-engine batch with strict GEO/SEO data-pack rules.",
-        "operationId": "generate_article_batch_api_geo_article_engine_generate_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ArticleEngineRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "404": {
-            "description": "Not found"
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ]
-      }
-    },
-    "/api/geo/article-engine/status/{batch_id}": {
-      "get": {
-        "tags": [
-          "GEO Features"
-        ],
-        "summary": "Get Article Batch Status",
-        "description": "Fetch processing/completion status for an article batch.",
-        "operationId": "get_article_batch_status_api_geo_article_engine_status__batch_id__get",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "batch_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "title": "Batch Id"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "404": {
-            "description": "Not found"
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/geo/article-engine/latest/{audit_id}": {
-      "get": {
-        "tags": [
-          "GEO Features"
-        ],
-        "summary": "Get Latest Article Batch",
-        "description": "Fetch latest generated article batch for the audit.",
-        "operationId": "get_latest_article_batch_api_geo_article_engine_latest__audit_id__get",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "audit_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "title": "Audit Id"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "404": {
-            "description": "Not found"
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/geo/dashboard/{audit_id}": {
-      "get": {
-        "tags": [
-          "GEO Features"
-        ],
-        "summary": "Get Geo Dashboard",
-        "description": "Obtiene resumen completo de GEO para el dashboard.",
-        "operationId": "get_geo_dashboard_api_geo_dashboard__audit_id__get",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "audit_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "title": "Audit Id"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "404": {
-            "description": "Not found"
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/hubspot/auth-url": {
-      "get": {
-        "tags": [
-          "hubspot"
-        ],
-        "summary": "Get Auth Url",
-        "description": "Obtiene la URL para iniciar la autenticaci\u00f3n con HubSpot",
-        "operationId": "get_auth_url_api_hubspot_auth_url_get",
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ConnectResponse"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ]
-      }
-    },
-    "/api/hubspot/callback": {
-      "post": {
-        "tags": [
-          "hubspot"
-        ],
-        "summary": "Oauth Callback",
-        "description": "Maneja el callback de OAuth y crea la conexi\u00f3n",
-        "operationId": "oauth_callback_api_hubspot_callback_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ConnectRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ]
-      }
-    },
-    "/api/hubspot/connections": {
-      "get": {
-        "tags": [
-          "hubspot"
-        ],
-        "summary": "Get Connections",
-        "description": "Lista conexiones activas de HubSpot",
-        "operationId": "get_connections_api_hubspot_connections_get",
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ]
-      }
-    },
-    "/api/hubspot/sync/{connection_id}": {
-      "post": {
-        "tags": [
-          "hubspot"
-        ],
-        "summary": "Sync Pages",
-        "description": "Sincroniza las p\u00e1ginas de una conexi\u00f3n",
-        "operationId": "sync_pages_api_hubspot_sync__connection_id__post",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "connection_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Connection Id"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/hubspot/pages/{connection_id}": {
-      "get": {
-        "tags": [
-          "hubspot"
-        ],
-        "summary": "Get Pages",
-        "description": "Obtiene las p\u00e1ginas sincronizadas",
-        "operationId": "get_pages_api_hubspot_pages__connection_id__get",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "connection_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Connection Id"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/hubspot/recommendations/{audit_id}": {
-      "get": {
-        "tags": [
-          "hubspot"
-        ],
-        "summary": "Get Recommendations",
-        "description": "Obtiene recomendaciones de HubSpot basadas en una auditor\u00eda",
-        "operationId": "get_recommendations_api_hubspot_recommendations__audit_id__get",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "audit_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "title": "Audit Id"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/hubspot/apply-recommendations": {
-      "post": {
-        "tags": [
-          "hubspot"
-        ],
-        "summary": "Batch Apply Recommendations",
-        "description": "Aplica un lote de recomendaciones",
-        "operationId": "batch_apply_recommendations_api_hubspot_apply_recommendations_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/BatchApplyRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ]
-      }
-    },
-    "/api/hubspot/rollback/{change_id}": {
-      "post": {
-        "tags": [
-          "hubspot"
-        ],
-        "summary": "Rollback Change",
-        "description": "Revierte un cambio aplicado",
-        "operationId": "rollback_change_api_hubspot_rollback__change_id__post",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "change_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Change Id"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/github/auth-url": {
-      "get": {
-        "tags": [
-          "github"
-        ],
-        "summary": "Get Auth Url",
-        "description": "Obtiene URL para iniciar OAuth con GitHub",
-        "operationId": "get_auth_url_api_github_auth_url_get",
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ConnectResponse"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ]
-      }
-    },
-    "/api/github/oauth/authorize": {
-      "get": {
-        "tags": [
-          "github"
-        ],
-        "summary": "Oauth Authorize",
-        "description": "Redirige directamente a GitHub OAuth (para compatibilidad con frontend)",
-        "operationId": "oauth_authorize_api_github_oauth_authorize_get",
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ]
-      }
-    },
-    "/api/github/callback": {
-      "post": {
-        "tags": [
-          "github"
-        ],
-        "summary": "Oauth Callback",
-        "description": "Maneja callback de OAuth",
-        "operationId": "oauth_callback_api_github_callback_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CallbackRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ]
-      }
-    },
-    "/api/github/connections": {
-      "get": {
-        "tags": [
-          "github"
-        ],
-        "summary": "Get Connections",
-        "description": "Lista conexiones activas de GitHub",
-        "operationId": "get_connections_api_github_connections_get",
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ]
-      }
-    },
-    "/api/github/sync/{connection_id}": {
-      "post": {
-        "tags": [
-          "github"
-        ],
-        "summary": "Sync Repositories",
-        "description": "Sincroniza repositorios de una conexi\u00f3n",
-        "operationId": "sync_repositories_api_github_sync__connection_id__post",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "connection_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Connection Id"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/github/repos/{connection_id}": {
-      "get": {
-        "tags": [
-          "github"
-        ],
-        "summary": "Get Repositories",
-        "description": "Obtiene repositorios de una conexi\u00f3n",
-        "operationId": "get_repositories_api_github_repos__connection_id__get",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "connection_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Connection Id"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/RepositoryResponse"
-                  },
-                  "title": "Response Get Repositories Api Github Repos  Connection Id  Get"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/github/repositories/{connection_id}": {
-      "get": {
-        "tags": [
-          "github"
-        ],
-        "summary": "Get Repositories",
-        "description": "Obtiene repositorios de una conexi\u00f3n",
-        "operationId": "get_repositories_api_github_repositories__connection_id__get",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "connection_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Connection Id"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/RepositoryResponse"
-                  },
-                  "title": "Response Get Repositories Api Github Repositories  Connection Id  Get"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/github/analyze/{connection_id}/{repo_id}": {
-      "post": {
-        "tags": [
-          "github"
-        ],
-        "summary": "Analyze Repository",
-        "description": "Analiza un repositorio para detectar tipo de sitio",
-        "operationId": "analyze_repository_api_github_analyze__connection_id___repo_id__post",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "connection_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Connection Id"
-            }
-          },
-          {
-            "name": "repo_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Repo Id"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/github/create-pr": {
-      "post": {
-        "tags": [
-          "github"
-        ],
-        "summary": "Create Pull Request",
-        "description": "Crea un Pull Request con fixes SEO/GEO",
-        "operationId": "create_pull_request_api_github_create_pr_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CreatePRRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PRResponse"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ]
-      }
-    },
-    "/api/github/prs/{repo_id}": {
-      "get": {
-        "tags": [
-          "github"
-        ],
-        "summary": "Get Pull Requests",
-        "description": "Obtiene PRs de un repositorio",
-        "operationId": "get_pull_requests_api_github_prs__repo_id__get",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "repo_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Repo Id"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/PRResponse"
-                  },
-                  "title": "Response Get Pull Requests Api Github Prs  Repo Id  Get"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/github/audit-blogs/{connection_id}/{repo_id}": {
-      "post": {
-        "tags": [
-          "github"
-        ],
-        "summary": "Audit Repository Blogs",
-        "description": "Audita todos los blogs de un repositorio\n\nEncuentra autom\u00e1ticamente todos los archivos de blog seg\u00fan el framework\ny ejecuta una auditor\u00eda SEO completa en cada uno.\n\nArgs:\n    connection_id: ID de la conexi\u00f3n de GitHub\n    repo_id: ID del repositorio\n\nReturns:\n    Reporte completo con todos los blogs auditados y sus issues",
-        "operationId": "audit_repository_blogs_api_github_audit_blogs__connection_id___repo_id__post",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "connection_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Connection Id"
-            }
-          },
-          {
-            "name": "repo_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Repo Id"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/github/create-blog-fixes-pr/{connection_id}/{repo_id}": {
-      "post": {
-        "tags": [
-          "github"
-        ],
-        "summary": "Create Blog Fixes Pr",
-        "description": "Crea un PR con fixes para blogs espec\u00edficos\n\nToma los resultados de una auditor\u00eda de blogs y crea un PR\naplicando todos los fixes necesarios.\n\nArgs:\n    connection_id: ID de la conexi\u00f3n\n    repo_id: ID del repositorio\n    blog_paths: Lista de paths de blogs a aplicar fixes\n\nReturns:\n    PR creado con fixes aplicados",
-        "operationId": "create_blog_fixes_pr_api_github_create_blog_fixes_pr__connection_id___repo_id__post",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "connection_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Connection Id"
-            }
-          },
-          {
-            "name": "repo_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Repo Id"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "array",
-                "items": {
-                  "type": "string"
-                },
-                "title": "Blog Paths"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/github/audit-to-fixes/{audit_id}": {
-      "get": {
-        "tags": [
-          "github"
-        ],
-        "summary": "Convert Audit To Fixes",
-        "description": "Convierte el fix_plan de una auditor\u00eda en fixes aplicables a c\u00f3digo\n\nEste endpoint toma una auditor\u00eda existente y genera una lista de fixes\nque pueden ser aplicados directamente al c\u00f3digo fuente.\n\nArgs:\n    audit_id: ID de la auditor\u00eda\n\nReturns:\n    Dict con audit_id y lista de fixes formateados para aplicar",
-        "operationId": "convert_audit_to_fixes_api_github_audit_to_fixes__audit_id__get",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "audit_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "title": "Audit Id"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/github/fix-inputs/{audit_id}": {
-      "get": {
-        "tags": [
-          "github"
-        ],
-        "summary": "Get Fix Inputs",
-        "description": "Returns missing inputs required to safely apply fixes (user-provided, no fabrication).",
-        "operationId": "get_fix_inputs_api_github_fix_inputs__audit_id__get",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "audit_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "title": "Audit Id"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/FixInputsResponse"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      },
-      "post": {
-        "tags": [
-          "github"
-        ],
-        "summary": "Submit Fix Inputs",
-        "description": "Persist user-provided inputs into fix_plan and return remaining missing inputs.",
-        "operationId": "submit_fix_inputs_api_github_fix_inputs__audit_id__post",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "audit_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "title": "Audit Id"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/FixInputsSubmit"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/FixInputsResponse"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/github/fix-inputs/chat/{audit_id}": {
-      "post": {
-        "tags": [
-          "github"
-        ],
-        "summary": "Fix Inputs Chat",
-        "description": "Returns LLM-guided suggestions for missing inputs using audit evidence only.",
-        "operationId": "fix_inputs_chat_api_github_fix_inputs_chat__audit_id__post",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "audit_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "title": "Audit Id"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/FixInputChatRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/FixInputChatResponse"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/github/geo-score/{audit_id}": {
-      "get": {
-        "tags": [
-          "github"
-        ],
-        "summary": "Get Geo Score",
-        "description": "Calcula GEO Score de una auditor\u00eda\n\nGEO (Generative Engine Optimization) mide qu\u00e9 tan optimizado est\u00e1\nel contenido para ser detectado y citado por LLMs como ChatGPT, Gemini, Claude.\n\nArgs:\n    audit_id: ID de la auditor\u00eda a evaluar\n\nReturns:\n    Score 0-100 con breakdown por categor\u00eda y recomendaciones",
-        "operationId": "get_geo_score_api_github_geo_score__audit_id__get",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "audit_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "title": "Audit Id"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/github/audit-blogs-geo/{connection_id}/{repo_id}": {
-      "post": {
-        "tags": [
-          "github"
-        ],
-        "summary": "Audit Repository Blogs Geo",
-        "description": "Audita blogs de un repositorio para SEO + GEO\n\nGEO (Generative Engine Optimization) detecta issues adicionales a SEO:\n- Formato Q&A (LLMs prefieren preguntas-respuestas)\n- E-E-A-T signals (Experience, Expertise, Authority, Trust)\n- Estructura de fragmentos (snippet-level clarity)\n- Lenguaje conversacional vs keyword-stuffed\n- Respuestas directas (pir\u00e1mide invertida)\n\nArgs:\n    connection_id: ID de la conexi\u00f3n de GitHub\n    repo_id: ID del repositorio\n\nReturns:\n    Reporte completo con SEO issues + GEO issues + GEO score por blog",
-        "operationId": "audit_repository_blogs_geo_api_github_audit_blogs_geo__connection_id___repo_id__post",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "connection_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Connection Id"
-            }
-          },
-          {
-            "name": "repo_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Repo Id"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/github/create-geo-fixes-pr/{connection_id}/{repo_id}": {
-      "post": {
-        "tags": [
-          "github"
-        ],
-        "summary": "Create Geo Fixes Pr",
-        "description": "Crea PR con fixes SEO + GEO para blogs",
-        "operationId": "create_geo_fixes_pr_api_github_create_geo_fixes_pr__connection_id___repo_id__post",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "connection_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Connection Id"
-            }
-          },
-          {
-            "name": "repo_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Repo Id"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CreateGeoPRRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/github/geo-compare/{audit_id}": {
-      "get": {
-        "tags": [
-          "github"
-        ],
-        "summary": "Compare Geo With Competitors",
-        "description": "Compara GEO score con competidores\n\n\u00datil para ver gaps de optimizaci\u00f3n vs competencia directa\n\nArgs:\n    audit_id: ID de la auditor\u00eda a comparar\n    competitor_urls: Lista de URLs de competidores (opcional)\n\nReturns:\n    An\u00e1lisis comparativo con ranking y gaps",
-        "operationId": "compare_geo_with_competitors_api_github_geo_compare__audit_id__get",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "audit_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "title": "Audit Id"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "anyOf": [
-                  {
-                    "type": "array",
-                    "items": {
-                      "type": "string"
-                    }
-                  },
-                  {
-                    "type": "null"
-                  }
-                ],
-                "title": "Competitor Urls"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/github/webhook": {
-      "post": {
-        "tags": [
-          "github"
-        ],
-        "summary": "Github Webhook",
-        "description": "Maneja webhooks de GitHub\n\nEventos soportados:\n- push: Auto-auditar cuando hay cambios\n- pull_request: Actualizar estado del PR\n- installation: Manejar instalaci\u00f3n de la app",
-        "operationId": "github_webhook_api_github_webhook_post",
-        "parameters": [
-          {
-            "name": "x-github-event",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Github-Event"
-            }
-          },
-          {
-            "name": "x-hub-signature-256",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Hub-Signature-256"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/github/create-auto-fix-pr/{connection_id}/{repo_id}": {
-      "post": {
-        "tags": [
-          "github"
-        ],
-        "summary": "Create Auto Fix Pr",
-        "description": "Crea un PR autom\u00e1tico basado en auditor\u00eda existente.\n\nUtiliza el m\u00e9todo GitHubService.create_pr_with_fixes que ya tiene toda\nla l\u00f3gica de extracci\u00f3n de contexto enriquecido (PageSpeed, Technical, etc.)",
-        "operationId": "create_auto_fix_pr_api_github_create_auto_fix_pr__connection_id___repo_id__post",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "connection_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Connection Id"
-            }
-          },
-          {
-            "name": "repo_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Repo Id"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CreateAutoFixRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/webhooks/config": {
-      "post": {
-        "tags": [
-          "webhooks"
-        ],
-        "summary": "Create Webhook Config",
-        "description": "Create a new webhook configuration.\n\nThe webhook will receive POST requests with JSON payload containing:\n- event: Event type (e.g., \"audit.completed\")\n- timestamp: ISO 8601 timestamp\n- data: Event-specific data\n- webhook_id: Unique delivery ID\n\nHeaders included:\n- X-Webhook-Signature: HMAC-SHA256 signature (if secret provided)\n- X-Webhook-Event: Event type\n- X-Webhook-Timestamp: Delivery timestamp",
-        "operationId": "create_webhook_config_api_webhooks_config_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/WebhookConfigCreate"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "201": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "title": "Response Create Webhook Config Api Webhooks Config Post"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/webhooks/test": {
-      "post": {
-        "tags": [
-          "webhooks"
-        ],
-        "summary": "Test Webhook",
-        "description": "Test a webhook endpoint by sending a test event.\n\nThis sends a test payload to verify the endpoint is reachable\nand properly configured to receive webhooks.",
-        "operationId": "test_webhook_api_webhooks_test_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/WebhookTestRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/WebhookTestResponse"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/webhooks/events": {
-      "get": {
-        "tags": [
-          "webhooks"
-        ],
-        "summary": "List Webhook Events",
-        "description": "List all available webhook event types.",
-        "operationId": "list_webhook_events_api_webhooks_events_get",
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "items": {
-                    "type": "object"
-                  },
-                  "type": "array",
-                  "title": "Response List Webhook Events Api Webhooks Events Get"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/webhooks/github/incoming": {
-      "post": {
-        "tags": [
-          "webhooks"
-        ],
-        "summary": "Handle Github Webhook",
-        "description": "Handle incoming GitHub webhooks.\n\nVerifies the signature and processes GitHub events like:\n- push: Code pushed to repository\n- pull_request: PR opened/closed/merged\n- issues: Issue created/updated",
-        "operationId": "handle_github_webhook_api_webhooks_github_incoming_post",
-        "parameters": [
-          {
-            "name": "x-hub-signature-256",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Hub-Signature-256"
-            }
-          },
-          {
-            "name": "x-github-event",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Github-Event"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/webhooks/hubspot/incoming": {
-      "post": {
-        "tags": [
-          "webhooks"
-        ],
-        "summary": "Handle Hubspot Webhook",
-        "description": "Handle incoming HubSpot webhooks.\n\nProcesses HubSpot CRM events like:\n- contact.creation\n- contact.propertyChange\n- deal.creation",
-        "operationId": "handle_hubspot_webhook_api_webhooks_hubspot_incoming_post",
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/webhooks/health": {
-      "get": {
-        "tags": [
-          "webhooks"
-        ],
-        "summary": "Webhook Health",
-        "description": "Check webhook service health status.",
-        "operationId": "webhook_health_api_webhooks_health_get",
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/sse/audits/{audit_id}/progress": {
-      "get": {
-        "tags": [
-          "sse"
-        ],
-        "summary": "Stream Audit Progress",
-        "description": "SSE endpoint for streaming audit progress updates.\nRequires standard Authorization: Bearer header.",
-        "operationId": "stream_audit_progress_api_sse_audits__audit_id__progress_get",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "audit_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "title": "Audit Id"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/health": {
-      "get": {
-        "tags": [
-          "health"
-        ],
-        "summary": "Health Check",
-        "description": "Health check endpoint para load balancers.\nRetorna 200 si todos los servicios est\u00e1n operativos.",
-        "operationId": "health_check_health_get",
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          }
-        }
-      }
-    },
-    "/health/ready": {
-      "get": {
-        "tags": [
-          "health"
-        ],
-        "summary": "Readiness Check",
-        "description": "Readiness check - verifica si la app puede recibir tr\u00e1fico.",
-        "operationId": "readiness_check_health_ready_get",
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          }
-        }
-      }
-    },
-    "/health/live": {
-      "get": {
-        "tags": [
-          "health"
-        ],
-        "summary": "Liveness Check",
-        "description": "Liveness check - verifica si la app est\u00e1 viva (no colgada).",
-        "operationId": "liveness_check_health_live_get",
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/score-history/domain/{domain}": {
+    "/api/v1/score-history/domain/{domain}": {
       "get": {
         "tags": [
           "Score History"
         ],
         "summary": "Get Domain History",
         "description": "Obtiene el historial de scores para un dominio espec\u00edfico.\n\n- **domain**: Dominio a consultar (ej: example.com)\n- **days**: Cantidad de d\u00edas de historial (default: 90)",
-        "operationId": "get_domain_history_api_score_history_domain__domain__get",
+        "operationId": "get_domain_history_api_v1_score_history_domain__domain__get",
         "security": [
           {
             "HTTPBearer": []
@@ -11111,14 +5703,14 @@
         }
       }
     },
-    "/api/score-history/domain/{domain}/comparison": {
+    "/api/v1/score-history/domain/{domain}/comparison": {
       "get": {
         "tags": [
           "Score History"
         ],
         "summary": "Get Monthly Comparison",
         "description": "Compara los scores del mes actual vs el mes anterior.\n\nRetorna:\n- Promedio de cada m\u00e9trica para ambos meses\n- Diferencia absoluta y porcentual\n- Tendencia (up/down/stable)",
-        "operationId": "get_monthly_comparison_api_score_history_domain__domain__comparison_get",
+        "operationId": "get_monthly_comparison_api_v1_score_history_domain__domain__comparison_get",
         "security": [
           {
             "HTTPBearer": []
@@ -11157,14 +5749,14 @@
         }
       }
     },
-    "/api/score-history/summary": {
+    "/api/v1/score-history/summary": {
       "get": {
         "tags": [
           "Score History"
         ],
         "summary": "Get Domains Summary",
         "description": "Obtiene un resumen de todos los dominios auditados.\n\n\u00datil para dashboards que muestran m\u00faltiples sitios.",
-        "operationId": "get_domains_summary_api_score_history_summary_get",
+        "operationId": "get_domains_summary_api_v1_score_history_summary_get",
         "security": [
           {
             "HTTPBearer": []
@@ -11206,14 +5798,14 @@
         }
       }
     },
-    "/api/score-history/record": {
+    "/api/v1/score-history/record": {
       "post": {
         "tags": [
           "Score History"
         ],
         "summary": "Record Score Manually",
         "description": "Registra manualmente un score en el historial.\n\nNormalmente se llama autom\u00e1ticamente cuando una auditor\u00eda se completa.",
-        "operationId": "record_score_manually_api_score_history_record_post",
+        "operationId": "record_score_manually_api_v1_score_history_record_post",
         "security": [
           {
             "HTTPBearer": []
@@ -11301,84 +5893,60 @@
         }
       }
     },
-    "/search/": {
-      "post": {
+    "/health": {
+      "get": {
         "tags": [
-          "search"
+          "health"
         ],
-        "summary": "Search Ai",
-        "description": "Endpoint de b\u00fasqueda AI que procesa consultas y puede iniciar auditor\u00edas",
-        "operationId": "search_ai_search__post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/SearchRequest"
-              }
-            }
-          },
-          "required": true
-        },
+        "summary": "Health Check",
+        "description": "Health check endpoint para load balancers.\nRetorna 200 si todos los servicios est\u00e1n operativos.",
+        "operationId": "health_check_health_get",
         "responses": {
           "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SearchResponse"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
+                "schema": {}
               }
             }
           }
         }
       }
     },
-    "/search": {
-      "post": {
+    "/health/ready": {
+      "get": {
         "tags": [
-          "search"
+          "health"
         ],
-        "summary": "Search Ai",
-        "description": "Endpoint de b\u00fasqueda AI que procesa consultas y puede iniciar auditor\u00edas",
-        "operationId": "search_ai_search_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/SearchRequest"
-              }
-            }
-          },
-          "required": true
-        },
+        "summary": "Readiness Check",
+        "description": "Readiness check - verifica si la app puede recibir tr\u00e1fico.",
+        "operationId": "readiness_check_health_ready_get",
         "responses": {
           "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SearchResponse"
-                }
+                "schema": {}
               }
             }
-          },
-          "422": {
-            "description": "Validation Error",
+          }
+        }
+      }
+    },
+    "/health/live": {
+      "get": {
+        "tags": [
+          "health"
+        ],
+        "summary": "Liveness Check",
+        "description": "Liveness check - verifica si la app est\u00e1 viva (no colgada).",
+        "operationId": "liveness_check_health_live_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
+                "schema": {}
               }
             }
           }
@@ -11420,6 +5988,7 @@
           "content_outline": {
             "anyOf": [
               {
+                "additionalProperties": true,
                 "type": "object"
               },
               {
@@ -11478,6 +6047,7 @@
             "title": "Summary"
           },
           "pillars": {
+            "additionalProperties": true,
             "type": "object",
             "title": "Pillars"
           },
@@ -11778,6 +6348,7 @@
           "target_audit": {
             "anyOf": [
               {
+                "additionalProperties": true,
                 "type": "object"
               },
               {
@@ -11789,6 +6360,7 @@
           "external_intelligence": {
             "anyOf": [
               {
+                "additionalProperties": true,
                 "type": "object"
               },
               {
@@ -11801,6 +6373,7 @@
             "anyOf": [
               {
                 "items": {
+                  "additionalProperties": true,
                   "type": "object"
                 },
                 "type": "array"
@@ -11815,6 +6388,7 @@
             "anyOf": [
               {
                 "items": {
+                  "additionalProperties": true,
                   "type": "object"
                 },
                 "type": "array"
@@ -11883,6 +6457,7 @@
           "pagespeed_data": {
             "anyOf": [
               {
+                "additionalProperties": true,
                 "type": "object"
               },
               {
@@ -12103,6 +6678,7 @@
           },
           "recommendations": {
             "items": {
+              "additionalProperties": true,
               "type": "object"
             },
             "type": "array",
@@ -12116,34 +6692,11 @@
         ],
         "title": "BatchApplyRequest"
       },
-      "Body_analyze_keyword_gap_api_content_keywords_gap_post": {
-        "properties": {
-          "your_keywords": {
-            "items": {
-              "type": "object"
-            },
-            "type": "array",
-            "title": "Your Keywords"
-          },
-          "competitor_keywords": {
-            "items": {
-              "type": "object"
-            },
-            "type": "array",
-            "title": "Competitor Keywords"
-          }
-        },
-        "type": "object",
-        "required": [
-          "your_keywords",
-          "competitor_keywords"
-        ],
-        "title": "Body_analyze_keyword_gap_api_content_keywords_gap_post"
-      },
       "Body_analyze_keyword_gap_api_v1_content_keywords_gap_post": {
         "properties": {
           "your_keywords": {
             "items": {
+              "additionalProperties": true,
               "type": "object"
             },
             "type": "array",
@@ -12151,6 +6704,7 @@
           },
           "competitor_keywords": {
             "items": {
+              "additionalProperties": true,
               "type": "object"
             },
             "type": "array",
@@ -12519,6 +7073,7 @@
           },
           "fixes": {
             "items": {
+              "additionalProperties": true,
               "type": "object"
             },
             "type": "array",
@@ -12549,6 +7104,7 @@
             "title": "Page Path"
           },
           "values": {
+            "additionalProperties": true,
             "type": "object",
             "title": "Values"
           }
@@ -12617,6 +7173,7 @@
           "current_values": {
             "anyOf": [
               {
+                "additionalProperties": true,
                 "type": "object"
               },
               {
@@ -13002,6 +7559,7 @@
           "expected_improvements": {
             "anyOf": [
               {
+                "additionalProperties": true,
                 "type": "object"
               },
               {
@@ -13106,6 +7664,7 @@
             "anyOf": [
               {
                 "items": {
+                  "additionalProperties": true,
                   "type": "object"
                 },
                 "type": "array"
