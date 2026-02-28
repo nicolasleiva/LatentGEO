@@ -18,6 +18,12 @@ Parameters:
     Type: AWS::EC2::SecurityGroup::Id
   ECSSecurityGroupId:
     Type: AWS::EC2::SecurityGroup::Id
+  AlbOriginDomainName:
+    Type: String
+    Description: Fully qualified domain name CloudFront uses to connect to ALB origin.
+  Route53HostedZoneId:
+    Type: String
+    Description: Public Route53 hosted zone ID for AlbOriginDomainName.
   AppSecretArn:
     Type: String
   BackendImageUri:
@@ -288,6 +294,26 @@ Resources:
         - !Ref ALBSecurityGroupId
       Subnets: !Ref PublicSubnetIds
 
+  ALBOriginCertificate:
+    Type: AWS::CertificateManager::Certificate
+    Properties:
+      DomainName: !Ref AlbOriginDomainName
+      ValidationMethod: DNS
+      DomainValidationOptions:
+        - DomainName: !Ref AlbOriginDomainName
+          HostedZoneId: !Ref Route53HostedZoneId
+
+  ALBOriginRecord:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref Route53HostedZoneId
+      Name: !Ref AlbOriginDomainName
+      Type: A
+      AliasTarget:
+        DNSName: !GetAtt ApplicationLoadBalancer.DNSName
+        HostedZoneId: !GetAtt ApplicationLoadBalancer.CanonicalHostedZoneID
+        EvaluateTargetHealth: false
+
   BackendTargetGroup:
     Type: AWS::ElasticLoadBalancingV2::TargetGroup
     Properties:
@@ -318,8 +344,11 @@ Resources:
     Type: AWS::ElasticLoadBalancingV2::Listener
     Properties:
       LoadBalancerArn: !Ref ApplicationLoadBalancer
-      Port: 80
-      Protocol: HTTP
+      Port: 443
+      Protocol: HTTPS
+      SslPolicy: ELBSecurityPolicy-TLS13-1-2-2021-06
+      Certificates:
+        - CertificateArn: !Ref ALBOriginCertificate
       DefaultActions:
         - Type: forward
           TargetGroupArn: !Ref FrontendTargetGroup
@@ -406,11 +435,13 @@ Resources:
         PriceClass: PriceClass_100
         Origins:
           - Id: alb-origin
-            DomainName: !GetAtt ApplicationLoadBalancer.DNSName
+            DomainName: !Ref AlbOriginDomainName
             CustomOriginConfig:
               HTTPPort: 80
               HTTPSPort: 443
-              OriginProtocolPolicy: http-only
+              OriginProtocolPolicy: https-only
+              OriginSSLProtocols:
+                - TLSv1.2
         DefaultCacheBehavior:
           TargetOriginId: alb-origin
           ViewerProtocolPolicy: redirect-to-https

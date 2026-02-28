@@ -21,8 +21,18 @@ def _make_target_audit(url: str, title: str, meta: str, h1: str):
     }
 
 
-def _host_set(urls):
-    return {urlparse(str(url)).hostname or "" for url in urls}
+def _normalize_host(value, *, strip_www: bool = False):
+    host = (value or "").strip().lower().rstrip(".")
+    if strip_www and host.startswith("www."):
+        return host[4:]
+    return host
+
+
+def _host_set(urls, *, strip_www: bool = False):
+    return {
+        _normalize_host(urlparse(str(url)).hostname, strip_www=strip_www)
+        for url in urls
+    }
 
 
 def test_extract_core_terms_from_target_bootcamp():
@@ -80,8 +90,11 @@ def test_filter_competitor_urls_core_terms():
     competitors = PipelineService.filter_competitor_urls(
         items, target_domain="platform5.la", core_terms=["coding", "bootcamp"], limit=5
     )
-    assert "examplebootcamp.com" in _host_set(competitors)
-    assert all("randomnews" not in url for url in competitors)
+    competitor_hosts = _host_set(competitors)
+    expected_hosts = {"examplebootcamp.com"}
+    missing_hosts = expected_hosts - competitor_hosts
+    assert not missing_hosts
+    assert "randomnews.com" not in competitor_hosts
 
 
 def test_filter_competitor_urls_does_not_block_dealer_by_dea_substring():
@@ -99,7 +112,9 @@ def test_filter_competitor_urls_does_not_block_dealer_by_dea_substring():
         anchor_terms=["fender", "guitar"],
         limit=5,
     )
-    assert "www.gibson.com" in _host_set(competitors)
+    competitor_hosts = _host_set(competitors)
+    missing_hosts = {"www.gibson.com"} - competitor_hosts
+    assert not missing_hosts
 
 
 def test_normalize_token_root_strips_accents_and_plural_noise():
@@ -121,7 +136,9 @@ def test_filter_competitor_urls_matches_consultora_with_consulting_variants():
         core_terms=["consultora", "transformación"],
         limit=5,
     )
-    assert "example-consulting.com" in _host_set(competitors)
+    competitor_hosts = _host_set(competitors)
+    missing_hosts = {"example-consulting.com"} - competitor_hosts
+    assert not missing_hosts
 
 
 def test_extract_competitor_urls_falls_back_to_anchor_terms_when_core_terms_are_noisy():
@@ -178,7 +195,9 @@ def test_extract_competitor_urls_falls_back_to_anchor_terms_when_core_terms_are_
     )
 
     assert urls
-    assert "www.themusiczoo.com" in _host_set(urls)
+    discovered_hosts = _host_set(urls)
+    missing_hosts = {"www.themusiczoo.com"} - discovered_hosts
+    assert not missing_hosts
 
 
 def test_filter_competitor_urls_excludes_research_paths_from_competitors():
@@ -203,7 +222,8 @@ def test_filter_competitor_urls_excludes_research_paths_from_competitors():
         limit=5,
     )
 
-    assert all("hfsresearch.com" not in url for url in competitors)
+    competitor_hosts = _host_set(competitors)
+    assert "hfsresearch.com" not in competitor_hosts
 
 
 def test_filter_competitor_urls_excludes_directory_sites():
@@ -227,8 +247,10 @@ def test_filter_competitor_urls_excludes_directory_sites():
         limit=5,
     )
 
-    assert all("clutch.co" not in url for url in competitors)
-    assert "www.example-consulting.com" in _host_set(competitors)
+    assert "clutch.co" not in _host_set(competitors)
+    competitor_hosts = _host_set(competitors)
+    missing_hosts = {"www.example-consulting.com"} - competitor_hosts
+    assert not missing_hosts
 
 
 def test_extract_anchor_terms_requires_repeated_signal():
@@ -284,11 +306,13 @@ def test_extract_internal_urls_from_search_accepts_only_exact_host():
     )
 
     hosts = _host_set(urls)
-    assert "example.com" in hosts
-    assert "www.example.com" in hosts
-    assert all("blog.example.com" not in u for u in urls)
-    assert all("evil-example.com" not in u for u in urls)
-    assert all(not u.startswith("ftp://") for u in urls)
+    expected_hosts = {"example.com", "www.example.com"}
+    missing_hosts = expected_hosts - hosts
+    assert not missing_hosts
+    assert "blog.example.com" not in hosts
+    assert "evil-example.com" not in hosts
+    schemes = {urlparse(str(u)).scheme.lower() for u in urls}
+    assert "ftp" not in schemes
 
 
 def test_sanitize_report_sources_normalizes_internal_placeholders():

@@ -4,6 +4,10 @@ from app.models import Audit, AuditStatus
 from urllib.parse import urlparse
 
 
+def _normalize_host(value):
+    return (value or "").strip().lower().rstrip(".")
+
+
 def _test_user():
     return AuthUser(user_id="test-user", email="test@example.com")
 
@@ -49,8 +53,9 @@ def test_list_audits_returns_only_current_user_data(client, db_session):
     list_res = client.get("/api/v1/audits/")
     assert list_res.status_code == 200
     audits = list_res.json()
-    returned_hosts = {urlparse(item["url"]).hostname for item in audits}
+    returned_hosts = {_normalize_host(urlparse(item["url"]).hostname) for item in audits}
 
-    assert "owned-site.com" in returned_hosts
+    missing_hosts = {"owned-site.com"} - returned_hosts
+    assert not missing_hosts
     assert "other-site.com" not in returned_hosts
 

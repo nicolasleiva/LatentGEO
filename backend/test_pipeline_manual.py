@@ -14,6 +14,10 @@ from app.core.config import settings
 from app.services.pipeline_service import PipelineService
 
 
+def _normalize_host(hostname) -> str:
+    return (hostname or "").strip().lower().rstrip(".")
+
+
 async def test_manual_pipeline():
     print("Testing Pipeline Filtering Logic...")
 
@@ -42,10 +46,10 @@ async def test_manual_pipeline():
 
     print(f"Filtered URLs: {filtered}")
 
-    filtered_hosts = {urlparse(url).hostname for url in filtered}
-    assert "www.competitor1.com" in filtered_hosts
-    assert "www.competitor2.com" in filtered_hosts
-    assert "www.competitor3.com" in filtered_hosts
+    filtered_hosts = {_normalize_host(urlparse(url).hostname) for url in filtered}
+    expected_hosts = {"www.competitor1.com", "www.competitor2.com", "www.competitor3.com"}
+    missing_hosts = expected_hosts - filtered_hosts
+    assert not missing_hosts
     assert len(filtered) == 3
 
     print("Filter Test Passed!")

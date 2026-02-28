@@ -215,6 +215,23 @@ def create_app() -> FastAPI:
             routes=app.routes,
             contact={"name": "Soporte Auditor GEO", "email": "dev@auditorgeo.com"},
         )
+
+        components = openapi_schema.setdefault("components", {})
+        security_schemes = components.setdefault("securitySchemes", {})
+        security_schemes.setdefault(
+            "HTTPBearer",
+            {"type": "http", "scheme": "bearer"},
+        )
+
+        http_methods = {"get", "post", "put", "patch", "delete", "options", "head", "trace"}
+        for path_item in openapi_schema.get("paths", {}).values():
+            for method, operation in path_item.items():
+                if method.lower() not in http_methods or not isinstance(operation, dict):
+                    continue
+                if "security" not in operation:
+                    operation["security"] = []
+
+        openapi_schema["security"] = [{"HTTPBearer": []}]
         app.openapi_schema = openapi_schema
         return app.openapi_schema
 

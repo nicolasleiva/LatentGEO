@@ -199,20 +199,19 @@ def verify_env_variables():
     print("VERIFICACIÓN DE VARIABLES DE ENTORNO")
     print("=" * 60)
 
-    vars_to_check = [
-        ("GOOGLE_PAGESPEED_API_KEY", settings.GOOGLE_PAGESPEED_API_KEY),
-        ("SERPER_API_KEY", settings.SERPER_API_KEY),
-        ("NVIDIA_API_KEY", settings.NVIDIA_API_KEY),
-        ("NV_API_KEY", settings.NV_API_KEY),
+    sensitive_values = [
+        settings.GOOGLE_PAGESPEED_API_KEY,
+        settings.SERPER_API_KEY,
+        settings.NVIDIA_API_KEY,
+        settings.NV_API_KEY,
     ]
 
-    all_ok = True
-    for name, value in vars_to_check:
-        if value:
-            print(f"[OK] {name}: {redact_secret(bool(value))}")
-        else:
-            print(f"[FAIL] {name}: NO CONFIGURADO")
-            all_ok = False
+    configured_count = sum(1 for value in sensitive_values if value)
+    missing_count = len(sensitive_values) - configured_count
+    all_ok = missing_count == 0
+
+    print(f"[INFO] configured_count={configured_count}")
+    print(f"[INFO] missing_count={missing_count}")
 
     return all_ok
 
