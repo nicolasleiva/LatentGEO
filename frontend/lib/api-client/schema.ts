@@ -2449,8 +2449,8 @@ export interface paths {
         trace?: never;
     };
 }
-type webhooks = Record<string, never>;
-interface components {
+export type webhooks = Record<string, never>;
+export interface components {
     schemas: {
         /** AIContentSuggestionResponse */
         AIContentSuggestionResponse: {
@@ -3254,7 +3254,7 @@ interface components {
     headers: never;
     pathItems: never;
 }
-type $defs = Record<string, never>;
+export type $defs = Record<string, never>;
 export interface operations {
     list_audits_api_v1_audits__get: {
         parameters: {

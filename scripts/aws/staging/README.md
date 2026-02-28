@@ -15,6 +15,8 @@ This folder contains a reproducible deployment flow for AWS staging in `us-east-
 1. Copy config template:
    `Copy-Item scripts/aws/staging/config.example.env scripts/aws/staging/config.env`
 2. Fill required values in `scripts/aws/staging/config.env`.
+   - `ALB_ORIGIN_DOMAIN`: FQDN used by CloudFront to reach ALB origin (for example `alb-origin.staging.example.com`).
+   - `ROUTE53_HOSTED_ZONE_ID`: public hosted zone ID that owns `ALB_ORIGIN_DOMAIN`.
 3. Configure AWS CLI profile (`default`) with SSO:
    - `aws configure sso --profile default`
    - SSO Start URL: `https://d-9066007ac4.awsapps.com/start`
@@ -37,4 +39,6 @@ This folder contains a reproducible deployment flow for AWS staging in `us-east-
 - The deploy script creates/updates Secrets Manager secret `${PROJECT_NAME}/${ENVIRONMENT_NAME}/app`.
 - If `DB_PASSWORD` is empty, `deploy.ps1` generates a strong random password at runtime.
 - CloudFront default domain is used for staging URL.
+- ALB origin traffic is restricted using AWS managed prefix list `com.amazonaws.global.cloudfront.origin-facing`.
+- `ROUTE53_HOSTED_ZONE_ID` is your domain hosted zone. The ALB alias target hosted zone is derived automatically from ALB `CanonicalHostedZoneID`.
 - Credits activities are optional and should not block release.

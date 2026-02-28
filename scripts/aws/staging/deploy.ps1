@@ -459,6 +459,24 @@ function Ensure-Budget {
     ))
 }
 
+function Get-CloudFrontOriginPrefixListId {
+    if ($DryRun) {
+        return 'pl-dryruncloudfront'
+    }
+
+    $prefixListId = (Invoke-Aws @(
+        'ec2', 'describe-managed-prefix-lists',
+        '--query', "PrefixLists[?PrefixListName=='com.amazonaws.global.cloudfront.origin-facing'] | [0].PrefixListId",
+        '--output', 'text'
+    )).Trim()
+
+    if ([string]::IsNullOrWhiteSpace($prefixListId) -or $prefixListId -eq 'None') {
+        throw 'Could not resolve CloudFront managed prefix list (com.amazonaws.global.cloudfront.origin-facing).'
+    }
+
+    return $prefixListId
+}
+
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..')).Path
 $configFile = Resolve-PathSafe -BasePath $repoRoot -PathValue $ConfigPath
 $config = Load-KeyValueFile -Path $configFile
@@ -489,6 +507,8 @@ $redisNodeType = Get-ConfigValue -Map $config -Key 'REDIS_NODE_TYPE' -DefaultVal
 $desiredBackendCount = Get-ConfigValue -Map $config -Key 'DESIRED_BACKEND_COUNT' -DefaultValue '1'
 $desiredFrontendCount = Get-ConfigValue -Map $config -Key 'DESIRED_FRONTEND_COUNT' -DefaultValue '1'
 $desiredWorkerCount = Get-ConfigValue -Map $config -Key 'DESIRED_WORKER_COUNT' -DefaultValue '0'
+$albOriginDomain = Get-ConfigValue -Map $config -Key 'ALB_ORIGIN_DOMAIN' -Required
+$route53HostedZoneId = Get-ConfigValue -Map $config -Key 'ROUTE53_HOSTED_ZONE_ID' -Required
 
 $sourceEnvFile = Resolve-PathSafe -BasePath $repoRoot -PathValue (Get-ConfigValue -Map $config -Key 'SOURCE_ENV_FILE' -DefaultValue '.env')
 $secretName = Get-ConfigValue -Map $config -Key 'APP_SECRET_NAME' -DefaultValue "$projectName/$environmentName/app"
@@ -503,6 +523,10 @@ if ($configEnableCredits) { $EnableCredits = $true }
 
 Write-Step "Using AWS CLI: $script:AwsCli"
 Write-Step "Project=$projectName Environment=$environmentName Region=$script:AwsRegion"
+
+$cloudFrontOriginPrefixListId = Get-CloudFrontOriginPrefixListId
+Write-Step "Using CloudFront origin prefix list: $cloudFrontOriginPrefixListId"
+Write-Step 'CloudFront managed prefix list has a high rule weight; verify security group quotas if deployment fails.'
 
 if (-not $DryRun) {
     $identity = Invoke-Aws @('sts', 'get-caller-identity', '--output', 'json') | Out-String | ConvertFrom-Json
@@ -533,6 +557,7 @@ Deploy-Stack -StackName $networkStack -TemplatePath $networkTemplate -Parameters
     ProjectName = $projectName
     EnvironmentName = $environmentName
     AllowedIngressCidr = $allowedIngressCidr
+    CloudFrontOriginPrefixListId = $cloudFrontOriginPrefixListId
 }
 
 $vpcId = Get-StackOutput -StackName $networkStack -OutputKey 'VpcId'
@@ -691,6 +716,8 @@ Deploy-Stack -StackName $appStack -TemplatePath $appTemplate -Parameters @{
     PrivateSubnetIds = $privateSubnetIds
     ALBSecurityGroupId = $albSg
     ECSSecurityGroupId = $ecsSg
+    AlbOriginDomainName = $albOriginDomain
+    Route53HostedZoneId = $route53HostedZoneId
     AppSecretArn = $appSecretArn
     BackendImageUri = $backendImage
     FrontendImageUri = $frontendImage
