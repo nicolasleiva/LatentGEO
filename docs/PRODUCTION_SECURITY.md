@@ -166,3 +166,17 @@ The application is now production-ready with:
 ✅ **Authentication**: JWT with proper expiration
 ✅ **89 API Routes**: All core features working
 ✅ **Integrations**: HubSpot + GitHub working
+
+---
+
+## OpenAPI Checkov Policy Note
+
+`CKV_OPENAPI_5` is intentionally excluded in the dedicated OpenAPI scan workflow.
+
+Reason:
+- The rule assumes OAuth2-style scopes.
+- This API uses `type: http` + `scheme: bearer`.
+- In OpenAPI, bearer auth does not define scopes, so `[]` is the valid value.
+- Public operations explicitly use `security: []` to override global auth requirements.
+
+Other OpenAPI security checks (`CKV_OPENAPI_3`, `CKV_OPENAPI_4`, `CKV_OPENAPI_20`) remain enforced.

@@ -26,6 +26,14 @@ class CompetitorCitationService:
     - Recomendar estrategias de mejora
     """
 
+    _ALLOWED_ERROR_CATEGORIES = {"internal_error", "invalid_input", "unauthorized"}
+    _ALLOWED_ERROR_CODES = {
+        "workers_unavailable",
+        "timeout",
+        "dependency_error",
+        "internal_error",
+    }
+
     @staticmethod
     async def analyze_competitor_citations(
         db: Session,
@@ -256,8 +264,10 @@ Sé específico y accionable. Formato:
             }
 
         except Exception as e:
-            logger.error(f"Error en análisis de gaps: {e}")
-            return {"has_gaps": True, "error": str(e)}
+            logger.exception("Error en análisis de gaps")
+            return CompetitorCitationService._error_payload(
+                error_code=CompetitorCitationService._resolve_error_code(e)
+            )
 
     @staticmethod
     def _extract_recommendations(analysis_text: str) -> List[str]:
@@ -303,6 +313,65 @@ Sé específico y accionable. Formato:
             db.rollback()
 
     @staticmethod
+    def _resolve_error_code(exc: Exception) -> str:
+        message = str(exc).lower()
+        if "timeout" in message:
+            return "timeout"
+        if "unavailable" in message or "worker" in message:
+            return "workers_unavailable"
+        return "dependency_error"
+
+    @staticmethod
+    def _sanitize_error_category(error_value: Any) -> str:
+        if isinstance(error_value, str):
+            normalized = error_value.strip().lower()
+            if normalized in CompetitorCitationService._ALLOWED_ERROR_CATEGORIES:
+                return normalized
+        return "internal_error"
+
+    @staticmethod
+    def _sanitize_error_code(error_code_value: Any) -> str:
+        if isinstance(error_code_value, str):
+            normalized = error_code_value.strip().lower()
+            if normalized in CompetitorCitationService._ALLOWED_ERROR_CODES:
+                return normalized
+        return "dependency_error"
+
+    @staticmethod
+    def _error_payload(error_code: str = "internal_error") -> Dict[str, Any]:
+        safe_error_code = CompetitorCitationService._sanitize_error_code(error_code)
+        return {
+            "has_data": False,
+            "has_gaps": None,
+            "error": "internal_error",
+            "error_code": safe_error_code,
+        }
+
+    @staticmethod
+    def _sanitize_gap_analysis(payload: Any) -> Dict[str, Any]:
+        if not isinstance(payload, dict):
+            return CompetitorCitationService._error_payload("dependency_error")
+
+        if "error" in payload or "error_code" in payload:
+            return {
+                "has_data": False,
+                "has_gaps": None,
+                "error": CompetitorCitationService._sanitize_error_category(
+                    payload.get("error")
+                ),
+                "error_code": CompetitorCitationService._sanitize_error_code(
+                    payload.get("error_code")
+                ),
+            }
+
+        has_gaps = payload.get("has_gaps")
+        if isinstance(has_gaps, bool):
+            payload["has_gaps"] = has_gaps
+        else:
+            payload["has_gaps"] = False
+        return payload
+
+    @staticmethod
     def get_citation_benchmark(db: Session, audit_id: int) -> Dict[str, Any]:
         """
         Obtiene benchmark de citaciones.
@@ -323,15 +392,15 @@ Sé específico y accionable. Formato:
             if not analysis:
                 return {
                     "has_data": False,
+                    "has_gaps": None,
                     "message": "No hay análisis de competidores disponible",
                 }
 
             import json
 
             competitors = json.loads(analysis.competitor_data)
-            gap_analysis = (
-                json.loads(analysis.gap_analysis) if analysis.gap_analysis else {}
-            )
+            gap_analysis = json.loads(analysis.gap_analysis) if analysis.gap_analysis else {}
+            gap_analysis = CompetitorCitationService._sanitize_gap_analysis(gap_analysis)
 
             # Preparar datos para visualización
             return {
@@ -342,6 +411,6 @@ Sé específico y accionable. Formato:
                 "timestamp": analysis.analyzed_at.isoformat(),
             }
 
-        except Exception as e:
-            logger.error(f"Error obteniendo benchmark: {e}")
-            return {"has_data": False, "error": str(e)}
+        except Exception:
+            logger.exception("Error obteniendo benchmark")
+            return CompetitorCitationService._error_payload("internal_error")

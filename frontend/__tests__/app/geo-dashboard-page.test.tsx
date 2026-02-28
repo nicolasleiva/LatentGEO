@@ -56,6 +56,7 @@ describe("GEO dashboard page", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     window.localStorage.clear();
+    window.history.replaceState({}, "", "/en/audits/3/geo?tab=article-engine");
     (useParams as jest.Mock).mockReturnValue({ id: "3" });
     (usePathname as jest.Mock).mockReturnValue("/en/audits/3/geo");
     (useRouter as jest.Mock).mockReturnValue({ replace: mockReplace });
@@ -88,13 +89,10 @@ describe("GEO dashboard page", () => {
   it("resolves ?tab=article-engine without crashing and renders the section", async () => {
     render(<GEODashboardPage />);
 
-    await waitFor(() => {
-      expect(
-        screen.getByRole("heading", {
-          name: "Article Engine",
-        }),
-      ).toBeInTheDocument();
+    const articleHeading = await screen.findByRole("heading", {
+      name: "Article Engine",
     });
+    expect(articleHeading).toBeInTheDocument();
     expect(
       screen.getByText(
         /generate audit-grounded article batches focused on citation and conversion outcomes/i,
