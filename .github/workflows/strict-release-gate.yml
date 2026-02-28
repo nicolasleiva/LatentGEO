@@ -3,6 +3,9 @@ name: Strict Release Gate
 on:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 env:
   PYTHON_VERSION: "3.11"
   NODE_VERSION: "20"
@@ -155,7 +158,7 @@ jobs:
           pnpm --dir frontend build
 
       - name: Frontend dependency audit
-        run: pnpm --dir frontend audit --prod --audit-level=high
+        run: pnpm --dir frontend audit --audit-level=high
 
   strict-release-ready:
     name: Strict Release Ready

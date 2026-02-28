@@ -8,7 +8,12 @@ import re
 from typing import List, Optional
 from urllib.parse import urlparse
 
-from app.core.security import validate_api_key, validate_email, validate_url
+from app.core.security import (
+    sanitize_html_content,
+    validate_api_key,
+    validate_email,
+    validate_url,
+)
 from pydantic import BaseModel, Field, field_validator
 
 
@@ -184,27 +189,7 @@ class HTMLContent(BaseModel):
     @field_validator("content")
     @classmethod
     def sanitize_html(cls, v):
-        # Remove script tags and their contents
-        v = re.sub(r"<script[^>]*>.*?</script>", "", v, flags=re.DOTALL | re.IGNORECASE)
-
-        # Remove event handlers
-        v = re.sub(r'\s+on\w+\s*=\s*["\'][^"\']*["\']', "", v, flags=re.IGNORECASE)
-        v = re.sub(r"\s+on\w+\s*=\s*[^\s>]+", "", v, flags=re.IGNORECASE)
-
-        # Remove javascript: urls
-        v = re.sub(r"javascript:", "", v, flags=re.IGNORECASE)
-        v = re.sub(r"vbscript:", "", v, flags=re.IGNORECASE)
-        v = re.sub(r"data:text/html", "", v, flags=re.IGNORECASE)
-
-        # Remove style tags (can be used for CSS injection)
-        v = re.sub(r"<style[^>]*>.*?</style>", "", v, flags=re.DOTALL | re.IGNORECASE)
-
-        # Remove iframe, embed, object tags
-        v = re.sub(r"<iframe[^>]*>.*?</iframe>", "", v, flags=re.DOTALL | re.IGNORECASE)
-        v = re.sub(r"<embed[^>]*/?>", "", v, flags=re.IGNORECASE)
-        v = re.sub(r"<object[^>]*>.*?</object>", "", v, flags=re.DOTALL | re.IGNORECASE)
-
-        return v.strip()
+        return sanitize_html_content(v, max_length=50000)
 
 
 class WebhookURLInput(BaseModel):

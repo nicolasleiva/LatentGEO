@@ -16,6 +16,24 @@ interface CoreWebVitalsProps {
   data: any; // Relaxed type to handle both structures
 }
 
+interface MetricCardProps {
+  label: string;
+  value: string;
+  sub: string;
+}
+
+function MetricCard({ label, value, sub }: MetricCardProps) {
+  return (
+    <div className="text-center p-4 glass-panel border border-border rounded-xl hover:bg-muted/50 transition-colors">
+      <div className="text-xs text-muted-foreground uppercase tracking-wider mb-1">
+        {label}
+      </div>
+      <div className="text-xl font-semibold text-foreground">{value}</div>
+      <div className="text-xs text-muted-foreground/70 mt-1">{sub}</div>
+    </div>
+  );
+}
+
 export function CoreWebVitalsChart({ data }: CoreWebVitalsProps) {
   // Robust data handling: check if data is nested (mobile/desktop) or flat
   // If flat, we treat it as "Mobile" (default strategy) or just "Current"
@@ -80,24 +98,6 @@ export function CoreWebVitalsChart({ data }: CoreWebVitalsProps) {
       timeZoneName: "short",
     });
   };
-
-  const MetricCard = ({
-    label,
-    value,
-    sub,
-  }: {
-    label: string;
-    value: string;
-    sub: string;
-  }) => (
-    <div className="text-center p-4 glass-panel border border-border rounded-xl hover:bg-muted/50 transition-colors">
-      <div className="text-xs text-muted-foreground uppercase tracking-wider mb-1">
-        {label}
-      </div>
-      <div className="text-xl font-semibold text-foreground">{value}</div>
-      <div className="text-xs text-muted-foreground/70 mt-1">{sub}</div>
-    </div>
-  );
 
   return (
     <div className="space-y-8">

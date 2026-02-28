@@ -14,9 +14,6 @@ import {
   Area,
 } from "recharts";
 import {
-  TrendingUp,
-  TrendingDown,
-  Minus,
   Calendar,
   BarChart3,
   ArrowUpRight,
@@ -50,6 +47,48 @@ interface MonthlyComparison {
     critical_issues: ComparisonMetric;
     audit_count: ComparisonMetric;
   };
+}
+
+interface ComparisonCardProps {
+  label: string;
+  metric: ComparisonMetric;
+  isLowerBetter?: boolean;
+}
+
+function ComparisonCard({
+  label,
+  metric,
+  isLowerBetter = false,
+}: ComparisonCardProps) {
+  const isPositive = isLowerBetter ? metric.change < 0 : metric.change > 0;
+  const colorClass =
+    metric.trend === "stable"
+      ? "text-muted-foreground"
+      : isPositive
+        ? "text-green-500"
+        : "text-red-500";
+
+  return (
+    <div className="p-4 glass-panel rounded-xl border border-border hover:bg-muted/50 transition-colors">
+      <div className="text-xs text-muted-foreground uppercase tracking-wider mb-2">
+        {label}
+      </div>
+      <div className="flex items-baseline gap-2">
+        <span className="text-2xl font-bold text-foreground">
+          {metric.current}
+        </span>
+        <span className={`text-sm ${colorClass} flex items-center gap-1`}>
+          {metric.trend === "up" && <ArrowUpRight className="w-3 h-3" />}
+          {metric.trend === "down" && <ArrowDownRight className="w-3 h-3" />}
+          {metric.change > 0 ? "+" : ""}
+          {metric.change_pct}%
+        </span>
+      </div>
+      <div className="text-xs text-muted-foreground mt-1">
+        vs {metric.previous} previous month
+      </div>
+    </div>
+  );
 }
 
 export function ScoreHistoryChart({ domain }: ScoreHistoryProps) {
@@ -93,54 +132,6 @@ export function ScoreHistoryChart({ domain }: ScoreHistoryProps) {
 
     if (domain) fetchData();
   }, [domain, days, backendUrl]);
-
-  const TrendIcon = ({ trend }: { trend: "up" | "down" | "stable" }) => {
-    if (trend === "up")
-      return <TrendingUp className="w-4 h-4 text-green-400" />;
-    if (trend === "down")
-      return <TrendingDown className="w-4 h-4 text-red-400" />;
-    return <Minus className="w-4 h-4 text-muted-foreground" />;
-  };
-
-  const ComparisonCard = ({
-    label,
-    metric,
-    isLowerBetter = false,
-  }: {
-    label: string;
-    metric: ComparisonMetric;
-    isLowerBetter?: boolean;
-  }) => {
-    const isPositive = isLowerBetter ? metric.change < 0 : metric.change > 0;
-    const colorClass =
-      metric.trend === "stable"
-        ? "text-muted-foreground"
-        : isPositive
-          ? "text-green-500"
-          : "text-red-500";
-
-    return (
-      <div className="p-4 glass-panel rounded-xl border border-border hover:bg-muted/50 transition-colors">
-        <div className="text-xs text-muted-foreground uppercase tracking-wider mb-2">
-          {label}
-        </div>
-        <div className="flex items-baseline gap-2">
-          <span className="text-2xl font-bold text-foreground">
-            {metric.current}
-          </span>
-          <span className={`text-sm ${colorClass} flex items-center gap-1`}>
-            {metric.trend === "up" && <ArrowUpRight className="w-3 h-3" />}
-            {metric.trend === "down" && <ArrowDownRight className="w-3 h-3" />}
-            {metric.change > 0 ? "+" : ""}
-            {metric.change_pct}%
-          </span>
-        </div>
-        <div className="text-xs text-muted-foreground mt-1">
-          vs {metric.previous} previous month
-        </div>
-      </div>
-    );
-  };
 
   if (loading) {
     return (

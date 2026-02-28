@@ -379,12 +379,16 @@ class PageSpeedService:
                         )
                         return {"error": f"API error: {status_code}"}
 
-            except Exception as e:
-                logger.error(f"PageSpeed exception (attempt {attempt+1}): {e}")
+            except Exception:
+                logger.exception(f"PageSpeed exception (attempt {attempt+1})")
                 if attempt < max_retries - 1:
                     await asyncio.sleep(retry_delay)
                     continue
-                return {"error": str(e), "url": url, "strategy": strategy}
+                return {
+                    "error": "Internal server error",
+                    "url": url,
+                    "strategy": strategy,
+                }
 
     @staticmethod
     async def analyze_both_strategies(url: str, api_key: Optional[str] = None) -> Dict:

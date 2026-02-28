@@ -1,0 +1,34 @@
+diff --git a/dist/build/copyTracedFiles.js b/dist/build/copyTracedFiles.js
+index 818e026657aa3a917176da04aa34878c3ca6048d..4221be16f4ed71a43a4d1abc5eb2a4bdd7bf8496 100644
+--- a/dist/build/copyTracedFiles.js
++++ b/dist/build/copyTracedFiles.js
+@@ -211,9 +211,27 @@ File ${serverPath} does not exist
+                 symlinkSync(symlink, to);
+             }
+             catch (e) {
+-                if (e.code !== "EEXIST") {
+-                    throw e;
++                if (e.code === "EEXIST") {
++                    return;
+                 }
++                // Windows can deny symlink creation without developer mode or elevated privileges.
++                // Fall back to copying the traced file to keep build portability.
++                if (e.code === "EPERM" || e.code === "EACCES") {
++                    try {
++                        const fromStats = statSync(from);
++                        if (fromStats.isDirectory()) {
++                            cpSync(from, to, { recursive: true, dereference: true });
++                        }
++                        else {
++                            copyFileAndMakeOwnerWritable(from, to);
++                        }
++                        return;
++                    }
++                    catch (copyError) {
++                        logger.debug("Error copying file after symlink failure:", copyError);
++                    }
++                }
++                throw e;
+             }
+         }
+         else {

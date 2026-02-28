@@ -288,5 +288,6 @@ def test_audits_competitors_route_filters_social_domains(client, db_session):
     assert payload
     domains = [item.get("domain", "") for item in payload]
     assert all("instagram.com" not in d for d in domains)
-    assert any("royalcanin.com" in d for d in domains)
+    normalized_domains = {str(d).strip().lower() for d in domains}
+    assert "royalcanin.com" in normalized_domains
 
