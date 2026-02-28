@@ -180,7 +180,7 @@ async def start_citation_tracking(
 
     except Exception as e:
         logger.error(f"Error starting citation tracking: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.get("/citation-tracking/history/{audit_id}")
@@ -197,7 +197,7 @@ def get_citation_history(
         return history
     except Exception as e:
         logger.error(f"Error getting citation history: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.get("/citation-tracking/recent/{audit_id}")
@@ -235,7 +235,7 @@ def get_recent_citations(
         ]
     except Exception as e:
         logger.error(f"Error getting recent citations: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.get("/citations/{audit_id}")
@@ -280,7 +280,7 @@ def get_recent_citations_legacy(
         }
     except Exception as e:
         logger.error(f"Error getting legacy citations: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.get("/citation-history/{audit_id}")
@@ -336,7 +336,7 @@ def get_citation_history_legacy(
         return {"history": history}
     except Exception as e:
         logger.error(f"Error getting legacy citation history: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 # ============= Query Discovery Endpoints =============
@@ -370,7 +370,7 @@ async def discover_queries(
 
     except Exception as e:
         logger.error(f"Error discovering queries: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.post("/query-discovery")
@@ -435,7 +435,7 @@ async def discover_queries_legacy(
         raise
     except Exception as e:
         logger.error(f"Error discovering legacy queries: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.get("/query-discovery/opportunities/{audit_id}")
@@ -455,7 +455,7 @@ def get_query_opportunities(
         }
     except Exception as e:
         logger.error(f"Error getting opportunities: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 # ============= Competitor Citation Endpoints =============
@@ -498,7 +498,7 @@ async def analyze_competitor_citations(
 
     except Exception as e:
         logger.error(f"Error analyzing competitors: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.get("/competitor-analysis/benchmark/{audit_id}")
@@ -514,7 +514,7 @@ def get_citation_benchmark(
         return benchmark
     except Exception as e:
         logger.error(f"Error getting benchmark: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.post("/competitor-analysis")
@@ -621,7 +621,7 @@ async def analyze_competitor_citations_legacy(
         raise
     except Exception as e:
         logger.error(f"Error in legacy competitor analysis: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 # ============= Schema Optimizer Endpoints =============
@@ -653,7 +653,7 @@ async def generate_schema(
 
     except Exception as e:
         logger.error(f"Error generating schema: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.post("/schema/multiple")
@@ -671,7 +671,7 @@ async def generate_multiple_schemas(
 
     except Exception as e:
         logger.error(f"Error generating schemas: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.post("/schema-generator")
@@ -705,7 +705,7 @@ async def generate_schema_legacy(
         }
     except Exception as e:
         logger.error(f"Error generating legacy schema: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.post("/schema-multiple")
@@ -738,7 +738,7 @@ async def generate_multiple_schemas_legacy(
         }
     except Exception as e:
         logger.error(f"Error generating legacy multiple schemas: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 # ============= Content Template Endpoints =============
@@ -754,7 +754,7 @@ def list_content_templates(
         return {"total_templates": len(templates), "templates": templates}
     except Exception as e:
         logger.error(f"Error listing templates: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.get("/content-templates")
@@ -792,7 +792,7 @@ def list_content_templates_legacy(
         }
     except Exception as e:
         logger.error(f"Error listing legacy templates: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.post("/content-templates/generate")
@@ -819,11 +819,11 @@ async def generate_content_template(
 
         return template
 
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Internal server error")
     except Exception as e:
         logger.error(f"Error generating template: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.post("/content-templates/analyze")
@@ -848,7 +848,7 @@ def analyze_content(
         raise
     except Exception as e:
         logger.error(f"Error analyzing content: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.post("/analyze-content")
@@ -882,7 +882,7 @@ def analyze_content_legacy(
         raise
     except Exception as e:
         logger.error(f"Error in legacy content analyze: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 # ============= Commerce LLM Tool =============
@@ -936,7 +936,7 @@ async def analyze_commerce_query(
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as e:
         logger.error(f"Error analyzing commerce query: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.get("/commerce-query/latest/{audit_id}")
@@ -972,7 +972,7 @@ def get_latest_commerce_query_analysis(
         }
     except Exception as e:
         logger.error(f"Error fetching latest commerce query analysis: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.post("/commerce-campaign/generate")
@@ -1003,7 +1003,7 @@ async def generate_commerce_campaign(
         }
     except Exception as e:
         logger.error(f"Error generating commerce campaign: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.get("/commerce-campaign/latest/{audit_id}")
@@ -1027,7 +1027,7 @@ def get_latest_commerce_campaign(
         }
     except Exception as e:
         logger.error(f"Error fetching latest commerce campaign: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 # ============= Article Engine Tool =============
@@ -1126,7 +1126,7 @@ async def generate_article_batch(
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as e:
         logger.error(f"Error generating article batch: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.get("/article-engine/status/{batch_id}")
@@ -1149,7 +1149,7 @@ def get_article_batch_status(
         raise
     except Exception as e:
         logger.error(f"Error fetching article batch status: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.get("/article-engine/latest/{audit_id}")
@@ -1167,7 +1167,7 @@ def get_latest_article_batch(
         return {"has_data": True, **GeoArticleEngineService.serialize_batch(batch)}
     except Exception as e:
         logger.error(f"Error fetching latest article batch: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 # ============= Dashboard Summary Endpoint =============
@@ -1291,4 +1291,5 @@ async def get_geo_dashboard(
 
     except Exception as e:
         logger.error(f"Error getting GEO dashboard: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
+

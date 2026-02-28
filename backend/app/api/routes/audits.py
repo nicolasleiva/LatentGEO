@@ -780,13 +780,11 @@ async def run_pagespeed_analysis(
             "message": "PageSpeed analysis completed",
             "strategies_analyzed": list(pagespeed_data.keys()),
         }
-    except Exception as e:
+    except Exception:
         logger.error(
-            f"PageSpeed analysis failed for audit {audit_id}: {e}", exc_info=True
+            f"PageSpeed analysis failed for audit {audit_id}", exc_info=True
         )
-        raise HTTPException(
-            status_code=500, detail=f"Error analyzing PageSpeed: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.post("/{audit_id}/generate-pdf")
@@ -948,10 +946,10 @@ async def generate_audit_pdf(
             f"generate_pdf_db_failed audit_id={audit_id} error_code=db_unavailable error={db_err}"
         )
         raise _db_unavailable_http_exception("generate_pdf_persist") from db_err
-    except Exception as e:
+    except Exception:
         logger.error(f"=== Error generating PDF for audit {audit_id} ===")
-        logger.error(f"Error: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Error generating PDF: {str(e)}")
+        logger.exception("Error generating PDF")
+        raise HTTPException(status_code=500, detail="Internal server error")
     finally:
         _release_pdf_generation_lock(audit_id, lock_token, lock_mode)
 
@@ -1081,12 +1079,10 @@ async def configure_audit_chat(
         return ChatMessage(
             role="assistant", content="Configuration saved. Starting audit..."
         )
-    except Exception as e:
+    except Exception:
         db.rollback()
-        logger.error(f"Error saving audit configuration: {e}")
-        raise HTTPException(
-            status_code=500, detail=f"Error saving configuration: {str(e)}"
-        )
+        logger.exception("Error saving audit configuration")
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 # DEPRECATED: Old GitHub integration endpoint

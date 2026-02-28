@@ -3,6 +3,7 @@ from typing import Any, Dict, List
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
 
 from ...core.auth import AuthUser, get_current_user
+from ...core.security import is_safe_outbound_url, normalize_outbound_url
 from ...services.crawler_service import CrawlerService
 from ...services.duplicate_content_service import DuplicateContentService
 from ...services.keyword_gap_service import KeywordGapService
@@ -75,8 +76,19 @@ async def compare_keywords(
     _current_user: AuthUser = Depends(get_current_user),
 ):
     """Compara keywords entre dos URLs"""
-    your_html = await CrawlerService.get_page_content(your_url)
-    comp_html = await CrawlerService.get_page_content(competitor_url)
+    normalized_your_url = normalize_outbound_url(your_url)
+    normalized_competitor_url = normalize_outbound_url(competitor_url)
+    if not normalized_your_url or not is_safe_outbound_url(normalized_your_url):
+        raise HTTPException(status_code=422, detail="your_url is invalid or blocked")
+    if not normalized_competitor_url or not is_safe_outbound_url(
+        normalized_competitor_url
+    ):
+        raise HTTPException(
+            status_code=422, detail="competitor_url is invalid or blocked"
+        )
+
+    your_html = await CrawlerService.get_page_content(normalized_your_url)
+    comp_html = await CrawlerService.get_page_content(normalized_competitor_url)
 
     if not your_html or not comp_html:
         raise HTTPException(400, "No se pudo obtener el contenido")

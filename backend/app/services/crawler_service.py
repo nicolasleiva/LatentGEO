@@ -26,6 +26,7 @@ from bs4 import BeautifulSoup
 from defusedxml import ElementTree as DefusedET
 
 from ..core.config import settings
+from ..core.security import is_safe_outbound_url, normalize_outbound_url
 
 logger = logging.getLogger(__name__)
 
@@ -678,24 +679,63 @@ class CrawlerService:
             Contenido HTML o None si falla
         """
         try:
+            current_url = normalize_outbound_url(url)
+            if not current_url:
+                logger.warning("URL inválida para descarga de contenido")
+                return None
+
             timeout_config = aiohttp.ClientTimeout(total=timeout)
             headers = HEADERS_MOBILE if mobile else HEADERS_DESKTOP
+            max_redirect_hops = 5
+
             async with aiohttp.ClientSession(
                 headers=headers, timeout=timeout_config
             ) as session:
-                async with session.get(url) as resp:
-                    if resp.status == 200:
-                        try:
-                            return await resp.text()
-                        except Exception:
-                            raw = await resp.read()
-                            return raw.decode(errors="ignore")
-                    else:
-                        logger.warning(f"Error descargando {url}: status {resp.status}")
+                for _ in range(max_redirect_hops + 1):
+                    if not is_safe_outbound_url(current_url):
+                        logger.warning(
+                            "Bloqueado por política SSRF al descargar contenido: %s",
+                            current_url,
+                        )
                         return None
 
-        except Exception as e:
-            logger.error(f"Error descargando {url}: {e}")
+                    async with session.get(current_url, allow_redirects=False) as resp:
+                        if resp.status in {301, 302, 303, 307, 308}:
+                            location = resp.headers.get("Location")
+                            if not location:
+                                return None
+                            next_url = normalize_outbound_url(
+                                urljoin(str(resp.url), location)
+                            )
+                            if not next_url or not is_safe_outbound_url(next_url):
+                                logger.warning(
+                                    "Redirect bloqueado por política SSRF: %s -> %s",
+                                    current_url,
+                                    location,
+                                )
+                                return None
+                            current_url = next_url
+                            continue
+
+                        if resp.status == 200:
+                            try:
+                                return await resp.text()
+                            except Exception:
+                                raw = await resp.read()
+                                return raw.decode(errors="ignore")
+
+                        logger.warning(
+                            "Error descargando %s: status %s", current_url, resp.status
+                        )
+                        return None
+
+                logger.warning(
+                    "Demasiados redirects al descargar contenido: %s", current_url
+                )
+                return None
+
+        except Exception:
+            logger.exception("Error descargando contenido")
             return None
 
 

@@ -10,6 +10,7 @@ import shutil
 import tempfile
 import time
 from datetime import datetime
+from pathlib import Path
 from typing import Any, Awaitable, Callable, Dict, List, Optional
 from urllib.parse import urlparse
 
@@ -180,13 +181,32 @@ class PDFService:
 
     @staticmethod
     def _reports_dir_for_audit(audit_id: int) -> str:
-        return os.path.join(settings.REPORTS_BASE_DIR, f"audit_{audit_id}")
+        try:
+            audit_id_int = int(audit_id)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("audit_id must be a positive integer") from exc
+        if audit_id_int <= 0:
+            raise ValueError("audit_id must be a positive integer")
+
+        root = Path(settings.REPORTS_BASE_DIR or "reports").resolve(strict=False)
+        candidate = (root / f"audit_{audit_id_int}").resolve(strict=False)
+        try:
+            candidate.relative_to(root)
+        except ValueError as exc:
+            raise ValueError("Unsafe PDF reports directory path") from exc
+        return str(candidate)
 
     @staticmethod
     def _report_context_signature_path(audit_id: int) -> str:
-        return os.path.join(
-            PDFService._reports_dir_for_audit(audit_id), "report_context.sha256"
+        reports_dir = Path(PDFService._reports_dir_for_audit(int(audit_id))).resolve(
+            strict=False
         )
+        signature_path = (reports_dir / "report_context.sha256").resolve(strict=False)
+        try:
+            signature_path.relative_to(reports_dir)
+        except ValueError as exc:
+            raise ValueError("Unsafe report signature path") from exc
+        return str(signature_path)
 
     @staticmethod
     def _serialize_for_signature(value: Any) -> Any:

@@ -100,7 +100,7 @@ def test_chat_flow():
         from app.core.config import settings
 
         if settings.NVIDIA_API_KEY:
-            print(f"✅ NVIDIA_API_KEY configured: {settings.NVIDIA_API_KEY[:20]}...")
+            print("✅ NVIDIA_API_KEY configured: <configured>")
         else:
             print("⚠️  NVIDIA_API_KEY not found in settings")
     except Exception as e:

@@ -45,6 +45,7 @@ httpx==0.28.1  # Required for webhook service
 PyJWT>=2.8.0  # JWT token handling
 pybreaker>=1.4.0  # Circuit breaker for external providers
 tornado>=6.0.0  # Required for pybreaker.call_async
+bleach>=6.2.0  # HTML sanitization allowlist
 
 # Monitoring & Logging (Level 2/3)
 sentry-sdk[fastapi]>=1.40.0

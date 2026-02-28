@@ -5,8 +5,9 @@ Servicio de AuditorÃ­a - LÃ³gica principal
 import json
 import os
 import re
-from hashlib import sha256
 from datetime import datetime, timezone
+from hashlib import sha256
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 from urllib.parse import urlparse
 
@@ -297,6 +298,27 @@ class AuditService:
         return f"{head}_{digest}"
 
     @staticmethod
+    def _reports_root_dir() -> Path:
+        return Path(settings.REPORTS_DIR or "reports").resolve(strict=False)
+
+    @staticmethod
+    def _reports_dir_for_audit(audit_id: int) -> Path:
+        try:
+            audit_id_int = int(audit_id)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("audit_id must be a positive integer") from exc
+        if audit_id_int <= 0:
+            raise ValueError("audit_id must be a positive integer")
+
+        root = AuditService._reports_root_dir()
+        candidate = (root / f"audit_{audit_id_int}").resolve(strict=False)
+        try:
+            candidate.relative_to(root)
+        except ValueError as exc:
+            raise ValueError("Unsafe audit artifact path") from exc
+        return candidate
+
+    @staticmethod
     async def set_audit_results(
         db: Session,
         audit_id: int,
@@ -495,52 +517,50 @@ class AuditService:
         """Sincrona: Escribir archivos JSON al disco"""
         try:
             # Crear directorio de reportes
-            reports_dir = os.path.join(
-                settings.REPORTS_DIR or "reports", f"audit_{audit_id}"
-            )
-            pages_dir = os.path.join(reports_dir, "pages")
-            competitors_dir = os.path.join(reports_dir, "competitors")
-            os.makedirs(reports_dir, exist_ok=True)
-            os.makedirs(pages_dir, exist_ok=True)
-            os.makedirs(competitors_dir, exist_ok=True)
+            reports_dir = AuditService._reports_dir_for_audit(audit_id)
+            pages_dir = reports_dir / "pages"
+            competitors_dir = reports_dir / "competitors"
+            reports_dir.mkdir(parents=True, exist_ok=True)
+            pages_dir.mkdir(parents=True, exist_ok=True)
+            competitors_dir.mkdir(parents=True, exist_ok=True)
 
             # Guardar resumen agregado
-            aggregated_path = os.path.join(reports_dir, "aggregated_summary.json")
+            aggregated_path = reports_dir / "aggregated_summary.json"
             with open(aggregated_path, "w", encoding="utf-8") as f:
                 json.dump(safe_target_audit, f, ensure_ascii=False, indent=2)
 
             # Guardar fix_plan
-            fix_plan_path = os.path.join(reports_dir, "fix_plan.json")
+            fix_plan_path = reports_dir / "fix_plan.json"
             with open(fix_plan_path, "w", encoding="utf-8") as f:
                 json.dump(safe_fix_plan, f, ensure_ascii=False, indent=2)
 
             # Guardar PageSpeed
             if safe_pagespeed_data:
-                pagespeed_path = os.path.join(reports_dir, "pagespeed.json")
+                pagespeed_path = reports_dir / "pagespeed.json"
                 with open(pagespeed_path, "w", encoding="utf-8") as f:
                     json.dump(safe_pagespeed_data, f, ensure_ascii=False, indent=2)
 
             # Guardar Keywords
             if safe_keywords:
-                keywords_path = os.path.join(reports_dir, "keywords.json")
+                keywords_path = reports_dir / "keywords.json"
                 with open(keywords_path, "w", encoding="utf-8") as f:
                     json.dump(safe_keywords, f, ensure_ascii=False, indent=2)
 
             # Guardar Backlinks
             if safe_backlinks:
-                backlinks_path = os.path.join(reports_dir, "backlinks.json")
+                backlinks_path = reports_dir / "backlinks.json"
                 with open(backlinks_path, "w", encoding="utf-8") as f:
                     json.dump(safe_backlinks, f, ensure_ascii=False, indent=2)
 
             # Guardar Rankings
             if safe_rankings:
-                rankings_path = os.path.join(reports_dir, "rankings.json")
+                rankings_path = reports_dir / "rankings.json"
                 with open(rankings_path, "w", encoding="utf-8") as f:
                     json.dump(safe_rankings, f, ensure_ascii=False, indent=2)
 
             # Guardar LLM Visibility
             if safe_llm_visibility:
-                visibility_path = os.path.join(reports_dir, "llm_visibility.json")
+                visibility_path = reports_dir / "llm_visibility.json"
                 with open(visibility_path, "w", encoding="utf-8") as f:
                     json.dump(safe_llm_visibility, f, ensure_ascii=False, indent=2)
 
@@ -575,7 +595,7 @@ class AuditService:
                 "rank_tracking": safe_rankings,
                 "llm_visibility": safe_llm_visibility,
             }
-            context_path = os.path.join(reports_dir, "final_llm_context.json")
+            context_path = reports_dir / "final_llm_context.json"
             with open(context_path, "w", encoding="utf-8") as f:
                 json.dump(final_context, f, ensure_ascii=False, indent=2)
 
@@ -672,18 +692,13 @@ class AuditService:
             )
 
             if AuditService._local_artifacts_enabled():
-                reports_dir = os.path.join(
-                    settings.REPORTS_DIR or "reports", f"audit_{audit_id}"
-                )
-                pages_dir = os.path.join(reports_dir, "pages")
-                os.makedirs(pages_dir, exist_ok=True)
+                pages_dir = AuditService._reports_dir_for_audit(audit_id) / "pages"
+                pages_dir.mkdir(parents=True, exist_ok=True)
                 raw_filename = (
                     str(page_url or "").replace("https://", "").replace("http://", "")
                 )
                 safe_filename = AuditService._safe_fs_name(raw_filename)
-                page_json_path = os.path.join(
-                    pages_dir, f"report_{page_index}_{safe_filename}.json"
-                )
+                page_json_path = pages_dir / f"report_{page_index}_{safe_filename}.json"
                 with open(page_json_path, "w", encoding="utf-8") as f:
                     json.dump(safe_audit_data, f, ensure_ascii=False, indent=2)
                 logger.info(f"Pagina auditada guardada: {page_url} -> {page_json_path}")
@@ -1266,11 +1281,9 @@ class AuditService:
 
         if AuditService._local_artifacts_enabled():
             try:
-                reports_dir = os.path.join(
-                    settings.REPORTS_DIR or "reports", f"audit_{audit_id}"
-                )
-                os.makedirs(reports_dir, exist_ok=True)
-                fix_plan_path = os.path.join(reports_dir, "fix_plan.json")
+                reports_dir = AuditService._reports_dir_for_audit(audit_id)
+                reports_dir.mkdir(parents=True, exist_ok=True)
+                fix_plan_path = reports_dir / "fix_plan.json"
                 with open(fix_plan_path, "w", encoding="utf-8") as f:
                     json.dump(audit.fix_plan or [], f, ensure_ascii=False, indent=2)
             except Exception as e:
@@ -1757,11 +1770,9 @@ class AuditService:
 
         if AuditService._local_artifacts_enabled():
             try:
-                reports_dir = os.path.join(
-                    settings.REPORTS_DIR or "reports", f"audit_{audit_id}"
-                )
-                os.makedirs(reports_dir, exist_ok=True)
-                fix_plan_path = os.path.join(reports_dir, "fix_plan.json")
+                reports_dir = AuditService._reports_dir_for_audit(audit_id)
+                reports_dir.mkdir(parents=True, exist_ok=True)
+                fix_plan_path = reports_dir / "fix_plan.json"
                 with open(fix_plan_path, "w", encoding="utf-8") as f:
                     json.dump(audit.fix_plan or [], f, ensure_ascii=False, indent=2)
             except Exception as e:
@@ -2033,15 +2044,10 @@ class CompetitorService:
         # Guardar JSON local solo en modo legacy de artefactos.
         if AuditService._local_artifacts_enabled():
             try:
-                reports_dir = os.path.join(
-                    settings.REPORTS_DIR or "reports", f"audit_{audit_id}"
-                )
-                competitors_dir = os.path.join(reports_dir, "competitors")
-                os.makedirs(competitors_dir, exist_ok=True)
+                competitors_dir = AuditService._reports_dir_for_audit(audit_id) / "competitors"
+                competitors_dir.mkdir(parents=True, exist_ok=True)
                 safe_domain = re.sub(r"[^\w\-_.]", "_", domain)
-                competitor_json_path = os.path.join(
-                    competitors_dir, f"competitor_{safe_domain}.json"
-                )
+                competitor_json_path = competitors_dir / f"competitor_{safe_domain}.json"
                 competitor_full_data = {
                     "url": url,
                     "domain": domain,

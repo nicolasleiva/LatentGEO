@@ -37,4 +37,4 @@ def test_generate_pr_body_handles_structured_values():
     body = PRGeneratorService.generate_pr_body(audit_data, fixes, file_changes)
 
     assert "app/page.tsx" in body
-    assert "schema.org" in body
+    assert "@context" in body

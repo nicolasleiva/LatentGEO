@@ -244,6 +244,9 @@ class TestDataQuality:
 
 
 if __name__ == "__main__":
+    def redact_secret(is_configured: bool) -> str:
+        return "<configured>" if is_configured else "<missing>"
+
     # Ejecutar tests manualmente
     print("=" * 60)
     print("TESTING GEO SERVICES WITH REAL APIs")
@@ -253,7 +256,9 @@ if __name__ == "__main__":
     print("\n1. Testing PageSpeed API Key...")
     try:
         assert settings.GOOGLE_PAGESPEED_API_KEY is not None
-        print(f"   ✓ API Key configured: {settings.GOOGLE_PAGESPEED_API_KEY[:20]}...")
+        print(
+            f"   ✓ API Key configured: {redact_secret(bool(settings.GOOGLE_PAGESPEED_API_KEY))}"
+        )
     except AssertionError as e:
         print(f"   ✗ {e}")
 
@@ -262,7 +267,7 @@ if __name__ == "__main__":
     try:
         api_key = settings.NVIDIA_API_KEY or settings.NV_API_KEY
         assert api_key is not None
-        print(f"   ✓ API Key configured: {api_key[:20]}...")
+        print(f"   ✓ API Key configured: {redact_secret(bool(api_key))}")
     except AssertionError as e:
         print(f"   ✗ {e}")
 

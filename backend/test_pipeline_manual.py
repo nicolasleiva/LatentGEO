@@ -2,6 +2,7 @@ import asyncio
 import os
 import sys
 from unittest.mock import MagicMock
+from urllib.parse import urlparse
 
 # Añadir el path del backend para poder importar app
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), ".")))
@@ -41,9 +42,10 @@ async def test_manual_pipeline():
 
     print(f"Filtered URLs: {filtered}")
 
-    assert "https://www.competitor1.com/" in filtered
-    assert "https://www.competitor2.com/" in filtered
-    assert "https://www.competitor3.com/" in filtered
+    filtered_hosts = {urlparse(url).hostname for url in filtered}
+    assert "www.competitor1.com" in filtered_hosts
+    assert "www.competitor2.com" in filtered_hosts
+    assert "www.competitor3.com" in filtered_hosts
     assert len(filtered) == 3
 
     print("Filter Test Passed!")

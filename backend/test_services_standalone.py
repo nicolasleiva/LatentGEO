@@ -27,6 +27,10 @@ os.environ["ENVIRONMENT"] = os.getenv("ENVIRONMENT", "test")
 from app.core.config import settings
 
 
+def redact_secret(is_configured: bool) -> str:
+    return "<configured>" if is_configured else "<missing>"
+
+
 async def test_pagespeed_api():
     """Test PageSpeed API real"""
     from app.services.pagespeed_service import PageSpeedService
@@ -38,10 +42,12 @@ async def test_pagespeed_api():
     # Verificar API key
     if not settings.GOOGLE_PAGESPEED_API_KEY:
         print("[FAIL] GOOGLE_PAGESPEED_API_KEY no está configurada")
-        print(f"   Valor actual: {settings.GOOGLE_PAGESPEED_API_KEY}")
+        print("   Estado: <missing>")
         return False
 
-    print(f"[OK] API Key configurada: {settings.GOOGLE_PAGESPEED_API_KEY[:25]}...")
+    print(
+        f"[OK] API Key configurada: {redact_secret(bool(settings.GOOGLE_PAGESPEED_API_KEY))}"
+    )
 
     # Test API real
     try:
@@ -98,11 +104,11 @@ async def test_nvidia_api():
 
     if not api_key:
         print("[FAIL] NVIDIA_API_KEY no está configurada")
-        print(f"   NVIDIA_API_KEY: {settings.NVIDIA_API_KEY}")
-        print(f"   NV_API_KEY: {settings.NV_API_KEY}")
+        print(f"   NVIDIA_API_KEY: {redact_secret(bool(settings.NVIDIA_API_KEY))}")
+        print(f"   NV_API_KEY: {redact_secret(bool(settings.NV_API_KEY))}")
         return False
 
-    print(f"[OK] API Key configurada: {api_key[:25]}...")
+    print(f"[OK] API Key configurada: {redact_secret(bool(api_key))}")
 
     try:
         from openai import AsyncOpenAI
@@ -203,8 +209,7 @@ def verify_env_variables():
     all_ok = True
     for name, value in vars_to_check:
         if value:
-            masked = value[:20] + "..." if len(value) > 20 else value
-            print(f"[OK] {name}: {masked}")
+            print(f"[OK] {name}: {redact_secret(bool(value))}")
         else:
             print(f"[FAIL] {name}: NO CONFIGURADO")
             all_ok = False

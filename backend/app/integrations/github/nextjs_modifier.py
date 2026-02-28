@@ -11,6 +11,7 @@ from datetime import datetime
 from typing import Dict, List, Optional
 
 from openai import OpenAI
+from bs4 import BeautifulSoup
 
 from ...core.config import settings
 from ...core.external_resilience import run_external_call_sync
@@ -655,12 +656,12 @@ Respond ONLY with valid JSON, no markdown:
     def _extract_file_context(self, content: str, file_path: str) -> Dict:
         """Extract context from file for AI generation"""
         headings = []
-        for match in re.finditer(
-            r"<h[1-6][^>]*>(.*?)</h[1-6]>", content, re.IGNORECASE | re.DOTALL
-        ):
-            text = re.sub(r"<[^>]+>", "", match.group(1)).strip()
-            if text and len(text) < 100:
-                headings.append(text)
+        soup = BeautifulSoup(content or "", "html.parser")
+        for tag_name in ("h1", "h2", "h3", "h4", "h5", "h6"):
+            for heading_tag in soup.find_all(tag_name):
+                text = heading_tag.get_text(" ", strip=True)
+                if text and len(text) < 100:
+                    headings.append(text)
 
         file_name = file_path.split("/")[-1].replace(".tsx", "").replace(".jsx", "")
 

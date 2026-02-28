@@ -91,9 +91,9 @@ async def audit_progress_stream(
     except asyncio.CancelledError:
         logger.info(f"SSE stream cancelled for audit {audit_id}")
         raise
-    except Exception as e:
-        logger.error(f"Error in SSE stream for audit {audit_id}: {e}")
-        yield f"data: {json.dumps({'error': str(e)})}\n\n"
+    except Exception:
+        logger.exception(f"Error in SSE stream for audit {audit_id}")
+        yield 'data: {"error":"Internal server error"}\n\n'
 
 
 @router.get("/audits/{audit_id}/progress")

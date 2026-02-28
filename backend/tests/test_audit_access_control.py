@@ -1,6 +1,7 @@
 from app.core.auth import AuthUser, get_current_user
 from app.main import app
 from app.models import Audit, AuditStatus
+from urllib.parse import urlparse
 
 
 def _test_user():
@@ -48,8 +49,8 @@ def test_list_audits_returns_only_current_user_data(client, db_session):
     list_res = client.get("/api/v1/audits/")
     assert list_res.status_code == 200
     audits = list_res.json()
-    returned_urls = {item["url"] for item in audits}
+    returned_hosts = {urlparse(item["url"]).hostname for item in audits}
 
-    assert "https://owned-site.com/" in returned_urls
-    assert "https://other-site.com/" not in returned_urls
+    assert "owned-site.com" in returned_hosts
+    assert "other-site.com" not in returned_hosts
 

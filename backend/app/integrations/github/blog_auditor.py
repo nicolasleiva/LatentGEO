@@ -3,10 +3,13 @@ Blog Auditor Service - Comprehensive blog analysis for repositories
 """
 
 import re
+import json
 from datetime import datetime
 from typing import Any, Dict, List
+from urllib.parse import urlparse
 
 import frontmatter
+from bs4 import BeautifulSoup
 
 from ...core.logger import get_logger
 from .client import GitHubClient
@@ -541,11 +544,64 @@ class BlogAuditorService:
             data["images_without_alt"] = len(img_matches) - imgs_with_alt
 
             # Schema check
-            data["has_schema"] = (
-                "application/ld+json" in content or "schema.org" in content
-            )
+            data["has_schema"] = self._has_schema_org_jsonld(content)
 
         return data
+
+    @staticmethod
+    def _context_uses_schema_org(context_value: Any) -> bool:
+        if isinstance(context_value, str):
+            raw_ctx = context_value.strip()
+            if not raw_ctx:
+                return False
+            parsed = urlparse(raw_ctx if "://" in raw_ctx else f"https://{raw_ctx}")
+            host = (parsed.hostname or "").lower()
+            return host in {"schema.org", "www.schema.org"}
+
+        if isinstance(context_value, list):
+            return any(
+                BlogAuditorService._context_uses_schema_org(item)
+                for item in context_value
+            )
+
+        if isinstance(context_value, dict):
+            return any(
+                BlogAuditorService._context_uses_schema_org(item)
+                for item in context_value.values()
+            )
+
+        return False
+
+    @staticmethod
+    def _has_schema_org_jsonld(content: str) -> bool:
+        soup = BeautifulSoup(content or "", "html.parser")
+        for script in soup.find_all("script"):
+            script_type = (script.get("type") or "").strip().lower()
+            if "application/ld+json" not in script_type:
+                continue
+
+            raw_payload = (script.string or script.get_text() or "").strip()
+            if not raw_payload:
+                continue
+
+            try:
+                parsed_payload = json.loads(raw_payload)
+            except json.JSONDecodeError:
+                continue
+
+            candidates = (
+                parsed_payload if isinstance(parsed_payload, list) else [parsed_payload]
+            )
+            for item in candidates:
+                if (
+                    isinstance(item, dict)
+                    and BlogAuditorService._context_uses_schema_org(
+                        item.get("@context")
+                    )
+                ):
+                    return True
+
+        return False
 
     def _extract_slug_from_path(self, file_path: str) -> str:
         """Extrae slug de la URL del path del archivo"""
