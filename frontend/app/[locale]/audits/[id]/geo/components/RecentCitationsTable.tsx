@@ -31,7 +31,7 @@ export default function RecentCitationsTable({
     const fetchCitations = async () => {
       try {
         const res = await fetchWithBackendAuth(
-          `${backendUrl}/api/geo/citations/${auditId}?limit=10`,
+          `${backendUrl}/api/v1/geo/citations/${auditId}?limit=10`,
         );
         if (!res.ok) throw new Error("Failed to fetch citations");
         const data = await res.json();
@@ -110,3 +110,4 @@ export default function RecentCitationsTable({
     </div>
   );
 }
+

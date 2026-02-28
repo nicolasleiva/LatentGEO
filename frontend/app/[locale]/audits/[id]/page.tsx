@@ -213,7 +213,7 @@ export default function AuditDetailPage() {
     warmState.inFlight = true;
     try {
       const res = await fetchWithBackendAuth(
-        `${backendUrl}/api/geo/dashboard/${auditId}`,
+        `${backendUrl}/api/v1/geo/dashboard/${auditId}`,
       );
       if (!res.ok) return;
       const geoData = await res.json();
@@ -260,7 +260,7 @@ export default function AuditDetailPage() {
     setReportMessage(null);
     try {
       const res = await fetchWithBackendAuth(
-        `${backendUrl}/api/reports/markdown/${auditId}`,
+        `${backendUrl}/api/v1/reports/markdown/${auditId}`,
       );
       if (res.ok) {
         const data = await res.json();
@@ -275,7 +275,7 @@ export default function AuditDetailPage() {
       }
 
       const fallbackRes = await fetchWithBackendAuth(
-        `${backendUrl}/api/audits/${auditId}/report`,
+        `${backendUrl}/api/v1/audits/${auditId}/report`,
       );
       if (fallbackRes.ok) {
         const data = await fallbackRes.json();
@@ -308,7 +308,7 @@ export default function AuditDetailPage() {
     setFixPlanMessage(null);
     try {
       const res = await fetchWithBackendAuth(
-        `${backendUrl}/api/audits/${auditId}/fix_plan`,
+        `${backendUrl}/api/v1/audits/${auditId}/fix_plan`,
       );
       if (!res.ok) {
         setFixPlan([]);
@@ -346,7 +346,7 @@ export default function AuditDetailPage() {
       try {
         // Fetch audit first
         const auditRes = await fetchWithBackendAuth(
-          `${backendUrl}/api/audits/${auditId}`,
+          `${backendUrl}/api/v1/audits/${auditId}`,
         );
         if (!auditRes.ok) {
           if (auditRes.status === 429) {
@@ -376,10 +376,10 @@ export default function AuditDetailPage() {
 
         // Fetch pages and competitors in parallel (non-blocking for initial render)
         const [pagesRes, compRes] = await Promise.all([
-          fetchWithBackendAuth(`${backendUrl}/api/audits/${auditId}/pages`),
+          fetchWithBackendAuth(`${backendUrl}/api/v1/audits/${auditId}/pages`),
           auditData.status === "completed"
             ? fetchWithBackendAuth(
-                `${backendUrl}/api/audits/${auditId}/competitors`,
+                `${backendUrl}/api/v1/audits/${auditId}/competitors`,
               ).catch(() => null)
             : Promise.resolve(null),
         ]);
@@ -548,7 +548,7 @@ export default function AuditDetailPage() {
     try {
       logger.log("Analyzing PageSpeed...");
       const res = await fetchWithBackendAuth(
-        `${backendUrl}/api/audits/${auditId}/pagespeed`,
+        `${backendUrl}/api/v1/audits/${auditId}/pagespeed`,
         {
           method: "POST",
         },
@@ -582,7 +582,7 @@ export default function AuditDetailPage() {
     setPdfGenerating(true);
     try {
       const generateRes = await fetchWithBackendAuth(
-        `${backendUrl}/api/audits/${auditId}/generate-pdf`,
+        `${backendUrl}/api/v1/audits/${auditId}/generate-pdf`,
         {
           method: "POST",
         },
@@ -602,7 +602,7 @@ export default function AuditDetailPage() {
 
       await new Promise((resolve) => setTimeout(resolve, 500));
       const downloadRes = await fetchWithBackendAuth(
-        `${backendUrl}/api/audits/${auditId}/download-pdf`,
+        `${backendUrl}/api/v1/audits/${auditId}/download-pdf`,
       );
       if (!downloadRes.ok) {
         const errorPayload = await downloadRes
@@ -2065,3 +2065,4 @@ export default function AuditDetailPage() {
     </div>
   );
 }
+

@@ -110,14 +110,14 @@ def test_fix_inputs_endpoints(client, db_session, monkeypatch, tmp_path):
     audit = _seed_fix_inputs_audit(db_session)
     connection_id, repo_id = _seed_owned_connection_and_repo(db_session)
 
-    response = client.get(f"/api/github/fix-inputs/{audit.id}")
+    response = client.get(f"/api/v1/github/fix-inputs/{audit.id}")
     assert response.status_code == 200
     payload = response.json()
     assert payload["missing_inputs"]
 
     # Should block PR while required inputs are missing
     pr_response = client.post(
-        f"/api/github/create-auto-fix-pr/{connection_id}/{repo_id}",
+        f"/api/v1/github/create-auto-fix-pr/{connection_id}/{repo_id}",
         json={"audit_id": audit.id},
     )
     assert pr_response.status_code == 422
@@ -146,7 +146,7 @@ def test_fix_inputs_endpoints(client, db_session, monkeypatch, tmp_path):
     }
 
     submit_response = client.post(
-        f"/api/github/fix-inputs/{audit.id}", json=submit_payload
+        f"/api/v1/github/fix-inputs/{audit.id}", json=submit_payload
     )
     assert submit_response.status_code == 200
     submit_payload = submit_response.json()
@@ -154,3 +154,4 @@ def test_fix_inputs_endpoints(client, db_session, monkeypatch, tmp_path):
 
     fix_plan_path = os.path.join(str(tmp_path), f"audit_{audit.id}", "fix_plan.json")
     assert os.path.exists(fix_plan_path)
+

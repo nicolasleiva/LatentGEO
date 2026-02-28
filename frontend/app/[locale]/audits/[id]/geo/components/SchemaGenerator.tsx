@@ -41,7 +41,7 @@ export default function SchemaGenerator({ backendUrl }: SchemaGeneratorProps) {
 
     try {
       const res = await fetchWithBackendAuth(
-        `${backendUrl}/api/geo/schema-generator`,
+        `${backendUrl}/api/v1/geo/schema-generator`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -191,3 +191,4 @@ export default function SchemaGenerator({ backendUrl }: SchemaGeneratorProps) {
     </div>
   );
 }
+

@@ -36,7 +36,7 @@ export default function CitationHistory({
     const fetchHistory = async () => {
       try {
         const res = await fetchWithBackendAuth(
-          `${backendUrl}/api/geo/citation-history/${auditId}`,
+          `${backendUrl}/api/v1/geo/citation-history/${auditId}`,
         );
         if (!res.ok) throw new Error("Failed to fetch history");
         const data = await res.json();
@@ -144,3 +144,4 @@ export default function CitationHistory({
     </div>
   );
 }
+

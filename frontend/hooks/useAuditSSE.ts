@@ -80,7 +80,7 @@ export function useAuditSSE(
     const poll = async () => {
       try {
         const res = await fetchWithBackendAuth(
-          `${BACKEND_URL}/api/audits/${auditId}/status`,
+          `${BACKEND_URL}/api/v1/audits/${auditId}/status`,
         );
         if (!res.ok) {
           if (res.status === 401 || res.status === 403) {
@@ -234,3 +234,4 @@ export function useAuditSSE(
     reconnect: connect,
   };
 }
+

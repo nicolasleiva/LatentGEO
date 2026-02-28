@@ -22,8 +22,8 @@ export default function HealthOpsPage() {
         { name: "GET /health/ready", url: `${API_URL}/health/ready` },
         { name: "GET /health/live", url: `${API_URL}/health/live` },
         {
-          name: "GET /api/webhooks/health",
-          url: `${API_URL}/api/webhooks/health`,
+          name: "GET /api/v1/webhooks/health",
+          url: `${API_URL}/api/v1/webhooks/health`,
         },
       ];
 
@@ -94,3 +94,4 @@ export default function HealthOpsPage() {
     </div>
   );
 }
+

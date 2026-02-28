@@ -39,7 +39,7 @@ export default function ContentAnalyze({ backendUrl }: ContentAnalyzeProps) {
 
     try {
       const res = await fetchWithBackendAuth(
-        `${backendUrl}/api/geo/analyze-content`,
+        `${backendUrl}/api/v1/geo/analyze-content`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -188,3 +188,4 @@ export default function ContentAnalyze({ backendUrl }: ContentAnalyzeProps) {
     </div>
   );
 }
+

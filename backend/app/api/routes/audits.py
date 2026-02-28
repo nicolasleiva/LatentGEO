@@ -277,7 +277,7 @@ async def _create_audit_internal(
     else:
         logger.info(f"Audit {audit.id} created, waiting for chat config")
 
-    response.headers["Location"] = f"/api/audits/{audit.id}"
+    response.headers["Location"] = f"/api/v1/audits/{audit.id}"
     return audit
 
 
@@ -304,7 +304,7 @@ async def create_audit(
     - Generates the full PDF report
     This keeps audit creation fast and responsive.
 
-    Acepta tanto /api/audits como /api/audits/ para evitar redirecciones 307.
+    Acepta tanto /api/v1/audits como /api/v1/audits/ para evitar redirecciones 307.
     """
     # Do not trust ownership from request body.
     audit_create.user_id = current_user.user_id
@@ -988,7 +988,7 @@ def download_audit_pdf(
         if not pdf_report or not pdf_report.file_path:
             raise HTTPException(
                 status_code=404,
-                detail="El archivo PDF no existe. Por favor, genera el PDF primero usando POST /api/audits/{audit_id}/generate-pdf",
+                detail="El archivo PDF no existe. Por favor, genera el PDF primero usando POST /api/v1/audits/{audit_id}/generate-pdf",
             )
 
         pdf_path = pdf_report.file_path
@@ -1090,7 +1090,7 @@ async def configure_audit_chat(
 
 
 # DEPRECATED: Old GitHub integration endpoint
-# This functionality is now handled by /api/github/ endpoints
+# This functionality is now handled by /api/v1/github/ endpoints
 # See: backend/app/api/routes/github.py
 
 # class GitHubFixRequest(BaseModel):
@@ -1100,4 +1100,4 @@ async def configure_audit_chat(
 # @router.post("/{audit_id}/github/create-fix", status_code=status.HTTP_201_CREATED)
 # async def create_github_fix(...):
 #     # This endpoint has been superseded by the new GitHub integration
-#     # Use /api/github/create-auto-fix-pr/{connection_id}/{repo_id} instead
+#     # Use /api/v1/github/create-auto-fix-pr/{connection_id}/{repo_id} instead

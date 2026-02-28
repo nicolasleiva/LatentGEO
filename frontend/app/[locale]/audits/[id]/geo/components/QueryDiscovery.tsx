@@ -37,7 +37,7 @@ export default function QueryDiscovery({
 
     try {
       const res = await fetchWithBackendAuth(
-        `${backendUrl}/api/geo/query-discovery`,
+        `${backendUrl}/api/v1/geo/query-discovery`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -151,3 +151,4 @@ export default function QueryDiscovery({
     </div>
   );
 }
+

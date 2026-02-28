@@ -27,7 +27,7 @@ export default function HubSpotRollbackPage() {
     setResult(null);
     try {
       const res = await fetch(
-        `${API_URL}/api/hubspot/rollback/${encodeURIComponent(id)}`,
+        `${API_URL}/api/v1/hubspot/rollback/${encodeURIComponent(id)}`,
         {
           method: "POST",
         },
@@ -92,3 +92,4 @@ export default function HubSpotRollbackPage() {
     </div>
   );
 }
+

@@ -30,7 +30,7 @@ def test_create_audit_dispatches_task(client: TestClient):
         }
 
         # Realizar la petición
-        response = client.post("/api/audits/", json=audit_data)
+        response = client.post("/api/v1/audits/", json=audit_data)
 
         # 1. Verificar estado de la respuesta
         assert response.status_code == 202
@@ -51,7 +51,7 @@ def test_get_audits_list(client: TestClient):
     """
     Verifica que se puede obtener una lista de auditorías.
     """
-    response = client.get("/api/audits/")
+    response = client.get("/api/v1/audits/")
     assert response.status_code == 200
     data = response.json()
     assert isinstance(data, list)
@@ -59,7 +59,7 @@ def test_get_audits_list(client: TestClient):
 
 def test_create_audit_respects_requested_language(client: TestClient):
     response = client.post(
-        "/api/audits/",
+        "/api/v1/audits/",
         json={
             "url": "https://example.com",
             "language": "es",
@@ -71,7 +71,7 @@ def test_create_audit_respects_requested_language(client: TestClient):
 
 def test_create_audit_defaults_language_to_en(client: TestClient):
     response = client.post(
-        "/api/audits/",
+        "/api/v1/audits/",
         json={
             "url": "https://example.org",
         },
@@ -82,7 +82,7 @@ def test_create_audit_defaults_language_to_en(client: TestClient):
 
 def test_configure_chat_updates_language_when_provided(client: TestClient):
     create_response = client.post(
-        "/api/audits/",
+        "/api/v1/audits/",
         json={
             "url": "https://example.net",
             "language": "es",
@@ -97,19 +97,19 @@ def test_configure_chat_updates_language_when_provided(client: TestClient):
         mock_delay.return_value = mock_task
 
         config_response = client.post(
-            "/api/audits/chat/config",
+            "/api/v1/audits/chat/config",
             json={"audit_id": audit_id, "language": "pt"},
         )
 
     assert config_response.status_code == 200
-    detail_response = client.get(f"/api/audits/{audit_id}")
+    detail_response = client.get(f"/api/v1/audits/{audit_id}")
     assert detail_response.status_code == 200
     assert detail_response.json()["language"] == "pt"
 
 
 def test_configure_chat_preserves_language_when_omitted(client: TestClient):
     create_response = client.post(
-        "/api/audits/",
+        "/api/v1/audits/",
         json={
             "url": "https://example.edu",
             "language": "es",
@@ -124,11 +124,12 @@ def test_configure_chat_preserves_language_when_omitted(client: TestClient):
         mock_delay.return_value = mock_task
 
         config_response = client.post(
-            "/api/audits/chat/config",
+            "/api/v1/audits/chat/config",
             json={"audit_id": audit_id, "market": "ar"},
         )
 
     assert config_response.status_code == 200
-    detail_response = client.get(f"/api/audits/{audit_id}")
+    detail_response = client.get(f"/api/v1/audits/{audit_id}")
     assert detail_response.status_code == 200
     assert detail_response.json()["language"] == "es"
+

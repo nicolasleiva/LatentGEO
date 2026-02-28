@@ -40,7 +40,7 @@ def test_ai_content_generate_returns_503_when_kimi_missing(
     _disable_kimi_keys(monkeypatch)
 
     response = client.post(
-        f"/api/ai-content/generate/{audit_id}?domain=example.com",
+        f"/api/v1/ai-content/generate/{audit_id}?domain=example.com",
         json=["ai"],
     )
     assert response.status_code == 503
@@ -55,7 +55,7 @@ def test_keywords_research_returns_503_when_kimi_missing(
     _disable_kimi_keys(monkeypatch)
 
     response = client.post(
-        f"/api/keywords/research/{audit_id}?domain=example.com",
+        f"/api/v1/keywords/research/{audit_id}?domain=example.com",
         json=["ai seo"],
     )
     assert response.status_code == 503
@@ -70,7 +70,7 @@ def test_llm_visibility_check_returns_503_when_kimi_missing(
     _disable_kimi_keys(monkeypatch)
 
     response = client.post(
-        f"/api/llm-visibility/check/{audit_id}?brand_name=example",
+        f"/api/v1/llm-visibility/check/{audit_id}?brand_name=example",
         json=["best ai tools"],
     )
     assert response.status_code == 503
@@ -98,7 +98,7 @@ def test_ai_content_returns_502_on_invalid_kimi_json(client, db_session, monkeyp
     )
 
     response = client.post(
-        f"/api/ai-content/generate/{audit_id}?domain=example.com",
+        f"/api/v1/ai-content/generate/{audit_id}?domain=example.com",
         json=["ai"],
     )
     assert response.status_code == 502
@@ -120,10 +120,11 @@ def test_llm_visibility_returns_502_on_kimi_runtime_error(
     )
 
     response = client.post(
-        f"/api/llm-visibility/check/{audit_id}?brand_name=example",
+        f"/api/v1/llm-visibility/check/{audit_id}?brand_name=example",
         json=["best ai tools"],
     )
     assert response.status_code == 502
     payload = response.json()
     assert payload["detail"]["code"] == "KIMI_GENERATION_FAILED"
     assert "forced visibility failure" in payload["detail"]["message"]
+

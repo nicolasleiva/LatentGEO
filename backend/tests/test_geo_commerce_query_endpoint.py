@@ -105,7 +105,7 @@ def test_commerce_query_analyze_endpoint_shape(client, db_session, monkeypatch):
     monkeypatch.setattr(GeoCommerceService, "analyze_query", fake_analyze_query)
 
     response = client.post(
-        "/api/geo/commerce-query/analyze",
+        "/api/v1/geo/commerce-query/analyze",
         json={
             "audit_id": audit_id,
             "query": "zapatilla nike",
@@ -129,13 +129,14 @@ def test_commerce_query_requires_query_and_market(client, db_session):
     audit_id = _seed_audit(db_session)
 
     missing_query = client.post(
-        "/api/geo/commerce-query/analyze",
+        "/api/v1/geo/commerce-query/analyze",
         json={"audit_id": audit_id, "market": "AR"},
     )
     assert missing_query.status_code == 422
 
     missing_market = client.post(
-        "/api/geo/commerce-query/analyze",
+        "/api/v1/geo/commerce-query/analyze",
         json={"audit_id": audit_id, "query": "zapatilla nike"},
     )
     assert missing_market.status_code == 422
+

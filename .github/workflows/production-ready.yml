@@ -95,6 +95,11 @@ jobs:
         cd frontend
         pnpm install --frozen-lockfile
 
+    - name: Enforce canonical backend API paths in frontend
+      run: |
+        cd frontend
+        pnpm run check:no-legacy-api
+
     - name: Run ESLint
       run: |
         cd frontend
@@ -257,6 +262,11 @@ jobs:
       run: |
         cd frontend
         pnpm install --frozen-lockfile
+
+    - name: Enforce canonical backend API paths in frontend
+      run: |
+        cd frontend
+        pnpm run check:no-legacy-api
 
     - name: Run unit tests
       run: |

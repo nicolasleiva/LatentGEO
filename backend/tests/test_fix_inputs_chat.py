@@ -58,7 +58,7 @@ def test_fix_inputs_chat_endpoint(client, db_session, monkeypatch):
         "language": "en",
     }
 
-    response = client.post(f"/api/github/fix-inputs/chat/{audit.id}", json=payload)
+    response = client.post(f"/api/v1/github/fix-inputs/chat/{audit.id}", json=payload)
     assert response.status_code == 200
     data = response.json()
     assert data["suggested_value"] == "Example Guitar Store"
@@ -84,8 +84,9 @@ def test_fix_inputs_chat_fallback_on_invalid_json(client, db_session, monkeypatc
         "language": "en",
     }
 
-    response = client.post(f"/api/github/fix-inputs/chat/{audit.id}", json=payload)
+    response = client.post(f"/api/v1/github/fix-inputs/chat/{audit.id}", json=payload)
     assert response.status_code == 200
     data = response.json()
     assert data["suggested_value"] == ""
     assert data["confidence"] == "unknown"
+

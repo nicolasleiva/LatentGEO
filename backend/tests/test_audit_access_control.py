@@ -12,13 +12,13 @@ def _other_user():
 
 
 def test_audit_detail_forbidden_for_non_owner(client):
-    create_res = client.post("/api/audits/", json={"url": "https://owner-example.com"})
+    create_res = client.post("/api/v1/audits/", json={"url": "https://owner-example.com"})
     assert create_res.status_code == 202
     audit_id = create_res.json()["id"]
 
     app.dependency_overrides[get_current_user] = _other_user
     try:
-        forbidden_res = client.get(f"/api/audits/{audit_id}")
+        forbidden_res = client.get(f"/api/v1/audits/{audit_id}")
         assert forbidden_res.status_code == 403
     finally:
         app.dependency_overrides[get_current_user] = _test_user
@@ -45,10 +45,11 @@ def test_list_audits_returns_only_current_user_data(client, db_session):
     db_session.add(other_audit)
     db_session.commit()
 
-    list_res = client.get("/api/audits/")
+    list_res = client.get("/api/v1/audits/")
     assert list_res.status_code == 200
     audits = list_res.json()
     returned_urls = {item["url"] for item in audits}
 
     assert "https://owned-site.com/" in returned_urls
     assert "https://other-site.com/" not in returned_urls
+
