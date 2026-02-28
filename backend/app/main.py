@@ -223,13 +223,34 @@ def create_app() -> FastAPI:
             {"type": "http", "scheme": "bearer"},
         )
 
-        http_methods = {"get", "post", "put", "patch", "delete", "options", "head", "trace"}
-        for path_item in openapi_schema.get("paths", {}).values():
+        public_operations = {
+            ("post", "/api/v1/github/webhook"),
+            ("post", "/api/v1/webhooks/github/incoming"),
+            ("post", "/api/v1/webhooks/hubspot/incoming"),
+            ("get", "/health"),
+            ("get", "/health/ready"),
+            ("get", "/health/live"),
+        }
+        http_methods = {
+            "get",
+            "post",
+            "put",
+            "patch",
+            "delete",
+            "options",
+            "head",
+            "trace",
+        }
+        for path, path_item in openapi_schema.get("paths", {}).items():
             for method, operation in path_item.items():
-                if method.lower() not in http_methods or not isinstance(operation, dict):
+                method_lower = method.lower()
+                if method_lower not in http_methods or not isinstance(operation, dict):
+                    continue
+                if (method_lower, path) in public_operations:
+                    operation["security"] = []
                     continue
                 if "security" not in operation:
-                    operation["security"] = []
+                    operation["security"] = [{"HTTPBearer": []}]
 
         openapi_schema["security"] = [{"HTTPBearer": []}]
         app.openapi_schema = openapi_schema

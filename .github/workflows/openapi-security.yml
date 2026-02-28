@@ -1,0 +1,52 @@
+name: OpenAPI Security Scan
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - "frontend/lib/api-client/openapi.json"
+      - "backend/app/main.py"
+      - ".github/workflows/openapi-security.yml"
+  pull_request:
+    branches: ["main"]
+    paths:
+      - "frontend/lib/api-client/openapi.json"
+      - "backend/app/main.py"
+      - ".github/workflows/openapi-security.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  checkov-openapi:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Checkov
+        run: python -m pip install --upgrade "checkov==3.2.497"
+
+      - name: Scan OpenAPI
+        # CKV_OPENAPI_5 assumes OAuth2 scopes.
+        # For HTTP bearer auth (type=http, scheme=bearer), [] is valid by OpenAPI because bearer has no scopes.
+        working-directory: frontend
+        run: >
+          python -m checkov.main
+          -f lib/api-client/openapi.json
+          --framework openapi
+          --check CKV_OPENAPI_3,CKV_OPENAPI_4,CKV_OPENAPI_20
+          --skip-check CKV_OPENAPI_5
+          -o sarif
+          --output-file-path ../openapi-checkov.sarif
+
+      - name: Upload results to Security tab
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: openapi-checkov.sarif

@@ -55,6 +55,78 @@ def _extract_domain_brand(url: str) -> tuple[str, str]:
     return domain, brand_name
 
 
+_ALLOWED_ERROR_CATEGORIES = {"internal_error", "invalid_input", "unauthorized"}
+_ALLOWED_ERROR_CODES = {
+    "workers_unavailable",
+    "timeout",
+    "dependency_error",
+    "internal_error",
+}
+
+
+def _sanitize_geo_error_category(value: Any) -> str:
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in _ALLOWED_ERROR_CATEGORIES:
+            return normalized
+    return "internal_error"
+
+
+def _sanitize_geo_error_code(value: Any) -> str:
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in _ALLOWED_ERROR_CODES:
+            return normalized
+    return "dependency_error"
+
+
+def _sanitize_geo_gap_analysis(value: Any) -> Dict[str, Any]:
+    if not isinstance(value, dict):
+        return {
+            "has_data": False,
+            "has_gaps": None,
+            "error": "internal_error",
+            "error_code": "dependency_error",
+        }
+
+    if "error" in value or "error_code" in value:
+        return {
+            "has_data": False,
+            "has_gaps": None,
+            "error": _sanitize_geo_error_category(value.get("error")),
+            "error_code": _sanitize_geo_error_code(value.get("error_code")),
+        }
+
+    has_gaps = value.get("has_gaps")
+    return {
+        **value,
+        "has_gaps": has_gaps if isinstance(has_gaps, bool) else False,
+    }
+
+
+def _sanitize_geo_benchmark_payload(payload: Any) -> Dict[str, Any]:
+    if not isinstance(payload, dict):
+        return {
+            "has_data": False,
+            "has_gaps": None,
+            "error": "internal_error",
+            "error_code": "internal_error",
+        }
+
+    if "error" in payload or "error_code" in payload:
+        return {
+            "has_data": False,
+            "has_gaps": None,
+            "error": _sanitize_geo_error_category(payload.get("error")),
+            "error_code": _sanitize_geo_error_code(payload.get("error_code")),
+        }
+
+    sanitized = dict(payload)
+    if "gap_analysis" in sanitized:
+        sanitized["gap_analysis"] = _sanitize_geo_gap_analysis(sanitized["gap_analysis"])
+    return sanitized
+
+
 # ============= Pydantic Models =============
 
 
@@ -511,7 +583,7 @@ def get_citation_benchmark(
     try:
         _get_owned_audit(db, audit_id, current_user)
         benchmark = CompetitorCitationService.get_citation_benchmark(db, audit_id)
-        return benchmark
+        return _sanitize_geo_benchmark_payload(benchmark)
     except Exception as e:
         logger.error(f"Error getting benchmark: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
@@ -1215,6 +1287,7 @@ async def get_geo_dashboard(
             logger.warning(
                 f"Competitor benchmark failed for audit {audit_id}: {benchmark_exc}"
             )
+        benchmark = _sanitize_geo_benchmark_payload(benchmark)
 
         try:
             latest_campaign = GeoCommerceService.get_latest_campaign(db, audit_id)
@@ -1239,6 +1312,12 @@ async def get_geo_dashboard(
                 f"Article engine lookup failed for audit {audit_id}: {batch_exc}"
             )
 
+        benchmark_gap_payload = benchmark.get("gap_analysis")
+        if benchmark_gap_payload is None and (
+            "error" in benchmark or "error_code" in benchmark
+        ):
+            benchmark_gap_payload = benchmark
+
         return {
             "audit_id": audit_id,
             "citation_tracking": {
@@ -1256,7 +1335,7 @@ async def get_geo_dashboard(
                     if benchmark.get("competitors")
                     else None
                 ),
-                "gap_analysis": benchmark.get("gap_analysis", {}),
+                "gap_analysis": _sanitize_geo_gap_analysis(benchmark_gap_payload),
             },
             "commerce_campaign": {
                 "has_data": latest_campaign is not None,
