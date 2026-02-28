@@ -1,4 +1,4 @@
-export const BRAND = {
+const BRAND = {
   name: "LatentGEO.ai",
   shortName: "LatentGEO",
 } as const;
@@ -8,4 +8,3 @@ export const APP_METADATA = {
   description:
     "Autonomous code remediation and AI-native content creation for growth and visibility.",
 } as const;
-

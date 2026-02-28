@@ -1,6 +1,6 @@
 import { ensureData, typedApiClient } from "./client";
 
-export type AuditListItem = {
+type AuditListItem = {
   id: number;
   url: string;
   domain?: string;
