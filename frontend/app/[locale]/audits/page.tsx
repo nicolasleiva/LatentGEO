@@ -243,6 +243,14 @@ export default function AuditsListPage() {
                 onClick={() =>
                   router.push(withLocale(pathname, `/audits/${audit.id}`))
                 }
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    router.push(withLocale(pathname, `/audits/${audit.id}`));
+                  }
+                }}
+                role="button"
+                tabIndex={0}
                 className="group p-6 glass-card border border-border rounded-2xl cursor-pointer hover:bg-muted/50 hover:border-border/80 transition-all"
               >
                 <div className="flex items-center justify-between">

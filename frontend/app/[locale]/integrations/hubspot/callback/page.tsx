@@ -1,23 +1,24 @@
 "use client";
 
-import { useEffect, useState, Suspense } from "react";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useEffect, useState } from "react";
+import { usePathname } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Loader2 } from "lucide-react";
 import { API_URL } from "@/lib/api";
 import { fetchWithBackendAuth } from "@/lib/backend-auth";
 import { withLocale } from "@/lib/locale-routing";
 
-function CallbackContent() {
-  const router = useRouter();
+export default function HubSpotCallback() {
   const pathname = usePathname();
-  const searchParams = useSearchParams();
-  const code = searchParams.get("code");
-  const state = searchParams.get("state");
   const [status, setStatus] = useState("Processing...");
   const [error, setError] = useState("");
 
   useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const code = params.get("code");
+    const state = params.get("state");
+
     const exchangeCode = async (authCode: string) => {
       try {
         const response = await fetchWithBackendAuth(
@@ -36,9 +37,10 @@ function CallbackContent() {
         const data = await response.json();
         setStatus("Connected successfully! Redirecting...");
 
-        // Redirect to pages list
         setTimeout(() => {
-          router.push(withLocale(pathname, "/integrations/hubspot/pages"));
+          window.location.assign(
+            withLocale(pathname, "/integrations/hubspot/pages"),
+          );
         }, 1500);
       } catch (err) {
         console.error(err);
@@ -53,42 +55,25 @@ function CallbackContent() {
     } else {
       setError("No authorization code found");
     }
-  }, [code, pathname, router, state]);
+  }, [pathname]);
 
-  return (
-    <Card className="w-full max-w-md text-center">
-      <CardHeader>
-        <CardTitle>Connecting to HubSpot</CardTitle>
-      </CardHeader>
-      <CardContent>
-        {error ? (
-          <div className="text-red-500 mb-4">{error}</div>
-        ) : (
-          <div className="flex flex-col items-center gap-4">
-            <Loader2 className="h-8 w-8 animate-spin text-primary" />
-            <p className="text-muted-foreground">{status}</p>
-          </div>
-        )}
-      </CardContent>
-    </Card>
-  );
-}
-
-export default function HubSpotCallback() {
   return (
     <div className="container mx-auto py-20 flex justify-center">
-      <Suspense
-        fallback={
-          <Card className="w-full max-w-md text-center">
-            <CardContent className="pt-6">
-              <Loader2 className="h-8 w-8 animate-spin text-primary mx-auto" />
-              <p className="mt-2 text-muted-foreground">Loading...</p>
-            </CardContent>
-          </Card>
-        }
-      >
-        <CallbackContent />
-      </Suspense>
+      <Card className="w-full max-w-md text-center">
+        <CardHeader>
+          <CardTitle>Connecting to HubSpot</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {error ? (
+            <div className="text-red-500 mb-4">{error}</div>
+          ) : (
+            <div className="flex flex-col items-center gap-4">
+              <Loader2 className="h-8 w-8 animate-spin text-primary" />
+              <p className="text-muted-foreground">{status}</p>
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }

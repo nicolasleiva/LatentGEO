@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { useTheme } from "next-themes";
 import Image from "next/image";
 import { Header } from "@/components/header";
@@ -128,12 +129,12 @@ export default function SettingsPage() {
           <p className="text-muted-foreground mb-8">
             Please sign in to access your settings.
           </p>
-          <a
+          <Link
             href="/auth/login"
             className="inline-flex items-center gap-2 px-6 py-3 bg-primary text-primary-foreground rounded-xl font-medium hover:bg-primary/90 transition-colors"
           >
             Sign In
-          </a>
+          </Link>
         </div>
       </div>
     );
@@ -166,6 +167,7 @@ export default function SettingsPage() {
                     src={user.picture}
                     alt={user.name || "User"}
                     fill
+                    sizes="80px"
                     className="rounded-full border-2 border-border object-cover"
                     unoptimized
                   />
@@ -186,10 +188,14 @@ export default function SettingsPage() {
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm text-muted-foreground mb-2">
+                <label
+                  htmlFor="display-name"
+                  className="block text-sm text-muted-foreground mb-2"
+                >
                   Display Name
                 </label>
                 <input
+                  id="display-name"
                   type="text"
                   value={displayName}
                   onChange={(event) => setDisplayName(event.target.value)}
@@ -198,10 +204,14 @@ export default function SettingsPage() {
                 />
               </div>
               <div>
-                <label className="block text-sm text-muted-foreground mb-2">
+                <label
+                  htmlFor="account-email"
+                  className="block text-sm text-muted-foreground mb-2"
+                >
                   Email
                 </label>
                 <input
+                  id="account-email"
                   type="email"
                   value={user.email || ""}
                   disabled
@@ -263,7 +273,7 @@ export default function SettingsPage() {
             </div>
 
             <div className="space-y-4">
-              <label className="flex items-center justify-between p-4 glass-panel rounded-xl cursor-pointer hover:bg-muted/50 transition-colors">
+              <div className="flex items-center justify-between p-4 glass-panel rounded-xl hover:bg-muted/50 transition-colors">
                 <div>
                   <p className="font-medium">Email Notifications</p>
                   <p className="text-sm text-muted-foreground">
@@ -272,6 +282,7 @@ export default function SettingsPage() {
                 </div>
                 <input
                   type="checkbox"
+                  aria-label="Email Notifications"
                   checked={notifications.email}
                   onChange={(e) =>
                     setNotifications({
@@ -281,9 +292,9 @@ export default function SettingsPage() {
                   }
                   className="w-5 h-5 accent-brand"
                 />
-              </label>
+              </div>
 
-              <label className="flex items-center justify-between p-4 glass-panel rounded-xl cursor-pointer hover:bg-muted/50 transition-colors">
+              <div className="flex items-center justify-between p-4 glass-panel rounded-xl hover:bg-muted/50 transition-colors">
                 <div>
                   <p className="font-medium">Audit Complete</p>
                   <p className="text-sm text-muted-foreground">
@@ -292,6 +303,7 @@ export default function SettingsPage() {
                 </div>
                 <input
                   type="checkbox"
+                  aria-label="Audit Complete"
                   checked={notifications.auditComplete}
                   onChange={(e) =>
                     setNotifications({
@@ -301,9 +313,9 @@ export default function SettingsPage() {
                   }
                   className="w-5 h-5 accent-brand"
                 />
-              </label>
+              </div>
 
-              <label className="flex items-center justify-between p-4 glass-panel rounded-xl cursor-pointer hover:bg-muted/50 transition-colors">
+              <div className="flex items-center justify-between p-4 glass-panel rounded-xl hover:bg-muted/50 transition-colors">
                 <div>
                   <p className="font-medium">Weekly Report</p>
                   <p className="text-sm text-muted-foreground">
@@ -312,6 +324,7 @@ export default function SettingsPage() {
                 </div>
                 <input
                   type="checkbox"
+                  aria-label="Weekly Report"
                   checked={notifications.weeklyReport}
                   onChange={(e) =>
                     setNotifications({
@@ -321,7 +334,7 @@ export default function SettingsPage() {
                   }
                   className="w-5 h-5 accent-brand"
                 />
-              </label>
+              </div>
             </div>
           </section>
 

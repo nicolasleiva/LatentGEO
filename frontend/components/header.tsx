@@ -168,6 +168,7 @@ export function Header() {
                       src={user.picture}
                       alt={profileLabel}
                       fill
+                      sizes="28px"
                       className="object-cover"
                       unoptimized
                     />
@@ -197,10 +198,10 @@ export function Header() {
           ) : (
             <div className="hidden md:flex items-center gap-2">
               <Button asChild variant="ghost" size="sm" className="rounded-xl">
-                <a href="/auth/login">Sign in</a>
+                <Link href="/auth/login">Sign in</Link>
               </Button>
               <Button asChild size="sm" className="rounded-xl">
-                <a href="/auth/login">Start audit</a>
+                <Link href="/auth/login">Start audit</Link>
               </Button>
             </div>
           )}
@@ -282,20 +283,20 @@ export function Header() {
                 ) : (
                   <div className="space-y-2">
                     <SheetClose asChild>
-                      <a
+                      <Link
                         href="/auth/login"
                         className="inline-flex h-10 w-full items-center justify-center rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground shadow-sm hover:bg-primary/90"
                       >
                         Start audit
-                      </a>
+                      </Link>
                     </SheetClose>
                     <SheetClose asChild>
-                      <a
+                      <Link
                         href="/auth/login"
                         className="inline-flex h-10 w-full items-center justify-center rounded-lg border border-border bg-transparent px-4 text-sm font-medium hover:bg-accent/70"
                       >
                         Sign in
-                      </a>
+                      </Link>
                     </SheetClose>
                   </div>
                 )}
