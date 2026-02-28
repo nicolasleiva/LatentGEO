@@ -1,28 +1,58 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { auth0 } from "@/lib/auth0";
-import { createBackendInternalToken } from "@/lib/internal-backend-jwt";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest) {
-  const session = await auth0.getSession(request);
-  const user = session?.user;
-  if (!user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  try {
+    const audience =
+      process.env.AUTH0_API_AUDIENCE?.trim() ||
+      process.env.NEXT_PUBLIC_AUTH0_API_AUDIENCE?.trim() ||
+      "";
+    const scope =
+      process.env.AUTH0_API_SCOPES?.trim() ||
+      process.env.NEXT_PUBLIC_AUTH0_API_SCOPES?.trim() ||
+      "read:app";
 
-  const tokenData = createBackendInternalToken(user);
-  if ("error" in tokenData) {
-    const status = tokenData.error.startsWith("Invalid user session") ? 401 : 500;
-    return NextResponse.json({ error: tokenData.error }, { status });
-  }
+    if (!audience) {
+      return NextResponse.json(
+        { error: "Server misconfigured: AUTH0_API_AUDIENCE is missing" },
+        { status: 500 },
+      );
+    }
 
-  return NextResponse.json({
-    token: tokenData.token,
-    expires_at: tokenData.expiresAtMs,
-    user_id: tokenData.userId,
-    email: tokenData.email,
-  });
+    const tokenResponse = await auth0.getAccessToken({
+      refresh: false,
+      audience,
+      scope,
+      authorizationParameters: {
+        audience,
+        scope,
+      },
+    });
+
+    if (!tokenResponse?.token) {
+      return NextResponse.json(
+        { error: "Unauthorized: missing Auth0 access token" },
+        { status: 401 },
+      );
+    }
+
+    return NextResponse.json({
+      token: tokenResponse.token,
+      expires_at: tokenResponse.expiresAt
+        ? tokenResponse.expiresAt * 1000
+        : undefined,
+      token_type: tokenResponse.token_type,
+      audience: tokenResponse.audience,
+      scope: tokenResponse.scope,
+    });
+  } catch {
+    return NextResponse.json(
+      { error: "Unauthorized: missing Auth0 session" },
+      { status: 401 },
+    );
+  }
 }
-

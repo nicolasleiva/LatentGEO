@@ -221,6 +221,12 @@ export default function ArticleEngine({
       const res = await fetchWithBackendAuth(
         `${backendUrl}/api/geo/article-engine/status/${batchId}`,
       );
+      if (res.status === 401) {
+        stopPolling();
+        // Redirect to unified sign-in if session expired
+        window.location.href = "/auth/login";
+        return null;
+      }
       if (!res.ok) {
         throw new Error(await parseErrorMessage(res));
       }
@@ -242,6 +248,9 @@ export default function ArticleEngine({
       stopPolling();
       pollingRef.current = setInterval(() => {
         fetchBatchStatus(batchId).catch((pollError) => {
+          // If pollError is null (from 401 redirect), do nothing
+          if (!pollError) return;
+          
           setError(
             pollError instanceof Error ? pollError.message : String(pollError),
           );
@@ -259,6 +268,10 @@ export default function ArticleEngine({
         const res = await fetchWithBackendAuth(
           `${backendUrl}/api/geo/article-engine/latest/${auditId}`,
         );
+        if (res.status === 401) {
+          window.location.href = "/auth/login";
+          return;
+        }
         if (!res.ok) throw new Error(await parseErrorMessage(res));
         const raw = await res.json();
         if (raw?.has_data) {
@@ -299,6 +312,10 @@ export default function ArticleEngine({
           }),
         },
       );
+      if (res.status === 401) {
+        window.location.href = "/auth/login";
+        return;
+      }
       if (!res.ok) throw new Error(await parseErrorMessage(res));
       const payload = normalizeBatch(await res.json());
       if (!payload) throw new Error("Invalid article batch response");

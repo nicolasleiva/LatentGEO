@@ -1,5 +1,4 @@
 import asyncio
-import os
 import uuid
 from datetime import datetime
 from typing import List
@@ -31,7 +30,8 @@ from app.services.pipeline_service import PipelineService
 # Importar la tarea de Celery
 from app.workers.tasks import run_audit_task
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Response, status
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, RedirectResponse
+from sqlalchemy.exc import DBAPIError, OperationalError
 from sqlalchemy.orm import Session
 
 logger = get_logger(__name__)
@@ -131,6 +131,17 @@ def _release_pdf_generation_lock(
 def _get_owned_audit(db: Session, audit_id: int, current_user: AuthUser) -> Audit:
     audit = AuditService.get_audit(db, audit_id)
     return ensure_audit_access(audit, current_user)
+
+
+def _db_unavailable_http_exception(action: str) -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        detail={
+            "error_code": "db_unavailable",
+            "action": action,
+            "message": "Database is temporarily unavailable. Retry in a few seconds.",
+        },
+    )
 
 
 async def run_audit_sync(audit_id: int):
@@ -243,7 +254,10 @@ async def _create_audit_internal(
     """
     Función interna para crear auditoría.
     """
-    audit = AuditService.create_audit(db, audit_create)
+    # Run sync database operation in threadpool
+    from starlette.concurrency import run_in_threadpool
+
+    audit = await run_in_threadpool(AuditService.create_audit, db, audit_create)
 
     # Solo iniciar pipeline si tiene configuración completa
     if audit_create.competitors or audit_create.market:
@@ -806,15 +820,23 @@ async def generate_audit_pdf(
     from app.models import Report
     from app.services.pdf_service import PDFService
 
-    audit = _get_owned_audit(db, audit_id, current_user)
+    try:
+        audit = _get_owned_audit(db, audit_id, current_user)
+        if audit.status != AuditStatus.COMPLETED:
+            raise HTTPException(
+                status_code=400,
+                detail=f"La auditoría debe estar completada. Estado actual: {audit.status.value}",
+            )
+    except HTTPException:
+        raise
+    except (OperationalError, DBAPIError) as db_err:
+        logger.error(
+            f"generate_pdf_precheck_failed audit_id={audit_id} error_code=db_unavailable error={db_err}"
+        )
+        raise _db_unavailable_http_exception("generate_pdf_precheck") from db_err
+
     lock_token: str | None = None
     lock_mode: str | None = None
-
-    if audit.status != AuditStatus.COMPLETED:
-        raise HTTPException(
-            status_code=400,
-            detail=f"La auditoría debe estar completada. Estado actual: {audit.status.value}",
-        )
 
     acquired_lock, lock_token, lock_mode = _acquire_pdf_generation_lock(audit_id)
     if not acquired_lock:
@@ -855,12 +877,19 @@ async def generate_audit_pdf(
             return_details=True,
         )
         pdf_path = generation_result.get("pdf_path")
+        if not pdf_path:
+            raise Exception("PDF generation failed - missing path")
+        is_supabase_path = str(pdf_path).startswith("supabase://")
+        if not is_supabase_path:
+            raise Exception(
+                "PDF generation failed - expected Supabase storage path (supabase://...)."
+            )
 
-        if not pdf_path or not os.path.exists(pdf_path):
-            raise Exception(f"PDF generation failed - file not created at {pdf_path}")
-
-        # Get file size
-        file_size = os.path.getsize(pdf_path)
+        file_size_raw = generation_result.get("file_size")
+        try:
+            file_size = int(file_size_raw) if file_size_raw is not None else None
+        except (TypeError, ValueError):
+            file_size = None
 
         # Save PDF path to Report table
         existing_report = (
@@ -912,6 +941,13 @@ async def generate_audit_pdf(
             ),
         }
 
+    except HTTPException:
+        raise
+    except (OperationalError, DBAPIError) as db_err:
+        logger.error(
+            f"generate_pdf_db_failed audit_id={audit_id} error_code=db_unavailable error={db_err}"
+        )
+        raise _db_unavailable_http_exception("generate_pdf_persist") from db_err
     except Exception as e:
         logger.error(f"=== Error generating PDF for audit {audit_id} ===")
         logger.error(f"Error: {e}", exc_info=True)
@@ -931,58 +967,68 @@ def download_audit_pdf(
     Si el PDF no existe, sugiere generarlo primero.
     """
     from app.models import Report
-    from fastapi.responses import FileResponse
 
-    audit = _get_owned_audit(db, audit_id, current_user)
+    try:
+        audit = _get_owned_audit(db, audit_id, current_user)
 
-    if audit.status != AuditStatus.COMPLETED:
-        raise HTTPException(
-            status_code=400,
-            detail=f"El PDF aún no está listo. Estado actual: {audit.status.value}",
-        )
-
-    # Get PDF path from Report table
-    pdf_report = (
-        db.query(Report)
-        .filter(Report.audit_id == audit_id, Report.report_type == "PDF")
-        .order_by(Report.created_at.desc())
-        .first()
-    )
-
-    if not pdf_report or not pdf_report.file_path:
-        raise HTTPException(
-            status_code=404,
-            detail="El archivo PDF no existe. Por favor, genera el PDF primero usando POST /api/audits/{audit_id}/generate-pdf",
-        )
-
-    pdf_path = pdf_report.file_path
-
-    # Handle both relative and absolute paths
-    if not os.path.isabs(pdf_path):
-        # If relative, make it absolute from current working directory
-        pdf_path = os.path.abspath(pdf_path)
-
-    logger.info(f"Attempting to download PDF from: {pdf_path}")
-    logger.info(f"File exists: {os.path.exists(pdf_path)}")
-
-    if not os.path.exists(pdf_path):
-        # Try alternative path - maybe it's in /app directory
-        alt_path = os.path.join("/app", pdf_report.file_path)
-        logger.info(f"Trying alternative path: {alt_path}")
-        if os.path.exists(alt_path):
-            pdf_path = alt_path
-            logger.info("Found PDF at alternative path")
-        else:
+        if audit.status != AuditStatus.COMPLETED:
             raise HTTPException(
-                status_code=404,
-                detail=f"El archivo PDF no existe en {pdf_path} ni en {alt_path}. Por favor, genera el PDF primero.",
+                status_code=400,
+                detail=f"El PDF aún no está listo. Estado actual: {audit.status.value}",
             )
 
-    return FileResponse(
-        path=pdf_path,
-        media_type="application/pdf",
-        filename=f"audit_{audit_id}_report.pdf",
-    )
+        # Get PDF path from Report table
+        pdf_report = (
+            db.query(Report)
+            .filter(Report.audit_id == audit_id, Report.report_type == "PDF")
+            .order_by(Report.created_at.desc())
+            .first()
+        )
+
+        if not pdf_report or not pdf_report.file_path:
+            raise HTTPException(
+                status_code=404,
+                detail="El archivo PDF no existe. Por favor, genera el PDF primero usando POST /api/audits/{audit_id}/generate-pdf",
+            )
+
+        pdf_path = pdf_report.file_path
+
+        if not pdf_path.startswith("supabase://"):
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "Legacy local PDF paths are disabled in Supabase-only mode. "
+                    "Regenera el PDF para almacenarlo en Supabase."
+                ),
+            )
+    except HTTPException:
+        raise
+    except (OperationalError, DBAPIError) as db_err:
+        logger.error(
+            f"download_pdf_db_failed audit_id={audit_id} error_code=db_unavailable error={db_err}"
+        )
+        raise _db_unavailable_http_exception("download_pdf_lookup") from db_err
+
+    from app.services.supabase_service import SupabaseService
+
+    storage_path = pdf_path.replace("supabase://", "", 1)
+    try:
+        signed_url = SupabaseService.get_signed_url(
+            bucket=settings.SUPABASE_STORAGE_BUCKET,
+            path=storage_path,
+        )
+        logger.info(
+            f"storage_provider=supabase audit_id={audit_id} action=download_pdf_redirect storage_path={storage_path}"
+        )
+        return RedirectResponse(url=signed_url, status_code=302)
+    except Exception as e:
+        logger.error(
+            f"storage_provider=supabase audit_id={audit_id} action=download_pdf_failed error_code=supabase_signed_url_failed error={e}"
+        )
+        raise HTTPException(
+            status_code=500,
+            detail="No se pudo generar el enlace de descarga de Supabase.",
+        ) from e
 
 
 @router.post("/chat/config", response_model=ChatMessage)

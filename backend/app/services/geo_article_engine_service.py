@@ -1763,8 +1763,9 @@ class GeoArticleEngineService:
             if isinstance(src, dict) and src.get("url")
         ]
 
+        current_year = datetime.now().year
         system_prompt = (
-            "You are a senior GEO + SEO editorial strategist. "
+            f"You are a senior GEO + SEO editorial strategist. Current year is {current_year}. "
             "Write production-ready articles only from the provided evidence. "
             "Never fabricate data. Return strict JSON only."
         )
@@ -1797,6 +1798,7 @@ class GeoArticleEngineService:
                 },
                 "citation_format": "[Source: https://...]",
                 "constraints": [
+                    f"Write content relevant for {current_year}, avoiding outdated year references unless historical.",
                     "Use only audited evidence and required sources.",
                     "Map every major claim to source tags.",
                     "Do not invent competitors, metrics or sources.",

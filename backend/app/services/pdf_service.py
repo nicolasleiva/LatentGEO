@@ -1,11 +1,13 @@
 """
-Servicio para la generación de reportes en PDF.
+Servicio para la generaciÃ³n de reportes en PDF.
 """
 
 import asyncio
 import hashlib
 import json
 import os
+import shutil
+import tempfile
 import time
 from datetime import datetime
 from typing import Any, Awaitable, Callable, Dict, List, Optional
@@ -25,17 +27,17 @@ try:
     PDF_GENERATOR_AVAILABLE = FPDF_AVAILABLE
 except ImportError as e:
     logger.warning(
-        f"No se pudo importar create_comprehensive_pdf: {e}. PDFs no estarán disponibles."
+        f"No se pudo importar create_comprehensive_pdf: {e}. PDFs no estarÃ¡n disponibles."
     )
     PDF_GENERATOR_AVAILABLE = False
 
     def create_comprehensive_pdf(report_folder_path, metadata=None):
-        logger.error("create_comprehensive_pdf no está disponible")
+        logger.error("create_comprehensive_pdf no estÃ¡ disponible")
         raise ImportError("create_pdf module not available")
 
 
 class PDFService:
-    """Encapsula la lógica para crear archivos PDF a partir de contenido."""
+    """Encapsula la lÃ³gica para crear archivos PDF a partir de contenido."""
 
     REPORT_CONTEXT_PROMPT_VERSION = "report_generation_v2"
 
@@ -148,6 +150,33 @@ class PDFService:
                     logger.warning(
                         f"No se pudo limpiar artefacto previo {file_path}: {e}"
                     )
+
+    @staticmethod
+    def _upload_pdf_to_supabase(audit_id: int, pdf_file_path: str) -> tuple[str, int]:
+        if not settings.SUPABASE_URL or not settings.SUPABASE_SERVICE_ROLE_KEY:
+            raise RuntimeError(
+                "SUPABASE_URL y SUPABASE_SERVICE_ROLE_KEY son obligatorios para PDFs."
+            )
+        if not settings.SUPABASE_STORAGE_BUCKET:
+            raise RuntimeError("SUPABASE_STORAGE_BUCKET es obligatorio para PDFs.")
+
+        from .supabase_service import SupabaseService
+
+        with open(pdf_file_path, "rb") as f:
+            file_content = f.read()
+
+        file_size = len(file_content)
+        storage_path = f"audits/{audit_id}/report.pdf"
+        logger.info(
+            f"storage_provider=supabase audit_id={audit_id} action=upload_pdf storage_path={storage_path}"
+        )
+        SupabaseService.upload_file(
+            bucket=settings.SUPABASE_STORAGE_BUCKET,
+            path=storage_path,
+            file_content=file_content,
+            content_type="application/pdf",
+        )
+        return f"supabase://{storage_path}", file_size
 
     @staticmethod
     def _reports_dir_for_audit(audit_id: int) -> str:
@@ -506,6 +535,8 @@ class PDFService:
 
     @staticmethod
     def _load_saved_report_signature(audit_id: int) -> str:
+        if not settings.AUDIT_LOCAL_ARTIFACTS_ENABLED:
+            return ""
         signature_path = PDFService._report_context_signature_path(audit_id)
         if not os.path.exists(signature_path):
             return ""
@@ -518,6 +549,8 @@ class PDFService:
 
     @staticmethod
     def _save_report_signature(audit_id: int, signature: str) -> None:
+        if not settings.AUDIT_LOCAL_ARTIFACTS_ENABLED:
+            return
         if not signature:
             return
         signature_path = PDFService._report_context_signature_path(audit_id)
@@ -1355,248 +1388,32 @@ class PDFService:
     @staticmethod
     def create_from_audit(audit: Audit, markdown_content: str) -> str:
         """
-        Crea un reporte PDF completo para una auditoría específica.
-        Usa create_comprehensive_pdf para generar el PDF con índice y anexos.
-
-        Args:
-            audit: La instancia del modelo Audit.
-            markdown_content: El contenido del reporte en formato Markdown.
-
-        Returns:
-            La ruta completa al archivo PDF generado.
+        Genera el PDF de auditoria y lo sube a Supabase Storage.
         """
         if not PDF_GENERATOR_AVAILABLE:
             logger.error(
-                "PDF generator no está disponible. Instalar fpdf2: pip install fpdf2"
+                "PDF generator no esta disponible. Instalar fpdf2: pip install fpdf2"
             )
             raise ImportError("PDF generator not available")
 
-        logger.info(f"Iniciando generación de PDF para auditoría {audit.id}")
+        logger.info(f"Iniciando generacion de PDF para auditoria {audit.id}")
 
-        reports_dir = os.path.join(settings.REPORTS_BASE_DIR, f"audit_{audit.id}")
-        os.makedirs(reports_dir, exist_ok=True)
-        PDFService._clean_previous_pdf_artifacts(reports_dir)
+        original_markdown = getattr(audit, "report_markdown", None)
+        if markdown_content:
+            audit.report_markdown = markdown_content
 
-        # Guardar el markdown en ag2_report.md (requerido por create_comprehensive_pdf)
-        md_file_path = os.path.join(reports_dir, "ag2_report.md")
-        with open(md_file_path, "w", encoding="utf-8") as f:
-            f.write(markdown_content)
-
-        # Guardar fix_plan.json si existe en audit.fix_plan
-        if hasattr(audit, "fix_plan") and audit.fix_plan:
-            fix_plan_path = os.path.join(reports_dir, "fix_plan.json")
-            try:
-                fix_plan_data = (
-                    json.loads(audit.fix_plan)
-                    if isinstance(audit.fix_plan, str)
-                    else audit.fix_plan
-                )
-                with open(fix_plan_path, "w", encoding="utf-8") as f:
-                    json.dump(fix_plan_data, f, indent=2, ensure_ascii=False)
-            except Exception as e:
-                logger.warning(f"No se pudo guardar fix_plan.json: {e}")
-
-        # Guardar aggregated_summary.json si existe en audit.target_audit
-        if hasattr(audit, "target_audit") and audit.target_audit:
-            agg_summary_path = os.path.join(reports_dir, "aggregated_summary.json")
-            try:
-                target_audit_data = (
-                    json.loads(audit.target_audit)
-                    if isinstance(audit.target_audit, str)
-                    else audit.target_audit
-                )
-                with open(agg_summary_path, "w", encoding="utf-8") as f:
-                    json.dump(target_audit_data, f, indent=2, ensure_ascii=False)
-            except Exception as e:
-                logger.warning(f"No se pudo guardar aggregated_summary.json: {e}")
-
-        # Guardar PageSpeed data
-        if hasattr(audit, "pagespeed_data") and audit.pagespeed_data:
-            pagespeed_path = os.path.join(reports_dir, "pagespeed.json")
-            try:
-                ps_data = (
-                    json.loads(audit.pagespeed_data)
-                    if isinstance(audit.pagespeed_data, str)
-                    else audit.pagespeed_data
-                )
-                with open(pagespeed_path, "w", encoding="utf-8") as f:
-                    json.dump(ps_data, f, indent=2, ensure_ascii=False)
-            except Exception as e:
-                logger.warning(f"No se pudo guardar pagespeed.json: {e}")
-
-        # Guardar Keywords data
-        if hasattr(audit, "keywords") and audit.keywords:
-            keywords_path = os.path.join(reports_dir, "keywords.json")
-            try:
-                keywords_list = []
-                for k in audit.keywords:
-                    volume_value = k.volume or 0
-                    difficulty_value = k.difficulty or 0
-                    cpc_value = k.cpc or 0.0
-                    metrics_source = (
-                        "google_ads"
-                        if (volume_value > 0 or difficulty_value > 0 or cpc_value > 0)
-                        else "not_available"
-                    )
-                    keywords_list.append(
-                        {
-                            "term": k.term,
-                            "volume": volume_value,
-                            "difficulty": difficulty_value,
-                            "cpc": cpc_value,
-                            "intent": k.intent,
-                            "metrics_source": metrics_source,
-                        }
-                    )
-                with open(keywords_path, "w", encoding="utf-8") as f:
-                    json.dump(keywords_list, f, indent=2, ensure_ascii=False)
-            except Exception as e:
-                logger.warning(f"No se pudo guardar keywords.json: {e}")
-
-        # Guardar Backlinks data
-        if hasattr(audit, "backlinks") and audit.backlinks:
-            backlinks_path = os.path.join(reports_dir, "backlinks.json")
-            try:
-                backlinks_list = []
-                for b in audit.backlinks:
-                    backlinks_list.append(
-                        {
-                            "source_url": b.source_url,
-                            "target_url": b.target_url,
-                            "anchor_text": b.anchor_text,
-                            "is_dofollow": b.is_dofollow,
-                            "domain_authority": b.domain_authority,
-                        }
-                    )
-                with open(backlinks_path, "w", encoding="utf-8") as f:
-                    json.dump(backlinks_list, f, indent=2, ensure_ascii=False)
-            except Exception as e:
-                logger.warning(f"No se pudo guardar backlinks.json: {e}")
-
-        # Guardar Rankings data
-        if hasattr(audit, "rank_trackings") and audit.rank_trackings:
-            rankings_path = os.path.join(reports_dir, "rankings.json")
-            try:
-                rankings_list = []
-                for r in audit.rank_trackings:
-                    rankings_list.append(
-                        {
-                            "keyword": r.keyword,
-                            "position": r.position,
-                            "url": r.url,
-                            "device": r.device,
-                            "location": r.location,
-                            "top_results": r.top_results,
-                        }
-                    )
-                with open(rankings_path, "w", encoding="utf-8") as f:
-                    json.dump(rankings_list, f, indent=2, ensure_ascii=False)
-            except Exception as e:
-                logger.warning(f"No se pudo guardar rankings.json: {e}")
-
-        # Guardar LLM Visibility data
-        if hasattr(audit, "llm_visibilities") and audit.llm_visibilities:
-            visibility_path = os.path.join(reports_dir, "llm_visibility.json")
-            try:
-                visibility_list = []
-                for v in audit.llm_visibilities:
-                    visibility_list.append(
-                        {
-                            "llm_name": v.llm_name,
-                            "query": v.query,
-                            "is_visible": v.is_visible,
-                            "rank": v.rank,
-                            "citation_text": v.citation_text,
-                        }
-                    )
-                with open(visibility_path, "w", encoding="utf-8") as f:
-                    json.dump(visibility_list, f, indent=2, ensure_ascii=False)
-            except Exception as e:
-                logger.warning(f"No se pudo guardar llm_visibility.json: {e}")
-
-        # Guardar páginas individuales
-        if hasattr(audit, "pages") and audit.pages:
-            pages_dir = os.path.join(reports_dir, "pages")
-            os.makedirs(pages_dir, exist_ok=True)
-            for page in audit.pages:
-                try:
-                    # Crear nombre de archivo seguro
-                    filename = (
-                        page.url.replace("https://", "")
-                        .replace("http://", "")
-                        .replace("/", "_")
-                        .replace("?", "_")
-                        .replace("&", "_")
-                    )
-                    if not filename:
-                        filename = "index"
-                    page_path = os.path.join(pages_dir, f"report_{filename}.json")
-
-                    page_data = (
-                        json.loads(page.audit_data)
-                        if isinstance(page.audit_data, str)
-                        else page.audit_data
-                    )
-                    with open(page_path, "w", encoding="utf-8") as f:
-                        json.dump(page_data, f, indent=2, ensure_ascii=False)
-                except Exception as e:
-                    logger.warning(f"No se pudo guardar página {page.url}: {e}")
-
-        # Guardar competidores
-        if hasattr(audit, "competitor_audits") and audit.competitor_audits:
-            competitors_dir = os.path.join(reports_dir, "competitors")
-            os.makedirs(competitors_dir, exist_ok=True)
-            try:
-                comp_list = (
-                    json.loads(audit.competitor_audits)
-                    if isinstance(audit.competitor_audits, str)
-                    else audit.competitor_audits
-                )
-                if isinstance(comp_list, list):
-                    for i, comp_data in enumerate(comp_list):
-                        try:
-                            domain = (
-                                comp_data.get("domain")
-                                or comp_data.get("url", "")
-                                .replace("https://", "")
-                                .replace("http://", "")
-                                .split("/")[0]
-                                or f"competitor_{i}"
-                            )
-                            comp_path = os.path.join(
-                                competitors_dir, f"competitor_{domain}.json"
-                            )
-                            with open(comp_path, "w", encoding="utf-8") as f:
-                                json.dump(comp_data, f, indent=2, ensure_ascii=False)
-                        except Exception as e:
-                            logger.warning(f"No se pudo guardar competidor {i}: {e}")
-            except Exception as e:
-                logger.warning(f"Error procesando competitor_audits: {e}")
-
-        # Llamar a create_comprehensive_pdf (igual que ag2_pipeline.py)
+        pages = list(getattr(audit, "pages", []) or [])
+        competitors = list(getattr(audit, "competitors", []) or [])
         try:
-            create_comprehensive_pdf(
-                reports_dir, metadata=PDFService._build_pdf_metadata(audit)
+            return asyncio.run(
+                PDFService.generate_comprehensive_pdf(
+                    audit=audit,
+                    pages=pages,
+                    competitors=competitors,
+                )
             )
-
-            # Buscar el PDF generado
-            import glob
-
-            pdf_files = glob.glob(
-                os.path.join(reports_dir, "Reporte_Consolidado_*.pdf")
-            )
-            if pdf_files:
-                pdf_file_path = pdf_files[0]
-                logger.info(f"Reporte PDF guardado en: {pdf_file_path}")
-                return pdf_file_path
-            else:
-                logger.error(f"No se encontró el PDF generado en {reports_dir}")
-                raise FileNotFoundError("PDF file not generated")
-        except Exception as e:
-            logger.error(
-                f"Error generando PDF con create_comprehensive_pdf: {e}", exc_info=True
-            )
-            raise
+        finally:
+            audit.report_markdown = original_markdown
 
     @staticmethod
     def _is_pagespeed_stale(pagespeed_data: dict, max_age_hours: int = 24) -> bool:
@@ -1790,7 +1607,7 @@ class PDFService:
 
                 # Store in database
                 AuditService.set_pagespeed_data(db, audit_id, pagespeed_data)
-                logger.info("✓ PageSpeed data collected and stored")
+                logger.info("âœ“ PageSpeed data collected and stored")
             except Exception as e:
                 logger.error(f"PageSpeed collection failed: {e}")
                 # Fallback to existing (stale) data if available
@@ -1809,7 +1626,7 @@ class PDFService:
                         audit.pagespeed_data if audit.pagespeed_data else None
                     )
         else:
-            logger.info("✓ Using cached PageSpeed data (fresh)")
+            logger.info("âœ“ Using cached PageSpeed data (fresh)")
 
         # 4. Prepare GEO Tools context for PDF (cached by default, optional fresh refresh)
         logger.info("Preparing GEO Tools (Keywords, Backlinks, Rankings) for PDF...")
@@ -2433,7 +2250,7 @@ class PDFService:
                         pass
 
             logger.info(
-                f"✓ GEO Tools data ready: {len(keywords_data.get('items', []))} keywords, {len(backlinks_data.get('top_backlinks', []))} backlinks, {len(rank_tracking_data.get('rankings', []))} rankings"
+                f"âœ“ GEO Tools data ready: {len(keywords_data.get('items', []))} keywords, {len(backlinks_data.get('top_backlinks', []))} backlinks, {len(rank_tracking_data.get('rankings', []))} rankings"
             )
 
         except Exception as tool_error:
@@ -2447,7 +2264,7 @@ class PDFService:
         if force_fresh_geo:
             complete_context = PDFService._load_complete_audit_context(db, audit_id)
         logger.info(
-            f"✓ Complete context loaded with {len(complete_context)} feature types"
+            f"âœ“ Complete context loaded with {len(complete_context)} feature types"
         )
 
         # 5.1 Ensure external intelligence quality for PDF report generation.
@@ -2534,7 +2351,7 @@ class PDFService:
                         audit.category = refreshed_category.strip()
                     db.commit()
                     external_intel_refreshed = True
-                    logger.info("✓ External intelligence refreshed for PDF context")
+                    logger.info("âœ“ External intelligence refreshed for PDF context")
             except Exception as external_err:
                 from .pipeline_service import get_pipeline_service
 
@@ -2627,7 +2444,7 @@ class PDFService:
 
         if report_cache_hit:
             logger.info(
-                "✓ Report context signature matched. Reusing cached markdown report."
+                "âœ“ Report context signature matched. Reusing cached markdown report."
             )
             audit.report_markdown = fallback_markdown_report
             audit.fix_plan = fallback_fix_plan
@@ -2730,7 +2547,7 @@ class PDFService:
                         raise TimeoutError("Product intelligence timed out")
                     product_intelligence_data = asdict(product_result)
                     logger.info(
-                        f"✓ Product intelligence loaded (ecommerce={product_intelligence_data.get('is_ecommerce')})"
+                        f"âœ“ Product intelligence loaded (ecommerce={product_intelligence_data.get('is_ecommerce')})"
                     )
                 except Exception as e:
                     logger.warning(f"Product intelligence generation failed: {e}")
@@ -2835,7 +2652,7 @@ class PDFService:
 
                 audit.report_markdown = markdown_report
                 logger.info(
-                    f"✓ Markdown report regenerated with complete context ({len(markdown_report)} chars)"
+                    f"âœ“ Markdown report regenerated with complete context ({len(markdown_report)} chars)"
                 )
 
                 # Ensure fix_plan is generated - NO FALLBACK for production
@@ -2869,7 +2686,7 @@ class PDFService:
 
         competitors = CompetitorService.get_competitors(db, audit_id)
 
-        logger.info(f"✓ Loaded {len(pages)} pages and {len(competitors)} competitors")
+        logger.info(f"âœ“ Loaded {len(pages)} pages and {len(competitors)} competitors")
 
         # 8. Generate PDF with complete context
         pdf_path = await PDFService.generate_comprehensive_pdf(
@@ -2882,6 +2699,7 @@ class PDFService:
             rank_tracking_data=rank_tracking_data,
             llm_visibility_data=llm_visibility_data,
         )
+        pdf_file_size = getattr(audit, "_generated_pdf_size_bytes", None)
 
         total_elapsed = time.monotonic() - started_at
         logger.info(
@@ -2896,6 +2714,7 @@ class PDFService:
                 "generation_mode": generation_mode,
                 "external_intel_refreshed": external_intel_refreshed,
                 "external_intel_refresh_reason": external_intel_refresh_reason,
+                "file_size": pdf_file_size,
             }
         return pdf_path
 
@@ -2911,9 +2730,9 @@ class PDFService:
         llm_visibility_data: list = None,
     ) -> str:
         """
-        Genera un PDF completo con todos los datos de la auditoría:
-        - Datos de auditoría principal
-        - Páginas auditadas
+        Genera un PDF completo con todos los datos de la auditorÃ­a:
+        - Datos de auditorÃ­a principal
+        - PÃ¡ginas auditadas
         - Competidores
         - PageSpeed data
         - Keywords
@@ -2923,7 +2742,7 @@ class PDFService:
 
         Args:
             audit: La instancia del modelo Audit
-            pages: Lista de páginas auditadas
+            pages: Lista de pÃ¡ginas auditadas
             competitors: Lista de competidores
             pagespeed_data: Datos de PageSpeed (opcional)
             keywords_data: Datos de Keywords (opcional)
@@ -2936,196 +2755,227 @@ class PDFService:
         """
         if not PDF_GENERATOR_AVAILABLE:
             logger.error(
-                "PDF generator no está disponible. Instalar fpdf2: pip install fpdf2"
+                "PDF generator no estÃ¡ disponible. Instalar fpdf2: pip install fpdf2"
             )
             raise ImportError("PDF generator not available")
 
         logger.info(
-            f"Generando PDF completo para auditoría {audit.id} con todos los datos"
+            f"Generando PDF completo para auditorÃ­a {audit.id} con todos los datos"
         )
 
-        reports_dir = os.path.join(settings.REPORTS_BASE_DIR, f"audit_{audit.id}")
-        os.makedirs(reports_dir, exist_ok=True)
-        PDFService._clean_previous_pdf_artifacts(reports_dir)
-
-        # 1. Guardar markdown report
-        if audit.report_markdown:
-            md_file_path = os.path.join(reports_dir, "ag2_report.md")
-            with open(md_file_path, "w", encoding="utf-8") as f:
-                f.write(audit.report_markdown)
-
-        # 2. Guardar fix_plan.json
-        if audit.fix_plan:
-            fix_plan_path = os.path.join(reports_dir, "fix_plan.json")
-            try:
-                fix_plan_data = (
-                    json.loads(audit.fix_plan)
-                    if isinstance(audit.fix_plan, str)
-                    else audit.fix_plan
-                )
-                with open(fix_plan_path, "w", encoding="utf-8") as f:
-                    json.dump(fix_plan_data, f, indent=2, ensure_ascii=False)
-            except Exception as e:
-                logger.warning(f"No se pudo guardar fix_plan.json: {e}")
-
-        # 3. Guardar aggregated_summary.json (target audit)
-        if audit.target_audit:
-            agg_summary_path = os.path.join(reports_dir, "aggregated_summary.json")
-            try:
-                target_audit_data = (
-                    json.loads(audit.target_audit)
-                    if isinstance(audit.target_audit, str)
-                    else audit.target_audit
-                )
-                with open(agg_summary_path, "w", encoding="utf-8") as f:
-                    json.dump(target_audit_data, f, indent=2, ensure_ascii=False)
-            except Exception as e:
-                logger.warning(f"No se pudo guardar aggregated_summary.json: {e}")
-
-        # 4. Guardar PageSpeed data
-        if pagespeed_data:
-            pagespeed_path = os.path.join(reports_dir, "pagespeed.json")
-            try:
-                with open(pagespeed_path, "w", encoding="utf-8") as f:
-                    json.dump(pagespeed_data, f, indent=2, ensure_ascii=False)
-            except Exception as e:
-                logger.warning(f"No se pudo guardar pagespeed.json: {e}")
-
-        # 4.1 Guardar Keywords data
-        if keywords_data:
-            keywords_path = os.path.join(reports_dir, "keywords.json")
-            try:
-                # keywords_data can be a dict or a list
-                data_to_save = (
-                    keywords_data.get("keywords", keywords_data)
-                    if isinstance(keywords_data, dict)
-                    else keywords_data
-                )
-                with open(keywords_path, "w", encoding="utf-8") as f:
-                    json.dump(data_to_save, f, indent=2, ensure_ascii=False)
-            except Exception as e:
-                logger.warning(f"No se pudo guardar keywords.json: {e}")
-
-        # 4.2 Guardar Backlinks data
-        if backlinks_data:
-            backlinks_path = os.path.join(reports_dir, "backlinks.json")
-            try:
-                # backlinks_data can be a dict or a list
-                data_to_save = (
-                    backlinks_data.get("top_backlinks", backlinks_data)
-                    if isinstance(backlinks_data, dict)
-                    else backlinks_data
-                )
-                with open(backlinks_path, "w", encoding="utf-8") as f:
-                    json.dump(data_to_save, f, indent=2, ensure_ascii=False)
-            except Exception as e:
-                logger.warning(f"No se pudo guardar backlinks.json: {e}")
-
-        # 4.3 Guardar Rankings data
-        if rank_tracking_data:
-            rankings_path = os.path.join(reports_dir, "rankings.json")
-            try:
-                # rank_tracking_data can be a dict or a list
-                data_to_save = (
-                    rank_tracking_data.get("rankings", rank_tracking_data)
-                    if isinstance(rank_tracking_data, dict)
-                    else rank_tracking_data
-                )
-                with open(rankings_path, "w", encoding="utf-8") as f:
-                    json.dump(data_to_save, f, indent=2, ensure_ascii=False)
-            except Exception as e:
-                logger.warning(f"No se pudo guardar rankings.json: {e}")
-
-        # 4.4 Guardar LLM Visibility data
-        if llm_visibility_data:
-            visibility_path = os.path.join(reports_dir, "llm_visibility.json")
-            try:
-                with open(visibility_path, "w", encoding="utf-8") as f:
-                    json.dump(llm_visibility_data, f, indent=2, ensure_ascii=False)
-            except Exception as e:
-                logger.warning(f"No se pudo guardar llm_visibility.json: {e}")
-
-        # 5. Guardar datos de páginas
-        if pages:
-            pages_dir = os.path.join(reports_dir, "pages")
-            os.makedirs(pages_dir, exist_ok=True)
-            for page in pages:
-                try:
-                    page_data = {
-                        "url": page.url,
-                        "path": page.path,
-                        "overall_score": page.overall_score,
-                        "h1_score": page.h1_score,
-                        "structure_score": page.structure_score,
-                        "content_score": page.content_score,
-                        "eeat_score": page.eeat_score,
-                        "schema_score": page.schema_score,
-                        "critical_issues": page.critical_issues,
-                        "high_issues": page.high_issues,
-                        "medium_issues": page.medium_issues,
-                        "low_issues": page.low_issues,
-                        "audit_data": page.audit_data,
-                    }
-                    page_filename = f"page_{page.id}.json"
-                    page_path = os.path.join(pages_dir, page_filename)
-                    with open(page_path, "w", encoding="utf-8") as f:
-                        json.dump(page_data, f, indent=2, ensure_ascii=False)
-                except Exception as e:
-                    logger.warning(f"No se pudo guardar datos de página {page.id}: {e}")
-
-        # 6. Guardar datos de competidores
-        if competitors:
-            competitors_dir = os.path.join(reports_dir, "competitors")
-            os.makedirs(competitors_dir, exist_ok=True)
-            for idx, comp in enumerate(competitors):
-                try:
-                    comp_data = (
-                        comp
-                        if isinstance(comp, dict)
-                        else {
-                            "url": getattr(comp, "url", ""),
-                            "geo_score": getattr(comp, "geo_score", 0),
-                            "audit_data": getattr(comp, "audit_data", {}),
-                        }
-                    )
-                    # Extract domain from URL if not present
-                    if "domain" not in comp_data:
-                        from urllib.parse import urlparse
-
-                        url = comp_data.get("url", "")
-                        if url:
-                            domain = urlparse(url).netloc.replace("www.", "")
-                        else:
-                            domain = f"competitor_{idx + 1}"
-                        comp_data["domain"] = domain
-                    comp_filename = f"competitor_{idx + 1}.json"
-                    comp_path = os.path.join(competitors_dir, comp_filename)
-                    with open(comp_path, "w", encoding="utf-8") as f:
-                        json.dump(comp_data, f, indent=2, ensure_ascii=False)
-                except Exception as e:
-                    logger.warning(f"No se pudo guardar datos de competidor {idx}: {e}")
-
-        # 7. Generar PDF con create_comprehensive_pdf
+        reports_dir = tempfile.mkdtemp(prefix=f"audit_{audit.id}_")
         try:
-            create_comprehensive_pdf(
-                reports_dir, metadata=PDFService._build_pdf_metadata(audit)
-            )
+            os.makedirs(reports_dir, exist_ok=True)
+            PDFService._clean_previous_pdf_artifacts(reports_dir)
 
-            # Buscar el PDF generado
-            import glob
+            # 1. Guardar markdown report
+            if audit.report_markdown:
+                md_file_path = os.path.join(reports_dir, "ag2_report.md")
+                with open(md_file_path, "w", encoding="utf-8") as f:
+                    f.write(audit.report_markdown)
 
-            pdf_files = glob.glob(
-                os.path.join(reports_dir, "Reporte_Consolidado_*.pdf")
-            )
-            if pdf_files:
-                pdf_file_path = pdf_files[0]
-                logger.info(f"PDF completo generado en: {pdf_file_path}")
-                return pdf_file_path
-            else:
-                logger.error(f"No se encontró el PDF generado en {reports_dir}")
-                raise FileNotFoundError("PDF file not generated")
-        except Exception as e:
-            logger.error(
-                f"Error generando PDF con create_comprehensive_pdf: {e}", exc_info=True
-            )
-            raise
+            # 2. Guardar fix_plan.json
+            if audit.fix_plan:
+                fix_plan_path = os.path.join(reports_dir, "fix_plan.json")
+                try:
+                    fix_plan_data = (
+                        json.loads(audit.fix_plan)
+                        if isinstance(audit.fix_plan, str)
+                        else audit.fix_plan
+                    )
+                    with open(fix_plan_path, "w", encoding="utf-8") as f:
+                        json.dump(fix_plan_data, f, indent=2, ensure_ascii=False)
+                except Exception as e:
+                    logger.warning(f"No se pudo guardar fix_plan.json: {e}")
+
+            # 3. Guardar aggregated_summary.json (target audit)
+            if audit.target_audit:
+                agg_summary_path = os.path.join(reports_dir, "aggregated_summary.json")
+                try:
+                    target_audit_data = (
+                        json.loads(audit.target_audit)
+                        if isinstance(audit.target_audit, str)
+                        else audit.target_audit
+                    )
+                    with open(agg_summary_path, "w", encoding="utf-8") as f:
+                        json.dump(target_audit_data, f, indent=2, ensure_ascii=False)
+                except Exception as e:
+                    logger.warning(f"No se pudo guardar aggregated_summary.json: {e}")
+
+            # 4. Guardar PageSpeed data
+            if pagespeed_data:
+                pagespeed_path = os.path.join(reports_dir, "pagespeed.json")
+                try:
+                    with open(pagespeed_path, "w", encoding="utf-8") as f:
+                        json.dump(pagespeed_data, f, indent=2, ensure_ascii=False)
+                except Exception as e:
+                    logger.warning(f"No se pudo guardar pagespeed.json: {e}")
+
+            # 4.1 Guardar Keywords data
+            if keywords_data:
+                keywords_path = os.path.join(reports_dir, "keywords.json")
+                try:
+                    # keywords_data can be a dict or a list
+                    data_to_save = (
+                        keywords_data.get("keywords", keywords_data)
+                        if isinstance(keywords_data, dict)
+                        else keywords_data
+                    )
+                    with open(keywords_path, "w", encoding="utf-8") as f:
+                        json.dump(data_to_save, f, indent=2, ensure_ascii=False)
+                except Exception as e:
+                    logger.warning(f"No se pudo guardar keywords.json: {e}")
+
+            # 4.2 Guardar Backlinks data
+            if backlinks_data:
+                backlinks_path = os.path.join(reports_dir, "backlinks.json")
+                try:
+                    # backlinks_data can be a dict or a list
+                    data_to_save = (
+                        backlinks_data.get("top_backlinks", backlinks_data)
+                        if isinstance(backlinks_data, dict)
+                        else backlinks_data
+                    )
+                    with open(backlinks_path, "w", encoding="utf-8") as f:
+                        json.dump(data_to_save, f, indent=2, ensure_ascii=False)
+                except Exception as e:
+                    logger.warning(f"No se pudo guardar backlinks.json: {e}")
+
+            # 4.3 Guardar Rankings data
+            if rank_tracking_data:
+                rankings_path = os.path.join(reports_dir, "rankings.json")
+                try:
+                    # rank_tracking_data can be a dict or a list
+                    data_to_save = (
+                        rank_tracking_data.get("rankings", rank_tracking_data)
+                        if isinstance(rank_tracking_data, dict)
+                        else rank_tracking_data
+                    )
+                    with open(rankings_path, "w", encoding="utf-8") as f:
+                        json.dump(data_to_save, f, indent=2, ensure_ascii=False)
+                except Exception as e:
+                    logger.warning(f"No se pudo guardar rankings.json: {e}")
+
+            # 4.4 Guardar LLM Visibility data
+            if llm_visibility_data:
+                visibility_path = os.path.join(reports_dir, "llm_visibility.json")
+                try:
+                    with open(visibility_path, "w", encoding="utf-8") as f:
+                        json.dump(llm_visibility_data, f, indent=2, ensure_ascii=False)
+                except Exception as e:
+                    logger.warning(f"No se pudo guardar llm_visibility.json: {e}")
+
+            # 5. Guardar datos de pÃ¡ginas
+            if pages:
+                pages_dir = os.path.join(reports_dir, "pages")
+                os.makedirs(pages_dir, exist_ok=True)
+                for page in pages:
+                    try:
+                        page_data = {
+                            "url": page.url,
+                            "path": page.path,
+                            "overall_score": page.overall_score,
+                            "h1_score": page.h1_score,
+                            "structure_score": page.structure_score,
+                            "content_score": page.content_score,
+                            "eeat_score": page.eeat_score,
+                            "schema_score": page.schema_score,
+                            "critical_issues": page.critical_issues,
+                            "high_issues": page.high_issues,
+                            "medium_issues": page.medium_issues,
+                            "low_issues": page.low_issues,
+                            "audit_data": page.audit_data,
+                        }
+                        page_filename = f"page_{page.id}.json"
+                        page_path = os.path.join(pages_dir, page_filename)
+                        with open(page_path, "w", encoding="utf-8") as f:
+                            json.dump(page_data, f, indent=2, ensure_ascii=False)
+                    except Exception as e:
+                        logger.warning(
+                            f"No se pudo guardar datos de pÃ¡gina {page.id}: {e}"
+                        )
+
+            # 6. Guardar datos de competidores
+            if competitors:
+                competitors_dir = os.path.join(reports_dir, "competitors")
+                os.makedirs(competitors_dir, exist_ok=True)
+                for idx, comp in enumerate(competitors):
+                    try:
+                        comp_data = (
+                            comp
+                            if isinstance(comp, dict)
+                            else {
+                                "url": getattr(comp, "url", ""),
+                                "geo_score": getattr(comp, "geo_score", 0),
+                                "audit_data": getattr(comp, "audit_data", {}),
+                            }
+                        )
+                        # Extract domain from URL if not present
+                        if "domain" not in comp_data:
+                            from urllib.parse import urlparse
+
+                            url = comp_data.get("url", "")
+                            if url:
+                                domain = urlparse(url).netloc.replace("www.", "")
+                            else:
+                                domain = f"competitor_{idx + 1}"
+                            comp_data["domain"] = domain
+                        comp_filename = f"competitor_{idx + 1}.json"
+                        comp_path = os.path.join(competitors_dir, comp_filename)
+                        with open(comp_path, "w", encoding="utf-8") as f:
+                            json.dump(comp_data, f, indent=2, ensure_ascii=False)
+                    except Exception as e:
+                        logger.warning(
+                            f"No se pudo guardar datos de competidor {idx}: {e}"
+                        )
+
+            # 7. Generar PDF con create_comprehensive_pdf
+            try:
+                create_comprehensive_pdf(
+                    reports_dir, metadata=PDFService._build_pdf_metadata(audit)
+                )
+
+                # Buscar el PDF generado
+                import glob
+
+                pdf_files = glob.glob(
+                    os.path.join(reports_dir, "Reporte_Consolidado_*.pdf")
+                )
+                if pdf_files:
+                    pdf_file_path = pdf_files[0]
+                    logger.info(f"PDF completo generado en: {pdf_file_path}")
+                    try:
+                        supabase_path, pdf_size = PDFService._upload_pdf_to_supabase(
+                            audit_id=audit.id, pdf_file_path=pdf_file_path
+                        )
+                        setattr(audit, "_generated_pdf_size_bytes", pdf_size)
+                        logger.info(
+                            f"storage_provider=supabase audit_id={audit.id} action=upload_pdf_ok size={pdf_size}"
+                        )
+                        return supabase_path
+                    except Exception as upload_err:
+                        logger.error(
+                            f"storage_provider=supabase audit_id={audit.id} action=upload_pdf_failed error_code=supabase_upload_failed error={upload_err}"
+                        )
+                        raise RuntimeError(
+                            "Error subiendo PDF a Supabase Storage."
+                        ) from upload_err
+                else:
+                    logger.error(f"No se encontrÃ³ el PDF generado en {reports_dir}")
+                    raise FileNotFoundError("PDF file not generated")
+            except Exception as e:
+                logger.error(
+                    f"Error generando PDF con create_comprehensive_pdf: {e}",
+                    exc_info=True,
+                )
+                raise
+        finally:
+            try:
+                shutil.rmtree(reports_dir, ignore_errors=True)
+            except Exception as cleanup_err:
+                logger.warning(
+                    f"Error limpiando temporales de PDF audit={audit.id}: {cleanup_err}"
+                )
+
+
+

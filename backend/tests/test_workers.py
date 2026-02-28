@@ -123,4 +123,5 @@ def test_generate_pdf_task(
         audit_id=audit.id,
         report_type="PDF",
         file_path=ANY,  # El path exacto puede variar
+        file_size=ANY,
     )

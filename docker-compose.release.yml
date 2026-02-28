@@ -1,0 +1,177 @@
+services:
+  db:
+    profiles: ["legacy-local-db"]
+    image: postgres:16
+    container_name: auditor_db
+    environment:
+      POSTGRES_USER: ${DB_USER:-auditor}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-auditor_password}
+      POSTGRES_DB: ${DB_NAME:-auditor_db}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "${DB_HOST_PORT:-5433}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - auditor_network
+
+  redis:
+    image: redis:7-alpine
+    container_name: auditor_redis
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - auditor_network
+
+  backend:
+    image: auditor_geo-backend:latest
+    container_name: auditor_backend
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      DB_POOL_SIZE: ${DB_POOL_SIZE:-5}
+      DB_MAX_OVERFLOW: ${DB_MAX_OVERFLOW:-5}
+      DB_POOL_TIMEOUT: ${DB_POOL_TIMEOUT:-15}
+      DB_POOL_RECYCLE: ${DB_POOL_RECYCLE:-900}
+      DB_CONNECT_TIMEOUT_SECONDS: ${DB_CONNECT_TIMEOUT_SECONDS:-5}
+      REDIS_URL: ${REDIS_URL}
+      CELERY_BROKER_URL: ${CELERY_BROKER_URL}
+      CELERY_RESULT_BACKEND: ${CELERY_RESULT_BACKEND}
+      DEBUG: ${DEBUG:-False}
+      ENVIRONMENT: ${ENVIRONMENT:-production}
+      PYTHONUNBUFFERED: "1"
+      # API Keys
+      GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
+      CSE_ID: ${CSE_ID:-}
+      SERPER_API_KEY: ${SERPER_API_KEY:-}
+      NVIDIA_API_KEY: ${NVIDIA_API_KEY:-}
+      NV_API_KEY: ${NV_API_KEY:-}
+      NV_API_KEY_CODE: ${NV_API_KEY_CODE:-}
+      NV_API_KEY_ANALYSIS: ${NV_API_KEY_ANALYSIS:-}
+      NV_MODEL_ANALYSIS: ${NV_MODEL_ANALYSIS:-}
+      NV_BASE_URL: ${NV_BASE_URL:-}
+      GOOGLE_PAGESPEED_API_KEY: ${GOOGLE_PAGESPEED_API_KEY:-}
+      BACKEND_INTERNAL_JWT_SECRET: ${BACKEND_INTERNAL_JWT_SECRET:-}
+      SECRET_KEY: ${SECRET_KEY:-}
+      SENTRY_DSN: ${SENTRY_DSN:-}
+      FRONTEND_URL: ${FRONTEND_URL:-}
+      WEBHOOK_SECRET: ${WEBHOOK_SECRET:-}
+      DEFAULT_WEBHOOK_URL: ${DEFAULT_WEBHOOK_URL:-}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-}
+      CORS_ORIGINS: ${CORS_ORIGINS:-}
+      TRUSTED_HOSTS: ${TRUSTED_HOSTS:-}
+      FORWARDED_ALLOW_IPS: ${FORWARDED_ALLOW_IPS:-[]}
+      AUTH0_DOMAIN: ${AUTH0_DOMAIN:-}
+      AUTH0_ISSUER_BASE_URL: ${AUTH0_ISSUER_BASE_URL:-}
+      AUTH0_API_AUDIENCE: ${AUTH0_API_AUDIENCE:-}
+      AUTH0_API_SCOPES: ${AUTH0_API_SCOPES:-read:app}
+      AUTH0_EXPECTED_CLIENT_ID: ${AUTH0_EXPECTED_CLIENT_ID:-}
+      AUTH0_JWKS_CACHE_TTL_SECONDS: ${AUTH0_JWKS_CACHE_TTL_SECONDS:-21600}
+      AUTH0_JWKS_FETCH_TIMEOUT_MS: ${AUTH0_JWKS_FETCH_TIMEOUT_MS:-2000}
+      # Supabase
+      SUPABASE_URL: ${SUPABASE_URL:-}
+      SUPABASE_KEY: ${SUPABASE_KEY:-}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY:-}
+      SUPABASE_JWT_SECRET: ${SUPABASE_JWT_SECRET:-}
+      SUPABASE_STORAGE_BUCKET: ${SUPABASE_STORAGE_BUCKET:-audit-reports}
+      AUDIT_LOCAL_ARTIFACTS_ENABLED: ${AUDIT_LOCAL_ARTIFACTS_ENABLED:-false}
+    ports:
+      - "8000:8000"
+    depends_on:
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./logs:/app/logs
+      # No source code volume mount for production release
+    networks:
+      - auditor_network
+    restart: unless-stopped
+
+  frontend:
+    image: auditor_geo-frontend:latest
+    container_name: auditor_frontend
+    ports:
+      - "3000:3000"
+    environment:
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
+      NEXT_PUBLIC_BACKEND_URL: ${NEXT_PUBLIC_BACKEND_URL}
+      API_URL: ${API_URL}
+      NODE_ENV: production
+      AUTH0_SECRET: ${AUTH0_SECRET:-}
+      AUTH0_DOMAIN: ${AUTH0_DOMAIN:-}
+      AUTH0_CLIENT_ID: ${AUTH0_CLIENT_ID:-}
+      AUTH0_CLIENT_SECRET: ${AUTH0_CLIENT_SECRET:-}
+      APP_BASE_URL: ${APP_BASE_URL:-}
+      AUTH0_LOGIN_SCOPES: ${AUTH0_LOGIN_SCOPES:-openid profile email}
+      AUTH0_API_AUDIENCE: ${AUTH0_API_AUDIENCE:-}
+      AUTH0_API_SCOPES: ${AUTH0_API_SCOPES:-read:app}
+      NEXT_PUBLIC_AUTH0_API_AUDIENCE: ${NEXT_PUBLIC_AUTH0_API_AUDIENCE:-}
+      NEXT_PUBLIC_AUTH0_API_SCOPES: ${NEXT_PUBLIC_AUTH0_API_SCOPES:-read:app}
+    depends_on:
+      - backend
+    networks:
+      - auditor_network
+    restart: unless-stopped
+
+  worker:
+    image: auditor_geo-backend:latest
+    container_name: auditor_worker
+    command: celery -A app.workers.tasks worker --loglevel=info --concurrency=2 --prefetch-multiplier=1 --max-tasks-per-child=20
+    healthcheck:
+      disable: true
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      DB_POOL_SIZE: ${DB_POOL_SIZE:-5}
+      DB_MAX_OVERFLOW: ${DB_MAX_OVERFLOW:-5}
+      DB_POOL_TIMEOUT: ${DB_POOL_TIMEOUT:-15}
+      DB_POOL_RECYCLE: ${DB_POOL_RECYCLE:-900}
+      DB_CONNECT_TIMEOUT_SECONDS: ${DB_CONNECT_TIMEOUT_SECONDS:-5}
+      REDIS_URL: ${REDIS_URL}
+      CELERY_BROKER_URL: ${CELERY_BROKER_URL}
+      CELERY_RESULT_BACKEND: ${CELERY_RESULT_BACKEND}
+      ENVIRONMENT: ${ENVIRONMENT:-production}
+      # API Keys (Same as backend)
+      GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
+      CSE_ID: ${CSE_ID:-}
+      SERPER_API_KEY: ${SERPER_API_KEY:-}
+      NVIDIA_API_KEY: ${NVIDIA_API_KEY:-}
+      NV_API_KEY: ${NV_API_KEY:-}
+      NV_API_KEY_CODE: ${NV_API_KEY_CODE:-}
+      NV_API_KEY_ANALYSIS: ${NV_API_KEY_ANALYSIS:-}
+      NV_MODEL_ANALYSIS: ${NV_MODEL_ANALYSIS:-}
+      NV_BASE_URL: ${NV_BASE_URL:-}
+      GOOGLE_PAGESPEED_API_KEY: ${GOOGLE_PAGESPEED_API_KEY:-}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-}
+      # Supabase
+      SUPABASE_URL: ${SUPABASE_URL:-}
+      SUPABASE_KEY: ${SUPABASE_KEY:-}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY:-}
+      SUPABASE_JWT_SECRET: ${SUPABASE_JWT_SECRET:-}
+      SUPABASE_STORAGE_BUCKET: ${SUPABASE_STORAGE_BUCKET:-audit-reports}
+      AUDIT_LOCAL_ARTIFACTS_ENABLED: ${AUDIT_LOCAL_ARTIFACTS_ENABLED:-false}
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+        reservations:
+          memory: 512M
+    depends_on:
+      - backend
+    volumes:
+      - ./logs:/app/logs
+    networks:
+      - auditor_network
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+
+networks:
+  auditor_network:
+    driver: bridge

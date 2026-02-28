@@ -16,11 +16,9 @@ async def test_keywords_service_no_invented_data():
     mock_audit = {"structure": {"h1_check": {"details": {"example": "Test"}}}}
     url = "https://example.com"
 
-    # Este es el servicio que antes inventaba datos (TechCrunch, etc.)
-    keywords = KeywordsServicePlural.generate_keywords_from_audit(mock_audit, url)
-
-    assert isinstance(keywords, list)
-    assert len(keywords) == 0  # Ahora debe ser 0 tras mi cambio
+    # El servicio legacy (plural) ahora es stub explícito.
+    with pytest.raises(RuntimeError, match="stub"):
+        KeywordsServicePlural.generate_keywords_from_audit(mock_audit, url)
 
 
 @pytest.mark.asyncio
@@ -28,11 +26,9 @@ async def test_backlinks_service_no_invented_data():
     """Verifica que el servicio BacklinksService (plural) ya no invente datos."""
     url = "https://example.com"
 
-    # Este es el servicio que antes inventaba datos (Forbes, etc.)
-    result = BacklinksServicePlural.generate_backlinks_from_audit({}, url)
-
-    assert result["total_backlinks"] == 0
-    assert len(result["top_backlinks"]) == 0
+    # El servicio legacy (plural) ahora es stub explícito.
+    with pytest.raises(RuntimeError, match="stub"):
+        BacklinksServicePlural.generate_backlinks_from_audit({}, url)
 
 
 @pytest.mark.asyncio
@@ -41,9 +37,9 @@ async def test_rank_tracking_service_no_invented_data():
     url = "https://example.com"
     keywords = [{"keyword": "test"}]
 
-    result = RankTrackingServicePlural.generate_rankings_from_keywords(keywords, url)
-
-    assert len(result) == 0
+    # El servicio legacy (plural) ahora es stub explícito.
+    with pytest.raises(RuntimeError, match="stub"):
+        RankTrackingServicePlural.generate_rankings_from_keywords(keywords, url)
 
 
 @pytest.mark.asyncio

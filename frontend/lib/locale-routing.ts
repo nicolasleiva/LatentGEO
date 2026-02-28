@@ -26,6 +26,7 @@ export function getLocalePrefix(pathname?: string | null): `/${string}` {
 export function withLocale(pathname: string | null | undefined, href: string): string {
   if (isAbsoluteUrl(href)) return href;
   if (href.startsWith("/auth/")) return href;
+  if (href === "/signin" || href.startsWith("/signin/")) return href;
 
   const normalized = normalizePath(href);
   if (normalized === "/") return getLocalePrefix(pathname);

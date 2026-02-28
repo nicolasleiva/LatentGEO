@@ -39,7 +39,7 @@ if settings.SENTRY_DSN:
         pass
 
 # Import routes - the __init__.py handles missing dependencies gracefully
-from .api.routes import (
+from .api.routes import (  # noqa: E402
     ai_content,
     analytics,
     audits,
@@ -66,7 +66,7 @@ try:
 except Exception:
     score_history = None
 
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager  # noqa: E402
 
 
 @asynccontextmanager
@@ -82,7 +82,8 @@ async def lifespan(app: FastAPI):
         validate_environment()
         logger.info("OK: Validacion de entorno exitosa")
     except Exception as e:
-        logger.error(f"WARN: Advertencia de validacion: {e}")
+        logger.error(f"ERR: Environment validation failed: {e}")
+        raise RuntimeError(f"Environment validation failed: {e}") from e
 
     try:
         await init_db()
@@ -116,12 +117,13 @@ def create_app() -> FastAPI:
     # Always send explicit origins to support credentials (cookies/auth)
     # We avoid "*" even in DEBUG because it conflicts with allow_credentials=True
 
-    # Ensure localhost and defaults are included
     cors_origins = set(settings.CORS_ORIGINS)
-    cors_origins.add("http://frontend:3000")
-    cors_origins.add("http://localhost:3000")
-    cors_origins.add("http://localhost:8000")
-    cors_origins.add("http://127.0.0.1:3000")
+    # Keep local/docker defaults only for non-production-like environments.
+    if settings.DEBUG or settings.ENVIRONMENT.lower() in {"development", "dev", "local"}:
+        cors_origins.add("http://frontend:3000")
+        cors_origins.add("http://localhost:3000")
+        cors_origins.add("http://localhost:8000")
+        cors_origins.add("http://127.0.0.1:3000")
 
     app.add_middleware(
         CORSMiddleware,
@@ -160,80 +162,44 @@ def create_app() -> FastAPI:
     # ===== VERSIONAMIENTO (Level 3) =====
     v1 = APIRouter(prefix="/api/v1")
 
-    v1.include_router(audits.router)
-    v1.include_router(reports.router)
-    v1.include_router(analytics.router)
-    if search:
-        v1.include_router(search.router)
-    if pagespeed:
-        v1.include_router(pagespeed.router)
-    if backlinks:
-        v1.include_router(backlinks.router)
-    if keywords:
-        v1.include_router(keywords.router)
-    if rank_tracking:
-        v1.include_router(rank_tracking.router)
-    if llm_visibility:
-        v1.include_router(llm_visibility.router)
-    if ai_content:
-        v1.include_router(ai_content.router)
-    if content_editor:
-        v1.include_router(content_editor.router)
-    if content_analysis:
-        v1.include_router(content_analysis.router)
-    if geo:
-        v1.include_router(geo.router)
-    if hubspot:
-        v1.include_router(hubspot.router)
-    if github:
-        v1.include_router(github.router)
-    if webhooks:
-        v1.include_router(webhooks.router)
-    if sse:
-        v1.include_router(sse.router)
+    # Register once from a shared list to keep /api and /api/v1 surfaces in sync.
+    api_route_modules = [
+        audits,
+        reports,
+        analytics,
+        search,
+        pagespeed,
+        backlinks,
+        keywords,
+        rank_tracking,
+        llm_visibility,
+        ai_content,
+        content_editor,
+        content_analysis,
+        geo,
+        hubspot,
+        github,
+        webhooks,
+        sse,
+    ]
+
+    for module in api_route_modules:
+        if module:
+            v1.include_router(module.router)
 
     app.include_router(v1)
 
     # Legacy Support /api & Global Routes
-    app.include_router(audits.router, prefix="/api")
-    app.include_router(reports.router, prefix="/api")
-    app.include_router(analytics.router, prefix="/api")
-    if search:
-        app.include_router(search.router, prefix="/api")
-    if pagespeed:
-        app.include_router(pagespeed.router, prefix="/api")
-    if backlinks:
-        app.include_router(backlinks.router, prefix="/api")
-    if keywords:
-        app.include_router(keywords.router, prefix="/api")
-    if rank_tracking:
-        app.include_router(rank_tracking.router, prefix="/api")
-    if llm_visibility:
-        app.include_router(llm_visibility.router, prefix="/api")
-    if ai_content:
-        app.include_router(ai_content.router, prefix="/api")
-    if content_editor:
-        app.include_router(content_editor.router, prefix="/api")
-    if content_analysis:
-        app.include_router(content_analysis.router, prefix="/api")
-    if geo:
-        app.include_router(geo.router, prefix="/api")
-    if hubspot:
-        app.include_router(hubspot.router, prefix="/api")
-    if github:
-        app.include_router(github.router, prefix="/api")
-    if webhooks:
-        app.include_router(webhooks.router, prefix="/api")
-    if sse:
-        app.include_router(sse.router, prefix="/api")
+    for module in api_route_modules:
+        if module:
+            app.include_router(module.router, prefix="/api")
     app.include_router(health.router)
     if score_history:
         app.include_router(score_history.router)
     if realtime:
         app.include_router(realtime.router)
 
-    if search:
-        app.include_router(search.router)  # AI Chat search often at root
+    # Do not expose business endpoints at root paths.
 
     # ===== OPENAPI CUSTOMIZATION =====
     def custom_openapi():

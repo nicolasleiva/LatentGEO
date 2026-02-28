@@ -104,6 +104,9 @@ def _seed_owned_connection_and_repo(db_session):
 
 def test_fix_inputs_endpoints(client, db_session, monkeypatch, tmp_path):
     monkeypatch.setattr(settings, "REPORTS_DIR", str(tmp_path), raising=False)
+    monkeypatch.setattr(
+        settings, "AUDIT_LOCAL_ARTIFACTS_ENABLED", True, raising=False
+    )
     audit = _seed_fix_inputs_audit(db_session)
     connection_id, repo_id = _seed_owned_connection_and_repo(db_session)
 

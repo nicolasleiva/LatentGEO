@@ -1,27 +1,26 @@
-# Auth0 Configuration (required for authentication)
-# Copy this file to .env.local and fill in your values
+# Template only (no real credentials here).
+# Keep real credentials only in the project root `.env`.
 
-# Generate a random secret: openssl rand -hex 32
+# Auth0 (required)
 AUTH0_SECRET=your-auth0-secret-min-32-characters-long
-
-# Your frontend URL
-APP_BASE_URL=http://localhost:3000
-
-# Your Auth0 domain (from Auth0 dashboard)
-AUTH0_DOMAIN=YOUR_DOMAIN.auth0.com
-
-# Your Auth0 application credentials (from Auth0 dashboard)
+AUTH0_DOMAIN=your-tenant.auth0.com
 AUTH0_CLIENT_ID=your-auth0-client-id
 AUTH0_CLIENT_SECRET=your-auth0-client-secret
+APP_BASE_URL=http://localhost:3000
 
-# Backend API URL
-NEXT_PUBLIC_BACKEND_URL=http://localhost:8000
+# Auth0 API Access Token contract (required for backend calls)
+AUTH0_API_AUDIENCE=https://your-api-identifier
+AUTH0_API_SCOPES=read:app
+AUTH0_LOGIN_SCOPES=openid profile email
+
+# Public mirrors used by browser token helper
+NEXT_PUBLIC_AUTH0_API_AUDIENCE=https://your-api-identifier
+NEXT_PUBLIC_AUTH0_API_SCOPES=read:app
+
+# Backend API URLs
 NEXT_PUBLIC_API_URL=http://localhost:8000
-
-# For Docker internal communication (used in server-side rendering)
+NEXT_PUBLIC_BACKEND_URL=http://localhost:8000
 API_URL=http://backend:8000
 
-# Internal backend JWT signing key (must match backend SECRET_KEY or BACKEND_INTERNAL_JWT_SECRET)
-BACKEND_INTERNAL_JWT_SECRET=your-shared-internal-jwt-secret
-# Optional legacy fallback (same value as backend SECRET_KEY)
-SECRET_KEY=your-shared-internal-jwt-secret
+# Backend runtime policy (set in root .env)
+# AUDIT_LOCAL_ARTIFACTS_ENABLED=false
