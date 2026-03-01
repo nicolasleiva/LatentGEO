@@ -53,15 +53,5 @@ structlog>=24.1.0
 
 
 
-# Desarrollo y testing
-pytest==7.4.3
-pytest-asyncio==0.21.1
-hypothesis>=6.124.0,<6.150.0
-pytest-timeout==2.3.1
-black>=24.3.0
-flake8==6.1.0
-types-PyYAML>=6.0.12
-types-python-dateutil>=2.9.0
-
 # Optional - Google Ads Integration
 # google-ads  # Uncomment if using Google Ads keyword integration

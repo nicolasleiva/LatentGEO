@@ -1,3 +1,35 @@
+# Security Incident Remediation Log (2026-03-01)
+
+## Incident Summary
+
+- Scope: exposed credentials patterns and historical secret-scanning alerts.
+- Repository: `LatentGEO`.
+- Owner: Security/Platform team.
+- Status: in-progress with blocking controls enabled.
+
+## Immediate Actions Completed
+
+1. Removed hardcoded database credentials from migration helper.
+2. Added repository baseline file for `detect-secrets` (`.secrets.baseline`).
+3. Added PR/push workflow for secret regression blocking:
+   - `.github/workflows/secret-scan.yml`
+4. Updated pre-commit secret scanner config to use baseline consistently.
+
+## Required Operational Actions (outside code)
+
+1. Rotate and revoke exposed provider keys (OpenAI, Google, DB, OAuth, webhooks).
+2. Review provider audit logs for suspicious usage.
+3. Close GitHub secret-scanning alerts only after confirming revocation.
+
+## Evidence Checklist
+
+- [ ] Rotation ticket IDs recorded
+- [ ] Revocation timestamps recorded
+- [ ] Affected GitHub alert numbers recorded
+- [ ] Security review sign-off recorded
+
+---
+
 # 🔒 Mejoras de Seguridad Necesarias
 
 ## 1. Problemas de Seguridad Encontrados

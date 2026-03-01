@@ -45,8 +45,8 @@ jobs:
       run: |
         cd backend
         python -m pip install --upgrade pip
-        pip install ruff black==24.3.0 mypy isort bandit pip-audit
-        pip install -r requirements.txt
+        pip install -r requirements-dev.txt
+        pip install bandit pip-audit
 
     - name: Run Ruff (Python Linting)
       run: |
@@ -190,8 +190,7 @@ jobs:
     - name: Install dependencies
       run: |
         cd backend
-        pip install -r requirements.txt
-        pip install pytest pytest-asyncio pytest-cov httpx
+        pip install -r requirements-dev.txt
 
     - name: Run deterministic backend suite with coverage
       env:

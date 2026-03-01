@@ -45,8 +45,8 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r backend/requirements.txt
-          pip install ruff black==24.3.0 mypy isort bandit pip-audit pytest pytest-asyncio pytest-cov httpx
+          pip install -r backend/requirements-dev.txt
+          pip install bandit pip-audit
 
       - name: Backend static quality
         run: |
