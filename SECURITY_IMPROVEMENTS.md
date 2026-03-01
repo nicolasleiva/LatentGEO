@@ -10,10 +10,14 @@
 ## Immediate Actions Completed
 
 1. Removed hardcoded database credentials from migration helper.
-2. Added repository baseline file for `detect-secrets` (`.secrets.baseline`).
-3. Added PR/push workflow for secret regression blocking:
+2. Removed remaining hardcoded DB password from `backend/migrate_add_geo_score.py`.
+3. Added repository baseline file for `detect-secrets` (`.secrets.baseline`).
+4. Added PR/push workflow for secret regression blocking:
    - `.github/workflows/secret-scan.yml`
-4. Updated pre-commit secret scanner config to use baseline consistently.
+5. Updated pre-commit secret scanner config to use baseline consistently.
+6. Created and pushed sanitized history branch: `sanitized/main`.
+   - Source branch SHA before rewrite: `288b77dd608fdc6286648e91ecd27ecbf0c6f0d1`
+   - Sanitized branch SHA: `1cd0d544c5cde4794ad537e2b82bd47202df741b`
 
 ## Required Operational Actions (outside code)
 

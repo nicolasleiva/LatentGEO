@@ -2,6 +2,7 @@ import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from app.core.config import settings
 from app.services.backlinks_service import BacklinksService as BacklinksServicePlural
 from app.services.keywords_service import KeywordsService as KeywordsServicePlural
 from app.services.pdf_service import PDFService
@@ -10,34 +11,45 @@ from app.services.rank_tracking_service import (
 )
 
 
-@pytest.mark.asyncio
-async def test_keywords_service_no_invented_data():
+def test_keywords_service_no_invented_data():
     """Verifica que el servicio KeywordsService (plural) ya no invente datos."""
     mock_audit = {"structure": {"h1_check": {"details": {"example": "Test"}}}}
     url = "https://example.com"
 
-    keywords = KeywordsServicePlural.generate_keywords_from_audit(mock_audit, url)
+    with patch.object(settings, "ENVIRONMENT", "development"), patch.object(
+        settings, "STRICT_CONFIG", False
+    ):
+        keywords = KeywordsServicePlural.generate_keywords_from_audit(mock_audit, url)
+
     assert keywords == []
 
 
-@pytest.mark.asyncio
-async def test_backlinks_service_no_invented_data():
+def test_backlinks_service_no_invented_data():
     """Verifica que el servicio BacklinksService (plural) ya no invente datos."""
     url = "https://example.com"
 
-    backlinks = BacklinksServicePlural.generate_backlinks_from_audit({}, url)
+    with patch.object(settings, "ENVIRONMENT", "development"), patch.object(
+        settings, "STRICT_CONFIG", False
+    ):
+        backlinks = BacklinksServicePlural.generate_backlinks_from_audit({}, url)
+
     assert backlinks["total_backlinks"] == 0
     assert backlinks["referring_domains"] == 0
     assert backlinks["top_backlinks"] == []
 
 
-@pytest.mark.asyncio
-async def test_rank_tracking_service_no_invented_data():
+def test_rank_tracking_service_no_invented_data():
     """Verifica que el servicio RankTrackingService (plural) ya no invente datos."""
     url = "https://example.com"
     keywords = [{"keyword": "test"}]
 
-    rankings = RankTrackingServicePlural.generate_rankings_from_keywords(keywords, url)
+    with patch.object(settings, "ENVIRONMENT", "development"), patch.object(
+        settings, "STRICT_CONFIG", False
+    ):
+        rankings = RankTrackingServicePlural.generate_rankings_from_keywords(
+            keywords, url
+        )
+
     assert rankings == []
 
 

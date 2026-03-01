@@ -5,7 +5,7 @@ Tests correctness properties that should hold across all inputs.
 """
 
 from app.services.pipeline_service import PipelineService
-from hypothesis import given, settings
+from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 
 ASCII_TEXT = st.text(
@@ -84,7 +84,11 @@ class TestPageSpeedOpportunitiesProperties:
     """Property-based tests for PageSpeed opportunities extraction."""
 
     @given(opportunities=COMPLEX_OPPORTUNITIES_DICT)
-    @settings(max_examples=50, deadline=None)
+    @settings(
+        max_examples=50,
+        deadline=None,
+        suppress_health_check=[HealthCheck.too_slow],
+    )
     def test_property_opportunities_extraction_never_crashes_for_complex_dicts(
         self, opportunities
     ):
