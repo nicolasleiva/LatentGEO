@@ -16,6 +16,7 @@ from app.schemas import (
     AuditResponse,
     AuditSummary,
     ChatMessage,
+    PDFDownloadUrlResponse,
 )
 from app.services.audit_local_service import AuditLocalService
 from app.services.audit_service import AuditService
@@ -142,6 +143,71 @@ def _db_unavailable_http_exception(action: str) -> HTTPException:
             "message": "Database is temporarily unavailable. Retry in a few seconds.",
         },
     )
+
+
+def _resolve_signed_pdf_download_url(
+    audit_id: int,
+    db: Session,
+    current_user: AuthUser,
+) -> tuple[str, str]:
+    from app.models import Report
+    from app.services.supabase_service import SupabaseService
+
+    try:
+        audit = _get_owned_audit(db, audit_id, current_user)
+
+        if audit.status != AuditStatus.COMPLETED:
+            raise HTTPException(
+                status_code=400,
+                detail=f"El PDF aún no está listo. Estado actual: {audit.status.value}",
+            )
+
+        pdf_report = (
+            db.query(Report)
+            .filter(Report.audit_id == audit_id, Report.report_type == "PDF")
+            .order_by(Report.created_at.desc())
+            .first()
+        )
+
+        if not pdf_report or not pdf_report.file_path:
+            raise HTTPException(
+                status_code=404,
+                detail="El archivo PDF no existe. Por favor, genera el PDF primero usando POST /api/v1/audits/{audit_id}/generate-pdf",
+            )
+
+        pdf_path = str(pdf_report.file_path)
+        if not pdf_path.startswith("supabase://"):
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "Legacy local PDF paths are disabled in Supabase-only mode. "
+                    "Regenera el PDF para almacenarlo en Supabase."
+                ),
+            )
+    except HTTPException:
+        raise
+    except (OperationalError, DBAPIError) as db_err:
+        logger.error(
+            f"download_pdf_db_failed audit_id={audit_id} error_code=db_unavailable error={db_err}"
+        )
+        raise _db_unavailable_http_exception("download_pdf_lookup") from db_err
+
+    storage_path = pdf_path.replace("supabase://", "", 1)
+    try:
+        signed_url = SupabaseService.get_signed_url(
+            bucket=settings.SUPABASE_STORAGE_BUCKET,
+            path=storage_path,
+        )
+    except Exception as exc:
+        logger.error(
+            f"storage_provider=supabase audit_id={audit_id} action=download_pdf_failed error_code=supabase_signed_url_failed error={exc}"
+        )
+        raise HTTPException(
+            status_code=500,
+            detail="No se pudo generar el enlace de descarga de Supabase.",
+        ) from exc
+
+    return signed_url, storage_path
 
 
 async def run_audit_sync(audit_id: int):
@@ -964,69 +1030,36 @@ def download_audit_pdf(
     Descarga el PDF de una auditoría completada.
     Si el PDF no existe, sugiere generarlo primero.
     """
-    from app.models import Report
+    signed_url, storage_path = _resolve_signed_pdf_download_url(
+        audit_id=audit_id,
+        db=db,
+        current_user=current_user,
+    )
+    logger.info(
+        f"storage_provider=supabase audit_id={audit_id} action=download_pdf_redirect storage_path={storage_path}"
+    )
+    return RedirectResponse(url=signed_url, status_code=302)
 
-    try:
-        audit = _get_owned_audit(db, audit_id, current_user)
 
-        if audit.status != AuditStatus.COMPLETED:
-            raise HTTPException(
-                status_code=400,
-                detail=f"El PDF aún no está listo. Estado actual: {audit.status.value}",
-            )
-
-        # Get PDF path from Report table
-        pdf_report = (
-            db.query(Report)
-            .filter(Report.audit_id == audit_id, Report.report_type == "PDF")
-            .order_by(Report.created_at.desc())
-            .first()
-        )
-
-        if not pdf_report or not pdf_report.file_path:
-            raise HTTPException(
-                status_code=404,
-                detail="El archivo PDF no existe. Por favor, genera el PDF primero usando POST /api/v1/audits/{audit_id}/generate-pdf",
-            )
-
-        pdf_path = pdf_report.file_path
-
-        if not pdf_path.startswith("supabase://"):
-            raise HTTPException(
-                status_code=409,
-                detail=(
-                    "Legacy local PDF paths are disabled in Supabase-only mode. "
-                    "Regenera el PDF para almacenarlo en Supabase."
-                ),
-            )
-    except HTTPException:
-        raise
-    except (OperationalError, DBAPIError) as db_err:
-        logger.error(
-            f"download_pdf_db_failed audit_id={audit_id} error_code=db_unavailable error={db_err}"
-        )
-        raise _db_unavailable_http_exception("download_pdf_lookup") from db_err
-
-    from app.services.supabase_service import SupabaseService
-
-    storage_path = pdf_path.replace("supabase://", "", 1)
-    try:
-        signed_url = SupabaseService.get_signed_url(
-            bucket=settings.SUPABASE_STORAGE_BUCKET,
-            path=storage_path,
-        )
-        logger.info(
-            f"storage_provider=supabase audit_id={audit_id} action=download_pdf_redirect storage_path={storage_path}"
-        )
-        return RedirectResponse(url=signed_url, status_code=302)
-    except Exception as e:
-        logger.error(
-            f"storage_provider=supabase audit_id={audit_id} action=download_pdf_failed error_code=supabase_signed_url_failed error={e}"
-        )
-        raise HTTPException(
-            status_code=500,
-            detail="No se pudo generar el enlace de descarga de Supabase.",
-        ) from e
+@router.get("/{audit_id}/download-pdf-url", response_model=PDFDownloadUrlResponse)
+def get_audit_pdf_download_url(
+    audit_id: int,
+    db: Session = Depends(get_db),
+    current_user: AuthUser = Depends(get_current_user),
+):
+    signed_url, storage_path = _resolve_signed_pdf_download_url(
+        audit_id=audit_id,
+        db=db,
+        current_user=current_user,
+    )
+    logger.info(
+        f"storage_provider=supabase audit_id={audit_id} action=download_pdf_url_ok storage_path={storage_path}"
+    )
+    return PDFDownloadUrlResponse(
+        download_url=signed_url,
+        expires_in_seconds=3600,
+        storage_provider="supabase",
+    )
 
 
 @router.post("/chat/config", response_model=ChatMessage)

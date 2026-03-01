@@ -41,6 +41,7 @@ import { useAuditSSE } from "@/hooks/useAuditSSE";
 import { API_URL } from "@/lib/api";
 import { fetchWithBackendAuth } from "@/lib/backend-auth";
 import { getExternalIntelligenceBanner } from "@/lib/external-intelligence-status";
+import { getPdfDownloadUrlFromPayload, triggerFileDownload } from "@/lib/pdf-download";
 
 // Dynamic imports for heavy components
 const CoreWebVitalsChart = dynamic(
@@ -602,23 +603,26 @@ export default function AuditDetailPage() {
 
       await new Promise((resolve) => setTimeout(resolve, 500));
       const downloadRes = await fetchWithBackendAuth(
-        `${backendUrl}/api/v1/audits/${auditId}/download-pdf`,
+        `${backendUrl}/api/v1/audits/${auditId}/download-pdf-url`,
       );
       if (!downloadRes.ok) {
         const errorPayload = await downloadRes
           .json()
           .catch(() => ({ detail: "Download failed" }));
-        throw new Error(errorPayload.detail || "Download failed");
+        const detail =
+          typeof errorPayload?.detail === "string"
+            ? errorPayload.detail
+            : "Download failed";
+        if (downloadRes.status === 500) {
+          throw new Error(
+            "No se pudo obtener el enlace de descarga. Intenta nuevamente.",
+          );
+        }
+        throw new Error(detail);
       }
-      const pdfBlob = await downloadRes.blob();
-      const objectUrl = URL.createObjectURL(pdfBlob);
-      const link = document.createElement("a");
-      link.href = objectUrl;
-      link.download = `audit_${auditId}_report.pdf`;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      URL.revokeObjectURL(objectUrl);
+      const downloadPayload = await downloadRes.json().catch(() => null);
+      const downloadUrl = getPdfDownloadUrlFromPayload(downloadPayload);
+      triggerFileDownload(downloadUrl, `audit_${auditId}_report.pdf`);
     } catch (err) {
       console.error(err);
       alert(

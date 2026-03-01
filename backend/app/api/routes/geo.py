@@ -63,6 +63,14 @@ _ALLOWED_ERROR_CODES = {
     "internal_error",
 }
 
+_SAFE_HTTP_ERROR_MESSAGES = {
+    "KIMI_UNAVAILABLE": "Service temporarily unavailable.",
+    "KIMI_GENERATION_FAILED": "Upstream generation dependency failed.",
+    "ARTICLE_DATA_PACK_INCOMPLETE": "Required article data pack is incomplete.",
+    "INSUFFICIENT_AUTHORITY_SOURCES": "Insufficient authority sources.",
+    "INVALID_INPUT": "Invalid request payload.",
+}
+
 
 def _sanitize_geo_error_category(value: Any) -> str:
     if isinstance(value, str):
@@ -125,6 +133,16 @@ def _sanitize_geo_benchmark_payload(payload: Any) -> Dict[str, Any]:
     if "gap_analysis" in sanitized:
         sanitized["gap_analysis"] = _sanitize_geo_gap_analysis(sanitized["gap_analysis"])
     return sanitized
+
+
+def _safe_http_error_detail(code: str) -> Dict[str, str]:
+    normalized_code = str(code or "INTERNAL_ERROR").strip().upper()
+    return {
+        "code": normalized_code,
+        "message": _SAFE_HTTP_ERROR_MESSAGES.get(
+            normalized_code, "Internal server error."
+        ),
+    }
 
 
 # ============= Pydantic Models =============
@@ -1000,12 +1018,21 @@ async def analyze_commerce_query(
                 "generated_at", analysis.created_at.isoformat()
             ),
         }
-    except KimiSearchUnavailableError as exc:
-        raise HTTPException(status_code=503, detail=str(exc))
-    except KimiSearchError as exc:
-        raise HTTPException(status_code=502, detail=str(exc))
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
+    except KimiSearchUnavailableError:
+        raise HTTPException(
+            status_code=503,
+            detail=_safe_http_error_detail("KIMI_UNAVAILABLE"),
+        )
+    except KimiSearchError:
+        raise HTTPException(
+            status_code=502,
+            detail=_safe_http_error_detail("KIMI_GENERATION_FAILED"),
+        )
+    except ValueError:
+        raise HTTPException(
+            status_code=400,
+            detail=_safe_http_error_detail("INVALID_INPUT"),
+        )
     except Exception as e:
         logger.error(f"Error analyzing commerce query: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
@@ -1146,32 +1173,35 @@ async def generate_article_batch(
                     first_error = article["generation_error"]
                     break
             if first_error:
-                code = first_error.get("code")
+                code = str(first_error.get("code") or "").strip().upper()
                 if code == "KIMI_UNAVAILABLE":
-                    raise HTTPException(status_code=503, detail=first_error)
+                    raise HTTPException(
+                        status_code=503,
+                        detail=_safe_http_error_detail(code),
+                    )
                 if code == "KIMI_GENERATION_FAILED":
-                    raise HTTPException(status_code=502, detail=first_error)
+                    raise HTTPException(
+                        status_code=502,
+                        detail=_safe_http_error_detail(code),
+                    )
                 if code in {
                     "ARTICLE_DATA_PACK_INCOMPLETE",
                     "INSUFFICIENT_AUTHORITY_SOURCES",
                 }:
-                    raise HTTPException(status_code=422, detail=first_error)
+                    raise HTTPException(
+                        status_code=422,
+                        detail=_safe_http_error_detail(code),
+                    )
         return GeoArticleEngineService.serialize_batch(processed)
-    except KimiUnavailableError as exc:
+    except KimiUnavailableError:
         raise HTTPException(
             status_code=503,
-            detail={
-                "code": "KIMI_UNAVAILABLE",
-                "message": str(exc),
-            },
+            detail=_safe_http_error_detail("KIMI_UNAVAILABLE"),
         )
-    except KimiSearchUnavailableError as exc:
+    except KimiSearchUnavailableError:
         raise HTTPException(
             status_code=503,
-            detail={
-                "code": "KIMI_UNAVAILABLE",
-                "message": str(exc),
-            },
+            detail=_safe_http_error_detail("KIMI_UNAVAILABLE"),
         )
     except (ArticleDataPackIncompleteError, InsufficientAuthoritySourcesError) as exc:
         code = (
@@ -1181,21 +1211,18 @@ async def generate_article_batch(
         )
         raise HTTPException(
             status_code=422,
-            detail={
-                "code": code,
-                "message": str(exc),
-            },
+            detail=_safe_http_error_detail(code),
         )
-    except (KimiGenerationError, KimiSearchError) as exc:
+    except (KimiGenerationError, KimiSearchError):
         raise HTTPException(
             status_code=502,
-            detail={
-                "code": "KIMI_GENERATION_FAILED",
-                "message": str(exc),
-            },
+            detail=_safe_http_error_detail("KIMI_GENERATION_FAILED"),
         )
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
+    except ValueError:
+        raise HTTPException(
+            status_code=400,
+            detail=_safe_http_error_detail("INVALID_INPUT"),
+        )
     except Exception as e:
         logger.error(f"Error generating article batch: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")

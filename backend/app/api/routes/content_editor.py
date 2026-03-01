@@ -1,12 +1,14 @@
 from typing import Any, Dict, List
 
 from app.core.auth import AuthUser, get_current_user
+from app.core.logger import get_logger
 from app.services.content_editor_service import ContentEditorService
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 router = APIRouter(prefix="/tools/content-editor", tags=["content-editor"])
 service = ContentEditorService()
+logger = get_logger(__name__)
 
 
 class AnalyzeRequest(BaseModel):
@@ -30,5 +32,6 @@ async def analyze_content(
     try:
         result = await service.analyze_content(request.text, request.keyword)
         return result
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception:
+        logger.exception("Content editor analyze failed")
+        raise HTTPException(status_code=500, detail="Internal server error")

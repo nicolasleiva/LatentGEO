@@ -936,6 +936,56 @@
         }
       }
     },
+    "/api/v1/audits/{audit_id}/download-pdf-url": {
+      "get": {
+        "tags": [
+          "audits"
+        ],
+        "summary": "Get Audit Pdf Download Url",
+        "operationId": "get_audit_pdf_download_url_api_v1_audits__audit_id__download_pdf_url_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "audit_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Audit Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PDFDownloadUrlResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No encontrado"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/audits/chat/config": {
       "post": {
         "tags": [
@@ -7522,6 +7572,29 @@
           "checked_at"
         ],
         "title": "LLMVisibilityResponse"
+      },
+      "PDFDownloadUrlResponse": {
+        "properties": {
+          "download_url": {
+            "type": "string",
+            "title": "Download Url"
+          },
+          "expires_in_seconds": {
+            "type": "integer",
+            "title": "Expires In Seconds",
+            "default": 3600
+          },
+          "storage_provider": {
+            "type": "string",
+            "title": "Storage Provider",
+            "default": "supabase"
+          }
+        },
+        "type": "object",
+        "required": [
+          "download_url"
+        ],
+        "title": "PDFDownloadUrlResponse"
       },
       "PDFRequest": {
         "properties": {

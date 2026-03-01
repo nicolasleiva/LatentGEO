@@ -149,6 +149,12 @@ class PDFResponse(BaseModel):
     message: str
 
 
+class PDFDownloadUrlResponse(BaseModel):
+    download_url: str
+    expires_in_seconds: int = 3600
+    storage_provider: str = "supabase"
+
+
 class AuditAnalytics(BaseModel):
     total_audits: int
     completed: int

@@ -70,15 +70,35 @@ class SupabaseService:
         """Generar URL firmada para descarga segura"""
         client = cls.get_client()
         try:
-            # create_signed_url retorna str o dict dependiendo de la versión/implementación
-            # Asumimos que la librería oficial retorna el JSON response
             res = client.storage.from_(bucket).create_signed_url(path, expiry_seconds)
-            
-            # En supabase-py v2, create_signed_url retorna un dict con 'signedURL'
-            if isinstance(res, dict) and "signedURL" in res:
-                return res["signedURL"]
-            # Fallback por si cambia la API
-            return str(res)
+
+            signed_url: Optional[str] = None
+            if isinstance(res, dict):
+                for key in ("signedURL", "signedUrl", "signed_url"):
+                    value = res.get(key)
+                    if isinstance(value, str) and value.strip():
+                        signed_url = value.strip()
+                        break
+            elif isinstance(res, str) and res.strip():
+                signed_url = res.strip()
+
+            if not signed_url:
+                raise ValueError(
+                    f"Supabase create_signed_url response inválido: {type(res).__name__}"
+                )
+
+            if signed_url.startswith("http://") or signed_url.startswith("https://"):
+                return signed_url
+
+            if signed_url.startswith("/"):
+                base_url = (settings.SUPABASE_URL or "").rstrip("/")
+                if not base_url:
+                    raise ValueError(
+                        "SUPABASE_URL faltante para resolver signed URL relativa."
+                    )
+                return f"{base_url}{signed_url}"
+
+            raise ValueError(f"Formato de signed URL inválido: {signed_url}")
         except Exception as e:
             logger.error(f"Error generando signed URL: {e}")
             raise e

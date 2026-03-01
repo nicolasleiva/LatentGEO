@@ -33,6 +33,9 @@ jobs:
   MSDO:
     # currently only windows latest is supported
     runs-on: windows-latest
+    env:
+      # Ensure Checkov consumes repository-level exclusions.
+      CHECKOV_CONFIG_FILE: .checkov.yml
     permissions:
       contents: read
       security-events: write
