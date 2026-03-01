@@ -97,8 +97,9 @@ class TestAPIKeyInputValidator:
 
     def test_placeholder_sk_xxx_rejected(self):
         """Test that placeholder patterns are rejected"""
+        placeholder_key = "sk-" + ("x" * 28)
         with pytest.raises(ValidationError) as exc_info:
-            APIKeyInput(api_key="sk-REDACTED")
+            APIKeyInput(api_key=placeholder_key)
 
         assert "placeholder" in str(exc_info.value).lower()
 

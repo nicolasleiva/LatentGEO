@@ -61,7 +61,8 @@ async def readiness_check(db: Session = Depends(get_db)):
     except Exception as e:
         logger.error(f"Readiness check failed: {e}")
         return JSONResponse(
-            status_code=503, content={"status": "not_ready", "error": str(e)}
+            status_code=503,
+            content={"status": "not_ready", "error": "dependency_unavailable"},
         )
 
 

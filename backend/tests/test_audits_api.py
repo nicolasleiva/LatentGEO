@@ -133,3 +133,18 @@ def test_configure_chat_preserves_language_when_omitted(client: TestClient):
     assert detail_response.status_code == 200
     assert detail_response.json()["language"] == "es"
 
+
+def test_download_pdf_url_rejects_non_completed_audit(client: TestClient):
+    create_response = client.post(
+        "/api/v1/audits/",
+        json={
+            "url": "https://example-download-check.com",
+        },
+    )
+    assert create_response.status_code == 202
+    audit_id = create_response.json()["id"]
+
+    download_response = client.get(f"/api/v1/audits/{audit_id}/download-pdf-url")
+    assert download_response.status_code == 400
+    assert "aún no está listo" in download_response.json()["detail"]
+

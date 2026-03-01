@@ -14,12 +14,14 @@ from ...core.access_control import (
 from ...core.auth import AuthUser, get_current_user
 from ...core.oauth_state import build_oauth_state, validate_oauth_state
 from ...core.database import get_db
+from ...core.logger import get_logger
 from ...integrations.hubspot.auth import HubSpotAuth
 from ...integrations.hubspot.service import HubSpotService
 from ...models import AIContentSuggestion, Audit, AuditedPage
 from ...models.hubspot import HubSpotChange, HubSpotConnection, HubSpotPage
 
 router = APIRouter(prefix="/hubspot", tags=["hubspot"])
+logger = get_logger(__name__)
 
 
 class ConnectRequest(BaseModel):
@@ -120,10 +122,11 @@ async def oauth_callback(
 
     except HTTPException:
         raise
-    except PermissionError as e:
-        raise HTTPException(status_code=403, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    except PermissionError:
+        raise HTTPException(status_code=403, detail="Forbidden")
+    except Exception:
+        logger.exception("HubSpot OAuth callback failed")
+        raise HTTPException(status_code=400, detail="Invalid OAuth callback request")
 
 
 @router.get("/connections")
@@ -184,8 +187,9 @@ async def sync_pages(
         return {"status": "success", "synced_count": len(pages)}
     except HTTPException:
         raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception:
+        logger.exception("HubSpot sync pages failed")
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.get("/pages/{connection_id}")
@@ -375,11 +379,11 @@ async def batch_apply_recommendations(
                     }
                 )
 
-        except Exception as e:
+        except Exception:
             results["failed"].append(
                 {
                     "page_id": rec.get("hubspot_page_id"),
-                    "error": str(e),
+                    "error": "internal_error",
                     "field": rec.get("field", "unknown"),
                 }
             )
@@ -440,5 +444,6 @@ async def rollback_change(
                 detail=f"Failed to rollback: {new_change.error_message}",
             )
 
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception:
+        logger.exception("HubSpot rollback failed")
+        raise HTTPException(status_code=500, detail="Internal server error")

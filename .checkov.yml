@@ -1,2 +1,6 @@
+# OpenAPI is scanned in dedicated workflow .github/workflows/openapi-security.yml
+# with explicit controls (including CKV_OPENAPI_5 exception rationale for HTTP bearer).
 skip-framework:
   - openapi
+skip-path:
+  - frontend/lib/api-client/openapi.json

@@ -217,9 +217,9 @@ def get_auth_url(current_user: AuthUser = Depends(get_current_user)):
         state = build_oauth_state("github", current_user)
         data = GitHubOAuth.get_authorization_url(state=state)
         return data
-    except Exception as e:
-        logger.error(f"Error generating GitHub auth URL: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception:
+        logger.exception("Error generating GitHub auth URL")
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.get("/oauth/authorize")
@@ -231,9 +231,9 @@ def oauth_authorize(current_user: AuthUser = Depends(get_current_user)):
         state = build_oauth_state("github", current_user)
         auth_data = GitHubOAuth.get_authorization_url(state=state)
         return RedirectResponse(url=auth_data["url"])
-    except Exception as e:
-        logger.error(f"Error redirecting to GitHub OAuth: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception:
+        logger.exception("Error redirecting to GitHub OAuth")
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.post("/callback")
@@ -273,11 +273,11 @@ async def oauth_callback(
 
     except HTTPException:
         raise
-    except PermissionError as e:
-        raise HTTPException(status_code=403, detail=str(e))
-    except Exception as e:
-        logger.error(f"GitHub OAuth callback error: {e}")
-        raise HTTPException(status_code=400, detail=str(e))
+    except PermissionError:
+        raise HTTPException(status_code=403, detail="Forbidden")
+    except Exception:
+        logger.exception("GitHub OAuth callback error")
+        raise HTTPException(status_code=400, detail="Invalid OAuth callback request")
 
 
 @router.get("/connections")
@@ -336,9 +336,9 @@ async def sync_repositories(
         return {"status": "success", "synced_count": len(repos)}
     except HTTPException:
         raise
-    except Exception as e:
-        logger.error(f"Error syncing repositories: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception:
+        logger.exception("Error syncing repositories")
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.get("/repositories/{connection_id}", response_model=List[RepositoryResponse])
@@ -384,9 +384,9 @@ async def analyze_repository(
         }
     except HTTPException:
         raise
-    except Exception as e:
-        logger.error(f"Error analyzing repository: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception:
+        logger.exception("Error analyzing repository")
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.post("/create-pr", response_model=PRResponse)
@@ -418,9 +418,9 @@ async def create_pull_request(
 
     except HTTPException:
         raise
-    except Exception as e:
-        logger.error(f"Error creating PR: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception:
+        logger.exception("Error creating PR")
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.get("/prs/{repo_id}", response_model=List[PRResponse])
@@ -488,9 +488,9 @@ async def audit_repository_blogs(
 
     except HTTPException:
         raise
-    except Exception as e:
-        logger.error(f"Error auditing blogs: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception:
+        logger.exception("Error auditing blogs")
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.post("/create-blog-fixes-pr/{connection_id}/{repo_id}")
@@ -579,9 +579,9 @@ async def create_blog_fixes_pr(
 
     except HTTPException:
         raise
-    except Exception as e:
-        logger.error(f"Error creating blog fixes PR: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception:
+        logger.exception("Error creating blog fixes PR")
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.get("/audit-to-fixes/{audit_id}")
@@ -834,9 +834,9 @@ async def get_geo_score(
 
         return geo_score
 
-    except Exception as e:
-        logger.error(f"Error calculating GEO score: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception:
+        logger.exception("Error calculating GEO score")
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.post("/audit-blogs-geo/{connection_id}/{repo_id}")
@@ -897,9 +897,9 @@ async def audit_repository_blogs_geo(
 
     except HTTPException:
         raise
-    except Exception as e:
-        logger.error(f"Error auditing blogs with GEO: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception:
+        logger.exception("Error auditing blogs with GEO")
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 class CreateGeoPRRequest(BaseModel):
@@ -1008,9 +1008,9 @@ async def create_geo_fixes_pr(
 
     except HTTPException:
         raise
-    except Exception as e:
-        logger.error(f"Error creating GEO fixes PR: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception:
+        logger.exception("Error creating GEO fixes PR")
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.get("/geo-compare/{audit_id}")
@@ -1056,9 +1056,9 @@ async def compare_geo_with_competitors(
 
         return comparison
 
-    except Exception as e:
-        logger.error(f"Error comparing GEO scores: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception:
+        logger.exception("Error comparing GEO scores")
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.post("/webhook")
@@ -1122,11 +1122,11 @@ async def github_webhook(
         return {"status": "success", "event": x_github_event}
 
     except Exception as e:
-        logger.error(f"Error processing webhook: {e}")
+        logger.exception("Error processing webhook")
         if "event" in locals():
             event.error_message = str(e)
             db.commit()
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 # Helper functions
@@ -1287,9 +1287,9 @@ async def create_auto_fix_pr(
 
     except HTTPException:
         raise
-    except ValueError as e:
-        logger.error(f"Validation error: {e}")
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        logger.error(f"Error creating auto-fix PR: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+    except ValueError:
+        logger.exception("Validation error creating auto-fix PR")
+        raise HTTPException(status_code=400, detail="Invalid request data")
+    except Exception:
+        logger.exception("Error creating auto-fix PR")
+        raise HTTPException(status_code=500, detail="Internal server error")
