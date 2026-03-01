@@ -1,38 +1,56 @@
+"""
+Legacy one-off migration helper.
+
+Use only when Alembic is not available in the target environment.
+Requires DATABASE_URL in environment.
+"""
+
+from __future__ import annotations
+
 import os
+import sys
+from contextlib import closing
 
 import psycopg2
 
-conn = psycopg2.connect(
-    host="localhost",
-    port=5432,
-    database="auditor_db",
-    user="auditor",
-    password="auditor123",
-)
 
-cur = conn.cursor()
+def _require_database_url() -> str:
+    database_url = os.getenv("DATABASE_URL", "").strip()
+    if not database_url:
+        raise RuntimeError(
+            "DATABASE_URL is required. Refusing to run with hardcoded credentials."
+        )
+    return database_url
 
-try:
-    cur.execute(
-        "ALTER TABLE audits ADD COLUMN IF NOT EXISTS language VARCHAR(10) DEFAULT 'es'"
-    )
-    print("✓ language column added")
-except Exception as e:
-    print(f"language: {e}")
 
-try:
-    cur.execute("ALTER TABLE audits ADD COLUMN IF NOT EXISTS competitors JSON")
-    print("✓ competitors column added")
-except Exception as e:
-    print(f"competitors: {e}")
+def main() -> int:
+    database_url = _require_database_url()
 
-try:
-    cur.execute("ALTER TABLE audits ADD COLUMN IF NOT EXISTS market VARCHAR(50)")
-    print("✓ market column added")
-except Exception as e:
-    print(f"market: {e}")
+    statements = [
+        (
+            "language",
+            "ALTER TABLE audits ADD COLUMN IF NOT EXISTS language VARCHAR(10) DEFAULT 'es'",
+        ),
+        (
+            "competitors",
+            "ALTER TABLE audits ADD COLUMN IF NOT EXISTS competitors JSON",
+        ),
+        ("market", "ALTER TABLE audits ADD COLUMN IF NOT EXISTS market VARCHAR(50)"),
+    ]
 
-conn.commit()
-cur.close()
-conn.close()
-print("\n✅ Migration completed")
+    with closing(psycopg2.connect(database_url)) as conn:
+        with conn, conn.cursor() as cur:
+            for label, statement in statements:
+                cur.execute(statement)
+                print(f"[ok] {label} column migration statement executed")
+
+    print("\n[ok] Migration completed")
+    return 0
+
+
+if __name__ == "__main__":
+    try:
+        raise SystemExit(main())
+    except Exception as exc:
+        print(f"[error] migration failed: {exc}", file=sys.stderr)
+        raise SystemExit(1)

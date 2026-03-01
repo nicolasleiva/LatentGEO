@@ -28,8 +28,8 @@ async def health_check(db: Session = Depends(get_db)):
     try:
         db.execute(text("SELECT 1"))
         health_status["services"]["database"] = "connected"
-    except Exception as e:
-        logger.error(f"Database health check failed: {e}")
+    except Exception:
+        logger.error("Database health check failed")
         health_status["services"]["database"] = "disconnected"
         health_status["status"] = "unhealthy"
 
@@ -40,8 +40,8 @@ async def health_check(db: Session = Depends(get_db)):
             health_status["services"]["redis"] = "connected"
         else:
             health_status["services"]["redis"] = "disabled"
-    except Exception as e:
-        logger.error(f"Redis health check failed: {e}")
+    except Exception:
+        logger.error("Redis health check failed")
         health_status["services"]["redis"] = "disconnected"
         if health_status["status"] == "healthy":
             health_status["status"] = "degraded"
@@ -58,8 +58,8 @@ async def readiness_check(db: Session = Depends(get_db)):
     try:
         db.execute(text("SELECT 1"))
         return JSONResponse(status_code=200, content={"status": "ready"})
-    except Exception as e:
-        logger.error(f"Readiness check failed: {e}")
+    except Exception:
+        logger.error("Readiness check failed")
         return JSONResponse(
             status_code=503,
             content={"status": "not_ready", "error": "dependency_unavailable"},
