@@ -1,5 +1,4 @@
 import pytest
-
 from app.core import database as database_module
 
 

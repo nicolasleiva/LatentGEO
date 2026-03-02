@@ -139,4 +139,3 @@ def test_commerce_query_requires_query_and_market(client, db_session):
         json={"audit_id": audit_id, "query": "zapatilla nike"},
     )
     assert missing_market.status_code == 422
-

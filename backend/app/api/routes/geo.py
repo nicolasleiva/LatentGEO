@@ -131,7 +131,9 @@ def _sanitize_geo_benchmark_payload(payload: Any) -> Dict[str, Any]:
 
     sanitized = dict(payload)
     if "gap_analysis" in sanitized:
-        sanitized["gap_analysis"] = _sanitize_geo_gap_analysis(sanitized["gap_analysis"])
+        sanitized["gap_analysis"] = _sanitize_geo_gap_analysis(
+            sanitized["gap_analysis"]
+        )
     return sanitized
 
 
@@ -1398,4 +1400,3 @@ async def get_geo_dashboard(
     except Exception as e:
         logger.error(f"Error getting GEO dashboard: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
-

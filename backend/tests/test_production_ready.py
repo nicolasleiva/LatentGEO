@@ -73,7 +73,8 @@ def test_app(test_db):
 @pytest.fixture
 def client(test_app):
     """Test client with configured app"""
-    return TestClient(test_app)
+    with TestClient(test_app) as test_client:
+        yield test_client
 
 
 class TestProductionReadiness:
@@ -131,7 +132,7 @@ class TestWebhookEndpoints:
             signature = "sha256=" + WebhookService.generate_signature(body, secret)
             response = client.post(
                 "/api/v1/webhooks/github/incoming",
-                data=body,
+                content=body,
                 headers={
                     "X-GitHub-Event": "ping",
                     "X-Hub-Signature-256": signature,
@@ -166,4 +167,3 @@ class TestMiddlewareIntegration:
         response = client.get("/health")
         assert "X-Response-Time" in response.headers
         assert response.status_code == 200
-

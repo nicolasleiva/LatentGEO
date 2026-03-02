@@ -2,7 +2,6 @@ import asyncio
 import time
 
 import pytest
-
 from app.core import external_resilience as resilience
 from app.core.config import settings
 

@@ -121,7 +121,13 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
     async def dispatch(self, request: Request, call_next):
         # Skip rate limit for health, docs, and metrics
-        if request.url.path in ["/health", "/health/live", "/health/ready", "/docs", "/openapi.json"]:
+        if request.url.path in [
+            "/health",
+            "/health/live",
+            "/health/ready",
+            "/docs",
+            "/openapi.json",
+        ]:
             return await call_next(request)
 
         request_path = request.url.path

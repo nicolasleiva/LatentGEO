@@ -1,6 +1,6 @@
-import asyncio
 import json
 
+import pytest
 from app.core.config import settings
 from app.models import AIContentSuggestion, Audit, AuditStatus, Keyword
 from app.services.geo_article_engine_service import GeoArticleEngineService
@@ -96,7 +96,10 @@ def test_extract_competitors_prefers_valid_audited_domains(db_session):
     assert all("instagram.com" not in c["domain"] for c in competitors)
 
 
-def test_process_batch_uses_audited_competitor_not_serp_social(db_session, monkeypatch):
+@pytest.mark.asyncio
+async def test_process_batch_uses_audited_competitor_not_serp_social(
+    db_session, monkeypatch
+):
     audit = _seed_audit(
         db_session,
         competitors=[
@@ -211,14 +214,15 @@ def test_process_batch_uses_audited_competitor_not_serp_social(db_session, monke
         "app.services.geo_article_engine_service.get_llm_function", lambda: fake_llm
     )
 
-    processed = asyncio.run(GeoArticleEngineService.process_batch(db_session, batch.id))
+    processed = await GeoArticleEngineService.process_batch(db_session, batch.id)
     assert processed.status == "completed"
     article = processed.articles[0]
     assert article["generation_status"] == "completed"
     assert article["competitor_to_beat"] == "royalcanin.com"
 
 
-def test_process_batch_sets_competitor_to_none_when_no_valid_audited_competitor(
+@pytest.mark.asyncio
+async def test_process_batch_sets_competitor_to_none_when_no_valid_audited_competitor(
     db_session, monkeypatch
 ):
     audit = _seed_audit(
@@ -258,7 +262,7 @@ def test_process_batch_sets_competitor_to_none_when_no_valid_audited_competitor(
         "app.services.geo_article_engine_service.get_llm_function", lambda: fake_llm
     )
 
-    processed = asyncio.run(GeoArticleEngineService.process_batch(db_session, batch.id))
+    processed = await GeoArticleEngineService.process_batch(db_session, batch.id)
     assert processed.status == "completed"
     article = processed.articles[0]
     assert article["generation_status"] == "completed"
@@ -293,4 +297,3 @@ def test_audits_competitors_route_filters_social_domains(client, db_session):
     }
     missing_domains = {"royalcanin.com"} - normalized_domains
     assert not missing_domains
-

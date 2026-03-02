@@ -10,7 +10,7 @@ from typing import Any, Dict, List, Optional
 from urllib.parse import urlparse
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from sqlalchemy.orm import Session
 
 from ...core.access_control import (
@@ -107,8 +107,7 @@ class RepositoryResponse(BaseModel):
     auto_audit: bool
     auto_pr: bool
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class CreatePRRequest(BaseModel):
@@ -127,8 +126,7 @@ class PRResponse(BaseModel):
     files_changed: int
     expected_improvements: Optional[Dict]
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class FixInputField(BaseModel):
@@ -295,11 +293,7 @@ def get_connections(
             connections.append(connection)
             continue
 
-        if (
-            not connection.owner_user_id
-            and not connection.owner_email
-            and current_user
-        ):
+        if not connection.owner_user_id and not connection.owner_email and current_user:
             try:
                 claimed = ensure_connection_access(
                     connection,

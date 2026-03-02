@@ -1,10 +1,9 @@
-from fastapi.testclient import TestClient
-
 from app.core.database import get_db
 from app.core.llm_kimi import KimiSearchError
 from app.main import app
 from app.models import Audit, AuditStatus
 from app.services.geo_commerce_service import GeoCommerceService
+from fastapi.testclient import TestClient
 
 
 def _seed_audit(db_session) -> int:

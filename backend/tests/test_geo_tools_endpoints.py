@@ -296,4 +296,3 @@ def test_geo_legacy_endpoints_shapes(client, db_session):
     analyze_json = analyze.json()
     assert "score" in analyze_json
     assert "geo_readiness" in analyze_json
-

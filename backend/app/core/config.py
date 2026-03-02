@@ -7,8 +7,7 @@ import os
 from typing import Any, Optional
 
 from pydantic import field_validator
-from pydantic_settings import BaseSettings
-from pydantic_settings import SettingsConfigDict
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 def _parse_string_list(value: Any) -> list[str]:
@@ -40,6 +39,7 @@ def _parse_string_list(value: Any) -> list[str]:
 
 class Settings(BaseSettings):
     """Configuración de la aplicación"""
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
@@ -59,12 +59,8 @@ class Settings(BaseSettings):
     DB_MAX_OVERFLOW: int = int(os.getenv("DB_MAX_OVERFLOW", "5"))
     DB_POOL_TIMEOUT: int = int(os.getenv("DB_POOL_TIMEOUT", "15"))
     DB_POOL_RECYCLE: int = int(os.getenv("DB_POOL_RECYCLE", "900"))
-    DB_POOL_PRE_PING: bool = (
-        os.getenv("DB_POOL_PRE_PING", "False").lower() == "true"
-    )
-    DB_CONNECT_TIMEOUT_SECONDS: int = int(
-        os.getenv("DB_CONNECT_TIMEOUT_SECONDS", "5")
-    )
+    DB_POOL_PRE_PING: bool = os.getenv("DB_POOL_PRE_PING", "False").lower() == "true"
+    DB_CONNECT_TIMEOUT_SECONDS: int = int(os.getenv("DB_CONNECT_TIMEOUT_SECONDS", "5"))
 
     # APIs externas
     GOOGLE_API_KEY: Optional[str] = None
@@ -290,9 +286,7 @@ class Settings(BaseSettings):
     SUPABASE_SERVICE_ROLE_KEY: Optional[str] = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
     SUPABASE_JWT_SECRET: Optional[str] = os.getenv("SUPABASE_JWT_SECRET")
     SUPABASE_STORAGE_BUCKET: str = os.getenv("SUPABASE_STORAGE_BUCKET", "audit-reports")
-    SUPABASE_TIMEOUT_SECONDS: float = float(
-        os.getenv("SUPABASE_TIMEOUT_SECONDS", "30")
-    )
+    SUPABASE_TIMEOUT_SECONDS: float = float(os.getenv("SUPABASE_TIMEOUT_SECONDS", "30"))
 
     # ===== WEBHOOK SETTINGS =====
     SENTRY_DSN: Optional[str] = os.getenv("SENTRY_DSN")
@@ -320,7 +314,15 @@ class Settings(BaseSettings):
             normalized = value.strip().lower()
             if normalized in {"1", "true", "yes", "on", "debug", "development", "dev"}:
                 return True
-            if normalized in {"0", "false", "no", "off", "release", "prod", "production"}:
+            if normalized in {
+                "0",
+                "false",
+                "no",
+                "off",
+                "release",
+                "prod",
+                "production",
+            }:
                 return False
         return value
 

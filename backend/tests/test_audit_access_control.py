@@ -1,7 +1,8 @@
+from urllib.parse import urlparse
+
 from app.core.auth import AuthUser, get_current_user
 from app.main import app
 from app.models import Audit, AuditStatus
-from urllib.parse import urlparse
 
 
 def _normalize_host(value):
@@ -17,7 +18,9 @@ def _other_user():
 
 
 def test_audit_detail_forbidden_for_non_owner(client):
-    create_res = client.post("/api/v1/audits/", json={"url": "https://owner-example.com"})
+    create_res = client.post(
+        "/api/v1/audits/", json={"url": "https://owner-example.com"}
+    )
     assert create_res.status_code == 202
     audit_id = create_res.json()["id"]
 
@@ -53,9 +56,10 @@ def test_list_audits_returns_only_current_user_data(client, db_session):
     list_res = client.get("/api/v1/audits/")
     assert list_res.status_code == 200
     audits = list_res.json()
-    returned_hosts = {_normalize_host(urlparse(item["url"]).hostname) for item in audits}
+    returned_hosts = {
+        _normalize_host(urlparse(item["url"]).hostname) for item in audits
+    }
 
     missing_hosts = {"owned-site.com"} - returned_hosts
     assert not missing_hosts
     assert "other-site.com" not in returned_hosts
-

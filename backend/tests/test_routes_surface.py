@@ -1,9 +1,8 @@
 from unittest.mock import patch
 
-from fastapi.testclient import TestClient
-
 from app import main as main_module
 from app.core.config import settings
+from fastapi.testclient import TestClient
 
 
 def _build_app(*, debug: bool, legacy_redirect_enabled: bool):
@@ -15,12 +14,11 @@ def _build_app(*, debug: bool, legacy_redirect_enabled: bool):
 
 def test_prod_legacy_api_path_returns_404_and_v1_is_registered():
     app = _build_app(debug=False, legacy_redirect_enabled=False)
-    client = TestClient(app)
-
-    legacy_response = client.get("/api/audits", follow_redirects=False)
-    canonical_response = client.get("/api/v1/audits", follow_redirects=False)
-    health_legacy_response = client.get("/api/health", follow_redirects=False)
-    health_live_response = client.get("/health/live", follow_redirects=False)
+    with TestClient(app) as client:
+        legacy_response = client.get("/api/audits", follow_redirects=False)
+        canonical_response = client.get("/api/v1/audits", follow_redirects=False)
+        health_legacy_response = client.get("/api/health", follow_redirects=False)
+        health_live_response = client.get("/health/live", follow_redirects=False)
 
     assert legacy_response.status_code == 404
     assert health_legacy_response.status_code == 404
@@ -30,9 +28,8 @@ def test_prod_legacy_api_path_returns_404_and_v1_is_registered():
 
 def test_debug_legacy_redirect_is_307_before_auth_or_rate_limit():
     app = _build_app(debug=True, legacy_redirect_enabled=True)
-    client = TestClient(app)
-
-    response = client.get("/api/audits", follow_redirects=False)
+    with TestClient(app) as client:
+        response = client.get("/api/audits", follow_redirects=False)
 
     assert response.status_code == 307
     assert response.headers.get("location") == "/api/v1/audits"

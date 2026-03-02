@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import pytest
 from app.core.access_control import ensure_connection_access
@@ -94,7 +94,7 @@ def test_hubspot_cross_user_connection_is_forbidden(client, db_session):
         access_token="encrypted-access",
         refresh_token="encrypted-refresh",
         scopes="content,cms.pages.read,cms.pages.write",
-        expires_at=datetime.utcnow() + timedelta(days=365),
+        expires_at=datetime.now(timezone.utc) + timedelta(days=365),
         is_active=True,
     )
     db_session.add(other_connection)
@@ -144,7 +144,7 @@ def test_legacy_connection_autoclaim_in_debug(db_session, monkeypatch):
         access_token="encrypted-access",
         refresh_token="encrypted-refresh",
         scopes="content,cms.pages.read,cms.pages.write",
-        expires_at=datetime.utcnow() + timedelta(days=365),
+        expires_at=datetime.now(timezone.utc) + timedelta(days=365),
         is_active=True,
     )
     db_session.add(legacy)
@@ -260,4 +260,3 @@ def test_health_unhealthy_returns_503_when_db_fails_even_if_redis_fails(
 
     assert response.status_code == 503
     assert response.json()["status"] == "unhealthy"
-

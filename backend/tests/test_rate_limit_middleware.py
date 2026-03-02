@@ -1,9 +1,8 @@
+from app.core.config import settings
+from app.core.middleware import RateLimitMiddleware as CoreRateLimitMiddleware
+from app.middleware.rate_limit import RateLimitMiddleware as RedisRateLimitMiddleware
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-
-from app.core.middleware import RateLimitMiddleware as CoreRateLimitMiddleware
-from app.core.config import settings
-from app.middleware.rate_limit import RateLimitMiddleware as RedisRateLimitMiddleware
 
 
 def _core_app(default_limit: int = 2) -> FastAPI:
@@ -77,11 +76,10 @@ class _BrokenRedis(_FakeRedis):
 
 
 def test_core_rate_limit_does_not_trust_x_forwarded_for():
-    client = TestClient(_core_app(default_limit=2))
-
-    response_1 = client.get("/test", headers={"X-Forwarded-For": "1.1.1.1"})
-    response_2 = client.get("/test", headers={"X-Forwarded-For": "2.2.2.2"})
-    response_3 = client.get("/test", headers={"X-Forwarded-For": "3.3.3.3"})
+    with TestClient(_core_app(default_limit=2)) as client:
+        response_1 = client.get("/test", headers={"X-Forwarded-For": "1.1.1.1"})
+        response_2 = client.get("/test", headers={"X-Forwarded-For": "2.2.2.2"})
+        response_3 = client.get("/test", headers={"X-Forwarded-For": "3.3.3.3"})
 
     assert response_1.status_code == 200
     assert response_2.status_code == 200
@@ -97,8 +95,8 @@ def test_redis_rate_limit_sets_mode_header_redis(monkeypatch):
         lambda *args, **kwargs: fake_redis,
     )
 
-    client = TestClient(_redis_app())
-    response = client.get("/test")
+    with TestClient(_redis_app()) as client:
+        response = client.get("/test")
 
     assert response.status_code == 200
     assert response.headers.get("X-RateLimit-Mode") == "redis"
@@ -108,8 +106,8 @@ def test_redis_rate_limit_falls_back_to_memory_when_redis_missing(monkeypatch):
     monkeypatch.setattr(settings, "REDIS_URL", None, raising=False)
     monkeypatch.setattr(settings, "RATE_LIMIT_DEFAULT", 10, raising=False)
 
-    client = TestClient(_redis_app())
-    response = client.get("/test")
+    with TestClient(_redis_app()) as client:
+        response = client.get("/test")
 
     assert response.status_code == 200
     assert response.headers.get("X-RateLimit-Mode") == "memory-fallback"
@@ -125,10 +123,10 @@ def test_redis_rate_limit_runtime_failure_uses_memory_and_blocks(monkeypatch):
         lambda *args, **kwargs: _BrokenRedis(),
     )
 
-    client = TestClient(_redis_app())
-    response_1 = client.get("/test", headers={"X-Forwarded-For": "5.5.5.5"})
-    response_2 = client.get("/test", headers={"X-Forwarded-For": "6.6.6.6"})
-    response_3 = client.get("/test", headers={"X-Forwarded-For": "7.7.7.7"})
+    with TestClient(_redis_app()) as client:
+        response_1 = client.get("/test", headers={"X-Forwarded-For": "5.5.5.5"})
+        response_2 = client.get("/test", headers={"X-Forwarded-For": "6.6.6.6"})
+        response_3 = client.get("/test", headers={"X-Forwarded-For": "7.7.7.7"})
 
     assert response_1.status_code == 200
     assert response_1.headers.get("X-RateLimit-Mode") == "memory-fallback"

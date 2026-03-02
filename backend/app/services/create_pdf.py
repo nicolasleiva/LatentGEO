@@ -224,25 +224,9 @@ class PDFReport(FPDF):
         self.set_auto_page_break(auto=True, margin=PAGE_MARGIN_MM)
 
     def setup_fonts(self):
-        """Intenta cargar fuentes locales; si no, usa las internas."""
-        try:
-            # FIX: Removido parámetro 'uni=True' (obsoleto)
-            if os.path.exists(FONT_REGULAR_PATH):
-                self.add_font("Roboto", "", FONT_REGULAR_PATH)
-                self._fonts_added.add("Roboto")
-            if os.path.exists(FONT_BOLD_PATH):
-                self.add_font("Roboto", "B", FONT_BOLD_PATH)
-                self._fonts_added.add("Roboto-B")
-            if os.path.exists(FONT_ITALIC_PATH):
-                self.add_font("Roboto", "I", FONT_ITALIC_PATH)
-                self._fonts_added.add("Roboto-I")
-            if os.path.exists(FONT_MONO_PATH):
-                self.add_font("RobotoMono", "", FONT_MONO_PATH)
-                self._fonts_added.add("RobotoMono")
-            family = "Roboto" if "Roboto" in self._fonts_added else "helvetica"
-            self.set_font(family, "", BASE_FONT_SIZE)
-        except Exception:
-            self.set_font("helvetica", "", BASE_FONT_SIZE)
+        """Usa fuentes core de FPDF para evitar fugas de archivo en subsetting TTF."""
+        self._fonts_added.clear()
+        self.set_font("helvetica", "", BASE_FONT_SIZE)
 
     def header(self):
         """Encabezado sobrio: título corto en una línea y una regla."""
@@ -733,11 +717,7 @@ class PDFReport(FPDF):
         Evita páginas en blanco y bloques cortados incorrectamente.
         """
         # Configurar fuente monoespaciada
-        mono = (
-            "RobotoMono"
-            if "RobotoMono" in self._fonts_added
-            else ("Roboto" if "Roboto" in self._fonts_added else "helvetica")
-        )
+        mono = "RobotoMono" if "RobotoMono" in self._fonts_added else "courier"
         font_size = 7
         line_height = 3.5  # mm por línea
 
@@ -866,11 +846,7 @@ class PDFReport(FPDF):
         else:
             snippet = str(data)[:800]
 
-        mono = (
-            "RobotoMono"
-            if "RobotoMono" in self._fonts_added
-            else ("Roboto" if "Roboto" in self._fonts_added else "helvetica")
-        )
+        mono = "RobotoMono" if "RobotoMono" in self._fonts_added else "courier"
         self.set_font(mono, "", MONO_FONT_SIZE)
         self.set_fill_color(*JSON_BOX_FILL)
         self.set_draw_color(*JSON_BOX_BORDER)

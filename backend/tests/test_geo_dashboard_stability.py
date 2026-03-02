@@ -113,4 +113,3 @@ def test_competitor_benchmark_endpoint_sanitizes_error_payload(
         "error": "internal_error",
         "error_code": "dependency_error",
     }
-

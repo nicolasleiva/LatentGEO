@@ -12,6 +12,7 @@ logger = get_logger(__name__)
 # Intentar importar supabase, manejar fallo si no está instalado (durante migración)
 try:
     from supabase import Client, create_client
+
     SUPABASE_AVAILABLE = True
 except ImportError:
     SUPABASE_AVAILABLE = False
@@ -28,7 +29,7 @@ class SupabaseService:
         """Obtener cliente singleton de Supabase (Service Role)"""
         if not SUPABASE_AVAILABLE:
             raise ImportError("Librería 'supabase' no instalada.")
-        
+
         if cls._client is None:
             if not settings.SUPABASE_URL or not settings.SUPABASE_SERVICE_ROLE_KEY:
                 raise ValueError(
@@ -41,11 +42,11 @@ class SupabaseService:
 
     @classmethod
     def upload_file(
-        cls, 
-        bucket: str, 
-        path: str, 
-        file_content: bytes, 
-        content_type: str = "application/pdf"
+        cls,
+        bucket: str,
+        path: str,
+        file_content: bytes,
+        content_type: str = "application/pdf",
     ) -> str:
         """
         Subir archivo a Supabase Storage.
@@ -57,7 +58,7 @@ class SupabaseService:
             client.storage.from_(bucket).upload(
                 path=path,
                 file=file_content,
-                file_options={"content-type": content_type, "upsert": "true"}
+                file_options={"content-type": content_type, "upsert": "true"},
             )
             logger.info(f"Archivo subido a Supabase Storage: {bucket}/{path}")
             return path
@@ -120,7 +121,7 @@ class SupabaseService:
         try:
             buckets = client.storage.list_buckets()
             exists = any(b.name == bucket for b in buckets)
-            
+
             if not exists:
                 logger.info(f"Creando bucket Supabase: {bucket}")
                 client.storage.create_bucket(bucket, options={"public": public})

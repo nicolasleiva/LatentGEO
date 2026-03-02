@@ -1,4 +1,3 @@
-import asyncio
 import json
 
 import pytest
@@ -120,7 +119,8 @@ def test_create_batch_fails_when_article_data_pack_prerequisites_missing(
     assert "ARTICLE_DATA_PACK_INCOMPLETE" in str(exc.value)
 
 
-def test_process_batch_rejects_when_authority_sources_insufficient(
+@pytest.mark.asyncio
+async def test_process_batch_rejects_when_authority_sources_insufficient(
     db_session, monkeypatch
 ):
     audit = _seed_audit(db_session)
@@ -188,7 +188,7 @@ def test_process_batch_rejects_when_authority_sources_insufficient(
         "app.services.geo_article_engine_service.get_llm_function", lambda: fake_llm
     )
 
-    processed = asyncio.run(GeoArticleEngineService.process_batch(db_session, batch.id))
+    processed = await GeoArticleEngineService.process_batch(db_session, batch.id)
     assert processed.status == "failed"
     assert processed.articles[0]["generation_status"] == "failed"
     assert (
@@ -197,7 +197,8 @@ def test_process_batch_rejects_when_authority_sources_insufficient(
     )
 
 
-def test_process_batch_builds_hybrid_keyword_strategy_and_uses_gap_prompt(
+@pytest.mark.asyncio
+async def test_process_batch_builds_hybrid_keyword_strategy_and_uses_gap_prompt(
     db_session, monkeypatch
 ):
     audit = _seed_audit(db_session)
@@ -318,7 +319,7 @@ def test_process_batch_builds_hybrid_keyword_strategy_and_uses_gap_prompt(
         "app.services.geo_article_engine_service.get_llm_function", lambda: fake_llm
     )
 
-    processed = asyncio.run(GeoArticleEngineService.process_batch(db_session, batch.id))
+    processed = await GeoArticleEngineService.process_batch(db_session, batch.id)
     assert processed.status == "completed"
     assert processed.summary["generated_count"] == 1
 
@@ -344,7 +345,10 @@ def test_process_batch_builds_hybrid_keyword_strategy_and_uses_gap_prompt(
     assert "article_data_pack" in generation_prompts[0]
 
 
-def test_process_batch_repairs_invalid_citations_when_enabled(db_session, monkeypatch):
+@pytest.mark.asyncio
+async def test_process_batch_repairs_invalid_citations_when_enabled(
+    db_session, monkeypatch
+):
     audit = _seed_audit(db_session)
     monkeypatch.setattr(
         "app.services.geo_article_engine_service.is_kimi_configured", lambda: True
@@ -445,14 +449,15 @@ def test_process_batch_repairs_invalid_citations_when_enabled(db_session, monkey
         "app.services.geo_article_engine_service.get_llm_function", lambda: fake_llm
     )
 
-    processed = asyncio.run(GeoArticleEngineService.process_batch(db_session, batch.id))
+    processed = await GeoArticleEngineService.process_batch(db_session, batch.id)
     assert processed.status == "completed"
     article = processed.articles[0]
     assert article["generation_status"] == "completed"
     assert "invalid.example.com" not in article["markdown"]
 
 
-def test_process_batch_fails_when_repair_disabled(db_session, monkeypatch):
+@pytest.mark.asyncio
+async def test_process_batch_fails_when_repair_disabled(db_session, monkeypatch):
     audit = _seed_audit(db_session)
     monkeypatch.setattr(
         "app.services.geo_article_engine_service.is_kimi_configured", lambda: True
@@ -541,13 +546,14 @@ def test_process_batch_fails_when_repair_disabled(db_session, monkeypatch):
         "app.services.geo_article_engine_service.get_llm_function", lambda: fake_llm
     )
 
-    processed = asyncio.run(GeoArticleEngineService.process_batch(db_session, batch.id))
+    processed = await GeoArticleEngineService.process_batch(db_session, batch.id)
     assert processed.status == "failed"
     assert processed.articles[0]["generation_status"] == "failed"
     assert processed.articles[0]["generation_error"]["code"] == "KIMI_GENERATION_FAILED"
 
 
-def test_citation_url_normalization_allows_www_and_http(db_session, monkeypatch):
+@pytest.mark.asyncio
+async def test_citation_url_normalization_allows_www_and_http(db_session, monkeypatch):
     audit = _seed_audit(db_session)
     monkeypatch.setattr(
         "app.services.geo_article_engine_service.is_kimi_configured", lambda: True
@@ -641,6 +647,6 @@ def test_citation_url_normalization_allows_www_and_http(db_session, monkeypatch)
         "app.services.geo_article_engine_service.get_llm_function", lambda: fake_llm
     )
 
-    processed = asyncio.run(GeoArticleEngineService.process_batch(db_session, batch.id))
+    processed = await GeoArticleEngineService.process_batch(db_session, batch.id)
     assert processed.status == "completed"
     assert processed.articles[0]["generation_status"] == "completed"

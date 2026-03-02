@@ -1001,4 +1001,3 @@ def generate_full_report_task(audit_id: int):
     except Exception as e:
         logger.error(f"Error generating full report: {e}", exc_info=True)
         raise
-

@@ -1,4 +1,3 @@
-import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -319,12 +318,3 @@ async def test_pdf_service_fallback_to_db():
                                     assert p_data["mobile"]["score"] == 90
 
     print("\n[OK] Test de fallback a BD exitoso.")
-
-
-if __name__ == "__main__":
-    asyncio.run(test_keywords_service_no_invented_data())
-    asyncio.run(test_backlinks_service_no_invented_data())
-    asyncio.run(test_rank_tracking_service_no_invented_data())
-    asyncio.run(test_pdf_service_real_data_flow())
-    asyncio.run(test_pdf_service_partial_failure())
-    asyncio.run(test_pdf_service_fallback_to_db())

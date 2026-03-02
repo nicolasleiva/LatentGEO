@@ -2,8 +2,8 @@
 Blog Auditor Service - Comprehensive blog analysis for repositories
 """
 
-import re
 import json
+import re
 from datetime import datetime
 from typing import Any, Dict, List
 from urllib.parse import urlparse
@@ -593,12 +593,9 @@ class BlogAuditorService:
                 parsed_payload if isinstance(parsed_payload, list) else [parsed_payload]
             )
             for item in candidates:
-                if (
-                    isinstance(item, dict)
-                    and BlogAuditorService._context_uses_schema_org(
-                        item.get("@context")
-                    )
-                ):
+                if isinstance(
+                    item, dict
+                ) and BlogAuditorService._context_uses_schema_org(item.get("@context")):
                     return True
 
         return False

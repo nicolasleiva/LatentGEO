@@ -223,8 +223,10 @@ def db_session(db_engine) -> Generator[Session, None, None]:
 
     # Rollback transaction to ensure test isolation
     session.close()
-    transaction.rollback()
-    connection.close()
+    if transaction.is_active:
+        transaction.rollback()
+    if not connection.closed:
+        connection.close()
 
 
 # Real test data factories

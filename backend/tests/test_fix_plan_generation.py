@@ -203,15 +203,3 @@ async def test_pdf_service_context_loading():
         assert "pagespeed" in context
 
         print("Test passed: PDF context loading works correctly")
-
-
-if __name__ == "__main__":
-    import asyncio
-
-    print("Running fix plan generation tests...")
-
-    asyncio.run(test_generate_report_with_fix_plan())
-    asyncio.run(test_generate_report_fallback_fix_plan())
-    asyncio.run(test_pdf_service_context_loading())
-
-    print("All tests completed!")

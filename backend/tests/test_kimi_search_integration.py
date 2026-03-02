@@ -1,4 +1,3 @@
-import asyncio
 import os
 
 import pytest
@@ -8,15 +7,17 @@ from app.core.llm_kimi import KimiSearchUnavailableError, kimi_search_serp
 STRICT_TEST_MODE = os.getenv("STRICT_TEST_MODE") == "1"
 
 
-def test_kimi_search_requires_feature_flag(monkeypatch):
+@pytest.mark.asyncio
+async def test_kimi_search_requires_feature_flag(monkeypatch):
     monkeypatch.setattr(settings, "NV_KIMI_SEARCH_ENABLED", False)
     with pytest.raises(KimiSearchUnavailableError):
-        asyncio.run(kimi_search_serp("zapatilla nike", "AR", top_k=5, language="es"))
+        await kimi_search_serp("zapatilla nike", "AR", top_k=5, language="es")
 
 
+@pytest.mark.asyncio
 @pytest.mark.integration
 @pytest.mark.live
-def test_kimi_search_live_contract_optional(monkeypatch):
+async def test_kimi_search_live_contract_optional(monkeypatch):
     if os.getenv("RUN_REAL_KIMI_SEARCH_TEST") != "1":
         if STRICT_TEST_MODE:
             pytest.fail("RUN_REAL_KIMI_SEARCH_TEST=1 is required in STRICT_TEST_MODE.")
@@ -32,9 +33,7 @@ def test_kimi_search_live_contract_optional(monkeypatch):
         pytest.skip("No NVIDIA API key configured for live Kimi Search test.")
 
     monkeypatch.setattr(settings, "NV_KIMI_SEARCH_ENABLED", True)
-    result = asyncio.run(
-        kimi_search_serp("nike running shoes", "US", top_k=5, language="en")
-    )
+    result = await kimi_search_serp("nike running shoes", "US", top_k=5, language="en")
 
     expected_provider = (
         "google-cse"

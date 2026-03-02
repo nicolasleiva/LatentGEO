@@ -52,12 +52,11 @@ class HubSpotService:
             existing_owner_user_id = (connection.owner_user_id or "").strip()
             existing_owner_email = _normalize_email(connection.owner_email)
             owner_matches = (
-                (existing_owner_user_id and existing_owner_user_id == owner_user_id)
-                or (
-                    existing_owner_email
-                    and owner_email_normalized
-                    and existing_owner_email == owner_email_normalized
-                )
+                existing_owner_user_id and existing_owner_user_id == owner_user_id
+            ) or (
+                existing_owner_email
+                and owner_email_normalized
+                and existing_owner_email == owner_email_normalized
             )
 
             if existing_owner_user_id or existing_owner_email:

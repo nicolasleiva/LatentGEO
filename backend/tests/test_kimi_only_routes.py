@@ -127,4 +127,3 @@ def test_llm_visibility_returns_502_on_kimi_runtime_error(
     payload = response.json()
     assert payload["detail"]["code"] == "KIMI_GENERATION_FAILED"
     assert "forced visibility failure" in payload["detail"]["message"]
-

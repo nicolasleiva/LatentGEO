@@ -12,9 +12,9 @@ from ...core.access_control import (
     is_connection_owned_by_user,
 )
 from ...core.auth import AuthUser, get_current_user
-from ...core.oauth_state import build_oauth_state, validate_oauth_state
 from ...core.database import get_db
 from ...core.logger import get_logger
+from ...core.oauth_state import build_oauth_state, validate_oauth_state
 from ...integrations.hubspot.auth import HubSpotAuth
 from ...integrations.hubspot.service import HubSpotService
 from ...models import AIContentSuggestion, Audit, AuditedPage
@@ -145,11 +145,7 @@ def get_connections(
             continue
 
         # Legacy rows only in DEBUG are auto-claimed.
-        if (
-            not connection.owner_user_id
-            and not connection.owner_email
-            and current_user
-        ):
+        if not connection.owner_user_id and not connection.owner_email and current_user:
             try:
                 claimed = ensure_connection_access(
                     connection,

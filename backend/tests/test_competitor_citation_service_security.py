@@ -1,8 +1,7 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from types import SimpleNamespace
 
 import pytest
-
 from app.services.competitor_citation_service import CompetitorCitationService
 
 
@@ -51,7 +50,7 @@ def test_get_citation_benchmark_sanitizes_historical_gap_analysis():
         competitor_data="[]",
         gap_analysis='{"has_gaps": true, "error": "Traceback details", "error_code": "boom"}',
         your_mentions=2,
-        analyzed_at=datetime.utcnow(),
+        analyzed_at=datetime.now(timezone.utc),
     )
 
     class _Query:

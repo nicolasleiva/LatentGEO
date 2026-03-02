@@ -187,7 +187,9 @@ class AuditService:
         status_value = None
         if getattr(audit, "status", None) is not None:
             status_value = (
-                audit.status.value if hasattr(audit.status, "value") else str(audit.status)
+                audit.status.value
+                if hasattr(audit.status, "value")
+                else str(audit.status)
             )
         return {
             "audit_id": int(audit.id),
@@ -889,7 +891,9 @@ class AuditService:
                     types = schema_data.get("types", [])
 
                 types_count = len(types)
-                return min(100, max(20, types_count * 20))  # MÃ­nimo 20 si estÃ¡ presente
+                return min(
+                    100, max(20, types_count * 20)
+                )  # MÃ­nimo 20 si estÃ¡ presente
             return 0.0
         except Exception:
             return 0.0
@@ -1858,7 +1862,9 @@ class ReportService:
                     try:
                         from .supabase_service import SupabaseService
 
-                        storage_path = str(report.file_path).replace("supabase://", "", 1)
+                        storage_path = str(report.file_path).replace(
+                            "supabase://", "", 1
+                        )
                         SupabaseService.delete_file(
                             bucket=settings.SUPABASE_STORAGE_BUCKET, path=storage_path
                         )
@@ -2067,10 +2073,14 @@ class CompetitorService:
         # Guardar JSON local solo en modo legacy de artefactos.
         if AuditService._local_artifacts_enabled():
             try:
-                competitors_dir = AuditService._reports_dir_for_audit(audit_id) / "competitors"
+                competitors_dir = (
+                    AuditService._reports_dir_for_audit(audit_id) / "competitors"
+                )
                 competitors_dir.mkdir(parents=True, exist_ok=True)
                 safe_domain = re.sub(r"[^\w\-_.]", "_", domain)
-                competitor_json_path = competitors_dir / f"competitor_{safe_domain}.json"
+                competitor_json_path = (
+                    competitors_dir / f"competitor_{safe_domain}.json"
+                )
                 competitor_full_data = {
                     "url": url,
                     "domain": domain,
@@ -2111,4 +2121,3 @@ class CompetitorService:
         return (
             db.query(Competitor).order_by(desc(Competitor.geo_score)).limit(limit).all()
         )
-

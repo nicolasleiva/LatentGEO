@@ -15,7 +15,7 @@ from app.core.database import get_db
 from app.core.logger import get_logger
 from app.services.webhook_service import WebhookEventType, WebhookService
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
-from pydantic import BaseModel, Field, HttpUrl
+from pydantic import BaseModel, ConfigDict, Field, HttpUrl
 from sqlalchemy.orm import Session
 
 logger = get_logger(__name__)
@@ -44,7 +44,9 @@ def _validate_outbound_webhook_url(raw_url: str) -> None:
     host = (parsed.hostname or "").strip().lower()
 
     if scheme not in {"http", "https"}:
-        raise HTTPException(status_code=400, detail="Webhook URL scheme must be http or https")
+        raise HTTPException(
+            status_code=400, detail="Webhook URL scheme must be http or https"
+        )
     if not settings.DEBUG and scheme != "https":
         raise HTTPException(
             status_code=400,
@@ -92,8 +94,7 @@ class WebhookConfigResponse(BaseModel):
     last_delivery_at: Optional[datetime] = None
     delivery_success_rate: Optional[float] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class WebhookTestRequest(BaseModel):
@@ -263,7 +264,9 @@ async def handle_github_webhook(
     webhook_secret = (settings.GITHUB_WEBHOOK_SECRET or "").strip()
     if not webhook_secret:
         if settings.DEBUG:
-            logger.warning("GITHUB_WEBHOOK_SECRET not configured; allowing webhook in debug mode")
+            logger.warning(
+                "GITHUB_WEBHOOK_SECRET not configured; allowing webhook in debug mode"
+            )
         else:
             raise HTTPException(
                 status_code=503,

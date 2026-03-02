@@ -20,12 +20,12 @@ from app.schemas import (
 )
 from app.services.audit_local_service import AuditLocalService
 from app.services.audit_service import AuditService
+from app.services.cache_service import cache
 from app.services.competitor_filters import (
     infer_vertical_hint,
     is_valid_competitor_domain,
     normalize_domain,
 )
-from app.services.cache_service import cache
 from app.services.pipeline_service import PipelineService
 
 # Importar la tarea de Celery
@@ -847,9 +847,7 @@ async def run_pagespeed_analysis(
             "strategies_analyzed": list(pagespeed_data.keys()),
         }
     except Exception:
-        logger.error(
-            f"PageSpeed analysis failed for audit {audit_id}", exc_info=True
-        )
+        logger.error(f"PageSpeed analysis failed for audit {audit_id}", exc_info=True)
         raise HTTPException(status_code=500, detail="Internal server error")
 
 

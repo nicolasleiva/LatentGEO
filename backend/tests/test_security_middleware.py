@@ -49,10 +49,9 @@ class TestRateLimitMiddleware:
 
     def test_rate_limit_headers_present(self, app):
         """Test that rate limit headers are added to response"""
-        client = TestClient(app)
-
-        # Make request from non-trusted IP
-        response = client.get("/test", headers={"X-Forwarded-For": "1.2.3.4"})
+        with TestClient(app) as client:
+            # Make request from non-trusted IP
+            response = client.get("/test", headers={"X-Forwarded-For": "1.2.3.4"})
 
         assert "X-RateLimit-Limit" in response.headers
         assert "X-RateLimit-Remaining" in response.headers
@@ -60,37 +59,34 @@ class TestRateLimitMiddleware:
 
     def test_health_endpoint_bypasses_rate_limit(self, app):
         """Test that health endpoint bypasses rate limiting"""
-        client = TestClient(app)
-
-        # Make many requests to health - should all succeed
-        for _ in range(20):
-            response = client.get("/health", headers={"X-Forwarded-For": "1.2.3.4"})
-            assert response.status_code == 200
+        with TestClient(app) as client:
+            # Make many requests to health - should all succeed
+            for _ in range(20):
+                response = client.get("/health", headers={"X-Forwarded-For": "1.2.3.4"})
+                assert response.status_code == 200
 
     def test_rate_limit_exceeded(self, app):
         """Test that rate limiting works when limit is exceeded"""
-        client = TestClient(app)
-
-        # Make requests until limit is exceeded
-        responses = []
-        for _ in range(10):
-            response = client.get("/test", headers={"X-Forwarded-For": "9.9.9.9"})
-            responses.append(response.status_code)
+        with TestClient(app) as client:
+            # Make requests until limit is exceeded
+            responses = []
+            for _ in range(10):
+                response = client.get("/test", headers={"X-Forwarded-For": "9.9.9.9"})
+                responses.append(response.status_code)
 
         # Some should be 200, some should be 429
         assert 429 in responses
 
     def test_endpoint_specific_limits(self, app):
         """Test that endpoint-specific limits work"""
-        client = TestClient(app)
-
-        # Auth endpoint has stricter limit (2/min)
-        for i in range(5):
-            response = client.get(
-                "/api/v1/auth/login", headers={"X-Forwarded-For": "8.8.8.8"}
-            )
-            if i >= 2:
-                assert response.status_code == 429
+        with TestClient(app) as client:
+            # Auth endpoint has stricter limit (2/min)
+            for i in range(5):
+                response = client.get(
+                    "/api/v1/auth/login", headers={"X-Forwarded-For": "8.8.8.8"}
+                )
+                if i >= 2:
+                    assert response.status_code == 429
 
 
 class TestSecurityHeadersMiddleware:
@@ -111,8 +107,8 @@ class TestSecurityHeadersMiddleware:
 
     def test_security_headers_present(self, app):
         """Test that all security headers are present"""
-        client = TestClient(app)
-        response = client.get("/test")
+        with TestClient(app) as client:
+            response = client.get("/test")
 
         # Check required headers
         assert response.headers.get("X-Content-Type-Options") == "nosniff"
@@ -124,8 +120,8 @@ class TestSecurityHeadersMiddleware:
 
     def test_csp_header_present(self, app):
         """Test that CSP header is present when enabled"""
-        client = TestClient(app)
-        response = client.get("/test")
+        with TestClient(app) as client:
+            response = client.get("/test")
 
         assert "Content-Security-Policy" in response.headers
         csp = response.headers.get("Content-Security-Policy")
@@ -153,32 +149,29 @@ class TestRequestValidationMiddleware:
 
     def test_normal_request_passes(self, app):
         """Test that normal requests pass validation"""
-        client = TestClient(app)
-        response = client.get("/test")
+        with TestClient(app) as client:
+            response = client.get("/test")
 
         assert response.status_code == 200
 
     def test_path_traversal_blocked(self, app):
         """Test that path traversal attempts are blocked"""
-        client = TestClient(app)
-
-        # Use query param to avoid TestClient path normalization
-        response = client.get("/test?file=../../etc/passwd")
+        with TestClient(app) as client:
+            # Use query param to avoid TestClient path normalization
+            response = client.get("/test?file=../../etc/passwd")
         assert response.status_code == 400
 
     def test_xss_attempt_blocked(self, app):
         """Test that XSS attempts in URL are blocked"""
-        client = TestClient(app)
-
-        # The middleware checks the whole URL string
-        response = client.get("/test", params={"x": "<script>alert(1)</script>"})
+        with TestClient(app) as client:
+            # The middleware checks the whole URL string
+            response = client.get("/test", params={"x": "<script>alert(1)</script>"})
         assert response.status_code == 400
 
     def test_javascript_url_blocked(self, app):
         """Test that javascript: URLs are blocked"""
-        client = TestClient(app)
-
-        response = client.get("/test?url=javascript:alert(1)")
+        with TestClient(app) as client:
+            response = client.get("/test?url=javascript:alert(1)")
         assert response.status_code == 400
 
 
@@ -200,8 +193,8 @@ class TestRequestLoggingMiddleware:
 
     def test_response_time_header_added(self, app):
         """Test that X-Response-Time header is added"""
-        client = TestClient(app)
-        response = client.get("/test")
+        with TestClient(app) as client:
+            response = client.get("/test")
 
         assert "X-Response-Time" in response.headers
 
@@ -268,8 +261,8 @@ class TestFullMiddlewareStack:
 
     def test_full_stack_request(self, app):
         """Test a request through the full middleware stack"""
-        client = TestClient(app)
-        response = client.get("/api/v1/test")
+        with TestClient(app) as client:
+            response = client.get("/api/v1/test")
 
         assert response.status_code == 200
 
@@ -279,12 +272,11 @@ class TestFullMiddlewareStack:
 
     def test_health_check_fast(self, app):
         """Test that health checks are fast through middleware"""
-        client = TestClient(app)
-
-        start = time.time()
-        for _ in range(10):
-            response = client.get("/health")
-            assert response.status_code == 200
+        with TestClient(app) as client:
+            start = time.time()
+            for _ in range(10):
+                response = client.get("/health")
+                assert response.status_code == 200
         elapsed = time.time() - start
 
         # 10 health checks should complete quickly
@@ -293,4 +285,3 @@ class TestFullMiddlewareStack:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
-

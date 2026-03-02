@@ -168,13 +168,10 @@ async def audit_progress_stream(
                     pubsub = None
                     use_redis_source = False
 
-            should_check_db = (
-                payload is None
-                and (
-                    sse_source == "db"
-                    or not use_redis_source
-                    or (now - last_db_check_ts) >= fallback_db_interval
-                )
+            should_check_db = payload is None and (
+                sse_source == "db"
+                or not use_redis_source
+                or (now - last_db_check_ts) >= fallback_db_interval
             )
 
             if should_check_db:
@@ -197,7 +194,9 @@ async def audit_progress_stream(
 
                 status_value = str(payload.get("status") or "").lower()
                 if status_value in TERMINAL_STATUSES:
-                    logger.info(f"SSE stream ended for audit {audit_id}: {status_value}")
+                    logger.info(
+                        f"SSE stream ended for audit {audit_id}: {status_value}"
+                    )
                     break
             elif now - last_emit_ts >= heartbeat_seconds:
                 yield _serialize_sse_event(

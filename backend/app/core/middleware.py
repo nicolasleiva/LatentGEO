@@ -111,7 +111,10 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
         # Skip rate limiting for health checks and SSE only
-        if request.url.path in ["/health", "/health/live", "/health/ready", "/"] or "/sse/" in request.url.path:
+        if (
+            request.url.path in ["/health", "/health/live", "/health/ready", "/"]
+            or "/sse/" in request.url.path
+        ):
             return await call_next(request)
 
         # Skip for trusted IPs

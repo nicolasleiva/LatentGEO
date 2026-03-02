@@ -165,7 +165,11 @@ def ensure_performance_indexes(engine_ref=None) -> None:
             "geo_article_batches",
             ["audit_id", "created_at DESC"],
         ),
-        ("idx_github_connections_owner_user_id", "github_connections", ["owner_user_id"]),
+        (
+            "idx_github_connections_owner_user_id",
+            "github_connections",
+            ["owner_user_id"],
+        ),
         ("idx_github_connections_owner_email", "github_connections", ["owner_email"]),
         (
             "idx_hubspot_connections_owner_user_id",

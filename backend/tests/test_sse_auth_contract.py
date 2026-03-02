@@ -1,11 +1,10 @@
 import json
 
 import pytest
-from fastapi import FastAPI
-from fastapi.testclient import TestClient
-
 from app.api.routes import sse as sse_route
 from app.core.auth import create_access_token
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 
 
 class _DummyStatus:
@@ -69,9 +68,7 @@ def _build_sse_test_app(monkeypatch) -> FastAPI:
         "get_audit",
         lambda _db, _audit_id: _DummyAudit(),
     )
-    monkeypatch.setattr(
-        sse_route, "ensure_audit_access", lambda audit, _user: audit
-    )
+    monkeypatch.setattr(sse_route, "ensure_audit_access", lambda audit, _user: audit)
     monkeypatch.setattr(sse_route, "audit_progress_stream", _fake_stream)
     monkeypatch.setattr(
         database_module, "SessionLocal", lambda: _DummySession(), raising=False
