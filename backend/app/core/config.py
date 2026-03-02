@@ -8,6 +8,7 @@ from typing import Any, Optional
 
 from pydantic import field_validator
 from pydantic_settings import BaseSettings
+from pydantic_settings import SettingsConfigDict
 
 
 def _parse_string_list(value: Any) -> list[str]:
@@ -39,6 +40,11 @@ def _parse_string_list(value: Any) -> list[str]:
 
 class Settings(BaseSettings):
     """Configuración de la aplicación"""
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
 
     # Configuración del proyecto
     PROJECT_NAME: str = "Auditor"
@@ -53,6 +59,9 @@ class Settings(BaseSettings):
     DB_MAX_OVERFLOW: int = int(os.getenv("DB_MAX_OVERFLOW", "5"))
     DB_POOL_TIMEOUT: int = int(os.getenv("DB_POOL_TIMEOUT", "15"))
     DB_POOL_RECYCLE: int = int(os.getenv("DB_POOL_RECYCLE", "900"))
+    DB_POOL_PRE_PING: bool = (
+        os.getenv("DB_POOL_PRE_PING", "False").lower() == "true"
+    )
     DB_CONNECT_TIMEOUT_SECONDS: int = int(
         os.getenv("DB_CONNECT_TIMEOUT_SECONDS", "5")
     )
@@ -199,6 +208,12 @@ class Settings(BaseSettings):
 
     # SSE / streaming
     SSE_MAX_DURATION: int = int(os.getenv("SSE_MAX_DURATION", "3600"))
+    SSE_SOURCE: str = os.getenv("SSE_SOURCE", "redis").lower()
+    SSE_FALLBACK_DB_INTERVAL_SECONDS: int = int(
+        os.getenv("SSE_FALLBACK_DB_INTERVAL_SECONDS", "10")
+    )
+    SSE_HEARTBEAT_SECONDS: int = int(os.getenv("SSE_HEARTBEAT_SECONDS", "30"))
+    SSE_RETRY_MS: int = int(os.getenv("SSE_RETRY_MS", "5000"))
 
     # LLM output limits (report generation)
     NV_MAX_TOKENS_REPORT: int = int(os.getenv("NV_MAX_TOKENS_REPORT", "8192"))
@@ -298,8 +313,22 @@ class Settings(BaseSettings):
     def _normalize_list_fields(cls, value: Any) -> list[str]:
         return _parse_string_list(value)
 
+    @field_validator("DEBUG", mode="before")
+    @classmethod
+    def _normalize_debug_field(cls, value: Any) -> Any:
+        if isinstance(value, str):
+            normalized = value.strip().lower()
+            if normalized in {"1", "true", "yes", "on", "debug", "development", "dev"}:
+                return True
+            if normalized in {"0", "false", "no", "off", "release", "prod", "production"}:
+                return False
+        return value
+
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
+        if self.SSE_SOURCE not in {"redis", "db"}:
+            self.SSE_SOURCE = "redis"
+
         # Actualizar APP_NAME con PROJECT_NAME si está configurado
         if self.PROJECT_NAME and self.PROJECT_NAME != "Auditor":
             self.APP_NAME = self.PROJECT_NAME
@@ -328,11 +357,6 @@ class Settings(BaseSettings):
                 self.FORWARDED_ALLOW_IPS = ["127.0.0.1", "::1"]
             if not self.FRONTEND_URL:
                 self.FRONTEND_URL = "http://localhost:3000"
-
-    class Config:
-        env_file = ".env"
-        env_file_encoding = "utf-8"
-        extra = "ignore"
 
 
 settings = Settings()
@@ -470,6 +494,14 @@ def validate_environment():
             errors.append("DB_POOL_RECYCLE must be > 0.")
         if settings.DB_CONNECT_TIMEOUT_SECONDS <= 0:
             errors.append("DB_CONNECT_TIMEOUT_SECONDS must be > 0.")
+        if settings.SSE_SOURCE not in {"redis", "db"}:
+            errors.append("SSE_SOURCE must be either 'redis' or 'db'.")
+        if settings.SSE_FALLBACK_DB_INTERVAL_SECONDS <= 0:
+            errors.append("SSE_FALLBACK_DB_INTERVAL_SECONDS must be > 0.")
+        if settings.SSE_HEARTBEAT_SECONDS <= 0:
+            errors.append("SSE_HEARTBEAT_SECONDS must be > 0.")
+        if settings.SSE_RETRY_MS <= 0:
+            errors.append("SSE_RETRY_MS must be > 0.")
 
     # AI Keys
     if not any(

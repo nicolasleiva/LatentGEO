@@ -47,9 +47,19 @@ services:
     container_name: auditor_backend
     environment:
       DATABASE_URL: ${DATABASE_URL}
+      DB_POOL_SIZE: ${DB_POOL_SIZE:-5}
+      DB_MAX_OVERFLOW: ${DB_MAX_OVERFLOW:-5}
+      DB_POOL_TIMEOUT: ${DB_POOL_TIMEOUT:-15}
+      DB_POOL_RECYCLE: ${DB_POOL_RECYCLE:-900}
+      DB_CONNECT_TIMEOUT_SECONDS: ${DB_CONNECT_TIMEOUT_SECONDS:-5}
+      DB_POOL_PRE_PING: ${DB_POOL_PRE_PING:-false}
       REDIS_URL: ${REDIS_URL}
       CELERY_BROKER_URL: ${CELERY_BROKER_URL}
       CELERY_RESULT_BACKEND: ${CELERY_RESULT_BACKEND}
+      SSE_SOURCE: ${SSE_SOURCE:-redis}
+      SSE_FALLBACK_DB_INTERVAL_SECONDS: ${SSE_FALLBACK_DB_INTERVAL_SECONDS:-10}
+      SSE_HEARTBEAT_SECONDS: ${SSE_HEARTBEAT_SECONDS:-30}
+      SSE_RETRY_MS: ${SSE_RETRY_MS:-5000}
       DEBUG: ${DEBUG:-False}
       ENVIRONMENT: ${ENVIRONMENT:-development}
       PYTHONUNBUFFERED: "1"
@@ -132,10 +142,7 @@ services:
       redis:
         condition: service_healthy
     volumes:
-      - ./backend:/app
       - ./logs:/app/logs
-      - ./scripts:/app/scripts
-      - ./fonts:/app/app/services/fonts
     networks:
       - auditor_network
     restart: unless-stopped
@@ -146,17 +153,17 @@ services:
       context: .
       dockerfile: Dockerfile.frontend
       args:
-        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
-        NEXT_PUBLIC_BACKEND_URL: ${NEXT_PUBLIC_BACKEND_URL}
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+        NEXT_PUBLIC_BACKEND_URL: ${NEXT_PUBLIC_BACKEND_URL:-http://localhost:8000}
         NEXT_PUBLIC_AUTH0_API_AUDIENCE: ${NEXT_PUBLIC_AUTH0_API_AUDIENCE:-}
         NEXT_PUBLIC_AUTH0_API_SCOPES: ${NEXT_PUBLIC_AUTH0_API_SCOPES:-read:app}
     container_name: auditor_frontend
     ports:
       - "3000:3000"
     environment:
-      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
-      NEXT_PUBLIC_BACKEND_URL: ${NEXT_PUBLIC_BACKEND_URL}
-      API_URL: ${API_URL}
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+      NEXT_PUBLIC_BACKEND_URL: ${NEXT_PUBLIC_BACKEND_URL:-http://localhost:8000}
+      API_URL: http://backend:8000
       NODE_ENV: production
       # Auth0 Configuration
       AUTH0_SECRET: ${AUTH0_SECRET:-}
@@ -183,12 +190,22 @@ services:
       context: .
       dockerfile: Dockerfile.backend
     container_name: auditor_worker
-    command: celery -A app.workers.tasks worker --loglevel=info
+    command: celery -A app.workers.tasks worker --loglevel=info --concurrency=2 --prefetch-multiplier=1 --max-tasks-per-child=20
     environment:
       DATABASE_URL: ${DATABASE_URL}
+      DB_POOL_SIZE: ${DB_POOL_SIZE:-5}
+      DB_MAX_OVERFLOW: ${DB_MAX_OVERFLOW:-5}
+      DB_POOL_TIMEOUT: ${DB_POOL_TIMEOUT:-15}
+      DB_POOL_RECYCLE: ${DB_POOL_RECYCLE:-900}
+      DB_CONNECT_TIMEOUT_SECONDS: ${DB_CONNECT_TIMEOUT_SECONDS:-5}
+      DB_POOL_PRE_PING: ${DB_POOL_PRE_PING:-false}
       REDIS_URL: ${REDIS_URL}
       CELERY_BROKER_URL: ${CELERY_BROKER_URL}
       CELERY_RESULT_BACKEND: ${CELERY_RESULT_BACKEND}
+      SSE_SOURCE: ${SSE_SOURCE:-redis}
+      SSE_FALLBACK_DB_INTERVAL_SECONDS: ${SSE_FALLBACK_DB_INTERVAL_SECONDS:-10}
+      SSE_HEARTBEAT_SECONDS: ${SSE_HEARTBEAT_SECONDS:-30}
+      SSE_RETRY_MS: ${SSE_RETRY_MS:-5000}
       ENVIRONMENT: ${ENVIRONMENT:-development}
       GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
       CSE_ID: ${CSE_ID:-}
@@ -253,7 +270,6 @@ services:
       SUPABASE_JWT_SECRET: ${SUPABASE_JWT_SECRET:-}
       SUPABASE_STORAGE_BUCKET: ${SUPABASE_STORAGE_BUCKET:-audit-reports}
       AUDIT_LOCAL_ARTIFACTS_ENABLED: ${AUDIT_LOCAL_ARTIFACTS_ENABLED:-false}
-      CELERYD_CONCURRENCY: 2
     # Health check disabled for worker to prevent restarts during long tasks
     # Worker health is monitored via logs and task completion
     deploy:
@@ -265,10 +281,7 @@ services:
     depends_on:
       - backend
     volumes:
-      - ./backend:/app
       - ./logs:/app/logs
-      - ./scripts:/app/scripts
-      - ./fonts:/app/app/services/fonts
     networks:
       - auditor_network
     restart: unless-stopped

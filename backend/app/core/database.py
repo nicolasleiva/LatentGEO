@@ -33,7 +33,7 @@ else:
     engine = create_engine(
         settings.DATABASE_URL,
         echo=settings.SQLALCHEMY_ECHO,
-        pool_pre_ping=True,
+        pool_pre_ping=bool(settings.DB_POOL_PRE_PING),
         # Pool configurable por entorno (Supabase pooler-friendly)
         pool_size=max(1, int(settings.DB_POOL_SIZE)),
         max_overflow=max(0, int(settings.DB_MAX_OVERFLOW)),

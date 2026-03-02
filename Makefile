@@ -1,4 +1,4 @@
-.PHONY: help up down restart logs build clean test dev prod
+.PHONY: help up down restart logs build clean test dev prod standard-up standard-down standard-restart standard-logs standard-build
 
 DOCKER_COMPOSE ?= docker compose
 DB_SERVICE ?= db
@@ -9,12 +9,13 @@ help:
 	@echo "GEO Audit Platform - Docker Commands"
 	@echo "===================================="
 	@echo ""
-	@echo "Production Commands:"
-	@echo "  make prod-up       - Start production environment"
-	@echo "  make prod-down     - Stop production environment"
-	@echo "  make prod-restart  - Restart production services"
-	@echo "  make prod-logs     - View production logs"
-	@echo "  make prod-build    - Build production images"
+	@echo "Standard Commands (docker-compose.yml):"
+	@echo "  make standard-up       - Start standard environment"
+	@echo "  make standard-down     - Stop standard environment"
+	@echo "  make standard-restart  - Restart standard services"
+	@echo "  make standard-logs     - View standard logs"
+	@echo "  make standard-build    - Build standard images"
+	@echo "  make prod-up           - Alias for standard-up"
 	@echo ""
 	@echo "Development Commands:"
 	@echo "  make dev-up        - Start development environment (with hot reload)"
@@ -35,28 +36,35 @@ help:
 	@echo "  make lint          - Run linters"
 	@echo ""
 
-# Production targets
-prod-up:
+# Standard targets
+standard-up:
 	$(DOCKER_COMPOSE) up -d
-	@echo "✓ Production environment started"
+	@echo "✓ Standard environment started"
 	@echo "  Frontend: http://localhost:3000"
 	@echo "  Backend: http://localhost:8000"
 	@echo "  API Docs: http://localhost:8000/docs"
 
-prod-down:
+standard-down:
 	$(DOCKER_COMPOSE) down
-	@echo "✓ Production environment stopped"
+	@echo "✓ Standard environment stopped"
 
-prod-restart:
+standard-restart:
 	$(DOCKER_COMPOSE) restart
-	@echo "✓ Production services restarted"
+	@echo "✓ Standard services restarted"
 
-prod-logs:
+standard-logs:
 	$(DOCKER_COMPOSE) logs -f
 
-prod-build:
+standard-build:
 	$(DOCKER_COMPOSE) build --no-cache
-	@echo "✓ Production images built"
+	@echo "✓ Standard images built"
+
+# Backward-compatible aliases
+prod-up: standard-up
+prod-down: standard-down
+prod-restart: standard-restart
+prod-logs: standard-logs
+prod-build: standard-build
 
 # Development targets
 dev-up:
@@ -148,8 +156,8 @@ logs-redis:
 	$(DOCKER_COMPOSE) logs -f redis
 
 # Quick commands
-up: prod-up
-down: prod-down
-restart: prod-restart
-logs: prod-logs
-build: prod-build
+up: standard-up
+down: standard-down
+restart: standard-restart
+logs: standard-logs
+build: standard-build

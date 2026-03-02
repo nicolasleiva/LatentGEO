@@ -1,3 +1,6 @@
+import json
+
+import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -23,11 +26,43 @@ class _DummySession:
         return None
 
 
+class _DummyRequest:
+    def __init__(self, disconnect_after_calls: int = 10):
+        self.disconnect_after_calls = disconnect_after_calls
+        self.calls = 0
+
+    async def is_disconnected(self) -> bool:
+        self.calls += 1
+        return self.calls > self.disconnect_after_calls
+
+
+def _decode_sse_chunk(chunk: bytes) -> tuple[dict, int | None]:
+    if isinstance(chunk, bytes):
+        raw = chunk.decode("utf-8")
+    else:
+        raw = str(chunk)
+
+    data_lines: list[str] = []
+    retry_value: int | None = None
+    for line in raw.splitlines():
+        if line.startswith("data: "):
+            data_lines.append(line.replace("data: ", "", 1))
+        if line.startswith("retry: "):
+            retry_value = int(line.replace("retry: ", "", 1))
+
+    payload = json.loads("\n".join(data_lines)) if data_lines else {}
+    return payload, retry_value
+
+
 def _build_sse_test_app(monkeypatch) -> FastAPI:
     import app.core.database as database_module
 
-    async def _fake_stream(_: int, __):
-        yield 'data: {"status":"processing","progress":10}\n\n'
+    async def _fake_stream(*_args, **_kwargs):
+        event = sse_route.ServerSentEvent(
+            raw_data='{"status":"processing","progress":10}',
+            retry=5000,
+        )
+        yield sse_route._serialize_sse_event(event)
 
     monkeypatch.setattr(
         sse_route.AuditService,
@@ -48,7 +83,9 @@ def _build_sse_test_app(monkeypatch) -> FastAPI:
 
 
 def test_sse_rejects_query_token_without_authorization(monkeypatch):
-    monkeypatch.setenv("BACKEND_INTERNAL_JWT_SECRET", "test-sse-secret")
+    monkeypatch.setenv(
+        "BACKEND_INTERNAL_JWT_SECRET", "test-sse-secret-with-minimum-32-bytes"
+    )
     app = _build_sse_test_app(monkeypatch)
     token = create_access_token({"sub": "test-user", "email": "test@example.com"})
 
@@ -60,7 +97,9 @@ def test_sse_rejects_query_token_without_authorization(monkeypatch):
 
 
 def test_sse_accepts_authorization_header(monkeypatch):
-    monkeypatch.setenv("BACKEND_INTERNAL_JWT_SECRET", "test-sse-secret")
+    monkeypatch.setenv(
+        "BACKEND_INTERNAL_JWT_SECRET", "test-sse-secret-with-minimum-32-bytes"
+    )
     app = _build_sse_test_app(monkeypatch)
     token = create_access_token({"sub": "test-user", "email": "test@example.com"})
 
@@ -73,3 +112,118 @@ def test_sse_accepts_authorization_header(monkeypatch):
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("text/event-stream")
     assert "data:" in response.text
+
+
+@pytest.mark.asyncio
+async def test_sse_event_includes_retry(monkeypatch):
+    monkeypatch.setattr(sse_route.settings, "SSE_RETRY_MS", 4321, raising=False)
+    monkeypatch.setattr(sse_route.settings, "SSE_SOURCE", "db", raising=False)
+    monkeypatch.setattr(sse_route.settings, "SSE_MAX_DURATION", 60, raising=False)
+
+    initial_payload = {
+        "audit_id": 123,
+        "progress": 100,
+        "status": "completed",
+        "error_message": None,
+        "geo_score": 88.5,
+        "total_pages": 12,
+    }
+    request = _DummyRequest(disconnect_after_calls=0)
+
+    generator = sse_route.audit_progress_stream(
+        audit_id=123,
+        current_user=None,
+        request=request,
+        initial_payload=initial_payload,
+    )
+    event_chunk = await anext(generator)
+    payload, retry_value = _decode_sse_chunk(event_chunk)
+    await generator.aclose()
+
+    assert payload["status"] == "completed"
+    assert retry_value == 4321
+
+
+@pytest.mark.asyncio
+async def test_sse_closes_when_client_disconnects(monkeypatch):
+    monkeypatch.setattr(sse_route.settings, "SSE_RETRY_MS", 5000, raising=False)
+    monkeypatch.setattr(sse_route.settings, "SSE_SOURCE", "db", raising=False)
+    monkeypatch.setattr(sse_route.settings, "SSE_MAX_DURATION", 60, raising=False)
+
+    initial_payload = {
+        "audit_id": 123,
+        "progress": 15,
+        "status": "running",
+        "error_message": None,
+        "geo_score": None,
+        "total_pages": 1,
+    }
+    request = _DummyRequest(disconnect_after_calls=0)
+
+    generator = sse_route.audit_progress_stream(
+        audit_id=123,
+        current_user=None,
+        request=request,
+        initial_payload=initial_payload,
+    )
+    first_chunk = await anext(generator)
+    payload, _ = _decode_sse_chunk(first_chunk)
+    assert payload["status"] == "running"
+
+    with pytest.raises(StopAsyncIteration):
+        await anext(generator)
+
+
+@pytest.mark.asyncio
+async def test_sse_fallback_db_without_redis_events(monkeypatch):
+    monkeypatch.setattr(sse_route.settings, "SSE_RETRY_MS", 5000, raising=False)
+    monkeypatch.setattr(sse_route.settings, "SSE_SOURCE", "redis", raising=False)
+    monkeypatch.setattr(
+        sse_route.settings, "SSE_FALLBACK_DB_INTERVAL_SECONDS", 1, raising=False
+    )
+    monkeypatch.setattr(sse_route.settings, "SSE_MAX_DURATION", 60, raising=False)
+
+    monkeypatch.setattr(sse_route.cache, "enabled", False, raising=False)
+    monkeypatch.setattr(sse_route.cache, "redis_client", None, raising=False)
+
+    payloads = [
+        {
+            "audit_id": 123,
+            "progress": 10,
+            "status": "running",
+            "error_message": None,
+            "geo_score": None,
+            "total_pages": 1,
+        },
+        {
+            "audit_id": 123,
+            "progress": 100,
+            "status": "completed",
+            "error_message": None,
+            "geo_score": 91.2,
+            "total_pages": 4,
+        },
+    ]
+
+    def _fake_load(_audit_id, _current_user):
+        return payloads.pop(0)
+
+    monkeypatch.setattr(sse_route, "_load_owned_audit_payload", _fake_load)
+    request = _DummyRequest(disconnect_after_calls=10)
+
+    generator = sse_route.audit_progress_stream(
+        audit_id=123,
+        current_user=object(),
+        request=request,
+        initial_payload=None,
+    )
+    first_chunk = await anext(generator)
+    second_chunk = await anext(generator)
+    first_payload, _ = _decode_sse_chunk(first_chunk)
+    second_payload, _ = _decode_sse_chunk(second_chunk)
+
+    assert first_payload["status"] == "running"
+    assert second_payload["status"] == "completed"
+
+    with pytest.raises(StopAsyncIteration):
+        await anext(generator)

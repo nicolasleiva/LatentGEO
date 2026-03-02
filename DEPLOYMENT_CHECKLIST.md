@@ -54,7 +54,7 @@
 - [ ] Actualizar variables de entorno
 - [ ] Cambiar CORS_ORIGINS a tu dominio
 - [ ] Cambiar ALLOWED_HOSTS
-- [ ] Revisar docker-compose.prod.yml
+- [ ] Revisar docker-compose.yml (estandar) y docker-compose.dev.yml (desarrollo)
 - [ ] Revisar Dockerfiles
 
 ### Dominio

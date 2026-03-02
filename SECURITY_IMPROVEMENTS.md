@@ -419,7 +419,7 @@ CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
 
 ### 4.2 Docker Compose Seguro
 
-**Archivo: `docker-compose.prod.yml`**
+**Archivo: `docker-compose.yml`**
 
 ```yaml
 version: '3.8'

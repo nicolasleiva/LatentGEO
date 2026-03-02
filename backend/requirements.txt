@@ -8,7 +8,7 @@ psycopg2-binary==2.9.9
 supabase>=2.3.0  # Supabase client
 
 # FastAPI y web
-fastapi==0.128.0
+fastapi==0.135.0
 uvicorn[standard]==0.24.0
 python-multipart>=0.0.22
 

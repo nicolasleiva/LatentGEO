@@ -61,6 +61,9 @@ export async function GET(request: NextRequest, context: RouteContext) {
     `/api/v1/sse/audits/${encodeURIComponent(context.params.auditId)}/progress`,
     backendBaseUrl,
   );
+  const upstreamAbortController = new AbortController();
+  const abortUpstream = () => upstreamAbortController.abort();
+  request.signal.addEventListener("abort", abortUpstream, { once: true });
 
   try {
     const upstreamResponse = await fetch(upstreamUrl.toString(), {
@@ -70,16 +73,57 @@ export async function GET(request: NextRequest, context: RouteContext) {
         Accept: "text/event-stream",
       },
       cache: "no-store",
+      signal: upstreamAbortController.signal,
     });
 
-    if (!upstreamResponse.body) {
+    if (!upstreamResponse.ok) {
       const fallbackBody =
         (await upstreamResponse.text()) ||
         "Failed to establish SSE stream from backend";
-      return new Response(fallbackBody, {
-        status: upstreamResponse.status || 502,
-      });
+      return NextResponse.json(
+        {
+          error: "SSE proxy upstream rejected request",
+          status: upstreamResponse.status,
+          detail: fallbackBody,
+        },
+        { status: upstreamResponse.status || 502 },
+      );
     }
+
+    if (!upstreamResponse.body) {
+      return NextResponse.json(
+        { error: "SSE proxy upstream body missing" },
+        { status: 502 },
+      );
+    }
+
+    const reader = upstreamResponse.body.getReader();
+    const proxiedBody = new ReadableStream<Uint8Array>({
+      start(controller) {
+        const pump = async () => {
+          try {
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) {
+                controller.close();
+                break;
+              }
+              if (value) {
+                controller.enqueue(value);
+              }
+            }
+          } catch (streamError) {
+            controller.error(streamError);
+          } finally {
+            reader.releaseLock();
+          }
+        };
+        void pump();
+      },
+      cancel() {
+        return reader.cancel();
+      },
+    });
 
     const headers = new Headers();
     headers.set(
@@ -90,8 +134,8 @@ export async function GET(request: NextRequest, context: RouteContext) {
     headers.set("Connection", "keep-alive");
     headers.set("X-Accel-Buffering", "no");
 
-    return new Response(upstreamResponse.body, {
-      status: upstreamResponse.status,
+    return new Response(proxiedBody, {
+      status: 200,
       headers,
     });
   } catch (error) {
@@ -100,5 +144,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
       { error: "SSE proxy upstream error", detail },
       { status: 502 },
     );
+  } finally {
+    request.signal.removeEventListener("abort", abortUpstream);
   }
 }
