@@ -13,6 +13,9 @@ from fastapi import HTTPException, status
 from .auth import AuthUser
 from .config import settings
 
+_OAUTH_STATE_DERIVATION_SALT = b"oauth-state-secret-derivation-v1"
+_OAUTH_STATE_PBKDF2_ITERATIONS = 600_000
+
 
 def _normalize_email(value: str | None) -> str | None:
     if not isinstance(value, str):
@@ -32,8 +35,15 @@ def _get_oauth_state_secret() -> str:
                 "OAUTH_STATE_SECRET/SECRET_KEY must be >=32 bytes for HS256."
             )
         # Keep dev/test compatibility with legacy short defaults while producing
-        # a deterministic HS256 key length accepted by modern PyJWT.
-        return hashlib.sha256(secret_bytes).hexdigest()
+        # a deterministic HS256 key via a strong key-derivation function.
+        derived_key = hashlib.pbkdf2_hmac(
+            "sha256",
+            secret_bytes,
+            _OAUTH_STATE_DERIVATION_SALT,
+            _OAUTH_STATE_PBKDF2_ITERATIONS,
+            dklen=32,
+        )
+        return derived_key.hex()
     return secret
 
 
