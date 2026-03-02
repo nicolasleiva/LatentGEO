@@ -1,16 +1,14 @@
 import os
 import subprocess
 import sys
-
-import pytest
-from fastapi import FastAPI
-from fastapi.testclient import TestClient
-
-from app.core.config import settings, validate_environment
 import tempfile
 
 import app.core.logger as logger_module
+import pytest
+from app.core.config import settings, validate_environment
 from app.core.middleware import SecurityHeadersMiddleware
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 
 
 def test_database_module_fails_fast_when_database_url_missing(tmp_path):
@@ -46,7 +44,9 @@ def test_logger_init_log_dir_falls_back_to_tmp(monkeypatch):
         if normalized_path != expected_fallback:
             raise PermissionError("read-only fs")
 
-    monkeypatch.setattr(logger_module.settings, "LOG_DIR", "blocked-logs", raising=False)
+    monkeypatch.setattr(
+        logger_module.settings, "LOG_DIR", "blocked-logs", raising=False
+    )
     monkeypatch.setattr(logger_module.os, "makedirs", fake_makedirs)
 
     selected = str(logger_module._init_log_dir()).replace("\\", "/")
@@ -58,7 +58,9 @@ def test_logger_init_log_dir_falls_back_to_tmp(monkeypatch):
 def test_validate_environment_requires_forwarded_allow_ips_in_production(monkeypatch):
     monkeypatch.setattr(settings, "ENVIRONMENT", "production", raising=False)
     monkeypatch.setattr(settings, "STRICT_CONFIG", True, raising=False)
-    monkeypatch.setattr(settings, "DATABASE_URL", "postgresql://u:p@db:5432/app", raising=False)
+    monkeypatch.setattr(
+        settings, "DATABASE_URL", "postgresql://u:p@db:5432/app", raising=False
+    )
     monkeypatch.setattr(settings, "REDIS_URL", "redis://redis:6379/0", raising=False)
     monkeypatch.setattr(
         settings, "CELERY_BROKER_URL", "redis://redis:6379/0", raising=False
@@ -69,9 +71,13 @@ def test_validate_environment_requires_forwarded_allow_ips_in_production(monkeyp
     monkeypatch.setattr(settings, "secret_key", "super-secret", raising=False)
     monkeypatch.setattr(settings, "ENCRYPTION_KEY", "super-encryption", raising=False)
     monkeypatch.setattr(settings, "WEBHOOK_SECRET", "super-webhook", raising=False)
-    monkeypatch.setattr(settings, "FRONTEND_URL", "https://frontend.example.com", raising=False)
+    monkeypatch.setattr(
+        settings, "FRONTEND_URL", "https://frontend.example.com", raising=False
+    )
     monkeypatch.setattr(settings, "DEBUG", False, raising=False)
-    monkeypatch.setattr(settings, "CORS_ORIGINS", ["https://frontend.example.com"], raising=False)
+    monkeypatch.setattr(
+        settings, "CORS_ORIGINS", ["https://frontend.example.com"], raising=False
+    )
     monkeypatch.setattr(settings, "TRUSTED_HOSTS", ["api.example.com"], raising=False)
     monkeypatch.setattr(settings, "FORWARDED_ALLOW_IPS", [], raising=False)
 
@@ -89,8 +95,8 @@ def test_csp_excludes_unsafe_eval_when_enabled():
     async def test_endpoint():
         return {"ok": True}
 
-    client = TestClient(app)
-    response = client.get("/test")
+    with TestClient(app) as client:
+        response = client.get("/test")
     csp = response.headers.get("Content-Security-Policy", "")
 
     assert "script-src" in csp

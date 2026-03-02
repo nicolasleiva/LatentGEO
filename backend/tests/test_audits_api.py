@@ -147,4 +147,3 @@ def test_download_pdf_url_rejects_non_completed_audit(client: TestClient):
     download_response = client.get(f"/api/v1/audits/{audit_id}/download-pdf-url")
     assert download_response.status_code == 400
     assert "aún no está listo" in download_response.json()["detail"]
-

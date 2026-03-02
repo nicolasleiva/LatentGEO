@@ -3,7 +3,7 @@ from enum import Enum
 from typing import Any, Dict, List, Optional
 
 from app.core.security import normalize_url
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, ConfigDict, field_validator
 
 from .validators import validate_market, validate_url
 
@@ -95,8 +95,7 @@ class AuditResponse(BaseModel):
     market: Optional[str] = None
     geo_score: float = 0  # GEO Score (0-100)
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class AuditSummary(BaseModel):
@@ -109,8 +108,7 @@ class AuditSummary(BaseModel):
     geo_score: Optional[float] = 0
     total_pages: Optional[int] = 0
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class AuditDetail(BaseModel):
@@ -124,8 +122,7 @@ class AuditDetail(BaseModel):
     report_markdown: Optional[str] = None
     fix_plan: Optional[List[Dict[str, Any]]] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class ReportResponse(BaseModel):
@@ -135,8 +132,7 @@ class ReportResponse(BaseModel):
     file_path: Optional[str] = None
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class PDFRequest(BaseModel):
@@ -215,8 +211,7 @@ class BacklinkResponse(BaseModel):
     domain_authority: Optional[int] = None
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class KeywordResponse(BaseModel):
@@ -229,8 +224,7 @@ class KeywordResponse(BaseModel):
     intent: Optional[str] = None
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class RankTrackingResponse(BaseModel):
@@ -244,8 +238,7 @@ class RankTrackingResponse(BaseModel):
     top_results: Optional[List[Dict[str, Any]]] = None  # Top 10 competitors
     tracked_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class LLMVisibilityResponse(BaseModel):
@@ -258,8 +251,7 @@ class LLMVisibilityResponse(BaseModel):
     citation_text: Optional[str] = None
     checked_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class AIContentSuggestionResponse(BaseModel):
@@ -272,5 +264,4 @@ class AIContentSuggestionResponse(BaseModel):
     priority: str
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)

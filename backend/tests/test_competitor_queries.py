@@ -879,14 +879,14 @@ async def test_run_initial_audit_without_llm_has_no_synthetic_queries():
     # or by calling a method that respects the flag if exposed.
     # Since analyze_external_intelligence assumes LLM is enabled, we verify that
     # if we were to construct the result manually as run_initial_audit does:
-    
+
     external = {
         "status": "unavailable",
         "error_code": "AGENT1_DISABLED",
         "query_source": "none",
-        "queries_to_run": []
+        "queries_to_run": [],
     }
-    
+
     assert external.get("status") == "unavailable"
     assert external.get("error_code") == "AGENT1_DISABLED"
     assert external.get("query_source") == "none"

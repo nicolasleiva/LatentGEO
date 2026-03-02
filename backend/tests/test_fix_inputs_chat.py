@@ -89,4 +89,3 @@ def test_fix_inputs_chat_fallback_on_invalid_json(client, db_session, monkeypatc
     data = response.json()
     assert data["suggested_value"] == ""
     assert data["confidence"] == "unknown"
-

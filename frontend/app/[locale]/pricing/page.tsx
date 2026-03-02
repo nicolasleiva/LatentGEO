@@ -125,7 +125,8 @@ export default function PricingPage() {
             Pricing built for execution, not vanity seats.
           </h1>
           <p className="text-xl text-muted-foreground max-w-2xl mx-auto">
-            Start lean, prove impact, and scale governance and automation as your team matures.
+            Start lean, prove impact, and scale governance and automation as
+            your team matures.
           </p>
         </div>
 
@@ -194,21 +195,24 @@ export default function PricingPage() {
               <Globe className="w-8 h-8 text-brand mx-auto mb-4" />
               <h3 className="font-semibold mb-2">AI-First Discovery</h3>
               <p className="text-sm text-muted-foreground">
-                Prioritize prompts and categories where AI visibility drives demand.
+                Prioritize prompts and categories where AI visibility drives
+                demand.
               </p>
             </div>
             <div className="p-6 bg-background/70 border border-border/70 rounded-2xl text-center">
               <GitBranch className="w-8 h-8 text-brand mx-auto mb-4" />
               <h3 className="font-semibold mb-2">Engineering Hand-off</h3>
               <p className="text-sm text-muted-foreground">
-                Move from insight to implementation-ready work with GitHub-native flow.
+                Move from insight to implementation-ready work with
+                GitHub-native flow.
               </p>
             </div>
             <div className="p-6 bg-background/70 border border-border/70 rounded-2xl text-center">
               <Building2 className="w-8 h-8 text-brand mx-auto mb-4" />
               <h3 className="font-semibold mb-2">Team Alignment</h3>
               <p className="text-sm text-muted-foreground">
-                Keep product, content, and growth teams on one execution narrative.
+                Keep product, content, and growth teams on one execution
+                narrative.
               </p>
             </div>
             <div className="p-6 bg-background/70 border border-border/70 rounded-2xl text-center">
@@ -274,7 +278,8 @@ export default function PricingPage() {
             Ready to run AI visibility as a core growth function?
           </h2>
           <p className="text-muted-foreground mb-8 max-w-xl mx-auto">
-            Start with a free audit, then scale your operating model when the data proves impact.
+            Start with a free audit, then scale your operating model when the
+            data proves impact.
           </p>
           <a
             href={startAuditHref}

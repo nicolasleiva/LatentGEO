@@ -8,7 +8,8 @@ import {
 describe("pdf-download helpers", () => {
   it("returns absolute download URL from payload", () => {
     const payload = {
-      download_url: "https://project.supabase.co/storage/v1/object/sign/audits/3/report.pdf",
+      download_url:
+        "https://project.supabase.co/storage/v1/object/sign/audits/3/report.pdf",
       expires_in_seconds: 3600,
       storage_provider: "supabase",
     };
@@ -18,7 +19,9 @@ describe("pdf-download helpers", () => {
 
   it("throws when payload does not include an absolute URL", () => {
     expect(() =>
-      getPdfDownloadUrlFromPayload({ download_url: "/storage/v1/object/sign/x" }),
+      getPdfDownloadUrlFromPayload({
+        download_url: "/storage/v1/object/sign/x",
+      }),
     ).toThrow("Download URL must be absolute.");
   });
 

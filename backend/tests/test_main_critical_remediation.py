@@ -59,4 +59,3 @@ async def test_lifespan_fails_fast_when_db_init_fails(monkeypatch):
     with pytest.raises(RuntimeError, match="Database initialization failed"):
         async with main_module.lifespan(FastAPI()):
             pass
-

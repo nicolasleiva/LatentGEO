@@ -53,4 +53,3 @@ describe("LLMVisibilityPage", () => {
     expect(screen.queryByText(/OpenAI\/Gemini/i)).not.toBeInTheDocument();
   });
 });
-

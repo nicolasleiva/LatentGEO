@@ -8,7 +8,10 @@ export const typedApiClient = createClient<paths>({
   fetch: (request: Request) => fetchWithBackendAuth(request),
 });
 
-export function ensureData<T>(payload: { data?: T; error?: unknown }, fallback: string): T {
+export function ensureData<T>(
+  payload: { data?: T; error?: unknown },
+  fallback: string,
+): T {
   if (payload.error) {
     const message =
       typeof payload.error === "object" && payload.error !== null

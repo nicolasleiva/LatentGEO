@@ -30,8 +30,9 @@ class MockEventSource {
 describe("useAuditSSE", () => {
   beforeEach(() => {
     MockEventSource.instances = [];
-    (globalThis as unknown as { EventSource: typeof MockEventSource }).EventSource =
-      MockEventSource;
+    (
+      globalThis as unknown as { EventSource: typeof MockEventSource }
+    ).EventSource = MockEventSource;
   });
 
   afterEach(() => {

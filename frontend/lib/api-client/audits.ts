@@ -16,7 +16,9 @@ export async function listAudits(): Promise<AuditListItem[]> {
   return Array.isArray(data) ? (data as AuditListItem[]) : [];
 }
 
-export async function createAudit(input: { url: string }): Promise<{ id: number }> {
+export async function createAudit(input: {
+  url: string;
+}): Promise<{ id: number }> {
   const result = await typedApiClient.POST("/api/v1/audits/", {
     body: input as never,
   });

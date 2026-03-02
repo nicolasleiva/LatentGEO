@@ -47,7 +47,9 @@ def test_smoke_webhooks_health(smoke_client: httpx.Client):
 
 
 def test_smoke_geo_content_templates(smoke_client: httpx.Client):
-    response = smoke_client.get("/api/v1/geo/content-templates", headers=_auth_headers())
+    response = smoke_client.get(
+        "/api/v1/geo/content-templates", headers=_auth_headers()
+    )
     assert response.status_code != 404, response.text
     assert response.status_code < 500, response.text
 
@@ -55,4 +57,3 @@ def test_smoke_geo_content_templates(smoke_client: httpx.Client):
         assert response.status_code == 200, response.text
     else:
         assert response.status_code in (401, 403), response.text
-

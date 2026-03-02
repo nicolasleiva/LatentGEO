@@ -633,7 +633,7 @@ class PipelineService:
             system_prompt += "\nContext includes ai_content_suggestions."
         if "PageSpeed" not in system_prompt and "pagespeed" not in system_prompt:
             system_prompt += "\nContext includes PageSpeed data."
-        
+
         current_year = datetime.now().year
         system_prompt += f"\nCurrent year is {current_year}."
 
@@ -1986,10 +1986,7 @@ class PipelineService:
                 if len(root) < 5:
                     continue
                 prefix_len = min(7, len(term_root), len(root))
-                if (
-                    prefix_len >= 5
-                    and term_root[:prefix_len] == root[:prefix_len]
-                ):
+                if prefix_len >= 5 and term_root[:prefix_len] == root[:prefix_len]:
                     return True
             return False
 
@@ -2182,9 +2179,7 @@ class PipelineService:
                 continue
 
         # Second pass (relaxed) is disabled by default to avoid false positives.
-        enable_relaxed_pass = bool(
-            getattr(settings, "COMPETITOR_RELAXED_PASS", False)
-        )
+        enable_relaxed_pass = bool(getattr(settings, "COMPETITOR_RELAXED_PASS", False))
         if enable_relaxed_pass and (len(local_urls) + len(global_urls)) < max(
             2, int(limit // 2)
         ):
@@ -3944,9 +3939,7 @@ class PipelineService:
     @staticmethod
     def _normalize_token_root(token: str) -> str:
         normalized = unicodedata.normalize("NFKD", str(token or "").lower())
-        ascii_folded = "".join(
-            ch for ch in normalized if not unicodedata.combining(ch)
-        )
+        ascii_folded = "".join(ch for ch in normalized if not unicodedata.combining(ch))
         raw = re.sub(r"[^a-z0-9]+", "", ascii_folded)
         if not raw:
             return ""
@@ -5852,9 +5845,7 @@ class PipelineService:
                         timeout_seconds=float(settings.SERPER_TIMEOUT_SECONDS),
                     )
                     if status_code != 200:
-                        last_error = (
-                            f"Serper API Error {status_code} en página {page + 1}: {body}"
-                        )
+                        last_error = f"Serper API Error {status_code} en página {page + 1}: {body}"
                         logger.error(f"PIPELINE: {last_error}")
                         break
 
@@ -6341,8 +6332,7 @@ class PipelineService:
                 for item in pruned_queries_snapshot:
                     _append_query(
                         str(item.get("query", "")).strip(),
-                        str(item.get("purpose", "")).strip()
-                        or "Competitor discovery",
+                        str(item.get("purpose", "")).strip() or "Competitor discovery",
                         query_id=str(item.get("id", "")).strip(),
                     )
                     if len(final_queries) >= max_queries:
@@ -8267,7 +8257,10 @@ async def run_initial_audit(
             if isinstance(external_intelligence, dict):
                 fallback_category = external_intelligence.get("category", "") or ""
             if not fallback_category or fallback_category.lower() in (
-                "unclassified", "unknown category", "none", "",
+                "unclassified",
+                "unknown category",
+                "none",
+                "",
             ):
                 content_data = normalized_target.get("content", {})
                 if isinstance(content_data, dict):
@@ -8286,7 +8279,9 @@ async def run_initial_audit(
                 cat_short = " ".join(str(fallback_category).split()[:4])
                 fallback_queries.append({"query": f"{cat_short} mejores sitios"})
             if target_domain:
-                fallback_queries.append({"query": f"sitios similares a {target_domain}"})
+                fallback_queries.append(
+                    {"query": f"sitios similares a {target_domain}"}
+                )
 
             if fallback_queries:
                 search_queries = fallback_queries

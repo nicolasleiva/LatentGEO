@@ -10,8 +10,8 @@ import re
 from datetime import datetime
 from typing import Dict, List, Optional
 
-from openai import OpenAI
 from bs4 import BeautifulSoup
+from openai import OpenAI
 
 from ...core.config import settings
 from ...core.external_resilience import run_external_call_sync

@@ -114,4 +114,3 @@ def test_article_engine_async_generate_and_status_endpoint(
     status_payload = status_res.json()
     assert status_payload["has_data"] is True
     assert status_payload["status"] == "processing"
-

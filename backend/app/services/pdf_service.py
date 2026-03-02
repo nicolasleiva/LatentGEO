@@ -2996,6 +2996,3 @@ class PDFService:
                 logger.warning(
                     f"Error limpiando temporales de PDF audit={audit.id}: {cleanup_err}"
                 )
-
-
-

@@ -111,5 +111,3 @@ describe("ArticleEngine component", () => {
     ).toBeInTheDocument();
   });
 });
-
-

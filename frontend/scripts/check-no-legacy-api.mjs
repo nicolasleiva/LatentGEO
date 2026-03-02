@@ -6,14 +6,9 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const frontendRoot = path.resolve(__dirname, "..");
 
-const scopes = [
-  "app",
-  "components",
-  "hooks",
-  "lib",
-  "__tests__",
-  "e2e",
-].map((relative) => path.join(frontendRoot, relative));
+const scopes = ["app", "components", "hooks", "lib", "__tests__", "e2e"].map(
+  (relative) => path.join(frontendRoot, relative),
+);
 
 const excludedPathFragments = [path.join("lib", "api-client")];
 const legacyApiPattern = /\/api\/(?!v1\/|auth(?:\/|$)|sse(?:\/|$))/g;
@@ -66,7 +61,9 @@ for (const scopeDir of scopes) {
     lines.forEach((line, index) => {
       legacyApiPattern.lastIndex = 0;
       if (legacyApiPattern.test(line)) {
-        const relativePath = path.relative(frontendRoot, filePath).replaceAll("\\", "/");
+        const relativePath = path
+          .relative(frontendRoot, filePath)
+          .replaceAll("\\", "/");
         violations.push(`${relativePath}:${index + 1}: ${line.trim()}`);
       }
     });

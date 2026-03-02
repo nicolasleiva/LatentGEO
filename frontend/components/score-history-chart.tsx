@@ -11,7 +11,12 @@ import {
   AreaChart,
   Area,
 } from "@/components/recharts-dynamic";
-import { Calendar, BarChart3, ArrowUpRight, ArrowDownRight } from "lucide-react";
+import {
+  Calendar,
+  BarChart3,
+  ArrowUpRight,
+  ArrowDownRight,
+} from "lucide-react";
 import { API_URL } from "@/lib/api";
 import { fetchWithBackendAuth } from "@/lib/backend-auth";
 
@@ -101,7 +106,9 @@ function ComparisonCard({
         {label}
       </div>
       <div className="flex items-baseline gap-2">
-        <span className="text-2xl font-bold text-foreground">{metric.current}</span>
+        <span className="text-2xl font-bold text-foreground">
+          {metric.current}
+        </span>
         <span className={`text-sm ${colorClass} flex items-center gap-1`}>
           {metric.trend === "up" && <ArrowUpRight className="w-3 h-3" />}
           {metric.trend === "down" && <ArrowDownRight className="w-3 h-3" />}
@@ -109,12 +116,18 @@ function ComparisonCard({
           {metric.change_pct}%
         </span>
       </div>
-      <div className="text-xs text-muted-foreground mt-1">vs {metric.previous} previous month</div>
+      <div className="text-xs text-muted-foreground mt-1">
+        vs {metric.previous} previous month
+      </div>
     </div>
   );
 }
 
-function MonthlyComparisonSection({ comparison }: { comparison: MonthlyComparison }) {
+function MonthlyComparisonSection({
+  comparison,
+}: {
+  comparison: MonthlyComparison;
+}) {
   return (
     <div className="glass-card p-6 rounded-2xl">
       <div className="flex items-center justify-between mb-6">
@@ -123,7 +136,9 @@ function MonthlyComparisonSection({ comparison }: { comparison: MonthlyCompariso
             <Calendar className="w-5 h-5 text-brand" />
           </div>
           <div>
-            <h3 className="text-lg font-medium text-foreground">Monthly Comparison</h3>
+            <h3 className="text-lg font-medium text-foreground">
+              Monthly Comparison
+            </h3>
             <p className="text-sm text-muted-foreground">
               {comparison.current_month} vs {comparison.previous_month}
             </p>
@@ -132,17 +147,36 @@ function MonthlyComparisonSection({ comparison }: { comparison: MonthlyCompariso
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <ComparisonCard label="Overall Score" metric={comparison.comparison.overall_score} />
-        <ComparisonCard label="SEO Score" metric={comparison.comparison.seo_score} />
-        <ComparisonCard label="GEO Score" metric={comparison.comparison.geo_score} />
-        <ComparisonCard label="Performance" metric={comparison.comparison.performance_score} />
-        <ComparisonCard label="LCP (ms)" metric={comparison.comparison.lcp} isLowerBetter />
+        <ComparisonCard
+          label="Overall Score"
+          metric={comparison.comparison.overall_score}
+        />
+        <ComparisonCard
+          label="SEO Score"
+          metric={comparison.comparison.seo_score}
+        />
+        <ComparisonCard
+          label="GEO Score"
+          metric={comparison.comparison.geo_score}
+        />
+        <ComparisonCard
+          label="Performance"
+          metric={comparison.comparison.performance_score}
+        />
+        <ComparisonCard
+          label="LCP (ms)"
+          metric={comparison.comparison.lcp}
+          isLowerBetter
+        />
         <ComparisonCard
           label="Critical issues"
           metric={comparison.comparison.critical_issues}
           isLowerBetter
         />
-        <ComparisonCard label="Audits" metric={comparison.comparison.audit_count} />
+        <ComparisonCard
+          label="Audits"
+          metric={comparison.comparison.audit_count}
+        />
       </div>
     </div>
   );
@@ -167,7 +201,9 @@ function HistoryChartSection({
             <BarChart3 className="w-5 h-5 text-brand" />
           </div>
           <div>
-            <h3 className="text-lg font-medium text-foreground">Score history</h3>
+            <h3 className="text-lg font-medium text-foreground">
+              Score history
+            </h3>
             <p className="text-sm text-muted-foreground">{domain}</p>
           </div>
         </div>
@@ -195,8 +231,16 @@ function HistoryChartSection({
             <AreaChart data={formattedHistory}>
               <defs>
                 <linearGradient id="colorOverall" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="hsl(var(--brand))" stopOpacity={0.3} />
-                  <stop offset="95%" stopColor="hsl(var(--brand))" stopOpacity={0} />
+                  <stop
+                    offset="5%"
+                    stopColor="hsl(var(--brand))"
+                    stopOpacity={0.3}
+                  />
+                  <stop
+                    offset="95%"
+                    stopColor="hsl(var(--brand))"
+                    stopOpacity={0}
+                  />
                 </linearGradient>
                 <linearGradient id="colorSeo" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="5%" stopColor="#14b8a6" stopOpacity={0.3} />
@@ -207,7 +251,10 @@ function HistoryChartSection({
                   <stop offset="95%" stopColor="#334155" stopOpacity={0} />
                 </linearGradient>
               </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+              <CartesianGrid
+                strokeDasharray="3 3"
+                stroke="hsl(var(--border))"
+              />
               <XAxis
                 dataKey="date"
                 stroke="hsl(var(--muted-foreground))"
@@ -227,7 +274,9 @@ function HistoryChartSection({
                   backdropFilter: "blur(10px)",
                 }}
               />
-              <Legend wrapperStyle={{ color: "hsl(var(--muted-foreground))" }} />
+              <Legend
+                wrapperStyle={{ color: "hsl(var(--muted-foreground))" }}
+              />
               <Area
                 type="monotone"
                 dataKey="overall_score"
@@ -259,7 +308,9 @@ function HistoryChartSection({
         <div className="h-[300px] flex items-center justify-center border border-dashed border-border rounded-xl">
           <div className="text-center">
             <BarChart3 className="w-12 h-12 text-muted-foreground/50 mx-auto mb-4" />
-            <p className="text-muted-foreground">No historical data available</p>
+            <p className="text-muted-foreground">
+              No historical data available
+            </p>
             <p className="text-muted-foreground/70 text-sm mt-2">
               Data is automatically recorded with each audit
             </p>
@@ -270,24 +321,42 @@ function HistoryChartSection({
   );
 }
 
-function HistoryTableSection({ formattedHistory }: { formattedHistory: any[] }) {
+function HistoryTableSection({
+  formattedHistory,
+}: {
+  formattedHistory: any[];
+}) {
   if (formattedHistory.length === 0) {
     return null;
   }
 
   return (
     <div className="glass-card p-6 rounded-2xl">
-      <h3 className="text-lg font-medium text-foreground mb-4">Audit details</h3>
+      <h3 className="text-lg font-medium text-foreground mb-4">
+        Audit details
+      </h3>
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-border">
-              <th className="text-left py-3 px-4 text-muted-foreground font-medium">Date</th>
-              <th className="text-center py-3 px-4 text-muted-foreground font-medium">Overall</th>
-              <th className="text-center py-3 px-4 text-muted-foreground font-medium">SEO</th>
-              <th className="text-center py-3 px-4 text-muted-foreground font-medium">GEO</th>
-              <th className="text-center py-3 px-4 text-muted-foreground font-medium">Performance</th>
-              <th className="text-center py-3 px-4 text-muted-foreground font-medium">Issues</th>
+              <th className="text-left py-3 px-4 text-muted-foreground font-medium">
+                Date
+              </th>
+              <th className="text-center py-3 px-4 text-muted-foreground font-medium">
+                Overall
+              </th>
+              <th className="text-center py-3 px-4 text-muted-foreground font-medium">
+                SEO
+              </th>
+              <th className="text-center py-3 px-4 text-muted-foreground font-medium">
+                GEO
+              </th>
+              <th className="text-center py-3 px-4 text-muted-foreground font-medium">
+                Performance
+              </th>
+              <th className="text-center py-3 px-4 text-muted-foreground font-medium">
+                Issues
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -295,7 +364,10 @@ function HistoryTableSection({ formattedHistory }: { formattedHistory: any[] }) 
               .slice(-10)
               .reverse()
               .map((h) => (
-                <tr key={`${h.date}-${h.overall_score}`} className="border-b border-border hover:bg-muted/50">
+                <tr
+                  key={`${h.date}-${h.overall_score}`}
+                  className="border-b border-border hover:bg-muted/50"
+                >
                   <td className="py-3 px-4 text-foreground">{h.date}</td>
                   <td className="py-3 px-4 text-center">
                     <span
@@ -310,9 +382,15 @@ function HistoryTableSection({ formattedHistory }: { formattedHistory: any[] }) 
                       {h.overall_score}
                     </span>
                   </td>
-                  <td className="py-3 px-4 text-center text-foreground">{h.seo_score}</td>
-                  <td className="py-3 px-4 text-center text-foreground">{h.geo_score}</td>
-                  <td className="py-3 px-4 text-center text-foreground">{h.performance_score}</td>
+                  <td className="py-3 px-4 text-center text-foreground">
+                    {h.seo_score}
+                  </td>
+                  <td className="py-3 px-4 text-center text-foreground">
+                    {h.geo_score}
+                  </td>
+                  <td className="py-3 px-4 text-center text-foreground">
+                    {h.performance_score}
+                  </td>
                   <td className="py-3 px-4 text-center">
                     <span className="text-red-500">{h.critical_issues}</span>
                     <span className="text-muted-foreground mx-1">/</span>
@@ -355,7 +433,9 @@ export function ScoreHistoryChart({ domain }: ScoreHistoryProps) {
           ),
         ]);
 
-        const history = historyRes.ok ? (await historyRes.json()).history || [] : [];
+        const history = historyRes.ok
+          ? (await historyRes.json()).history || []
+          : [];
         const comparison = comparisonRes.ok ? await comparisonRes.json() : null;
 
         dispatch({ type: "loaded", history, comparison });
@@ -391,7 +471,9 @@ export function ScoreHistoryChart({ domain }: ScoreHistoryProps) {
 
   return (
     <div className="space-y-8">
-      {viewState.comparison && <MonthlyComparisonSection comparison={viewState.comparison} />}
+      {viewState.comparison && (
+        <MonthlyComparisonSection comparison={viewState.comparison} />
+      )}
       <HistoryChartSection
         domain={domain}
         days={days}

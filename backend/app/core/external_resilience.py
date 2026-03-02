@@ -5,7 +5,8 @@ External service resilience helpers (timeouts + circuit breaker).
 from __future__ import annotations
 
 import asyncio
-from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
+from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FuturesTimeoutError
 from typing import Awaitable, Callable, Dict, TypeVar
 
 import pybreaker

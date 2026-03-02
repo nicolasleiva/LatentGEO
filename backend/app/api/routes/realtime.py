@@ -85,10 +85,15 @@ async def websocket_endpoint(websocket: WebSocket, audit_id: int):
 
     pubsub = None
 
+    progress_channel = AuditService.progress_channel(audit_id)
+    legacy_progress_channel = f"audit_progress_{audit_id}"
+
     if cache.enabled:
         pubsub = cache.redis_client.pubsub()
-        pubsub.subscribe(f"audit_progress_{audit_id}")
-        logger.info(f"Subscribed to Redis: audit_progress_{audit_id}")
+        pubsub.subscribe(progress_channel, legacy_progress_channel)
+        logger.info(
+            f"Subscribed to Redis channels: {progress_channel}, {legacy_progress_channel}"
+        )
 
     try:
         # Loop para escuchar ambos: mensajes del cliente y de Redis
@@ -119,10 +124,10 @@ async def websocket_endpoint(websocket: WebSocket, audit_id: int):
 
     except WebSocketDisconnect:
         if pubsub:
-            pubsub.unsubscribe(f"audit_progress_{audit_id}")
+            pubsub.unsubscribe(progress_channel, legacy_progress_channel)
         manager.disconnect(websocket, audit_id)
     except Exception as e:
         logger.error(f"WS Error: {e}")
         if pubsub:
-            pubsub.unsubscribe(f"audit_progress_{audit_id}")
+            pubsub.unsubscribe(progress_channel, legacy_progress_channel)
         manager.disconnect(websocket, audit_id)

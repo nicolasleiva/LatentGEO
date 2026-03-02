@@ -3,14 +3,15 @@ import os
 import re
 
 import pytest
-
 from app.core.config import settings
 from app.models import Audit, AuditStatus
 from app.services.audit_service import AuditService
 
 
 @pytest.mark.asyncio
-async def test_save_audit_files_persists_sanitized_fix_plan_once(tmp_path, monkeypatch, caplog):
+async def test_save_audit_files_persists_sanitized_fix_plan_once(
+    tmp_path, monkeypatch, caplog
+):
     monkeypatch.setattr(settings, "REPORTS_DIR", str(tmp_path), raising=False)
     monkeypatch.setattr(settings, "AUDIT_LOCAL_ARTIFACTS_ENABLED", True, raising=False)
     caplog.set_level("ERROR")

@@ -321,9 +321,7 @@ async def kimi_search_serp(
 
     async def _serper_search() -> Dict[str, Any]:
         if not settings.SERPER_API_KEY:
-            raise KimiSearchUnavailableError(
-                "Serper search requires SERPER_API_KEY."
-            )
+            raise KimiSearchUnavailableError("Serper search requires SERPER_API_KEY.")
 
         endpoint = "https://google.serper.dev/search"
         headers = {
@@ -433,6 +431,7 @@ async def kimi_search_serp(
 
         # Attempt Responses API first.
         try:
+
             async def _call_kimi_responses_search():
                 return await client.responses.create(
                     model=settings.NV_KIMI_SEARCH_MODEL,
@@ -456,6 +455,7 @@ async def kimi_search_serp(
             logger.warning(
                 f"Kimi responses API search call failed, retrying via chat tools: {response_exc}"
             )
+
             async def _call_kimi_chat_search():
                 return await client.chat.completions.create(
                     model=settings.NV_KIMI_SEARCH_MODEL,

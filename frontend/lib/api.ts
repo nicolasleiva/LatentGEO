@@ -99,15 +99,20 @@ class APIService {
   }
 
   async getAudit(id: string): Promise<AuditSummary> {
-    const res = await fetchWithBackendAuth(`${this.baseUrl}/api/v1/audits/${id}`);
+    const res = await fetchWithBackendAuth(
+      `${this.baseUrl}/api/v1/audits/${id}`,
+    );
     if (!res.ok) throw new Error(`API error: ${res.status}`);
     return res.json();
   }
 
   async deleteAudit(id: number): Promise<void> {
-    const res = await fetchWithBackendAuth(`${this.baseUrl}/api/v1/audits/${id}`, {
-      method: "DELETE",
-    });
+    const res = await fetchWithBackendAuth(
+      `${this.baseUrl}/api/v1/audits/${id}`,
+      {
+        method: "DELETE",
+      },
+    );
     if (!res.ok) throw new Error(`API error: ${res.status}`);
   }
 
@@ -1036,4 +1041,3 @@ class APIService {
 }
 
 export const api = new APIService();
-

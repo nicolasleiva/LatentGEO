@@ -6,6 +6,7 @@ Tests the full stack for production deployment.
 import json
 import os
 import tempfile
+from contextlib import asynccontextmanager
 from unittest.mock import patch
 
 import pytest
@@ -54,6 +55,13 @@ def test_app(test_db):
     ):
         app = create_app()
 
+        @asynccontextmanager
+        async def _noop_lifespan(_app):
+            yield
+
+        # Keep these tests focused on route/middleware contracts, not startup validators.
+        app.router.lifespan_context = _noop_lifespan
+
         # Override dependency
         def override_get_db():
             db = TestingSessionLocal()
@@ -73,7 +81,8 @@ def test_app(test_db):
 @pytest.fixture
 def client(test_app):
     """Test client with configured app"""
-    return TestClient(test_app)
+    with TestClient(test_app) as test_client:
+        yield test_client
 
 
 class TestProductionReadiness:
@@ -131,7 +140,7 @@ class TestWebhookEndpoints:
             signature = "sha256=" + WebhookService.generate_signature(body, secret)
             response = client.post(
                 "/api/v1/webhooks/github/incoming",
-                data=body,
+                content=body,
                 headers={
                     "X-GitHub-Event": "ping",
                     "X-Hub-Signature-256": signature,
@@ -166,4 +175,3 @@ class TestMiddlewareIntegration:
         response = client.get("/health")
         assert "X-Response-Time" in response.headers
         assert response.status_code == 200
-

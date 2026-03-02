@@ -3,6 +3,7 @@ HubSpot Integration - Quick Start Example
 Ejemplo de implementación básica del cliente de HubSpot
 """
 
+import os
 from datetime import datetime
 from typing import Dict, List, Optional
 
@@ -348,9 +349,11 @@ class HubSpotAuditService:
 class HubSpotOAuth:
     """Maneja el flujo OAuth con HubSpot"""
 
-    CLIENT_ID = "your-client-id"
-    CLIENT_SECRET = "your-client-secret"  # nosec B105
-    REDIRECT_URI = "https://your-app.com/integrations/hubspot/callback"
+    CLIENT_ID = os.getenv("HUBSPOT_CLIENT_ID", "")
+    CLIENT_SECRET = os.getenv("HUBSPOT_CLIENT_SECRET", "")
+    REDIRECT_URI = os.getenv(
+        "HUBSPOT_REDIRECT_URI", "https://your-app.com/integrations/hubspot/callback"
+    )
 
     SCOPES = [
         "content",

@@ -4,6 +4,8 @@ Configuración de Pytest y fixtures
 
 import os
 import sys
+import tempfile
+from contextlib import asynccontextmanager
 from typing import Generator
 
 import pytest
@@ -16,6 +18,11 @@ pytest_plugins = ["conftest_production"]
 
 RUN_INTEGRATION_TESTS = os.getenv("RUN_INTEGRATION_TESTS") == "1"
 STRICT_TEST_MODE = os.getenv("STRICT_TEST_MODE") == "1"
+_HYPOTHESIS_STORAGE_DIRECTORY = os.path.join(
+    tempfile.gettempdir(), ".hypothesis", "examples"
+)
+os.makedirs(_HYPOTHESIS_STORAGE_DIRECTORY, exist_ok=True)
+os.environ.setdefault("HYPOTHESIS_STORAGE_DIRECTORY", _HYPOTHESIS_STORAGE_DIRECTORY)
 
 # Add the backend directory to sys.path
 # In Docker, this is /app. Locally, it's the backend folder.
@@ -60,6 +67,28 @@ def pytest_terminal_summary(terminalreporter, exitstatus, config):
         f"STRICT_TEST_MODE=1: se detectaron {skipped_count} tests omitidos (no permitido).",
     )
     terminalreporter._session.exitstatus = 1
+
+
+@pytest.fixture(scope="function", autouse=True)
+def disable_app_lifespan_for_unit_tests():
+    """
+    Avoid running production lifespan (DB init, external services) on each unit test.
+    This keeps tests deterministic and prevents leaking external resources.
+    """
+    if RUN_INTEGRATION_TESTS:
+        yield
+        return
+
+    @asynccontextmanager
+    async def _noop_lifespan(_app):
+        yield
+
+    original_lifespan = app.router.lifespan_context
+    app.router.lifespan_context = _noop_lifespan
+    try:
+        yield
+    finally:
+        app.router.lifespan_context = original_lifespan
 
 
 @pytest.fixture(scope="function", autouse=True)
@@ -117,8 +146,10 @@ def db_session(setup_test_db) -> Generator:
     session = TestingSessionLocal(bind=connection)
     yield session
     session.close()
-    transaction.rollback()
-    connection.close()
+    if transaction.is_active:
+        transaction.rollback()
+    if not connection.closed:
+        connection.close()
 
 
 @pytest.fixture(scope="function")
@@ -139,8 +170,9 @@ def client(db_session) -> Generator:
     app.dependency_overrides[get_db] = override_get_db
     app.dependency_overrides[get_current_user] = override_get_current_user
 
-    with TestClient(app) as c:
-        yield c
-
-    app.dependency_overrides.pop(get_db, None)
-    app.dependency_overrides.pop(get_current_user, None)
+    try:
+        with TestClient(app) as c:
+            yield c
+    finally:
+        app.dependency_overrides.pop(get_db, None)
+        app.dependency_overrides.pop(get_current_user, None)

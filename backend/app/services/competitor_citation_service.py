@@ -399,8 +399,12 @@ Sé específico y accionable. Formato:
             import json
 
             competitors = json.loads(analysis.competitor_data)
-            gap_analysis = json.loads(analysis.gap_analysis) if analysis.gap_analysis else {}
-            gap_analysis = CompetitorCitationService._sanitize_gap_analysis(gap_analysis)
+            gap_analysis = (
+                json.loads(analysis.gap_analysis) if analysis.gap_analysis else {}
+            )
+            gap_analysis = CompetitorCitationService._sanitize_gap_analysis(
+                gap_analysis
+            )
 
             # Preparar datos para visualización
             return {

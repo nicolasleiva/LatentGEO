@@ -316,9 +316,9 @@ class TestSearchQueryInputValidator:
 
     def test_control_characters_removed(self):
         """Test that control characters are removed"""
-        input_data = SearchQueryInput(query="test\x00query\x1F")
+        input_data = SearchQueryInput(query="test\x00query\x1f")
         assert "\x00" not in input_data.query
-        assert "\x1F" not in input_data.query
+        assert "\x1f" not in input_data.query
 
     def test_whitespace_trimmed(self):
         """Test that whitespace is trimmed"""

@@ -2,7 +2,9 @@
 Complete System Verification Script
 Verifies all core business components are working.
 """
+import os
 import sys
+from secrets import token_urlsafe
 
 sys.path.insert(0, ".")
 
@@ -145,9 +147,8 @@ def main():
         errors.append(f"Validators: {e}")
         print(f"   ✗ Validators: {e}")
 
-    import os
-
-    os.environ["SECRET_KEY"] = "test-key-12345"
+    if not os.getenv("SECRET_KEY"):
+        os.environ["SECRET_KEY"] = token_urlsafe(32)
     try:
         from app.core.auth import create_access_token, verify_token
 

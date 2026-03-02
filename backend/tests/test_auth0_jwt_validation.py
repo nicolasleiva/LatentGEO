@@ -3,16 +3,17 @@ from datetime import datetime, timedelta, timezone
 
 import jwt
 import pytest
-from cryptography.hazmat.primitives.asymmetric import rsa
-
 from app.core import auth as auth_module
 from app.core.auth import get_user_from_bearer_token
+from cryptography.hazmat.primitives.asymmetric import rsa
 from fastapi import HTTPException
 
 
 def _build_rsa_fixture():
     private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
-    public_jwk = json.loads(jwt.algorithms.RSAAlgorithm.to_jwk(private_key.public_key()))
+    public_jwk = json.loads(
+        jwt.algorithms.RSAAlgorithm.to_jwk(private_key.public_key())
+    )
     public_jwk["kid"] = "test-kid"
     public_jwk["alg"] = "RS256"
     public_jwk["use"] = "sig"
@@ -65,7 +66,9 @@ def _set_auth0_settings(monkeypatch):
         None,
         raising=False,
     )
-    monkeypatch.setattr(auth_module.settings, "ENVIRONMENT", "development", raising=False)
+    monkeypatch.setattr(
+        auth_module.settings, "ENVIRONMENT", "development", raising=False
+    )
 
 
 def test_accepts_valid_auth0_access_token(monkeypatch):

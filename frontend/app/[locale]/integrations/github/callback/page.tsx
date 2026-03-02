@@ -81,7 +81,9 @@ export default function GitHubCallback() {
       <Card className="w-[400px]">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            {status === "loading" && <Loader2 className="h-6 w-6 animate-spin" />}
+            {status === "loading" && (
+              <Loader2 className="h-6 w-6 animate-spin" />
+            )}
             {status === "success" && (
               <CheckCircle2 className="h-6 w-6 text-green-500" />
             )}
@@ -93,8 +95,12 @@ export default function GitHubCallback() {
           <p className="text-muted-foreground mb-4">{message}</p>
           {status === "error" && (
             <div className="bg-red-50 p-2 rounded text-xs text-red-800 break-all">
-              <p>If the error persists, copy this code and send it to support:</p>
-              <code className="font-mono font-bold mt-2 block">{debugCode}</code>
+              <p>
+                If the error persists, copy this code and send it to support:
+              </p>
+              <code className="font-mono font-bold mt-2 block">
+                {debugCode}
+              </code>
             </div>
           )}
         </CardContent>
@@ -102,4 +108,3 @@ export default function GitHubCallback() {
     </div>
   );
 }
-

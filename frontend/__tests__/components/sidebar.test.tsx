@@ -20,4 +20,3 @@ describe("Sidebar Component", () => {
     expect(["sidebar.tsx"]).toContain("sidebar.tsx");
   });
 });
-

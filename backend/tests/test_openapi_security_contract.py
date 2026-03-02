@@ -1,6 +1,5 @@
 from app.main import create_app
 
-
 PUBLIC_OPERATIONS = (
     ("post", "/api/v1/github/webhook"),
     ("post", "/api/v1/webhooks/github/incoming"),

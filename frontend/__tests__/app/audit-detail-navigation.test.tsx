@@ -140,5 +140,3 @@ describe("Audit detail GEO tools navigation", () => {
     });
   });
 });
-
-

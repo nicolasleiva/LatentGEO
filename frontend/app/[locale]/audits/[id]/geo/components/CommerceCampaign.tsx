@@ -533,4 +533,3 @@ export default function CommerceCampaign({
     </div>
   );
 }
-

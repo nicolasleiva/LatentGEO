@@ -8,7 +8,12 @@ export default defineConfig({
     testTimeout: 15000,
     setupFiles: ["./vitest.setup.ts"],
     include: ["**/__tests__/**/*.{test,spec}.{ts,tsx}"],
-    exclude: ["**/node_modules/**", "**/.next/**", "**/.open-next/**", "**/e2e/**"],
+    exclude: [
+      "**/node_modules/**",
+      "**/.next/**",
+      "**/.open-next/**",
+      "**/e2e/**",
+    ],
     css: true,
   },
   resolve: {

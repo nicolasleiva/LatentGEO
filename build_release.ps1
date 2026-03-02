@@ -105,5 +105,5 @@ if ($LASTEXITCODE -ne 0) { Write-Error "Fallo al guardar imagenes"; exit 1 }
 Write-Host "Proceso completado. Archivo generado: auditor_geo_release.tar"
 Write-Host "Para distribuir, comparte:"
 Write-Host "  1. auditor_geo_release.tar"
-Write-Host "  2. docker-compose.release.yml"
+Write-Host "  2. docker-compose.yml"
 Write-Host "  3. .env.example (como plantilla)"

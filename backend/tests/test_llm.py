@@ -3,6 +3,7 @@
 Pruebas para el LLM KIMI. Estas pruebas son de integración y se saltan si
 no hay credenciales configuradas en el entorno.
 """
+
 import os
 
 import pytest

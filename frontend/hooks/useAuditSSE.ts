@@ -18,7 +18,8 @@ interface UseAuditSSEOptions {
   enabled?: boolean;
 }
 
-const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
+const BACKEND_URL =
+  process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
 
 /**
  * Hook para recibir actualizaciones en tiempo real de auditorías usando Server-Sent Events (SSE).
@@ -234,4 +235,3 @@ export function useAuditSSE(
     reconnect: connect,
   };
 }
-

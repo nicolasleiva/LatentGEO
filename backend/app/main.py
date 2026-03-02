@@ -119,7 +119,11 @@ def create_app() -> FastAPI:
 
     cors_origins = set(settings.CORS_ORIGINS)
     # Keep local/docker defaults only for non-production-like environments.
-    if settings.DEBUG or settings.ENVIRONMENT.lower() in {"development", "dev", "local"}:
+    if settings.DEBUG or settings.ENVIRONMENT.lower() in {
+        "development",
+        "dev",
+        "local",
+    }:
         cors_origins.add("http://frontend:3000")
         cors_origins.add("http://localhost:3000")
         cors_origins.add("http://localhost:8000")

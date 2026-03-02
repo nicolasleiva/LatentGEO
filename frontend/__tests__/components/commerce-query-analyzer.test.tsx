@@ -112,5 +112,3 @@ describe("Commerce query analyzer", () => {
     ).toBeInTheDocument();
   });
 });
-
-

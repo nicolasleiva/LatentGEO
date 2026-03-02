@@ -2,7 +2,9 @@ from app.core.config import settings
 from app.models import Audit, AuditStatus, Report
 
 
-def _create_completed_audit(db_session, file_path: str = "supabase://audits/3/report.pdf"):
+def _create_completed_audit(
+    db_session, file_path: str = "supabase://audits/3/report.pdf"
+):
     audit = Audit(
         url="https://www.robot.com/",
         domain="www.robot.com",
@@ -42,7 +44,9 @@ def test_download_pdf_url_returns_signed_url(client, db_session, monkeypatch):
     assert payload["storage_provider"] == "supabase"
 
 
-def test_download_pdf_redirect_returns_302_with_location(client, db_session, monkeypatch):
+def test_download_pdf_redirect_returns_302_with_location(
+    client, db_session, monkeypatch
+):
     audit = _create_completed_audit(db_session)
 
     signed_url = "https://project.supabase.co/storage/v1/object/sign/audit-reports/audits/3/report.pdf?token=test"
@@ -60,12 +64,16 @@ def test_download_pdf_redirect_returns_302_with_location(client, db_session, mon
     assert response.headers.get("location") == signed_url
 
 
-def test_download_pdf_url_normalizes_relative_signed_url(client, db_session, monkeypatch):
+def test_download_pdf_url_normalizes_relative_signed_url(
+    client, db_session, monkeypatch
+):
     audit = _create_completed_audit(db_session)
 
     class _BucketClient:
         def create_signed_url(self, path, expiry_seconds):
-            return {"signedURL": "/storage/v1/object/sign/audit-reports/audits/3/report.pdf?token=test"}
+            return {
+                "signedURL": "/storage/v1/object/sign/audit-reports/audits/3/report.pdf?token=test"
+            }
 
     class _StorageClient:
         def from_(self, bucket):
@@ -90,7 +98,9 @@ def test_download_pdf_url_normalizes_relative_signed_url(client, db_session, mon
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["download_url"].startswith("https://project.supabase.co/storage/v1/object/sign/")
+    assert payload["download_url"].startswith(
+        "https://project.supabase.co/storage/v1/object/sign/"
+    )
 
 
 def test_download_pdf_url_returns_409_for_legacy_local_path(client, db_session):

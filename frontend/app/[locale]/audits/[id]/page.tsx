@@ -41,7 +41,10 @@ import { useAuditSSE } from "@/hooks/useAuditSSE";
 import { API_URL } from "@/lib/api";
 import { fetchWithBackendAuth } from "@/lib/backend-auth";
 import { getExternalIntelligenceBanner } from "@/lib/external-intelligence-status";
-import { getPdfDownloadUrlFromPayload, triggerFileDownload } from "@/lib/pdf-download";
+import {
+  getPdfDownloadUrlFromPayload,
+  triggerFileDownload,
+} from "@/lib/pdf-download";
 
 // Dynamic imports for heavy components
 const CoreWebVitalsChart = dynamic(
@@ -773,7 +776,9 @@ export default function AuditDetailPage() {
                 {audit.source === "hubspot" && (
                   <Button
                     onClick={() =>
-                      router.push(`${localePrefix}/audits/${auditId}/hubspot-apply`)
+                      router.push(
+                        `${localePrefix}/audits/${auditId}/hubspot-apply`,
+                      )
                     }
                     className="bg-[#ff7a59] hover:bg-[#ff7a59]/90 text-white px-6"
                   >
@@ -1263,30 +1268,30 @@ export default function AuditDetailPage() {
                         </h3>
                         <div className="grid grid-cols-3 md:grid-cols-6 gap-2">
                           {psData.screenshots.map((screenshot: any) => (
-                              <div
-                                key={
-                                  screenshot.timestamp ??
-                                  screenshot.data ??
-                                  JSON.stringify(screenshot)
-                                }
-                                className="rounded-lg border border-border overflow-hidden bg-muted/50"
-                              >
-                                <div className="text-[10px] text-muted-foreground p-1 text-center">
-                                  {(screenshot.timestamp / 1000).toFixed(1)}s
-                                </div>
-                                {screenshot.data && (
-                                  <div className="relative w-full h-24">
-                                    <Image
-                                      src={screenshot.data}
-                                      alt={`Screenshot at ${screenshot.timestamp}ms`}
-                                      fill
-                                      sizes="160px"
-                                      className="object-cover object-top"
-                                    />
-                                  </div>
-                                )}
+                            <div
+                              key={
+                                screenshot.timestamp ??
+                                screenshot.data ??
+                                JSON.stringify(screenshot)
+                              }
+                              className="rounded-lg border border-border overflow-hidden bg-muted/50"
+                            >
+                              <div className="text-[10px] text-muted-foreground p-1 text-center">
+                                {(screenshot.timestamp / 1000).toFixed(1)}s
                               </div>
-                            ))}
+                              {screenshot.data && (
+                                <div className="relative w-full h-24">
+                                  <Image
+                                    src={screenshot.data}
+                                    alt={`Screenshot at ${screenshot.timestamp}ms`}
+                                    fill
+                                    sizes="160px"
+                                    className="object-cover object-top"
+                                  />
+                                </div>
+                              )}
+                            </div>
+                          ))}
                         </div>
                       </div>
                     )}
@@ -1362,22 +1367,22 @@ export default function AuditDetailPage() {
                                               {audit.details.items
                                                 .slice(0, 3)
                                                 .map((item: any) => (
-                                                    <div
-                                                      key={
-                                                        item.url ??
-                                                        item.source ??
-                                                        JSON.stringify(item)
-                                                      }
-                                                      className="text-xs"
-                                                    >
-                                                      •{" "}
-                                                      {item.url ||
-                                                        item.source ||
-                                                        JSON.stringify(
-                                                          item,
-                                                        ).substring(0, 100)}
-                                                    </div>
-                                                  ))}
+                                                  <div
+                                                    key={
+                                                      item.url ??
+                                                      item.source ??
+                                                      JSON.stringify(item)
+                                                    }
+                                                    className="text-xs"
+                                                  >
+                                                    •{" "}
+                                                    {item.url ||
+                                                      item.source ||
+                                                      JSON.stringify(
+                                                        item,
+                                                      ).substring(0, 100)}
+                                                  </div>
+                                                ))}
                                               {audit.details.items.length >
                                                 3 && (
                                                 <div className="text-xs">
@@ -1428,7 +1433,8 @@ export default function AuditDetailPage() {
                       GEO Dashboard
                     </h3>
                     <p className="text-sm text-muted-foreground">
-                      Monitor citations, discovery opportunities, and assistant-facing visibility.
+                      Monitor citations, discovery opportunities, and
+                      assistant-facing visibility.
                     </p>
                   </Link>
 
@@ -1468,7 +1474,8 @@ export default function AuditDetailPage() {
                       Backlink Intelligence
                     </h3>
                     <p className="text-sm text-muted-foreground">
-                      Evaluate authority signals and high-value linking opportunities.
+                      Evaluate authority signals and high-value linking
+                      opportunities.
                     </p>
                   </Link>
 
@@ -1507,7 +1514,8 @@ export default function AuditDetailPage() {
                       Content Editor
                     </h3>
                     <p className="text-sm text-muted-foreground">
-                      Refine page messaging for clarity, intent match, and conversion context.
+                      Refine page messaging for clarity, intent match, and
+                      conversion context.
                     </p>
                   </Link>
 
@@ -1527,7 +1535,8 @@ export default function AuditDetailPage() {
                       AI Content Angles
                     </h3>
                     <p className="text-sm text-muted-foreground">
-                      Generate editorial angles based on audit findings and gaps.
+                      Generate editorial angles based on audit findings and
+                      gaps.
                     </p>
                   </Link>
 
@@ -1548,7 +1557,8 @@ export default function AuditDetailPage() {
                       Ecommerce Query Analyzer
                     </h3>
                     <p className="text-sm text-muted-foreground">
-                      Analyze commerce prompts to improve citation share and buying-intent traffic.
+                      Analyze commerce prompts to improve citation share and
+                      buying-intent traffic.
                     </p>
                   </Link>
 
@@ -1572,7 +1582,8 @@ export default function AuditDetailPage() {
                       Article Engine
                     </h3>
                     <p className="text-sm text-muted-foreground">
-                      Generate audit-grounded articles designed to close citation and intent gaps.
+                      Generate audit-grounded articles designed to close
+                      citation and intent gaps.
                     </p>
                   </Link>
 
@@ -1592,7 +1603,8 @@ export default function AuditDetailPage() {
                       GitHub Auto-Fix
                     </h3>
                     <p className="text-sm text-muted-foreground">
-                      Create implementation-ready PRs with scoped SEO/GEO changes.
+                      Create implementation-ready PRs with scoped SEO/GEO
+                      changes.
                     </p>
                   </Link>
 
@@ -1610,7 +1622,8 @@ export default function AuditDetailPage() {
                           HubSpot Auto-Apply
                         </h3>
                         <p className="text-sm text-muted-foreground">
-                          Push selected recommendations directly into HubSpot CMS pages.
+                          Push selected recommendations directly into HubSpot
+                          CMS pages.
                         </p>
                       </button>
                     </DialogTrigger>
@@ -1908,7 +1921,9 @@ export default function AuditDetailPage() {
                               : 0;
                           return (
                             <tr
-                              key={comp.url ?? comp.domain ?? JSON.stringify(comp)}
+                              key={
+                                comp.url ?? comp.domain ?? JSON.stringify(comp)
+                              }
                               className="hover:bg-muted/20 transition-colors"
                             >
                               <td className="p-4 text-muted-foreground">
@@ -2074,4 +2089,3 @@ export default function AuditDetailPage() {
     </div>
   );
 }
-

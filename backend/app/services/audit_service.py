@@ -179,6 +179,43 @@ class AuditService:
         return query.all()
 
     @staticmethod
+    def progress_channel(audit_id: int) -> str:
+        return f"audit.progress.{int(audit_id)}"
+
+    @staticmethod
+    def build_progress_payload(audit: Audit) -> Dict[str, Any]:
+        status_value = None
+        if getattr(audit, "status", None) is not None:
+            status_value = (
+                audit.status.value
+                if hasattr(audit.status, "value")
+                else str(audit.status)
+            )
+        return {
+            "audit_id": int(audit.id),
+            "progress": float(audit.progress or 0),
+            "status": status_value or "unknown",
+            "error_message": audit.error_message,
+            "geo_score": audit.geo_score,
+            "total_pages": audit.total_pages,
+        }
+
+    @staticmethod
+    def publish_progress_event(audit_id: int, payload: Dict[str, Any]) -> None:
+        try:
+            from .cache_service import cache
+
+            if not cache.enabled or not cache.redis_client:
+                return
+
+            cache.redis_client.publish(
+                AuditService.progress_channel(audit_id),
+                json.dumps(payload, default=str),
+            )
+        except Exception as e:
+            logger.error(f"Error publishing progress to Redis: {e}")
+
+    @staticmethod
     def update_audit_progress(
         db: Session,
         audit_id: int,
@@ -206,22 +243,10 @@ class AuditService:
         db.commit()
         db.refresh(audit)
 
-        # Level 2/3: Broadcast progress via Redis Pub/Sub
-        try:
-            from .cache_service import cache
-
-            if cache.enabled:
-                progress_msg = {
-                    "audit_id": audit_id,
-                    "progress": audit.progress,
-                    "status": audit.status.value if audit.status else None,
-                    "error_message": audit.error_message,
-                }
-                cache.redis_client.publish(
-                    f"audit_progress_{audit_id}", json.dumps(progress_msg)
-                )
-        except Exception as e:
-            logger.error(f"Error publishing progress to Redis: {e}")
+        AuditService.publish_progress_event(
+            audit_id=audit_id,
+            payload=AuditService.build_progress_payload(audit),
+        )
 
         return audit
 
@@ -866,7 +891,9 @@ class AuditService:
                     types = schema_data.get("types", [])
 
                 types_count = len(types)
-                return min(100, max(20, types_count * 20))  # MÃ­nimo 20 si estÃ¡ presente
+                return min(
+                    100, max(20, types_count * 20)
+                )  # MÃ­nimo 20 si estÃ¡ presente
             return 0.0
         except Exception:
             return 0.0
@@ -1835,7 +1862,9 @@ class ReportService:
                     try:
                         from .supabase_service import SupabaseService
 
-                        storage_path = str(report.file_path).replace("supabase://", "", 1)
+                        storage_path = str(report.file_path).replace(
+                            "supabase://", "", 1
+                        )
                         SupabaseService.delete_file(
                             bucket=settings.SUPABASE_STORAGE_BUCKET, path=storage_path
                         )
@@ -2044,10 +2073,14 @@ class CompetitorService:
         # Guardar JSON local solo en modo legacy de artefactos.
         if AuditService._local_artifacts_enabled():
             try:
-                competitors_dir = AuditService._reports_dir_for_audit(audit_id) / "competitors"
+                competitors_dir = (
+                    AuditService._reports_dir_for_audit(audit_id) / "competitors"
+                )
                 competitors_dir.mkdir(parents=True, exist_ok=True)
                 safe_domain = re.sub(r"[^\w\-_.]", "_", domain)
-                competitor_json_path = competitors_dir / f"competitor_{safe_domain}.json"
+                competitor_json_path = (
+                    competitors_dir / f"competitor_{safe_domain}.json"
+                )
                 competitor_full_data = {
                     "url": url,
                     "domain": domain,
@@ -2088,4 +2121,3 @@ class CompetitorService:
         return (
             db.query(Competitor).order_by(desc(Competitor.geo_score)).limit(limit).all()
         )
-

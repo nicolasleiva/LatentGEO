@@ -244,6 +244,7 @@ class TestDataQuality:
 
 
 if __name__ == "__main__":
+
     def redact_secret(is_configured: bool) -> str:
         return "<configured>" if is_configured else "<missing>"
 

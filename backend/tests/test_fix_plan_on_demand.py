@@ -1,7 +1,7 @@
-import asyncio
 import json
 import os
 
+import pytest
 from app.core.config import settings
 from app.models import Audit, AuditedPage, AuditStatus
 from app.services.audit_service import AuditService
@@ -31,7 +31,10 @@ def _seed_audit(
     return audit
 
 
-def test_ensure_fix_plan_generates_and_persists(db_session, monkeypatch, tmp_path):
+@pytest.mark.asyncio
+async def test_ensure_fix_plan_generates_and_persists(
+    db_session, monkeypatch, tmp_path
+):
     audit = _seed_audit(db_session)
 
     async def fake_llm(*, system_prompt, user_prompt):
@@ -84,11 +87,9 @@ def test_ensure_fix_plan_generates_and_persists(db_session, monkeypatch, tmp_pat
 
     monkeypatch.setattr("app.core.llm_kimi.get_llm_function", lambda: fake_llm)
     monkeypatch.setattr(settings, "REPORTS_DIR", str(tmp_path), raising=False)
-    monkeypatch.setattr(
-        settings, "AUDIT_LOCAL_ARTIFACTS_ENABLED", True, raising=False
-    )
+    monkeypatch.setattr(settings, "AUDIT_LOCAL_ARTIFACTS_ENABLED", True, raising=False)
 
-    fix_plan = asyncio.run(AuditService.ensure_fix_plan(db_session, audit.id))
+    fix_plan = await AuditService.ensure_fix_plan(db_session, audit.id)
 
     assert isinstance(fix_plan, list)
     assert len(fix_plan) >= 5
@@ -182,15 +183,14 @@ def _seed_fix_plan_audit(db_session, tmp_path) -> Audit:
     return audit
 
 
-def test_get_fix_plan_missing_inputs_and_apply(db_session, monkeypatch, tmp_path):
+@pytest.mark.asyncio
+async def test_get_fix_plan_missing_inputs_and_apply(db_session, monkeypatch, tmp_path):
     monkeypatch.setattr(settings, "REPORTS_DIR", str(tmp_path), raising=False)
-    monkeypatch.setattr(
-        settings, "AUDIT_LOCAL_ARTIFACTS_ENABLED", True, raising=False
-    )
+    monkeypatch.setattr(settings, "AUDIT_LOCAL_ARTIFACTS_ENABLED", True, raising=False)
     audit = _seed_fix_plan_audit(db_session, tmp_path)
 
-    missing_inputs = asyncio.run(
-        AuditService.get_fix_plan_missing_inputs(db_session, audit.id)
+    missing_inputs = await AuditService.get_fix_plan_missing_inputs(
+        db_session, audit.id
     )
     assert any(group["issue_code"] == "H1_MISSING" for group in missing_inputs)
     assert any(group["issue_code"] == "SCHEMA_MISSING" for group in missing_inputs)
@@ -218,12 +218,9 @@ def test_get_fix_plan_missing_inputs_and_apply(db_session, monkeypatch, tmp_path
         },
     ]
 
-    updated = asyncio.run(
-        AuditService.apply_fix_plan_inputs(db_session, audit.id, answers)
-    )
+    updated = await AuditService.apply_fix_plan_inputs(db_session, audit.id, answers)
     assert isinstance(updated, list)
     assert any(item.get("recommended_value") == "Privacy Policy" for item in updated)
 
     fix_plan_path = os.path.join(str(tmp_path), f"audit_{audit.id}", "fix_plan.json")
     assert os.path.exists(fix_plan_path)
-

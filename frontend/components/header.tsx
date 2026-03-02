@@ -103,7 +103,10 @@ export function Header() {
   return (
     <header className="sticky top-0 z-50 w-full border-b border-border/70 bg-background/85 backdrop-blur-xl">
       <div className="container flex h-20 items-center justify-between px-4 sm:px-6">
-        <Link href={withCurrentLocale("/")} className="flex items-center gap-3 group">
+        <Link
+          href={withCurrentLocale("/")}
+          className="flex items-center gap-3 group"
+        >
           <div className="p-2.5 bg-foreground/5 rounded-2xl border border-foreground/10 group-hover:bg-foreground/10 transition-colors">
             <Sparkles className="h-6 w-6 text-foreground" />
           </div>

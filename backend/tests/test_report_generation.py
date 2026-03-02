@@ -1,5 +1,3 @@
-import asyncio
-
 import pytest
 from app.services.pipeline_service import PipelineService
 
@@ -146,9 +144,3 @@ async def test_generate_report_complete_context_properties():
         assert key in context_data, f"Key {key} missing from context"
 
     print("Test passed: All 10 context keys are present.")
-
-
-if __name__ == "__main__":
-    asyncio.run(test_generate_report_v11_structure())
-    asyncio.run(test_generate_report_partial_data())
-    asyncio.run(test_generate_report_complete_context_properties())

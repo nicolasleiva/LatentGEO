@@ -296,9 +296,9 @@ export default function AuditsListPage() {
                     <Badge
                       variant="outline"
                       className={getStatusColor(audit.status)}
-                      >
-                        {audit.status === "running" ? "running" : audit.status}
-                      </Badge>
+                    >
+                      {audit.status === "running" ? "running" : audit.status}
+                    </Badge>
 
                     <Button
                       variant="ghost"
@@ -340,17 +340,17 @@ export default function AuditsListPage() {
                 ? "No audits found"
                 : "No audits yet"}
             </h3>
-                <p className="text-muted-foreground/70 mb-6">
-                  {searchQuery || filter !== "all"
+            <p className="text-muted-foreground/70 mb-6">
+              {searchQuery || filter !== "all"
                 ? "Try adjusting the query or status filter."
                 : "Run your first audit to build an AI visibility baseline."}
-                </p>
-                <Button onClick={() => router.push(withLocale(pathname, "/"))}>
-                  <Plus className="w-4 h-4 mr-2" />
+            </p>
+            <Button onClick={() => router.push(withLocale(pathname, "/"))}>
+              <Plus className="w-4 h-4 mr-2" />
               Run New Audit
-                </Button>
-              </div>
-            )}
+            </Button>
+          </div>
+        )}
       </main>
     </div>
   );

@@ -5,17 +5,21 @@ Replaces polling to reduce server load and improve responsiveness.
 
 import asyncio
 import json
-from typing import AsyncGenerator
+from time import monotonic
+from typing import Any, AsyncGenerator
 
 from app.core.access_control import ensure_audit_access
 from app.core.auth import AuthUser, get_current_user
 from app.core.config import settings
 from app.core.logger import get_logger
 from app.services.audit_service import AuditService
-from fastapi import APIRouter, Depends
-from fastapi.responses import StreamingResponse
+from app.services.cache_service import cache
+from fastapi import APIRouter, Depends, Request
+from fastapi.sse import EventSourceResponse, ServerSentEvent, format_sse_event
+from starlette.concurrency import run_in_threadpool
 
 logger = get_logger(__name__)
+TERMINAL_STATUSES = {"completed", "failed"}
 
 router = APIRouter(
     prefix="/sse",
@@ -23,81 +27,212 @@ router = APIRouter(
 )
 
 
+def _load_owned_audit_payload(audit_id: int, current_user: AuthUser) -> dict[str, Any]:
+    from app.core.database import SessionLocal
+
+    db_session = SessionLocal()
+    try:
+        audit = AuditService.get_audit(db_session, audit_id)
+        audit = ensure_audit_access(audit, current_user)
+        return AuditService.build_progress_payload(audit)
+    finally:
+        db_session.close()
+
+
+def _decode_redis_payload(raw_data: Any, audit_id: int) -> dict[str, Any] | None:
+    payload: Any = raw_data
+    if isinstance(payload, bytes):
+        payload = payload.decode("utf-8")
+    if isinstance(payload, str):
+        try:
+            payload = json.loads(payload)
+        except json.JSONDecodeError:
+            return None
+    if not isinstance(payload, dict):
+        return None
+    payload.setdefault("audit_id", audit_id)
+    return payload
+
+
+def _serialize_sse_event(event: ServerSentEvent) -> bytes:
+    data_str = event.raw_data
+    if data_str is None and event.data is not None:
+        data_str = json.dumps(event.data, default=str)
+    return format_sse_event(
+        data_str=data_str,
+        event=event.event,
+        id=event.id,
+        retry=event.retry,
+        comment=event.comment,
+    )
+
+
 async def audit_progress_stream(
     audit_id: int,
     current_user: AuthUser,
-) -> AsyncGenerator[str, None]:
+    request: Request,
+    initial_payload: dict[str, Any] | None = None,
+) -> AsyncGenerator[bytes, None]:
     """
-    Stream audit progress updates using Server-Sent Events.
-    Sends updates every 2 seconds until audit is completed or failed.
-    Includes heartbeat to keep connection alive.
+    Stream audit progress updates using Redis as primary source and DB as fallback.
     """
-    max_duration = getattr(settings, "SSE_MAX_DURATION", 3600)  # seconds
-    start_time = asyncio.get_event_loop().time()
-    last_status = None
-    last_progress = None
-    heartbeat_counter = 0
+    max_duration = max(30, int(getattr(settings, "SSE_MAX_DURATION", 3600)))
+    heartbeat_seconds = max(5, int(getattr(settings, "SSE_HEARTBEAT_SECONDS", 30)))
+    fallback_db_interval = max(
+        1, int(getattr(settings, "SSE_FALLBACK_DB_INTERVAL_SECONDS", 10))
+    )
+    retry_ms = max(1000, int(getattr(settings, "SSE_RETRY_MS", 5000)))
+    sse_source = (getattr(settings, "SSE_SOURCE", "redis") or "redis").lower()
+
+    use_redis_source = (
+        sse_source == "redis" and cache.enabled and bool(cache.redis_client)
+    )
+    redis_channel = AuditService.progress_channel(audit_id)
+    pubsub = None
+
+    start_time = monotonic()
+    last_emit_ts = start_time
+    last_db_check_ts = 0.0
+    last_payload_signature = None
 
     try:
+        initial = initial_payload or await run_in_threadpool(
+            _load_owned_audit_payload, audit_id, current_user
+        )
+        initial_json = json.dumps(initial, default=str)
+        yield _serialize_sse_event(
+            ServerSentEvent(raw_data=initial_json, retry=retry_ms)
+        )
+        last_payload_signature = json.dumps(initial, sort_keys=True, default=str)
+        last_emit_ts = monotonic()
+        last_db_check_ts = last_emit_ts
+
+        initial_status = str(initial.get("status") or "").lower()
+        if initial_status in TERMINAL_STATUSES:
+            logger.info(f"SSE stream ended for audit {audit_id}: {initial_status}")
+            return
+
+        if use_redis_source:
+            try:
+                pubsub = cache.redis_client.pubsub()
+                await run_in_threadpool(pubsub.subscribe, redis_channel)
+                logger.info(f"SSE Redis subscribed: {redis_channel}")
+            except Exception as redis_sub_error:
+                logger.warning(
+                    f"SSE Redis subscription failed for audit {audit_id}: {redis_sub_error}"
+                )
+                pubsub = None
+                use_redis_source = False
+
         while True:
-            # Check timeout
-            if asyncio.get_event_loop().time() - start_time > max_duration:
+            now = monotonic()
+
+            if now - start_time > max_duration:
                 logger.warning(f"SSE stream timeout for audit {audit_id}")
-                yield f"data: {json.dumps({'error': 'Stream timeout'})}\n\n"
+                yield _serialize_sse_event(
+                    ServerSentEvent(
+                        raw_data=json.dumps({"error": "Stream timeout"}),
+                        retry=retry_ms,
+                    )
+                )
                 break
 
-            # Get fresh DB session for each query to avoid stale data
-            from app.core.database import SessionLocal
+            if await request.is_disconnected():
+                logger.info(f"SSE client disconnected for audit {audit_id}")
+                break
 
-            db_session = SessionLocal()
-            try:
-                audit = AuditService.get_audit(db_session, audit_id)
+            payload: dict[str, Any] | None = None
 
-                audit = ensure_audit_access(audit, current_user)
-
-                # Send update if something changed
-                if audit.status != last_status or audit.progress != last_progress:
-                    data = {
-                        "audit_id": audit.id,
-                        "status": audit.status.value if audit.status else "unknown",
-                        "progress": audit.progress or 0,
-                        "error_message": audit.error_message,
-                        "geo_score": audit.geo_score,
-                        "total_pages": audit.total_pages,
-                    }
-
-                    yield f"data: {json.dumps(data)}\n\n"
-
-                    last_status = audit.status
-                    last_progress = audit.progress
-
-                    # Stop streaming if audit is completed or failed
-                    if audit.status.value in ["completed", "failed"]:
-                        logger.info(
-                            f"SSE stream ended for audit {audit_id}: {audit.status.value}"
+            if pubsub:
+                try:
+                    message = await run_in_threadpool(
+                        lambda: pubsub.get_message(
+                            ignore_subscribe_messages=True,
+                            timeout=1.0,
                         )
-                        break
-                else:
-                    # Send heartbeat every 30 seconds to keep connection alive
-                    heartbeat_counter += 1
-                    if heartbeat_counter >= 15:  # 15 * 2s = 30s
-                        yield ": heartbeat\n\n"
-                        heartbeat_counter = 0
-            finally:
-                db_session.close()
+                    )
+                    if message and message.get("type") == "message":
+                        payload = _decode_redis_payload(message.get("data"), audit_id)
+                except Exception as redis_read_error:
+                    logger.warning(
+                        f"SSE Redis read failed for audit {audit_id}: {redis_read_error}"
+                    )
+                    try:
+                        await run_in_threadpool(pubsub.unsubscribe, redis_channel)
+                        await run_in_threadpool(pubsub.close)
+                    except Exception:
+                        logger.debug(
+                            f"Failed to close Redis pubsub cleanly for audit {audit_id}",
+                            exc_info=True,
+                        )
+                    pubsub = None
+                    use_redis_source = False
 
-            await asyncio.sleep(2)
+            should_check_db = payload is None and (
+                sse_source == "db"
+                or not use_redis_source
+                or (now - last_db_check_ts) >= fallback_db_interval
+            )
+
+            if should_check_db:
+                payload = await run_in_threadpool(
+                    _load_owned_audit_payload, audit_id, current_user
+                )
+                last_db_check_ts = now
+
+            if payload is not None:
+                payload_signature = json.dumps(payload, sort_keys=True, default=str)
+                if payload_signature != last_payload_signature:
+                    yield _serialize_sse_event(
+                        ServerSentEvent(
+                            raw_data=json.dumps(payload, default=str),
+                            retry=retry_ms,
+                        )
+                    )
+                    last_payload_signature = payload_signature
+                    last_emit_ts = now
+
+                status_value = str(payload.get("status") or "").lower()
+                if status_value in TERMINAL_STATUSES:
+                    logger.info(
+                        f"SSE stream ended for audit {audit_id}: {status_value}"
+                    )
+                    break
+            elif now - last_emit_ts >= heartbeat_seconds:
+                yield _serialize_sse_event(
+                    ServerSentEvent(comment="heartbeat", retry=retry_ms)
+                )
+                last_emit_ts = now
+
+            if not pubsub:
+                await asyncio.sleep(0.25)
 
     except asyncio.CancelledError:
         logger.info(f"SSE stream cancelled for audit {audit_id}")
         raise
     except Exception:
         logger.exception(f"Error in SSE stream for audit {audit_id}")
-        yield 'data: {"error":"Internal server error"}\n\n'
+        yield _serialize_sse_event(
+            ServerSentEvent(
+                raw_data=json.dumps({"error": "Internal server error"}),
+                retry=retry_ms,
+            )
+        )
+    finally:
+        if pubsub:
+            try:
+                await run_in_threadpool(pubsub.unsubscribe, redis_channel)
+                await run_in_threadpool(pubsub.close)
+            except Exception:
+                logger.debug(
+                    f"SSE Redis cleanup failed for audit {audit_id}",
+                    exc_info=True,
+                )
 
 
 @router.get("/audits/{audit_id}/progress")
 async def stream_audit_progress(
+    request: Request,
     audit_id: int,
     current_user: AuthUser = Depends(get_current_user),
 ):
@@ -105,21 +240,14 @@ async def stream_audit_progress(
     SSE endpoint for streaming audit progress updates.
     Requires standard Authorization: Bearer header.
     """
-    # Ownership check before opening stream
-    from app.core.database import SessionLocal
-
-    db_session = SessionLocal()
-    try:
-        audit = AuditService.get_audit(db_session, audit_id)
-        ensure_audit_access(audit, current_user)
-    finally:
-        db_session.close()
+    initial_payload = await run_in_threadpool(
+        _load_owned_audit_payload, audit_id, current_user
+    )
 
     logger.info(f"SSE connection established for audit {audit_id}")
 
-    return StreamingResponse(
-        audit_progress_stream(audit_id, current_user),
-        media_type="text/event-stream",
+    return EventSourceResponse(
+        audit_progress_stream(audit_id, current_user, request, initial_payload),
         headers={
             "Cache-Control": "no-cache",
             "Connection": "keep-alive",

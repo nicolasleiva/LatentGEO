@@ -146,7 +146,9 @@ describe("HomePage", () => {
     await user.click(screen.getByRole("button", { name: /run free audit/i }));
 
     await waitFor(() => {
-      expect(createAudit).toHaveBeenCalledWith({ url: "https://ceibo.digital" });
+      expect(createAudit).toHaveBeenCalledWith({
+        url: "https://ceibo.digital",
+      });
     });
     expect(mockPush).toHaveBeenCalledWith("/en/audits/99");
   });

@@ -1,54 +1,44 @@
-# Instrucciones para desplegar Auditor GEO (Docker Release)
+# Instrucciones de Despliegue (Release)
 
-## Requisitos previos
-
-1. Docker instalado y ejecutandose.
+## Requisitos
+1. Docker instalado.
 2. Docker Compose v2+.
 
 ## Archivos necesarios
+- `auditor_geo_release.tar` (imagenes backend/frontend)
+- `docker-compose.yml` (stack estandar)
+- `.env` (basado en `.env.example`)
 
-- `auditor_geo_release.tar`: Archivo con las imagenes Docker precompiladas.
-- `docker-compose.release.yml`: Definicion de servicios para produccion.
-- `.env`: Archivo de variables de entorno (basado en `.env.example`).
+## Pasos
 
-## Pasos para desplegar
+1. Cargar imagenes:
+```bash
+docker load -i auditor_geo_release.tar
+```
 
-1. **Cargar las imagenes Docker:**
+2. Configurar entorno:
+```bash
+cp .env.example .env
+# editar .env con credenciales reales
+```
 
-   Ejecuta el siguiente comando en la terminal (PowerShell o Bash) donde tengas el archivo `.tar`:
+3. Levantar servicios:
+```bash
+docker compose up -d
+```
 
-   ```bash
-   docker load -i auditor_geo_release.tar
-   ```
+4. Verificar estado:
+```bash
+docker compose ps
+```
 
-   Esto cargara `auditor_geo-backend:latest` y `auditor_geo-frontend:latest`.
+Servicios:
+- Backend: `http://localhost:8000`
+- Frontend: `http://localhost:3000`
 
-2. **Configurar variables de entorno:**
-
-   Copia el archivo `.env.example` a `.env` y configura las credenciales (DB, Redis, APIs externas).
-
-   ```bash
-   cp .env.example .env
-   # Edita .env con tus valores reales
-   ```
-
-3. **Iniciar los servicios:**
-
-   Usa el archivo de composicion de release:
-
-   ```bash
-   docker compose -f docker-compose.release.yml up -d
-   ```
-
-4. **Verificar estado:**
-
-   ```bash
-   docker compose -f docker-compose.release.yml ps
-   ```
-
-   El backend estara disponible en `http://localhost:8000` y el frontend en `http://localhost:3000`.
-
-## Notas adicionales
-
-- Los volumenes de datos (`postgres_data`, `auditor_reports`) persistiran los datos entre reinicios.
-- Si necesitas reiniciar un servicio especifico: `docker compose -f docker-compose.release.yml restart backend`
+## Notas
+- Para desarrollo con hot reload usar `docker-compose.dev.yml`.
+- Comando de reinicio backend:
+```bash
+docker compose restart backend
+```

@@ -1,11 +1,7 @@
 "use client";
 
 import { useEffect, useState, useRef } from "react";
-import {
-  useParams,
-  usePathname,
-  useRouter,
-} from "next/navigation";
+import { useParams, usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import {
@@ -362,7 +358,8 @@ export default function GEODashboardPage() {
                 GEO Command Center
               </h1>
               <p className="text-lg text-muted-foreground">
-                Operate citation visibility, prompt discovery, and structured remediation from one workspace.
+                Operate citation visibility, prompt discovery, and structured
+                remediation from one workspace.
               </p>
             </div>
 
@@ -378,7 +375,8 @@ export default function GEODashboardPage() {
 
         {error && (
           <div className="mb-6 rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-700 dark:text-amber-300">
-            Summary data is still syncing. You can continue using tools while retry runs in background.
+            Summary data is still syncing. You can continue using tools while
+            retry runs in background.
           </div>
         )}
 
@@ -523,7 +521,8 @@ export default function GEODashboardPage() {
                     Priority Query Opportunities
                   </h2>
                   <p className="text-muted-foreground">
-                    Prompts where your brand is absent but commercial intent is strong.
+                    Prompts where your brand is absent but commercial intent is
+                    strong.
                   </p>
                 </div>
               </div>
@@ -537,7 +536,8 @@ export default function GEODashboardPage() {
               ) : opportunities.length === 0 ? (
                 <div className="text-center py-12 bg-muted/30 rounded-2xl border border-dashed border-border">
                   <p className="text-muted-foreground">
-                    No opportunities yet. Run prompt discovery to populate this queue.
+                    No opportunities yet. Run prompt discovery to populate this
+                    queue.
                   </p>
                 </div>
               ) : (
@@ -638,7 +638,8 @@ export default function GEODashboardPage() {
                     Prompt Discovery
                   </h2>
                   <p className="text-muted-foreground">
-                    Discover new prompts and intent clusters for citation growth.
+                    Discover new prompts and intent clusters for citation
+                    growth.
                   </p>
                 </div>
               </div>
@@ -689,7 +690,8 @@ export default function GEODashboardPage() {
                     Commerce Query Analyzer
                   </h2>
                   <p className="text-muted-foreground">
-                    Evaluate one commerce prompt at a time and close the gap to the current leader.
+                    Evaluate one commerce prompt at a time and close the gap to
+                    the current leader.
                   </p>
                 </div>
               </div>
@@ -715,7 +717,8 @@ export default function GEODashboardPage() {
                     Article Engine
                   </h2>
                   <p className="text-muted-foreground">
-                    Generate audit-grounded article batches focused on citation and conversion outcomes.
+                    Generate audit-grounded article batches focused on citation
+                    and conversion outcomes.
                   </p>
                 </div>
               </div>
@@ -740,7 +743,8 @@ export default function GEODashboardPage() {
                     Schema Builder
                   </h2>
                   <p className="text-muted-foreground">
-                    Build optimized schema payloads for stronger entity interpretation.
+                    Build optimized schema payloads for stronger entity
+                    interpretation.
                   </p>
                 </div>
               </div>
@@ -784,7 +788,8 @@ export default function GEODashboardPage() {
                     Template Library
                   </h2>
                   <p className="text-muted-foreground">
-                    Reusable templates aligned to GEO structure and intent clarity.
+                    Reusable templates aligned to GEO structure and intent
+                    clarity.
                   </p>
                 </div>
               </div>
@@ -818,4 +823,3 @@ export default function GEODashboardPage() {
     </div>
   );
 }
-

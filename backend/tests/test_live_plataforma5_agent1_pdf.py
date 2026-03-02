@@ -136,7 +136,7 @@ def test_live_agent1_generates_competitor_queries_plataforma5(
 @pytest.mark.live
 @pytest.mark.slow
 def test_live_generate_pdf_plataforma5_and_download(
-    first_pdf_generation: Dict[str, Any]
+    first_pdf_generation: Dict[str, Any],
 ):
     payload = first_pdf_generation["payload"]
     assert "report_cache_hit" in payload

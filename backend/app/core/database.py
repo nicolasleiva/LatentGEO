@@ -33,7 +33,7 @@ else:
     engine = create_engine(
         settings.DATABASE_URL,
         echo=settings.SQLALCHEMY_ECHO,
-        pool_pre_ping=True,
+        pool_pre_ping=bool(settings.DB_POOL_PRE_PING),
         # Pool configurable por entorno (Supabase pooler-friendly)
         pool_size=max(1, int(settings.DB_POOL_SIZE)),
         max_overflow=max(0, int(settings.DB_MAX_OVERFLOW)),
@@ -165,7 +165,11 @@ def ensure_performance_indexes(engine_ref=None) -> None:
             "geo_article_batches",
             ["audit_id", "created_at DESC"],
         ),
-        ("idx_github_connections_owner_user_id", "github_connections", ["owner_user_id"]),
+        (
+            "idx_github_connections_owner_user_id",
+            "github_connections",
+            ["owner_user_id"],
+        ),
         ("idx_github_connections_owner_email", "github_connections", ["owner_email"]),
         (
             "idx_hubspot_connections_owner_user_id",

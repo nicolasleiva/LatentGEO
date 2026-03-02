@@ -94,4 +94,3 @@ export default function HealthOpsPage() {
     </div>
   );
 }
-

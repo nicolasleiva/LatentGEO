@@ -175,7 +175,8 @@ export default function ReportsExportsPage() {
             Reporting Studio
           </h1>
           <p className="text-muted-foreground mt-2 max-w-2xl">
-            Generate board-ready exports and structured data packages from completed audits.
+            Generate board-ready exports and structured data packages from
+            completed audits.
           </p>
         </div>
 
@@ -267,7 +268,9 @@ export default function ReportsExportsPage() {
 
                       <Button
                         onClick={() =>
-                          router.push(withLocale(pathname, `/audits/${audit.id}`))
+                          router.push(
+                            withLocale(pathname, `/audits/${audit.id}`),
+                          )
                         }
                         variant="ghost"
                         className="text-muted-foreground hover:text-foreground hover:bg-muted/50"

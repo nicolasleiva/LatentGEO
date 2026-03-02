@@ -32,7 +32,10 @@ export default function SchemaMultipleGenerator({
   const [url, setUrl] = useState("");
   const [loading, setLoading] = useState(false);
   const [results, setResults] = useState<SchemaSuggestion[] | null>(null);
-  const [ui, setUi] = useState<{ error: string | null; copiedIdx: number | null }>({
+  const [ui, setUi] = useState<{
+    error: string | null;
+    copiedIdx: number | null;
+  }>({
     error: null,
     copiedIdx: null,
   });
@@ -187,4 +190,3 @@ export default function SchemaMultipleGenerator({
     </div>
   );
 }
-

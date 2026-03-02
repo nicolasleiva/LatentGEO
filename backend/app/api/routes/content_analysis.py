@@ -41,7 +41,9 @@ async def extract_keywords(
             try:
                 body_top_n = int(payload["top_n"])
             except (TypeError, ValueError) as exc:
-                raise HTTPException(status_code=422, detail="top_n must be an integer") from exc
+                raise HTTPException(
+                    status_code=422, detail="top_n must be an integer"
+                ) from exc
 
     resolved_html = (body_html or html or "").strip()
     if not resolved_html:
