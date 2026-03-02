@@ -6,13 +6,11 @@ import { resolveApiBaseUrl } from "@/lib/env";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-type RouteContext = {
-  params: {
-    auditId: string;
-  };
-};
-
-export async function GET(request: NextRequest, context: RouteContext) {
+export async function GET(
+  request: NextRequest,
+  context: { params: Promise<{ auditId: string }> },
+) {
+  const { auditId } = await context.params;
   const session = await auth0.getSession(request);
   if (!session?.user) {
     return NextResponse.json(
@@ -58,7 +56,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
 
   const backendBaseUrl = resolveApiBaseUrl();
   const upstreamUrl = new URL(
-    `/api/v1/sse/audits/${encodeURIComponent(context.params.auditId)}/progress`,
+    `/api/v1/sse/audits/${encodeURIComponent(auditId)}/progress`,
     backendBaseUrl,
   );
   const upstreamAbortController = new AbortController();
