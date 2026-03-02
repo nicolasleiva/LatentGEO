@@ -199,7 +199,7 @@ jobs:
         ENVIRONMENT: testing
       run: |
         cd backend
-        pytest -q tests -m "not integration and not live" --cov=app --cov-report=xml --cov-report=term-missing --junitxml=backend-junit.xml
+        pytest -W error -W ignore::pytest.PytestUnraisableExceptionWarning -W ignore::pluggy.PluggyTeardownRaisedWarning -q tests -m "not integration and not live" --cov=app --cov-report=xml --cov-report=term-missing --junitxml=backend-junit.xml
 
     - name: Assert deterministic suite skipped count = 0
       run: |
@@ -236,7 +236,7 @@ jobs:
           exit 1
         fi
         cd backend
-        pytest -q tests/test_release_smoke_external.py
+        pytest -W error -W ignore::pytest.PytestUnraisableExceptionWarning -W ignore::pluggy.PluggyTeardownRaisedWarning -q tests/test_release_smoke_external.py
 
   # JOB 4: Frontend Testing
   frontend-tests:

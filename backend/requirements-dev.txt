@@ -17,5 +17,6 @@ flake8==6.1.0
 
 # Typing support
 types-PyYAML>=6.0.12
+types-bleach>=6.2.0
 types-python-dateutil>=2.9.0
 types-requests>=2.32.0

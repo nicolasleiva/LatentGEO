@@ -7,7 +7,7 @@ const activeLocales = ["en"];
 const legacyLocales = ["es"];
 const defaultLocale = "en";
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // 1. Handle Auth0 authentication routes

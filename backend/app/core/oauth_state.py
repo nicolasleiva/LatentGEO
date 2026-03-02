@@ -2,6 +2,7 @@
 Signed OAuth state helpers.
 """
 
+import hashlib
 import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict
@@ -24,6 +25,15 @@ def _get_oauth_state_secret() -> str:
     secret = settings.OAUTH_STATE_SECRET or settings.secret_key
     if not secret:
         raise RuntimeError("OAUTH_STATE_SECRET/SECRET_KEY no configurada")
+    secret_bytes = secret.encode("utf-8")
+    if len(secret_bytes) < 32:
+        if settings.ENVIRONMENT.lower() in {"production", "staging"}:
+            raise RuntimeError(
+                "OAUTH_STATE_SECRET/SECRET_KEY must be >=32 bytes for HS256."
+            )
+        # Keep dev/test compatibility with legacy short defaults while producing
+        # a deterministic HS256 key length accepted by modern PyJWT.
+        return hashlib.sha256(secret_bytes).hexdigest()
     return secret
 
 

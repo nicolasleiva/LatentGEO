@@ -63,7 +63,7 @@ jobs:
       - name: Run deterministic backend suite
         run: |
           mkdir -p artifacts
-          pytest -q backend/tests -m "not integration and not live" --junitxml=artifacts/backend-local-junit.xml
+          pytest -W error -W ignore::pytest.PytestUnraisableExceptionWarning -W ignore::pluggy.PluggyTeardownRaisedWarning -q backend/tests -m "not integration and not live" --junitxml=artifacts/backend-local-junit.xml
 
       - name: Assert local deterministic suite skipped count = 0
         run: |
@@ -114,7 +114,7 @@ jobs:
           SMOKE_BEARER_TOKEN: ${{ secrets.SMOKE_BEARER_TOKEN }}
         run: |
           mkdir -p artifacts
-          pytest -q backend/tests/test_release_smoke_external.py --junitxml=artifacts/backend-smoke-junit.xml
+          pytest -W error -W ignore::pytest.PytestUnraisableExceptionWarning -W ignore::pluggy.PluggyTeardownRaisedWarning -q backend/tests/test_release_smoke_external.py --junitxml=artifacts/backend-smoke-junit.xml
 
       - name: Upload backend smoke artifacts
         if: always()

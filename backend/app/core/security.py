@@ -8,7 +8,7 @@ import socket
 from typing import Optional, Set, Union
 from urllib.parse import urlparse
 
-import bleach  # type: ignore[import-untyped]
+import bleach
 from bs4 import BeautifulSoup
 
 _DEFAULT_ALLOWED_OUTBOUND_PORTS: Set[int] = {80, 443}
