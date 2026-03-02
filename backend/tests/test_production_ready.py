@@ -6,6 +6,7 @@ Tests the full stack for production deployment.
 import json
 import os
 import tempfile
+from contextlib import asynccontextmanager
 from unittest.mock import patch
 
 import pytest
@@ -53,6 +54,13 @@ def test_app(test_db):
         database, "SessionLocal", TestingSessionLocal
     ):
         app = create_app()
+
+        @asynccontextmanager
+        async def _noop_lifespan(_app):
+            yield
+
+        # Keep these tests focused on route/middleware contracts, not startup validators.
+        app.router.lifespan_context = _noop_lifespan
 
         # Override dependency
         def override_get_db():

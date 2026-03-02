@@ -1,3 +1,4 @@
+from contextlib import asynccontextmanager
 from unittest.mock import patch
 
 from app import main as main_module
@@ -9,7 +10,15 @@ def _build_app(*, debug: bool, legacy_redirect_enabled: bool):
     with patch.object(settings, "DEBUG", debug), patch.object(
         settings, "LEGACY_API_REDIRECT_ENABLED", legacy_redirect_enabled
     ), patch.object(main_module, "RATE_LIMIT_AVAILABLE", False):
-        return main_module.create_app()
+        app = main_module.create_app()
+
+        @asynccontextmanager
+        async def _noop_lifespan(_app):
+            yield
+
+        # These tests validate routing surface, not startup side effects.
+        app.router.lifespan_context = _noop_lifespan
+        return app
 
 
 def test_prod_legacy_api_path_returns_404_and_v1_is_registered():
