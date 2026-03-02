@@ -97,7 +97,10 @@ export function CompetitorAnalysisSkeleton() {
         <div className="h-5 bg-muted/50 rounded w-48 mb-4"></div>
         <div className="space-y-3 mb-4">
           {[1, 2].map((skeletonId) => (
-            <div key={`competitor-skeleton-${skeletonId}`} className="flex gap-2">
+            <div
+              key={`competitor-skeleton-${skeletonId}`}
+              className="flex gap-2"
+            >
               <div className="flex-1 h-10 bg-muted/40 rounded"></div>
               <div className="h-10 w-20 bg-muted/30 rounded"></div>
             </div>

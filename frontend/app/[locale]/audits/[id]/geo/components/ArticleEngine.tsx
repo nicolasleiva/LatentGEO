@@ -250,7 +250,7 @@ export default function ArticleEngine({
         fetchBatchStatus(batchId).catch((pollError) => {
           // If pollError is null (from 401 redirect), do nothing
           if (!pollError) return;
-          
+
           setError(
             pollError instanceof Error ? pollError.message : String(pollError),
           );
@@ -665,4 +665,3 @@ export default function ArticleEngine({
     </div>
   );
 }
-

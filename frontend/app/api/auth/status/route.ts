@@ -22,7 +22,8 @@ export async function GET(request: NextRequest) {
                 : typeof user.nickname === "string"
                   ? user.nickname
                   : undefined,
-            picture: typeof user.picture === "string" ? user.picture : undefined,
+            picture:
+              typeof user.picture === "string" ? user.picture : undefined,
           }
         : null,
     },

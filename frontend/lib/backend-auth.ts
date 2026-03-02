@@ -38,7 +38,8 @@ const shouldRedirectToLogin = () => {
 
 const canTriggerReauthRedirect = () => {
   if (typeof window === "undefined") return false;
-  const rawTs = window.sessionStorage.getItem(REAUTH_REDIRECT_STORAGE_KEY) || "0";
+  const rawTs =
+    window.sessionStorage.getItem(REAUTH_REDIRECT_STORAGE_KEY) || "0";
   const lastTs = Number(rawTs);
   const now = Date.now();
   if (Number.isFinite(lastTs) && now - lastTs < REAUTH_REDIRECT_COOLDOWN_MS) {
@@ -88,7 +89,10 @@ const getActiveRefreshLock = () => {
 };
 
 const waitForBroadcastedToken = async (): Promise<string | null> => {
-  if (typeof window === "undefined" || typeof BroadcastChannel === "undefined") {
+  if (
+    typeof window === "undefined" ||
+    typeof BroadcastChannel === "undefined"
+  ) {
     return null;
   }
 
@@ -120,7 +124,10 @@ const waitForBroadcastedToken = async (): Promise<string | null> => {
 };
 
 const broadcastTokenRefresh = (token: string, expiresAtMs: number) => {
-  if (typeof window === "undefined" || typeof BroadcastChannel === "undefined") {
+  if (
+    typeof window === "undefined" ||
+    typeof BroadcastChannel === "undefined"
+  ) {
     return;
   }
 

@@ -16,16 +16,20 @@ const publicEnvSchema = z.object({
 const publicEnv = publicEnvSchema.parse({
   NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL || fallbackApiUrl,
   NEXT_PUBLIC_BACKEND_URL:
-    process.env.NEXT_PUBLIC_BACKEND_URL || process.env.NEXT_PUBLIC_API_URL || fallbackApiUrl,
-  NEXT_PUBLIC_ANALYTICS_PROVIDER:
-    (process.env.NEXT_PUBLIC_ANALYTICS_PROVIDER || "vercel").toLowerCase(),
+    process.env.NEXT_PUBLIC_BACKEND_URL ||
+    process.env.NEXT_PUBLIC_API_URL ||
+    fallbackApiUrl,
+  NEXT_PUBLIC_ANALYTICS_PROVIDER: (
+    process.env.NEXT_PUBLIC_ANALYTICS_PROVIDER || "vercel"
+  ).toLowerCase(),
 });
 
 export const env = publicEnv;
 
 export function resolveApiBaseUrl(): string {
   const serverUrl = process.env.API_URL || env.NEXT_PUBLIC_API_URL;
-  const selected = typeof window !== "undefined" ? env.NEXT_PUBLIC_API_URL : serverUrl;
+  const selected =
+    typeof window !== "undefined" ? env.NEXT_PUBLIC_API_URL : serverUrl;
   if (!selected) {
     throw new Error(
       "API URL is not configured. Set NEXT_PUBLIC_API_URL (browser) and API_URL (server).",
@@ -33,4 +37,3 @@ export function resolveApiBaseUrl(): string {
   }
   return selected.replace(/\/+$/, "");
 }
-

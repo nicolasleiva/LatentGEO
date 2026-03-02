@@ -188,4 +188,3 @@ export default function ContentAnalyze({ backendUrl }: ContentAnalyzeProps) {
     </div>
   );
 }
-

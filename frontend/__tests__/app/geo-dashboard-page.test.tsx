@@ -100,5 +100,3 @@ describe("GEO dashboard page", () => {
     ).toBeInTheDocument();
   });
 });
-
-

@@ -147,7 +147,10 @@ export default function ContentTemplates({
             <button
               key={template.id}
               onClick={() =>
-                setSelection((prev) => ({ ...prev, selectedTemplate: template }))
+                setSelection((prev) => ({
+                  ...prev,
+                  selectedTemplate: template,
+                }))
               }
               className="w-full text-left bg-muted/30 border border-border rounded-xl p-4 hover:bg-muted/40 transition-colors"
             >
@@ -237,4 +240,3 @@ export default function ContentTemplates({
     </div>
   );
 }
-

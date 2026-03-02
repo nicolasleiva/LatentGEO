@@ -432,7 +432,9 @@ export default function GitHubAutoFixPage() {
 
   const connectGitHub = async () => {
     try {
-      const res = await fetchWithBackendAuth(`${backendUrl}/api/v1/github/auth-url`);
+      const res = await fetchWithBackendAuth(
+        `${backendUrl}/api/v1/github/auth-url`,
+      );
       const data = await safeParseJson(res);
       if (!res.ok || !data?.url) {
         throw new Error(data?.detail || "Failed to get GitHub auth URL");
@@ -466,7 +468,9 @@ export default function GitHubAutoFixPage() {
         {/* Back button */}
         <Button
           variant="ghost"
-          onClick={() => router.push(withLocale(pathname, `/audits/${auditId}`))}
+          onClick={() =>
+            router.push(withLocale(pathname, `/audits/${auditId}`))
+          }
           className="mb-8 text-muted-foreground hover:text-foreground hover:bg-muted/50 pl-0"
         >
           <ArrowLeft className="h-4 w-4 mr-2" />
@@ -479,7 +483,8 @@ export default function GitHubAutoFixPage() {
             GitHub Delivery Agent
           </h1>
           <p className="text-muted-foreground">
-            Translate audit findings into implementation-ready pull requests for your repository.
+            Translate audit findings into implementation-ready pull requests for
+            your repository.
           </p>
         </div>
 
@@ -496,7 +501,8 @@ export default function GitHubAutoFixPage() {
                 Connect GitHub
               </h2>
               <p className="text-muted-foreground mb-8">
-                Connect your GitHub account to enable PR generation from validated SEO/GEO findings.
+                Connect your GitHub account to enable PR generation from
+                validated SEO/GEO findings.
               </p>
               <Button
                 onClick={connectGitHub}
@@ -648,7 +654,8 @@ export default function GitHubAutoFixPage() {
                       Guided Inputs (Kimi)
                     </h4>
                     <p className="text-xs text-muted-foreground mt-1">
-                      Kimi proposes audit-grounded values. Required fields must be saved before PR creation.
+                      Kimi proposes audit-grounded values. Required fields must
+                      be saved before PR creation.
                     </p>
                   </div>
 
@@ -900,4 +907,3 @@ export default function GitHubAutoFixPage() {
     </div>
   );
 }
-

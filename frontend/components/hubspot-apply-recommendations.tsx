@@ -415,4 +415,3 @@ export default function HubSpotApplyRecommendations({
     </div>
   );
 }
-

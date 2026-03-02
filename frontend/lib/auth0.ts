@@ -41,7 +41,8 @@ const getAuth0Client = () => {
     return auth0Client;
   }
 
-  const isTest = process.env.NODE_ENV === "test" || process.env.VITEST === "true";
+  const isTest =
+    process.env.NODE_ENV === "test" || process.env.VITEST === "true";
   const isProduction = process.env.NODE_ENV === "production";
   const missing = getMissingAuth0EnvVars();
   const audience =
@@ -54,12 +55,7 @@ const getAuth0Client = () => {
     process.env.NEXT_PUBLIC_AUTH0_API_SCOPES?.trim() ||
     "read:app";
   const authorizationScope = Array.from(
-    new Set(
-      `${loginScope} ${apiScope}`
-        .trim()
-        .split(/\s+/)
-        .filter(Boolean),
-    ),
+    new Set(`${loginScope} ${apiScope}`.trim().split(/\s+/).filter(Boolean)),
   ).join(" ");
 
   if (!isTest && isProduction && !audience) {
@@ -88,5 +84,7 @@ export const auth0 = {
       ? getAuth0Client().getSession(request)
       : getAuth0Client().getSession(),
   getAccessToken: (options?: ServerGetAccessTokenOptions) =>
-    getAuth0Client().getAccessToken(options as never) as Promise<ServerAccessToken>,
+    getAuth0Client().getAccessToken(
+      options as never,
+    ) as Promise<ServerAccessToken>,
 };

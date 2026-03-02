@@ -201,4 +201,3 @@ export default function SchemaGenerator({ backendUrl }: SchemaGeneratorProps) {
     </div>
   );
 }
-

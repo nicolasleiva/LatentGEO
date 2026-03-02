@@ -30,4 +30,3 @@ describe("ThemeToggle Component", () => {
     expect(true).toBe(true);
   });
 });
-

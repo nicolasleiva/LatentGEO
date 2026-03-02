@@ -30,14 +30,32 @@ interface MetricsPayload {
   si: number;
 }
 
-function MetricsRow({ metrics, sub }: { metrics: MetricsPayload; sub: string }) {
+function MetricsRow({
+  metrics,
+  sub,
+}: {
+  metrics: MetricsPayload;
+  sub: string;
+}) {
   return (
     <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-      <MetricCard label="FCP" value={`${(metrics.fcp / 1000).toFixed(1)}s`} sub={sub} />
-      <MetricCard label="LCP" value={`${(metrics.lcp / 1000).toFixed(1)}s`} sub={sub} />
+      <MetricCard
+        label="FCP"
+        value={`${(metrics.fcp / 1000).toFixed(1)}s`}
+        sub={sub}
+      />
+      <MetricCard
+        label="LCP"
+        value={`${(metrics.lcp / 1000).toFixed(1)}s`}
+        sub={sub}
+      />
       <MetricCard label="TBT" value={`${metrics.tbt.toFixed(0)}ms`} sub={sub} />
       <MetricCard label="CLS" value={metrics.cls.toFixed(3)} sub={sub} />
-      <MetricCard label="SI" value={`${(metrics.si / 1000).toFixed(1)}s`} sub={sub} />
+      <MetricCard
+        label="SI"
+        value={`${(metrics.si / 1000).toFixed(1)}s`}
+        sub={sub}
+      />
     </div>
   );
 }
@@ -45,7 +63,9 @@ function MetricsRow({ metrics, sub }: { metrics: MetricsPayload; sub: string }) 
 function MetricCard({ label, value, sub }: MetricCardProps) {
   return (
     <div className="text-center p-4 glass-panel border border-border rounded-xl hover:bg-muted/50 transition-colors">
-      <div className="text-xs text-muted-foreground uppercase tracking-wider mb-1">{label}</div>
+      <div className="text-xs text-muted-foreground uppercase tracking-wider mb-1">
+        {label}
+      </div>
       <div className="text-xl font-semibold text-foreground">{value}</div>
       <div className="text-xs text-muted-foreground/70 mt-1">{sub}</div>
     </div>
@@ -67,7 +87,9 @@ function TestInformationSection({
 
   return (
     <div className="glass p-6 rounded-2xl">
-      <h3 className="text-lg font-medium mb-6 text-foreground">Test Information</h3>
+      <h3 className="text-lg font-medium mb-6 text-foreground">
+        Test Information
+      </h3>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-8 text-sm">
         <div>
           <div className="font-semibold mb-3 text-muted-foreground border-b border-border pb-2">
@@ -75,13 +97,15 @@ function TestInformationSection({
           </div>
           <div className="space-y-2 text-muted-foreground">
             <div className="flex justify-between">
-              <span>Captured:</span> <span>{formatDate(mobile.metadata.fetch_time)}</span>
+              <span>Captured:</span>{" "}
+              <span>{formatDate(mobile.metadata.fetch_time)}</span>
             </div>
             <div className="flex justify-between">
               <span>Device:</span> <span>Moto G Power (Emulated)</span>
             </div>
             <div className="flex justify-between">
-              <span>Lighthouse:</span> <span>{mobile.metadata.lighthouse_version}</span>
+              <span>Lighthouse:</span>{" "}
+              <span>{mobile.metadata.lighthouse_version}</span>
             </div>
             <div className="flex justify-between">
               <span>Network:</span> <span>4G Throttling</span>
@@ -96,13 +120,15 @@ function TestInformationSection({
             </div>
             <div className="space-y-2 text-muted-foreground">
               <div className="flex justify-between">
-                <span>Captured:</span> <span>{formatDate(desktop.metadata.fetch_time)}</span>
+                <span>Captured:</span>{" "}
+                <span>{formatDate(desktop.metadata.fetch_time)}</span>
               </div>
               <div className="flex justify-between">
                 <span>Device:</span> <span>Desktop Browser</span>
               </div>
               <div className="flex justify-between">
-                <span>Lighthouse:</span> <span>{desktop.metadata.lighthouse_version}</span>
+                <span>Lighthouse:</span>{" "}
+                <span>{desktop.metadata.lighthouse_version}</span>
               </div>
               <div className="flex justify-between">
                 <span>Network:</span> <span>Simulated</span>
@@ -115,14 +141,22 @@ function TestInformationSection({
   );
 }
 
-function DetailedMetricsSection({ mobile, desktop }: { mobile: any; desktop: any }) {
+function DetailedMetricsSection({
+  mobile,
+  desktop,
+}: {
+  mobile: any;
+  desktop: any;
+}) {
   if (!mobile?.metrics) {
     return null;
   }
 
   return (
     <div className="glass p-6 rounded-2xl">
-      <h3 className="text-lg font-medium mb-6 text-foreground">Detailed Metrics</h3>
+      <h3 className="text-lg font-medium mb-6 text-foreground">
+        Detailed Metrics
+      </h3>
       <MetricsRow metrics={mobile.metrics} sub="Mobile" />
       {desktop?.metrics && (
         <div className="mt-4">
@@ -152,7 +186,9 @@ function ScreenshotPanel({
       <div className="grid grid-cols-4 md:grid-cols-6 gap-2">
         {screenshots.map((shot: any, idx: number) => (
           <div
-            key={shot.timestamp || shot.data || shot.filename || `${title}-${idx}`}
+            key={
+              shot.timestamp || shot.data || shot.filename || `${title}-${idx}`
+            }
             className="border border-border rounded-lg overflow-hidden bg-background/70"
           >
             <Image
@@ -180,11 +216,17 @@ function ScreenshotPanel({
 function LighthouseScoresSection({ scoresData }: { scoresData: any[] }) {
   return (
     <div className="glass p-6 rounded-2xl flex flex-col">
-      <h3 className="text-lg font-medium mb-6 text-foreground">Lighthouse Scores</h3>
+      <h3 className="text-lg font-medium mb-6 text-foreground">
+        Lighthouse Scores
+      </h3>
       <div className="flex-1 min-h-[300px]">
         <ResponsiveContainer width="100%" height="100%">
           <BarChart data={scoresData}>
-            <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
+            <CartesianGrid
+              strokeDasharray="3 3"
+              stroke="hsl(var(--border))"
+              vertical={false}
+            />
             <XAxis
               dataKey="metric"
               stroke="hsl(var(--muted-foreground))"
@@ -223,21 +265,34 @@ function LighthouseScoresSection({ scoresData }: { scoresData: any[] }) {
 function CoreVitalsSection({ vitalsData }: { vitalsData: any[] }) {
   return (
     <div className="glass p-6 rounded-2xl">
-      <h3 className="text-lg font-medium mb-6 text-foreground">Core Web Vitals</h3>
+      <h3 className="text-lg font-medium mb-6 text-foreground">
+        Core Web Vitals
+      </h3>
       <div className="space-y-4">
         {vitalsData.map((item) => (
-          <div key={item.metric} className="border-b border-border/70 pb-4 last:border-0">
+          <div
+            key={item.metric}
+            className="border-b border-border/70 pb-4 last:border-0"
+          >
             <div className="flex justify-between items-center mb-2">
-              <span className="font-semibold text-sm text-foreground">{item.metric}</span>
+              <span className="font-semibold text-sm text-foreground">
+                {item.metric}
+              </span>
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <div className="text-xs text-muted-foreground mb-1">Mobile</div>
-                <div className="text-2xl font-semibold text-foreground">{item.Mobile}</div>
+                <div className="text-2xl font-semibold text-foreground">
+                  {item.Mobile}
+                </div>
               </div>
               <div>
-                <div className="text-xs text-muted-foreground mb-1">Desktop</div>
-                <div className="text-2xl font-semibold text-foreground">{item.Desktop}</div>
+                <div className="text-xs text-muted-foreground mb-1">
+                  Desktop
+                </div>
+                <div className="text-2xl font-semibold text-foreground">
+                  {item.Desktop}
+                </div>
               </div>
             </div>
           </div>
@@ -281,14 +336,17 @@ function OpportunitiesSection({
 
   return (
     <div className="grid gap-6 md:grid-cols-2">
-      {mobile?.opportunities && renderList("Opportunities (Mobile)", mobile.opportunities)}
-      {desktop?.opportunities && renderList("Opportunities (Desktop)", desktop.opportunities)}
+      {mobile?.opportunities &&
+        renderList("Opportunities (Mobile)", mobile.opportunities)}
+      {desktop?.opportunities &&
+        renderList("Opportunities (Desktop)", desktop.opportunities)}
     </div>
   );
 }
 
 export function CoreWebVitalsChart({ data }: CoreWebVitalsProps) {
-  const mobile = data.mobile || (data.performance_score !== undefined ? data : null);
+  const mobile =
+    data.mobile || (data.performance_score !== undefined ? data : null);
   const desktop = data.desktop || null;
 
   const scoresData = [
@@ -351,11 +409,18 @@ export function CoreWebVitalsChart({ data }: CoreWebVitalsProps) {
 
   return (
     <div className="space-y-8">
-      <TestInformationSection mobile={mobile} desktop={desktop} formatDate={formatDate} />
+      <TestInformationSection
+        mobile={mobile}
+        desktop={desktop}
+        formatDate={formatDate}
+      />
       <DetailedMetricsSection mobile={mobile} desktop={desktop} />
 
       <div className="grid gap-6 md:grid-cols-2">
-        <ScreenshotPanel title="Loading Screenshots (Mobile)" screenshots={mobile?.screenshots || []} />
+        <ScreenshotPanel
+          title="Loading Screenshots (Mobile)"
+          screenshots={mobile?.screenshots || []}
+        />
         <ScreenshotPanel
           title="Loading Screenshots (Desktop)"
           screenshots={desktop?.screenshots || []}

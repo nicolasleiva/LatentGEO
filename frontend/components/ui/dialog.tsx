@@ -129,9 +129,4 @@ function DialogDescription({
   );
 }
 
-export {
-  Dialog,
-  DialogContent,
-  DialogTitle,
-  DialogTrigger,
-};
+export { Dialog, DialogContent, DialogTitle, DialogTrigger };

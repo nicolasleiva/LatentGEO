@@ -50,7 +50,8 @@ const docs = [
     items: [
       {
         title: "Audit Operations",
-        description: "Manage audit queue, reruns, and baseline comparisons over time.",
+        description:
+          "Manage audit queue, reruns, and baseline comparisons over time.",
         href: "#auditing",
       },
       {
@@ -80,12 +81,14 @@ const docs = [
       },
       {
         title: "HubSpot Publishing Flow",
-        description: "Sync and optimize key landing pages for AI-era discoverability.",
+        description:
+          "Sync and optimize key landing pages for AI-era discoverability.",
         href: "#hubspot",
       },
       {
         title: "Typed API Client",
-        description: "Use OpenAPI-generated types and client modules across your stack.",
+        description:
+          "Use OpenAPI-generated types and client modules across your stack.",
         href: "#api",
       },
     ],
@@ -97,17 +100,20 @@ const docs = [
     items: [
       {
         title: "Quality Gates",
-        description: "Set merge criteria for type-check, lint, unit tests, and E2E checks.",
+        description:
+          "Set merge criteria for type-check, lint, unit tests, and E2E checks.",
         href: "#pagespeed",
       },
       {
         title: "Release Strategy",
-        description: "Use canaries, flags, and rollback-safe iteration by PR phase.",
+        description:
+          "Use canaries, flags, and rollback-safe iteration by PR phase.",
         href: "#llm",
       },
       {
         title: "Security and Access",
-        description: "Control auth, scoped sessions, and operational traceability.",
+        description:
+          "Control auth, scoped sessions, and operational traceability.",
         href: "#schema",
       },
     ],
@@ -143,7 +149,8 @@ export default function DocsPage() {
             Playbooks for running LatentGEO.ai in production
           </h1>
           <p className="text-xl text-muted-foreground max-w-2xl mx-auto">
-            Practical guides for audit operations, AI visibility growth, and delivery workflows.
+            Practical guides for audit operations, AI visibility growth, and
+            delivery workflows.
           </p>
         </div>
 
@@ -260,8 +267,9 @@ export default function DocsPage() {
               <div className="mt-6 p-4 bg-brand/10 border border-brand/20 rounded-xl">
                 <p className="text-brand font-medium">Operating Insight</p>
                 <p className="text-foreground/80 mt-2">
-                  AI discovery now influences category framing. If your pages are
-                  not citation-ready, competitors define the narrative first.
+                  AI discovery now influences category framing. If your pages
+                  are not citation-ready, competitors define the narrative
+                  first.
                 </p>
               </div>
             </div>
@@ -277,7 +285,8 @@ export default function DocsPage() {
                 <div>
                   <h3 className="font-medium">Run a baseline audit</h3>
                   <p className="text-muted-foreground text-sm mt-1">
-                    Submit your primary demand page and establish an initial AI visibility baseline.
+                    Submit your primary demand page and establish an initial AI
+                    visibility baseline.
                   </p>
                 </div>
               </div>
@@ -288,7 +297,8 @@ export default function DocsPage() {
                 <div>
                   <h3 className="font-medium">Review ranked opportunities</h3>
                   <p className="text-muted-foreground text-sm mt-1">
-                    Validate the highest-impact issues across structure, evidence, and competitor positioning.
+                    Validate the highest-impact issues across structure,
+                    evidence, and competitor positioning.
                   </p>
                 </div>
               </div>
@@ -299,7 +309,8 @@ export default function DocsPage() {
                 <div>
                   <h3 className="font-medium">Align owners and priority</h3>
                   <p className="text-muted-foreground text-sm mt-1">
-                    Convert findings into an execution queue owned by content, SEO, and engineering.
+                    Convert findings into an execution queue owned by content,
+                    SEO, and engineering.
                   </p>
                 </div>
               </div>
@@ -310,7 +321,8 @@ export default function DocsPage() {
                 <div>
                   <h3 className="font-medium">Ship and re-measure</h3>
                   <p className="text-muted-foreground text-sm mt-1">
-                    Deliver fixes through your workflow and re-run audits to verify trajectory.
+                    Deliver fixes through your workflow and re-run audits to
+                    verify trajectory.
                   </p>
                 </div>
               </div>
@@ -322,7 +334,8 @@ export default function DocsPage() {
               Understanding the GEO Score
             </h2>
             <p className="text-foreground/80 mb-6">
-              The score combines technical quality and semantic clarity signals that affect AI response reliability:
+              The score combines technical quality and semantic clarity signals
+              that affect AI response reliability:
             </p>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="p-4 bg-background/70 rounded-xl">
@@ -331,7 +344,8 @@ export default function DocsPage() {
                   <span className="font-medium">Content Quality</span>
                 </div>
                 <p className="text-muted-foreground text-sm">
-                  Clear, authority-oriented content with strong structure and intent matching.
+                  Clear, authority-oriented content with strong structure and
+                  intent matching.
                 </p>
               </div>
               <div className="p-4 bg-background/70 rounded-xl">
@@ -340,7 +354,8 @@ export default function DocsPage() {
                   <span className="font-medium">Schema Markup</span>
                 </div>
                 <p className="text-muted-foreground text-sm">
-                  Structured data that improves entity interpretation and response confidence.
+                  Structured data that improves entity interpretation and
+                  response confidence.
                 </p>
               </div>
               <div className="p-4 bg-background/70 rounded-xl">
@@ -349,7 +364,8 @@ export default function DocsPage() {
                   <span className="font-medium">E-E-A-T Signals</span>
                 </div>
                 <p className="text-muted-foreground text-sm">
-                  Experience, expertise, authority, and trust evidence for assistant ranking logic.
+                  Experience, expertise, authority, and trust evidence for
+                  assistant ranking logic.
                 </p>
               </div>
               <div className="p-4 bg-background/70 rounded-xl">
@@ -358,7 +374,8 @@ export default function DocsPage() {
                   <span className="font-medium">Technical SEO</span>
                 </div>
                 <p className="text-muted-foreground text-sm">
-                  Performance, crawlability, and implementation hygiene across critical pages.
+                  Performance, crawlability, and implementation hygiene across
+                  critical pages.
                 </p>
               </div>
             </div>

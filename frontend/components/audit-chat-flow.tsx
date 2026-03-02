@@ -287,4 +287,3 @@ export function AuditChatFlow({ auditId, onComplete }: AuditChatFlowProps) {
     </div>
   );
 }
-

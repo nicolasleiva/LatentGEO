@@ -83,7 +83,8 @@ export default function AnalyticsPage() {
             Visibility Command Center
           </h1>
           <p className="text-muted-foreground mt-2 max-w-2xl">
-            Monitor execution health, queue throughput, and competitive AI visibility trends.
+            Monitor execution health, queue throughput, and competitive AI
+            visibility trends.
           </p>
         </div>
 
@@ -103,7 +104,9 @@ export default function AnalyticsPage() {
               <div className="text-3xl font-semibold text-foreground mb-1">
                 {summary.total_audits}
               </div>
-              <div className="text-sm text-muted-foreground">Audits in system</div>
+              <div className="text-sm text-muted-foreground">
+                Audits in system
+              </div>
             </Card>
 
             <Card className="glass-card p-6">
@@ -119,7 +122,9 @@ export default function AnalyticsPage() {
               <div className="text-3xl font-semibold text-foreground mb-1">
                 {summary.completed_audits}
               </div>
-              <div className="text-sm text-muted-foreground">Successfully completed</div>
+              <div className="text-sm text-muted-foreground">
+                Successfully completed
+              </div>
             </Card>
 
             <Card className="glass-card p-6">
@@ -135,7 +140,9 @@ export default function AnalyticsPage() {
               <div className="text-3xl font-semibold text-foreground mb-1">
                 {summary.running_audits}
               </div>
-              <div className="text-sm text-muted-foreground">Currently processing</div>
+              <div className="text-sm text-muted-foreground">
+                Currently processing
+              </div>
             </Card>
 
             <Card className="glass-card p-6">
@@ -151,7 +158,9 @@ export default function AnalyticsPage() {
               <div className="text-3xl font-semibold text-foreground mb-1">
                 {metrics.unique_domains}
               </div>
-              <div className="text-sm text-muted-foreground">Tracked domains</div>
+              <div className="text-sm text-muted-foreground">
+                Tracked domains
+              </div>
             </Card>
           </div>
 
@@ -207,7 +216,9 @@ export default function AnalyticsPage() {
                   <TrendingUp className="h-6 w-6 text-brand" />
                 </div>
                 <div>
-                  <h3 className="font-semibold text-foreground">Operational Health</h3>
+                  <h3 className="font-semibold text-foreground">
+                    Operational Health
+                  </h3>
                   <p className="text-xs text-muted-foreground">
                     Failure pressure indicator
                   </p>
@@ -357,7 +368,10 @@ export default function AnalyticsPage() {
             {recent_audits.length === 0 && (
               <div className="text-center py-12 text-muted-foreground">
                 <BarChart3 className="h-12 w-12 mx-auto mb-3 opacity-40" />
-                <p>No audit activity yet. Run your first audit to unlock this dashboard.</p>
+                <p>
+                  No audit activity yet. Run your first audit to unlock this
+                  dashboard.
+                </p>
               </div>
             )}
           </Card>

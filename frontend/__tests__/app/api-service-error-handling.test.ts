@@ -31,4 +31,3 @@ describe("APIService error propagation", () => {
     ).rejects.toThrow("Kimi provider is not configured");
   });
 });
-

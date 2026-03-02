@@ -155,15 +155,18 @@ export default function WebhooksOpsPage() {
                   disabled={loading || !configUrl}
                   onClick={() =>
                     run("POST /webhooks/test", async () => {
-                      const res = await fetch(`${API_URL}/api/v1/webhooks/test`, {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({
-                          url: configUrl,
-                          secret: configSecret || null,
-                          event_type: testEvent,
-                        }),
-                      });
+                      const res = await fetch(
+                        `${API_URL}/api/v1/webhooks/test`,
+                        {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({
+                            url: configUrl,
+                            secret: configSecret || null,
+                            event_type: testEvent,
+                          }),
+                        },
+                      );
                       const data = await res.json().catch(() => ({}));
                       if (!res.ok)
                         throw new Error(data?.detail || `HTTP ${res.status}`);
@@ -178,7 +181,9 @@ export default function WebhooksOpsPage() {
                   disabled={loading}
                   onClick={() =>
                     run("GET /webhooks/health", async () => {
-                      const res = await fetch(`${API_URL}/api/v1/webhooks/health`);
+                      const res = await fetch(
+                        `${API_URL}/api/v1/webhooks/health`,
+                      );
                       const data = await res.json().catch(() => ({}));
                       if (!res.ok)
                         throw new Error(data?.detail || `HTTP ${res.status}`);
@@ -206,4 +211,3 @@ export default function WebhooksOpsPage() {
     </div>
   );
 }
-

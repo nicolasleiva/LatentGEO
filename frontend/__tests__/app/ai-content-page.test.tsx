@@ -56,4 +56,3 @@ describe("AIContentPage", () => {
     expect(screen.queryByText(/OpenAI\/Gemini/i)).not.toBeInTheDocument();
   });
 });
-

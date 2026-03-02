@@ -35,11 +35,15 @@ output.write_text(json.dumps(app.openapi(), indent=2), encoding="utf-8")
 print(f"OpenAPI schema written to {output}")
 `;
 
-const pythonResult = spawnSync("python", ["-c", pythonSource, openApiJsonPath], {
-  cwd: repoRoot,
-  env: { ...process.env, PYTHONPATH: backendPath },
-  stdio: "inherit",
-});
+const pythonResult = spawnSync(
+  "python",
+  ["-c", pythonSource, openApiJsonPath],
+  {
+    cwd: repoRoot,
+    env: { ...process.env, PYTHONPATH: backendPath },
+    stdio: "inherit",
+  },
+);
 
 if (pythonResult.status !== 0) {
   process.exit(pythonResult.status ?? 1);

@@ -47,11 +47,13 @@ const safeReturnTo = (returnTo?: string): string => {
 };
 
 const inAuthRoute = (pathname: string) => pathname.startsWith("/auth/");
-const inSigninRoute = (pathname: string) => pathname === "/signin" || pathname.startsWith("/signin/");
+const inSigninRoute = (pathname: string) =>
+  pathname === "/signin" || pathname.startsWith("/signin/");
 
 const canTriggerReauthRedirect = () => {
   if (typeof window === "undefined") return false;
-  const rawTs = window.sessionStorage.getItem(REAUTH_REDIRECT_STORAGE_KEY) || "0";
+  const rawTs =
+    window.sessionStorage.getItem(REAUTH_REDIRECT_STORAGE_KEY) || "0";
   const lastTs = Number(rawTs);
   const now = Date.now();
   if (Number.isFinite(lastTs) && now - lastTs < REAUTH_REDIRECT_COOLDOWN_MS) {
@@ -146,7 +148,11 @@ export const useRequireAppAuth = (signinPath = SIGNIN_PATH): AppAuthState => {
     if (auth.loading || auth.ready || typeof window === "undefined") return;
 
     const currentPath = `${window.location.pathname}${window.location.search}`;
-    if (inAuthRoute(window.location.pathname) || inSigninRoute(window.location.pathname)) return;
+    if (
+      inAuthRoute(window.location.pathname) ||
+      inSigninRoute(window.location.pathname)
+    )
+      return;
 
     // Give session cookies a brief grace period after callback before redirecting.
     const timer = window.setTimeout(async () => {

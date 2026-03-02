@@ -40,8 +40,9 @@ export default function SettingsPage() {
   const isLoading = auth.loading || !auth.ready;
   const { theme, setTheme } = useTheme();
   const [displayName, setDisplayName] = useState("");
-  const [notifications, setNotifications] =
-    useState<NotificationPreferences>(DEFAULT_NOTIFICATIONS);
+  const [notifications, setNotifications] = useState<NotificationPreferences>(
+    DEFAULT_NOTIFICATIONS,
+  );
   const [saved, setSaved] = useState(false);
 
   const storagePrefix = useMemo(() => {
@@ -61,7 +62,9 @@ export default function SettingsPage() {
 
     if (storedNotifications) {
       try {
-        const parsed = JSON.parse(storedNotifications) as NotificationPreferences;
+        const parsed = JSON.parse(
+          storedNotifications,
+        ) as NotificationPreferences;
         setNotifications({
           email: Boolean(parsed.email),
           auditComplete: Boolean(parsed.auditComplete),
@@ -157,7 +160,9 @@ export default function SettingsPage() {
           <section className="p-6 glass-card border border-border rounded-2xl">
             <div className="flex items-center gap-3 mb-6">
               <User className="w-5 h-5 text-brand" />
-              <h2 className="text-lg font-semibold">Profile & Workspace Identity</h2>
+              <h2 className="text-lg font-semibold">
+                Profile & Workspace Identity
+              </h2>
             </div>
 
             <div className="flex items-center gap-6 mb-6">
@@ -369,7 +374,8 @@ export default function SettingsPage() {
             </div>
 
             <p className="text-muted-foreground mb-4">
-              Request access to typed API tokens for CI integrations and internal tooling.
+              Request access to typed API tokens for CI integrations and
+              internal tooling.
             </p>
 
             <Button disabled>Request API Access</Button>

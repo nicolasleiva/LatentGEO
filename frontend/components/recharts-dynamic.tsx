@@ -7,8 +7,7 @@ const loadRechartsComponent = (name: string) =>
   dynamic(
     () =>
       import("recharts").then(
-        (mod) =>
-          (mod as unknown as Record<string, ComponentType<any>>)[name],
+        (mod) => (mod as unknown as Record<string, ComponentType<any>>)[name],
       ),
     { ssr: false },
   ) as ComponentType<any>;

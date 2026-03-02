@@ -223,7 +223,8 @@ export default function HomePage() {
       router.push(localePath(`/audits/${newAudit.id}`));
     } catch (error: any) {
       console.error("Error creating audit:", error);
-      const errorMessage = error.message || "Please verify the server is running.";
+      const errorMessage =
+        error.message || "Please verify the server is running.";
       setError(`Connection error: ${errorMessage}`);
       setSubmitting(false);
     }
@@ -272,11 +273,13 @@ export default function HomePage() {
               </h1>
 
               <p className="text-lg text-muted-foreground max-w-2xl leading-relaxed">
-                Run one audit, get a prioritized execution map, and move from insight to shipped changes.
+                Run one audit, get a prioritized execution map, and move from
+                insight to shipped changes.
               </p>
 
               <p className="text-sm text-foreground/80 max-w-2xl">
-                From URL -&gt; high-impact gaps -&gt; implementation-ready actions.
+                From URL -&gt; high-impact gaps -&gt; implementation-ready
+                actions.
               </p>
 
               <p className="text-sm text-muted-foreground max-w-2xl">
@@ -390,7 +393,8 @@ export default function HomePage() {
                 <div>
                   <p className="text-sm font-semibold">Secure by design</p>
                   <p className="text-sm text-muted-foreground mt-1">
-                    Scoped access, approval checkpoints, and traceable actions keep automation controlled.
+                    Scoped access, approval checkpoints, and traceable actions
+                    keep automation controlled.
                   </p>
                 </div>
               </div>
@@ -405,11 +409,13 @@ export default function HomePage() {
                 Capabilities
               </p>
               <h2 className="text-3xl md:text-4xl font-semibold tracking-tight mt-2">
-                Everything needed to run AI visibility like an operating function.
+                Everything needed to run AI visibility like an operating
+                function.
               </h2>
             </div>
             <p className="text-muted-foreground max-w-xl">
-              Purpose-built modules connect discovery, remediation, and measurement without context switching.
+              Purpose-built modules connect discovery, remediation, and
+              measurement without context switching.
             </p>
           </div>
 
@@ -488,9 +494,7 @@ export default function HomePage() {
               {audits.map((audit) => (
                 <div
                   key={audit.id}
-                  onClick={() =>
-                    router.push(localePath(`/audits/${audit.id}`))
-                  }
+                  onClick={() => router.push(localePath(`/audits/${audit.id}`))}
                   onKeyDown={(event) => {
                     if (event.key === "Enter" || event.key === " ") {
                       event.preventDefault();

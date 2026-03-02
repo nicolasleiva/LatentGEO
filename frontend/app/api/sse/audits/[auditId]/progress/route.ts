@@ -32,7 +32,10 @@ export async function GET(
 
     if (!audience) {
       return NextResponse.json(
-        { error: "Server misconfigured: AUTH0_API_AUDIENCE is missing for SSE proxy" },
+        {
+          error:
+            "Server misconfigured: AUTH0_API_AUDIENCE is missing for SSE proxy",
+        },
         { status: 500 },
       );
     }
@@ -137,7 +140,8 @@ export async function GET(
       headers,
     });
   } catch (error) {
-    const detail = error instanceof Error ? error.message : "Unknown SSE proxy error";
+    const detail =
+      error instanceof Error ? error.message : "Unknown SSE proxy error";
     return NextResponse.json(
       { error: "SSE proxy upstream error", detail },
       { status: 502 },

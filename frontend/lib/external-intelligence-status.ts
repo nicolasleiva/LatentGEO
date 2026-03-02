@@ -8,13 +8,11 @@ type ExternalIntelligencePayload = {
   warning_message?: string | null;
 };
 
-type ExternalIntelligenceBanner =
-  | {
-      severity: BannerSeverity;
-      code: string;
-      message: string;
-    }
-  | null;
+type ExternalIntelligenceBanner = {
+  severity: BannerSeverity;
+  code: string;
+  message: string;
+} | null;
 
 function normalizeCode(value: unknown): string {
   return typeof value === "string" ? value.trim().toUpperCase() : "";
