@@ -65,17 +65,17 @@ def test_config_security():
 
     issues = []
 
-    if settings.secret_key == "CHANGE_ME_IN_PRODUCTION":
+    if settings.secret_key == "CHANGE_ME_IN_PRODUCTION":  # pragma: allowlist secret
         issues.append("SECRET_KEY no configurado")
     else:
         print("[OK] SECRET_KEY configurado")
 
-    if settings.ENCRYPTION_KEY == "CHANGE_ME_IN_PRODUCTION":
+    if settings.ENCRYPTION_KEY == "CHANGE_ME_IN_PRODUCTION":  # pragma: allowlist secret
         issues.append("ENCRYPTION_KEY no configurado")
     else:
         print("[OK] ENCRYPTION_KEY configurado")
 
-    if settings.WEBHOOK_SECRET == "CHANGE_ME_IN_PRODUCTION":
+    if settings.WEBHOOK_SECRET == "CHANGE_ME_IN_PRODUCTION":  # pragma: allowlist secret
         issues.append("WEBHOOK_SECRET no configurado")
     else:
         print("[OK] WEBHOOK_SECRET configurado")
