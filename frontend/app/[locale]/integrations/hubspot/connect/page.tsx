@@ -55,7 +55,7 @@ export default function HubSpotConnect() {
 
             <Button
               onClick={handleConnect}
-              className="w-full bg-[#ff7a59] hover:bg-[#ff7a59]/90"
+              className="w-full bg-[#d95b3f] text-white hover:bg-[#c44f36]"
               disabled={loading}
             >
               {loading ? "Connecting..." : "Connect HubSpot Portal"}

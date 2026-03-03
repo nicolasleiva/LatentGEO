@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Manrope, Sora, JetBrains_Mono } from "next/font/google";
 import { ThemeProvider } from "@/components/theme-provider";
 import { AnalyticsProvider } from "@/components/providers/analytics-provider";
@@ -25,9 +25,54 @@ const jetbrainsMono = JetBrains_Mono({
   display: "swap",
 });
 
+const metadataBase = (() => {
+  const raw =
+    process.env.NEXT_PUBLIC_SITE_URL?.trim() || APP_METADATA.siteUrl.trim();
+  try {
+    return new URL(raw);
+  } catch {
+    return new URL(APP_METADATA.siteUrl);
+  }
+})();
+
 export const metadata: Metadata = {
-  title: APP_METADATA.title,
+  metadataBase,
+  title: {
+    default: APP_METADATA.title,
+    template: `%s | ${APP_METADATA.siteName}`,
+  },
   description: APP_METADATA.description,
+  applicationName: APP_METADATA.siteName,
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: {
+      index: true,
+      follow: true,
+      "max-image-preview": "large",
+      "max-snippet": -1,
+      "max-video-preview": -1,
+    },
+  },
+  openGraph: {
+    type: "website",
+    locale: APP_METADATA.locale,
+    siteName: APP_METADATA.siteName,
+    title: APP_METADATA.title,
+    description: APP_METADATA.description,
+    url: "/en",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: APP_METADATA.title,
+    description: APP_METADATA.description,
+  },
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  themeColor: "#0f766e",
 };
 
 export default async function RootLayout({

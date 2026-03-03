@@ -89,15 +89,17 @@ export default function ContentAnalysisPage() {
 
             <TabsContent value="keywords" className="space-y-6 animate-fade-up">
               <div className="glass p-6 rounded-2xl space-y-4 border border-border">
-                <h3 className="text-lg font-medium">Compare Keywords</h3>
+                <h2 className="text-lg font-medium">Compare Keywords</h2>
                 <div className="flex flex-col md:flex-row gap-4">
                   <input
+                    aria-label="Your website URL"
                     placeholder="Your URL (e.g. https://mysite.com)"
                     className="glass-input flex-1 px-4 py-3 rounded-xl outline-none"
                     value={yourUrl}
                     onChange={(e) => setYourUrl(e.target.value)}
                   />
                   <input
+                    aria-label="Competitor website URL"
                     placeholder="Competitor URL (e.g. https://competitor.com)"
                     className="glass-input flex-1 px-4 py-3 rounded-xl outline-none"
                     value={compUrl}
@@ -133,9 +135,9 @@ export default function ContentAnalysisPage() {
             <TabsContent value="duplicates" className="animate-fade-up">
               <div className="glass p-8 rounded-2xl border border-border text-center py-20">
                 <Copy className="w-12 h-12 mx-auto mb-4 text-muted-foreground/50" />
-                <h3 className="text-xl font-medium mb-2">
+                <h2 className="text-xl font-medium mb-2">
                   Duplicate Content Detection
-                </h3>
+                </h2>
                 <p className="text-muted-foreground max-w-md mx-auto">
                   Advanced TF-IDF and fuzzy matching analysis to detect internal
                   and external content duplication.

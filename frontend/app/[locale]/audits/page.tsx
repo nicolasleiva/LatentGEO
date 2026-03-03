@@ -195,6 +195,7 @@ export default function AuditsListPage() {
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
             <input
               type="text"
+              aria-label="Search audits by domain or URL"
               placeholder="Search by domain or URL..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
@@ -251,7 +252,7 @@ export default function AuditsListPage() {
                 }}
                 role="button"
                 tabIndex={0}
-                className="group p-6 glass-card border border-border rounded-2xl cursor-pointer hover:bg-muted/50 hover:border-border/80 transition-all"
+                className="group p-6 glass-card border border-border rounded-2xl cursor-pointer hover:bg-muted/50 hover:border-border/80 transition-[background-color,border-color]"
               >
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-4">

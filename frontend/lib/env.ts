@@ -6,6 +6,12 @@ const fallbackApiUrl =
   process.env.NEXT_PUBLIC_API_URL ||
   process.env.NEXT_PUBLIC_BACKEND_URL ||
   "http://localhost:8000";
+const defaultAnalyticsProvider = (() => {
+  if (process.env.NEXT_PUBLIC_ANALYTICS_PROVIDER) {
+    return process.env.NEXT_PUBLIC_ANALYTICS_PROVIDER;
+  }
+  return process.env.VERCEL ? "vercel" : "none";
+})();
 
 const publicEnvSchema = z.object({
   NEXT_PUBLIC_API_URL: z.string().min(1),
@@ -19,9 +25,7 @@ const publicEnv = publicEnvSchema.parse({
     process.env.NEXT_PUBLIC_BACKEND_URL ||
     process.env.NEXT_PUBLIC_API_URL ||
     fallbackApiUrl,
-  NEXT_PUBLIC_ANALYTICS_PROVIDER: (
-    process.env.NEXT_PUBLIC_ANALYTICS_PROVIDER || "vercel"
-  ).toLowerCase(),
+  NEXT_PUBLIC_ANALYTICS_PROVIDER: defaultAnalyticsProvider.toLowerCase(),
 });
 
 export const env = publicEnv;

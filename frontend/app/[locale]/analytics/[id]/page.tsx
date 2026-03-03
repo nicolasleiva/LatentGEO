@@ -228,7 +228,7 @@ function PagesPerformance({
         {pages.slice(0, 10).map((page: any) => (
           <div
             key={page.url || page.path || page.id}
-            className="flex items-center justify-between p-4 glass-panel rounded-lg border border-border hover:bg-muted/50 transition-all"
+            className="flex items-center justify-between p-4 glass-panel rounded-lg border border-border hover:bg-muted/50 transition-colors"
           >
             <div className="flex-1 min-w-0">
               <div className="font-medium text-foreground truncate">

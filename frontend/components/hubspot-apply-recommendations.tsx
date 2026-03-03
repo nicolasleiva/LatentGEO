@@ -306,6 +306,7 @@ export default function HubSpotApplyRecommendations({
                     <div className="flex items-center gap-2 mb-2">
                       <input
                         type="checkbox"
+                        aria-label={`Select recommendation for ${rec.page_title}`}
                         checked={isSelected}
                         onChange={() => toggleRecommendation(rec.id)}
                         className="w-4 h-4"
@@ -403,9 +404,9 @@ export default function HubSpotApplyRecommendations({
         <Card>
           <CardContent className="text-center py-12">
             <CheckCircle className="w-12 h-12 text-green-500 mx-auto mb-4" />
-            <h3 className="text-lg font-semibold mb-2">
+            <h2 className="text-lg font-semibold mb-2">
               Everything is optimized!
-            </h3>
+            </h2>
             <p className="text-muted-foreground">
               No pending recommendations to apply to HubSpot
             </p>

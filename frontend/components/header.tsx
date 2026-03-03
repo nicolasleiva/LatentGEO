@@ -112,7 +112,10 @@ export function Header() {
           </div>
           <div className="flex flex-col leading-none">
             <span className="text-xl font-semibold tracking-tight">
-              LatentGEO<span className="text-brand">.ai</span>
+              LatentGEO
+              <span className="text-emerald-700 dark:text-emerald-400">
+                .ai
+              </span>
             </span>
             <span className="hidden xl:block text-[11px] tracking-wider uppercase text-muted-foreground mt-1">
               AI search operations

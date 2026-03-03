@@ -167,7 +167,6 @@ export default function GEODashboardPage() {
   const [data, setData] = useState<GEODashboardData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState(DEFAULT_TAB);
-  const hasPreloaded = useRef(false);
   const requestIdRef = useRef(0);
 
   const backendUrl = API_URL;
@@ -186,38 +185,6 @@ export default function GEODashboardPage() {
     syncTabFromUrl();
     window.addEventListener("popstate", syncTabFromUrl);
     return () => window.removeEventListener("popstate", syncTabFromUrl);
-  }, []);
-
-  // Pre-load components after initial render for instant tab switching
-  useEffect(() => {
-    if (hasPreloaded.current) return;
-
-    // Wait for main content to render, then preload in background
-    const preloadTimer = setTimeout(() => {
-      hasPreloaded.current = true;
-      const preload = () => {
-        import("./components/RecentCitationsTable");
-        import("./components/CitationHistory");
-        import("./components/QueryDiscovery");
-        import("./components/CompetitorAnalysis");
-        import("./components/SchemaGenerator");
-        import("./components/SchemaMultipleGenerator");
-        import("./components/ContentTemplates");
-        import("./components/ContentAnalyze");
-        import("./components/CommerceCampaign");
-        import("./components/ArticleEngine");
-      };
-
-      if (typeof window !== "undefined" && "requestIdleCallback" in window) {
-        (
-          window as Window & { requestIdleCallback?: (cb: () => void) => void }
-        ).requestIdleCallback?.(preload);
-      } else {
-        setTimeout(preload, 100);
-      }
-    }, 1500);
-
-    return () => clearTimeout(preloadTimer);
   }, []);
 
   // B) Hydrate from local cache once per audit.
@@ -374,7 +341,7 @@ export default function GEODashboardPage() {
         </div>
 
         {error && (
-          <div className="mb-6 rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-700 dark:text-amber-300">
+          <div className="mb-6 rounded-2xl border border-amber-500/35 bg-amber-500/10 p-4 text-sm text-amber-900 dark:text-amber-200">
             Summary data is still syncing. You can continue using tools while
             retry runs in background.
           </div>
@@ -386,9 +353,9 @@ export default function GEODashboardPage() {
             <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
               <Target className="w-24 h-24 text-brand" />
             </div>
-            <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wider mb-2">
+            <h2 className="text-sm font-medium text-muted-foreground uppercase tracking-wider mb-2">
               Citation Rate
-            </h3>
+            </h2>
             <div className="text-4xl font-bold text-foreground mb-1">
               {citationRate.toFixed(1)}%
             </div>
@@ -401,9 +368,9 @@ export default function GEODashboardPage() {
             <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
               <TrendingUp className="w-24 h-24 text-emerald-600" />
             </div>
-            <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wider mb-2">
+            <h2 className="text-sm font-medium text-muted-foreground uppercase tracking-wider mb-2">
               Total Mentions
-            </h3>
+            </h2>
             <div className="text-4xl font-bold text-emerald-600 mb-1">
               {totalMentions}
             </div>
@@ -414,9 +381,9 @@ export default function GEODashboardPage() {
             <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
               <Search className="w-24 h-24 text-sky-600" />
             </div>
-            <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wider mb-2">
+            <h2 className="text-sm font-medium text-muted-foreground uppercase tracking-wider mb-2">
               Priority Gaps
-            </h3>
+            </h2>
             <div className="text-4xl font-bold text-sky-600 mb-1">
               {opportunities.length}
             </div>
@@ -429,9 +396,9 @@ export default function GEODashboardPage() {
             <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
               <BarChart3 className="w-24 h-24 text-brand" />
             </div>
-            <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wider mb-2">
+            <h2 className="text-sm font-medium text-muted-foreground uppercase tracking-wider mb-2">
               Sentiment
-            </h3>
+            </h2>
             <div className="flex gap-4 items-end h-10">
               <div className="flex flex-col items-center">
                 <div className="h-1 w-8 bg-green-500/20 rounded-full overflow-hidden mb-1">
@@ -481,7 +448,10 @@ export default function GEODashboardPage() {
               Tool suite
             </p>
             <Select value={activeTab} onValueChange={handleTabChange}>
-              <SelectTrigger className="w-full bg-muted/40 border-border rounded-xl">
+              <SelectTrigger
+                aria-label="Select GEO command module"
+                className="w-full bg-muted/40 border-border rounded-xl"
+              >
                 <SelectValue placeholder="Select a command module" />
               </SelectTrigger>
               <SelectContent className="bg-popover border-border/70">
@@ -509,7 +479,7 @@ export default function GEODashboardPage() {
 
           <TabsContent
             value="opportunities"
-            className="transition-all duration-300 ease-out data-[state=inactive]:opacity-0 data-[state=active]:opacity-100"
+            className="transition-opacity duration-300 ease-out data-[state=inactive]:opacity-0 data-[state=active]:opacity-100"
           >
             <div className="glass-card p-8">
               <div className="flex items-center gap-3 mb-6">
@@ -576,7 +546,7 @@ export default function GEODashboardPage() {
 
           <TabsContent
             value="citations"
-            className="transition-all duration-300 ease-out data-[state=inactive]:opacity-0 data-[state=active]:opacity-100"
+            className="transition-opacity duration-300 ease-out data-[state=inactive]:opacity-0 data-[state=active]:opacity-100"
           >
             <div className="glass-card p-8">
               <div className="flex items-center gap-3 mb-6">
@@ -601,7 +571,7 @@ export default function GEODashboardPage() {
 
           <TabsContent
             value="history"
-            className="transition-all duration-300 ease-out data-[state=inactive]:opacity-0 data-[state=active]:opacity-100"
+            className="transition-opacity duration-300 ease-out data-[state=inactive]:opacity-0 data-[state=active]:opacity-100"
           >
             <div className="glass-card p-8">
               <div className="flex items-center gap-3 mb-6">
@@ -626,7 +596,7 @@ export default function GEODashboardPage() {
 
           <TabsContent
             value="query"
-            className="transition-all duration-300 ease-out data-[state=inactive]:opacity-0 data-[state=active]:opacity-100"
+            className="transition-opacity duration-300 ease-out data-[state=inactive]:opacity-0 data-[state=active]:opacity-100"
           >
             <div className="glass-card p-8">
               <div className="flex items-center gap-3 mb-6">
@@ -652,7 +622,7 @@ export default function GEODashboardPage() {
 
           <TabsContent
             value="competitors"
-            className="transition-all duration-300 ease-out data-[state=inactive]:opacity-0 data-[state=active]:opacity-100"
+            className="transition-opacity duration-300 ease-out data-[state=inactive]:opacity-0 data-[state=active]:opacity-100"
           >
             <div className="glass-card p-8">
               <div className="flex items-center gap-3 mb-6">
@@ -678,7 +648,7 @@ export default function GEODashboardPage() {
           <TabsContent
             value="commerce"
             data-testid="geo-tab-commerce"
-            className="transition-all duration-300 ease-out data-[state=inactive]:opacity-0 data-[state=active]:opacity-100"
+            className="transition-opacity duration-300 ease-out data-[state=inactive]:opacity-0 data-[state=active]:opacity-100"
           >
             <div className="glass-card p-8">
               <div className="flex items-center gap-3 mb-6">
@@ -705,7 +675,7 @@ export default function GEODashboardPage() {
           <TabsContent
             value="article-engine"
             data-testid="geo-tab-article-engine"
-            className="transition-all duration-300 ease-out data-[state=inactive]:opacity-0 data-[state=active]:opacity-100"
+            className="transition-opacity duration-300 ease-out data-[state=inactive]:opacity-0 data-[state=active]:opacity-100"
           >
             <div className="glass-card p-8">
               <div className="flex items-center gap-3 mb-6">
@@ -731,7 +701,7 @@ export default function GEODashboardPage() {
 
           <TabsContent
             value="schema"
-            className="transition-all duration-300 ease-out data-[state=inactive]:opacity-0 data-[state=active]:opacity-100"
+            className="transition-opacity duration-300 ease-out data-[state=inactive]:opacity-0 data-[state=active]:opacity-100"
           >
             <div className="glass-card p-8">
               <div className="flex items-center gap-3 mb-6">
@@ -754,7 +724,7 @@ export default function GEODashboardPage() {
 
           <TabsContent
             value="schema-multiple"
-            className="transition-all duration-300 ease-out data-[state=inactive]:opacity-0 data-[state=active]:opacity-100"
+            className="transition-opacity duration-300 ease-out data-[state=inactive]:opacity-0 data-[state=active]:opacity-100"
           >
             <div className="glass-card p-8">
               <div className="flex items-center gap-3 mb-6">
@@ -776,7 +746,7 @@ export default function GEODashboardPage() {
 
           <TabsContent
             value="templates"
-            className="transition-all duration-300 ease-out data-[state=inactive]:opacity-0 data-[state=active]:opacity-100"
+            className="transition-opacity duration-300 ease-out data-[state=inactive]:opacity-0 data-[state=active]:opacity-100"
           >
             <div className="glass-card p-8">
               <div className="flex items-center gap-3 mb-6">
@@ -799,7 +769,7 @@ export default function GEODashboardPage() {
 
           <TabsContent
             value="content-analyze"
-            className="transition-all duration-300 ease-out data-[state=inactive]:opacity-0 data-[state=active]:opacity-100"
+            className="transition-opacity duration-300 ease-out data-[state=inactive]:opacity-0 data-[state=active]:opacity-100"
           >
             <div className="glass-card p-8">
               <div className="flex items-center gap-3 mb-6">
