@@ -290,10 +290,16 @@ async function main() {
     const route = resolveRoute(routeItem.path);
     const group = routeItem.group || "internal-auth";
     const requestedUrl = new URL(route, BASE_URL).toString();
-    const slug = sanitizeRoute(`${String(index + 1).padStart(2, "0")}-${route}`);
+    const slug = sanitizeRoute(
+      `${String(index + 1).padStart(2, "0")}-${route}`,
+    );
     const outputBasePath = path.resolve(OUTPUT_DIR, `${slug}-${nowStamp}`);
 
-    const run = await runLighthouse(requestedUrl, outputBasePath, LIGHTHOUSE_PORT);
+    const run = await runLighthouse(
+      requestedUrl,
+      outputBasePath,
+      LIGHTHOUSE_PORT,
+    );
     const htmlReport = `${outputBasePath}.report.html`;
     const jsonReport = `${outputBasePath}.report.json`;
 
@@ -385,7 +391,11 @@ async function main() {
 
   fs.writeFileSync(summaryJsonPath, JSON.stringify(results, null, 2), "utf8");
   fs.writeFileSync(summaryCsvPath, toCsv(results), "utf8");
-  fs.writeFileSync(aggregateJsonPath, JSON.stringify(aggregate, null, 2), "utf8");
+  fs.writeFileSync(
+    aggregateJsonPath,
+    JSON.stringify(aggregate, null, 2),
+    "utf8",
+  );
 
   const blockingFailures = results.filter((r) => r.status !== "ok");
 

@@ -2089,4 +2089,3 @@ export default function AuditDetailPage() {
     </div>
   );
 }
-
