@@ -20,7 +20,7 @@ export default function robots(): MetadataRoute.Robots {
         userAgent: "*",
         allow: ["/", "/en/docs", "/en/pricing"],
         disallow: [
-          "/api/",
+          "/api/v1/",
           "/auth/",
           "/signin",
           "/en",
