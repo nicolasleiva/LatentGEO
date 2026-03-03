@@ -737,7 +737,7 @@ export default function AuditDetailPage() {
               <div className="space-y-2">
                 <div className="h-2 w-full bg-muted/50 rounded-full overflow-hidden">
                   <div
-                    className="h-full bg-brand rounded-full transition-all"
+                    className="h-full bg-brand rounded-full transition-[width]"
                     style={{ width: `${progressValue}%` }}
                   />
                 </div>
@@ -1421,7 +1421,7 @@ export default function AuditDetailPage() {
                     href={geoRoutes.geoDashboard}
                     {...getGeoWarmLinkProps(geoRoutes.geoDashboard)}
                     data-testid="geo-tool-card-dashboard"
-                    className="group glass-panel p-6 rounded-2xl transition-all text-left hover:-translate-y-1 block"
+                    className="group glass-panel p-6 rounded-2xl transition-transform text-left hover:-translate-y-1 block"
                   >
                     <div className="flex items-start justify-between mb-3">
                       <div className="p-3 bg-brand/10 rounded-xl">
@@ -1442,7 +1442,7 @@ export default function AuditDetailPage() {
                   <Link
                     href={geoRoutes.keywords}
                     {...getGeoWarmLinkProps(geoRoutes.keywords)}
-                    className="group glass-panel p-6 rounded-2xl transition-all text-left hover:-translate-y-1 block"
+                    className="group glass-panel p-6 rounded-2xl transition-transform text-left hover:-translate-y-1 block"
                   >
                     <div className="flex items-start justify-between mb-3">
                       <div className="p-3 bg-brand/10 rounded-xl">
@@ -1462,7 +1462,7 @@ export default function AuditDetailPage() {
                   <Link
                     href={geoRoutes.backlinks}
                     {...getGeoWarmLinkProps(geoRoutes.backlinks)}
-                    className="group glass-panel p-6 rounded-2xl transition-all text-left hover:-translate-y-1 block"
+                    className="group glass-panel p-6 rounded-2xl transition-transform text-left hover:-translate-y-1 block"
                   >
                     <div className="flex items-start justify-between mb-3">
                       <div className="p-3 bg-green-500/20 rounded-xl">
@@ -1483,7 +1483,7 @@ export default function AuditDetailPage() {
                   <Link
                     href={geoRoutes.rankTracking}
                     {...getGeoWarmLinkProps(geoRoutes.rankTracking)}
-                    className="group glass-panel p-6 rounded-2xl transition-all text-left hover:-translate-y-1 block"
+                    className="group glass-panel p-6 rounded-2xl transition-transform text-left hover:-translate-y-1 block"
                   >
                     <div className="flex items-start justify-between mb-3">
                       <div className="p-3 bg-orange-500/20 rounded-xl">
@@ -1502,7 +1502,7 @@ export default function AuditDetailPage() {
                   {/* Content Editor */}
                   <Link
                     href={`${geoRoutes.contentEditor}?url=${encodeURIComponent(audit?.url || "")}`}
-                    className="group glass-panel p-6 rounded-2xl transition-all text-left hover:-translate-y-1 block"
+                    className="group glass-panel p-6 rounded-2xl transition-transform text-left hover:-translate-y-1 block"
                   >
                     <div className="flex items-start justify-between mb-3">
                       <div className="p-3 bg-pink-500/20 rounded-xl">
@@ -1523,7 +1523,7 @@ export default function AuditDetailPage() {
                   <Link
                     href={geoRoutes.aiContent}
                     {...getGeoWarmLinkProps(geoRoutes.aiContent)}
-                    className="group glass-panel p-6 rounded-2xl transition-all text-left hover:-translate-y-1 block"
+                    className="group glass-panel p-6 rounded-2xl transition-transform text-left hover:-translate-y-1 block"
                   >
                     <div className="flex items-start justify-between mb-3">
                       <div className="p-3 bg-cyan-500/20 rounded-xl">
@@ -1545,7 +1545,7 @@ export default function AuditDetailPage() {
                     href={geoRoutes.geoCommerce}
                     {...getGeoWarmLinkProps(geoRoutes.geoCommerce, "commerce")}
                     data-testid="geo-tool-card-commerce"
-                    className="group glass-panel p-6 rounded-2xl transition-all text-left hover:-translate-y-1 block"
+                    className="group glass-panel p-6 rounded-2xl transition-transform text-left hover:-translate-y-1 block"
                   >
                     <div className="flex items-start justify-between mb-3">
                       <div className="p-3 bg-indigo-500/20 rounded-xl">
@@ -1570,7 +1570,7 @@ export default function AuditDetailPage() {
                       "article-engine",
                     )}
                     data-testid="geo-tool-card-article-engine"
-                    className="group glass-panel p-6 rounded-2xl transition-all text-left hover:-translate-y-1 block"
+                    className="group glass-panel p-6 rounded-2xl transition-transform text-left hover:-translate-y-1 block"
                   >
                     <div className="flex items-start justify-between mb-3">
                       <div className="p-3 bg-violet-500/20 rounded-xl">
@@ -1591,7 +1591,7 @@ export default function AuditDetailPage() {
                   <Link
                     href={geoRoutes.githubAutoFix}
                     {...getGeoWarmLinkProps(geoRoutes.githubAutoFix)}
-                    className="group glass-panel p-6 rounded-2xl transition-all text-left hover:-translate-y-1 block"
+                    className="group glass-panel p-6 rounded-2xl transition-transform text-left hover:-translate-y-1 block"
                   >
                     <div className="flex items-start justify-between mb-3">
                       <div className="p-3 bg-brand/10 rounded-xl">
@@ -1611,7 +1611,7 @@ export default function AuditDetailPage() {
                   {/* HubSpot Auto-Apply */}
                   <Dialog>
                     <DialogTrigger asChild>
-                      <button className="group glass-panel p-6 rounded-2xl transition-all text-left hover:-translate-y-1">
+                      <button className="group glass-panel p-6 rounded-2xl transition-transform text-left hover:-translate-y-1">
                         <div className="flex items-start justify-between mb-3">
                           <div className="p-3 bg-orange-500/20 rounded-xl">
                             <Sparkles className="w-6 h-6 text-amber-600" />
@@ -2089,3 +2089,4 @@ export default function AuditDetailPage() {
     </div>
   );
 }
+

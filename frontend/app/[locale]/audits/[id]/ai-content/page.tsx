@@ -229,9 +229,9 @@ export default function AIContentPage() {
           {suggestions.length === 0 && !loading && (
             <Card className="glass-card p-10 text-center md:col-span-2">
               <Sparkles className="h-10 w-10 text-muted-foreground/60 mx-auto mb-4" />
-              <h3 className="text-lg font-semibold text-foreground mb-2">
+              <h2 className="text-lg font-semibold text-foreground mb-2">
                 No AI suggestions yet
-              </h3>
+              </h2>
               <p className="text-muted-foreground">
                 Generate a strategy to see content opportunities and outlines.
               </p>

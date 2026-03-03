@@ -1,0 +1,80 @@
+name: Web Quality Full Sweep
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: "20"
+
+jobs:
+  web-quality-full:
+    name: Lighthouse Full Route Sweep
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      PERF_BASE_URL: ${{ vars.PERF_TARGET_URL }}
+      PERF_AUDIT_ID: ${{ vars.PERF_AUDIT_ID }}
+      PERF_AUTH_EMAIL: ${{ secrets.PERF_AUTH_EMAIL }}
+      PERF_AUTH_PASSWORD: ${{ secrets.PERF_AUTH_PASSWORD }}
+      LH_CHROME_PORT: "9222"
+      NEXT_PUBLIC_ANALYTICS_PROVIDER: none
+      NEXT_PUBLIC_AUTH0_API_AUDIENCE: ${{ vars.NEXT_PUBLIC_AUTH0_API_AUDIENCE }}
+      NEXT_PUBLIC_AUTH0_API_SCOPES: ${{ vars.NEXT_PUBLIC_AUTH0_API_SCOPES }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate required inputs
+        run: |
+          set -euo pipefail
+
+          if [[ -z "${PERF_BASE_URL:-}" ]]; then
+            echo "PERF_TARGET_URL (mapped to PERF_BASE_URL) is required."
+            exit 1
+          fi
+          if [[ ! "${PERF_BASE_URL}" =~ ^https?:// ]]; then
+            echo "PERF_TARGET_URL must start with http:// or https://"
+            exit 1
+          fi
+
+          if [[ -z "${PERF_AUDIT_ID:-}" ]]; then
+            echo "PERF_AUDIT_ID is required."
+            exit 1
+          fi
+
+          if [[ -z "${PERF_AUTH_EMAIL:-}" || -z "${PERF_AUTH_PASSWORD:-}" ]]; then
+            echo "PERF_AUTH_EMAIL and PERF_AUTH_PASSWORD are required."
+            exit 1
+          fi
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.6.2
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Install frontend dependencies
+        run: pnpm --dir frontend install --frozen-lockfile
+
+      - name: Install Playwright Chromium
+        run: pnpm --dir frontend exec playwright install --with-deps chromium
+
+      - name: Run full web quality sweep
+        run: pnpm --dir frontend run quality:web:full
+
+      - name: Upload full-route Lighthouse artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lighthouse-full-auth
+          path: artifacts/lighthouse-full-auth

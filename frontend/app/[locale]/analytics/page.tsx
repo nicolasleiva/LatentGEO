@@ -296,7 +296,7 @@ export default function AnalyticsPage() {
               {recent_audits.slice(0, 10).map((audit: any) => (
                 <div
                   key={audit.id}
-                  className="flex items-center justify-between p-4 glass-panel rounded-xl hover:bg-muted/50 transition-all cursor-pointer"
+                  className="flex items-center justify-between p-4 glass-panel rounded-xl hover:bg-muted/50 transition-colors cursor-pointer"
                   onClick={() =>
                     router.push(withLocale(pathname, `/audits/${audit.id}`))
                   }

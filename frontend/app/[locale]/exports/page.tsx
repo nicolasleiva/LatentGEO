@@ -185,9 +185,9 @@ export default function ReportsExportsPage() {
           {audits.length === 0 ? (
             <Card className="glass-card p-12 text-center animate-fade-up">
               <FileText className="h-16 w-16 text-muted-foreground/50 mx-auto mb-4" />
-              <h3 className="text-xl font-semibold text-foreground mb-2">
+              <h2 className="text-xl font-semibold text-foreground mb-2">
                 No Completed Audits
-              </h3>
+              </h2>
               <p className="text-muted-foreground mb-6">
                 Finish at least one audit to unlock report generation.
               </p>
@@ -209,9 +209,9 @@ export default function ReportsExportsPage() {
                     <div className="flex-1">
                       <div className="flex items-center gap-3 mb-2">
                         {getStatusIcon(audit.status)}
-                        <h3 className="text-lg font-semibold text-foreground">
+                        <h2 className="text-lg font-semibold text-foreground">
                           {audit.domain}
-                        </h3>
+                        </h2>
                         <Badge
                           variant="outline"
                           className="text-xs border-border/70 bg-muted/40 text-muted-foreground"

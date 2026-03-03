@@ -117,7 +117,7 @@ export default function PricingPage() {
       <main className="max-w-6xl mx-auto px-6 py-16">
         {/* Hero */}
         <div className="text-center mb-16">
-          <div className="inline-flex items-center gap-2 px-4 py-2 bg-brand/10 border border-brand/20 rounded-full text-brand text-sm mb-6">
+          <div className="inline-flex items-center gap-2 px-4 py-2 bg-brand/10 border border-brand/20 rounded-full text-emerald-800 dark:text-emerald-200 text-sm mb-6">
             <Sparkles className="w-4 h-4" />
             Clear pricing for real operators
           </div>
@@ -177,7 +177,7 @@ export default function PricingPage() {
                     <div className="w-5 h-5 flex items-center justify-center flex-shrink-0">
                       <div className="w-1.5 h-0.5 bg-foreground/30 rounded" />
                     </div>
-                    <span className="text-muted-foreground/60">{feature}</span>
+                    <span className="text-muted-foreground">{feature}</span>
                   </div>
                 ))}
               </div>
@@ -293,7 +293,7 @@ export default function PricingPage() {
 
       {/* Footer */}
       <footer className="border-t border-border mt-20 py-8">
-        <div className="max-w-6xl mx-auto px-6 text-center text-muted-foreground/60 text-sm">
+        <div className="max-w-6xl mx-auto px-6 text-center text-muted-foreground text-sm">
           © 2026 LatentGEO.ai. Pricing shown in USD.
         </div>
       </footer>

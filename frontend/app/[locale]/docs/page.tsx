@@ -141,7 +141,7 @@ export default function DocsPage() {
       <main className="max-w-6xl mx-auto px-6 py-12">
         {/* Hero */}
         <div className="text-center mb-12">
-          <div className="inline-flex items-center gap-2 px-4 py-2 bg-brand/10 border border-brand/20 rounded-full text-brand text-sm mb-6">
+          <div className="inline-flex items-center gap-2 px-4 py-2 bg-brand/10 border border-brand/20 rounded-full text-emerald-800 dark:text-emerald-200 text-sm mb-6">
             <Book className="w-4 h-4" />
             Documentation
           </div>
@@ -157,13 +157,14 @@ export default function DocsPage() {
         {/* Search */}
         <div className="max-w-xl mx-auto mb-12">
           <div className="relative">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground/60" />
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
             <input
               type="text"
+              aria-label="Search documentation"
               placeholder="Search playbooks and workflows..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-12 pr-4 py-4 bg-background/80 border border-border/70 rounded-xl text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:border-brand/40 focus:ring-2 focus:ring-brand/10"
+              className="w-full pl-12 pr-4 py-4 bg-background/80 border border-border/70 rounded-xl text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-brand/40 focus:ring-2 focus:ring-brand/10"
             />
           </div>
         </div>
@@ -265,7 +266,9 @@ export default function DocsPage() {
                 your pages in high-intent responses.
               </p>
               <div className="mt-6 p-4 bg-brand/10 border border-brand/20 rounded-xl">
-                <p className="text-brand font-medium">Operating Insight</p>
+                <p className="text-emerald-800 dark:text-emerald-200 font-medium">
+                  Operating Insight
+                </p>
                 <p className="text-foreground/80 mt-2">
                   AI discovery now influences category framing. If your pages
                   are not citation-ready, competitors define the narrative
@@ -385,7 +388,7 @@ export default function DocsPage() {
 
       {/* Footer */}
       <footer className="border-t border-border mt-20 py-8">
-        <div className="max-w-6xl mx-auto px-6 text-center text-muted-foreground/60 text-sm">
+        <div className="max-w-6xl mx-auto px-6 text-center text-muted-foreground text-sm">
           © 2026 LatentGEO.ai. Documentation is continuously updated.
         </div>
       </footer>
