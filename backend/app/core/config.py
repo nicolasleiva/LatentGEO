@@ -132,6 +132,10 @@ class Settings(BaseSettings):
     GEO_ARTICLE_EXTRA_SEARCH_TOP_K: int = int(
         os.getenv("GEO_ARTICLE_EXTRA_SEARCH_TOP_K", "10")
     )
+    GEO_ARTICLE_STALE_SECONDS: int = int(os.getenv("GEO_ARTICLE_STALE_SECONDS", "1200"))
+    GEO_ARTICLE_ABORT_ON_FIRST_TIMEOUT: bool = (
+        os.getenv("GEO_ARTICLE_ABORT_ON_FIRST_TIMEOUT", "True").lower() == "true"
+    )
 
     # Devstral - Para modificación de código (optimizado para programación)
     NV_MODEL_CODE: str = "moonshotai/kimi-k2-instruct-0905"

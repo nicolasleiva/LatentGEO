@@ -3,12 +3,13 @@ GEO Features API Routes
 """
 
 import json
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 from urllib.parse import urlparse
 
 from app.core.access_control import ensure_audit_access
 from app.core.auth import AuthUser, get_current_user
+from app.core.config import settings
 from app.core.database import get_db
 from app.core.llm_kimi import (
     KimiGenerationError,
@@ -18,7 +19,7 @@ from app.core.llm_kimi import (
     get_llm_function,
 )
 from app.core.logger import get_logger
-from app.models import CitationTracking, DiscoveredQuery
+from app.models import CitationTracking, DiscoveredQuery, GeoArticleBatch
 from app.services.audit_service import AuditService
 from app.services.citation_tracker_service import CitationTrackerService
 from app.services.competitor_citation_service import CompetitorCitationService
@@ -31,6 +32,7 @@ from app.services.geo_article_engine_service import (
 from app.services.geo_commerce_service import GeoCommerceService
 from app.services.query_discovery_service import QueryDiscoveryService
 from app.services.schema_optimizer_service import SchemaOptimizerService
+from app.workers.celery_app import celery_app
 from fastapi import APIRouter, BackgroundTasks, Body, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
@@ -145,6 +147,90 @@ def _safe_http_error_detail(code: str) -> Dict[str, str]:
             normalized_code, "Internal server error."
         ),
     }
+
+
+_TERMINAL_ARTICLE_BATCH_STATUSES = {"completed", "failed", "partial_failed"}
+_FAILED_TASK_STATES = {"FAILURE", "REVOKED"}
+
+
+def _coerce_utc_datetime(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
+
+
+def _parse_iso_datetime(value: Any) -> Optional[datetime]:
+    if not isinstance(value, str):
+        return None
+    raw = value.strip()
+    if not raw:
+        return None
+    try:
+        parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return _coerce_utc_datetime(parsed)
+
+
+def _reconcile_article_batch_runtime_state(
+    db: Session, batch: GeoArticleBatch
+) -> GeoArticleBatch:
+    if batch.status in _TERMINAL_ARTICLE_BATCH_STATUSES:
+        return batch
+
+    summary = dict(batch.summary or {})
+    changed = False
+    now = datetime.now(timezone.utc)
+    task_state = str(summary.get("task_state") or "").upper()
+    task_id = str(summary.get("task_id") or "").strip()
+
+    if task_id:
+        try:
+            resolved_state = str(celery_app.AsyncResult(task_id).state or "").upper()
+        except Exception as exc:
+            logger.warning(
+                f"Unable to resolve celery state for article batch {batch.id}: {exc}"
+            )
+            resolved_state = ""
+        if resolved_state and resolved_state != task_state:
+            summary["task_state"] = resolved_state
+            task_state = resolved_state
+            changed = True
+
+        if batch.status == "processing" and task_state in _FAILED_TASK_STATES:
+            batch.status = "failed"
+            summary["failure_reason"] = (
+                f"BATCH_TASK_{task_state}: background task finished in {task_state}."
+            )
+            summary["completed_at"] = now.isoformat()
+            summary["last_progress_at"] = now.isoformat()
+            changed = True
+
+    stale_seconds = int(getattr(settings, "GEO_ARTICLE_STALE_SECONDS", 1200) or 0)
+    if batch.status == "processing" and stale_seconds > 0:
+        last_progress = _parse_iso_datetime(
+            summary.get("last_progress_at")
+        ) or _parse_iso_datetime(summary.get("started_at"))
+        if not last_progress and batch.created_at is not None:
+            last_progress = _coerce_utc_datetime(batch.created_at)
+
+        if last_progress and now - last_progress > timedelta(seconds=stale_seconds):
+            batch.status = "failed"
+            if not task_state:
+                summary["task_state"] = "UNKNOWN"
+            summary["failure_reason"] = (
+                "BATCH_STALLED: processing exceeded stale timeout window."
+            )
+            summary["completed_at"] = now.isoformat()
+            summary["last_progress_at"] = now.isoformat()
+            changed = True
+
+    if changed:
+        batch.summary = summary
+        db.commit()
+        db.refresh(batch)
+
+    return batch
 
 
 # ============= Pydantic Models =============
@@ -1158,6 +1244,8 @@ async def generate_article_batch(
             async_result = generate_article_batch_task.delay(batch.id)
             summary = dict(batch.summary or {})
             summary["task_id"] = async_result.id
+            summary["task_state"] = "PENDING"
+            summary["last_progress_at"] = datetime.now(timezone.utc).isoformat()
             batch.summary = summary
             db.commit()
             db.refresh(batch)
@@ -1242,6 +1330,7 @@ def get_article_batch_status(
         if not batch:
             raise HTTPException(status_code=404, detail="Article batch not found")
         _get_owned_audit(db, batch.audit_id, current_user)
+        batch = _reconcile_article_batch_runtime_state(db, batch)
         return {
             "has_data": True,
             **GeoArticleEngineService.serialize_batch(batch),
