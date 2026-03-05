@@ -43,6 +43,8 @@ const LIGHTHOUSE_PORT = Number.parseInt(
   process.env.LH_CHROME_PORT?.trim() || "9222",
   10,
 );
+const FAIL_ON_EXTERNAL_ERRORS =
+  process.env.PERF_FAIL_ON_EXTERNAL_ERRORS?.trim().toLowerCase() === "true";
 
 const nowStamp = new Date().toISOString().replace(/[:.]/g, "-");
 
@@ -100,6 +102,8 @@ function classifyFailure(message, finalUrl = "") {
   if (
     text.includes("err_connection_refused") ||
     text.includes("net::err_name_not_resolved") ||
+    text.includes("dns servers could not resolve") ||
+    text.includes("could not resolve host") ||
     text.includes("timed out") ||
     text.includes("502") ||
     text.includes("503")
@@ -392,6 +396,7 @@ async function main() {
     manifestTotal: manifestRoutes.length,
     login: loginState,
     skippedAuthenticatedRoutes: skippedRoutes,
+    failOnExternalErrors: FAIL_ON_EXTERNAL_ERRORS,
     auditedTotal: results.length,
     ok: results.filter((r) => r.status === "ok").length,
     thresholdFail: results.filter((r) => r.status === "threshold_fail").length,
@@ -417,7 +422,19 @@ async function main() {
     "utf8",
   );
 
-  const blockingFailures = results.filter((r) => r.status !== "ok");
+  const blockingFailures = results.filter((r) => {
+    if (r.status === "ok") {
+      return false;
+    }
+    if (
+      !FAIL_ON_EXTERNAL_ERRORS &&
+      r.status === "error" &&
+      r.classification === "external"
+    ) {
+      return false;
+    }
+    return true;
+  });
 
   const previewRows = results.map((r) => {
     return {
