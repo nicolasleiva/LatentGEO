@@ -1480,12 +1480,12 @@ class GeoArticleEngineService:
         )
         serp_results: List[Dict[str, Any]] = []
         external_from_serp: List[Dict[str, Any]] = []
-        top_competitors: List[Dict[str, Any]] = (
-            GeoArticleEngineService._extract_competitors_from_audit(
-                audit=audit,
-                audit_domain=audit_domain,
-                vertical_hint=vertical_hint,
-            )
+        top_competitors: List[
+            Dict[str, Any]
+        ] = GeoArticleEngineService._extract_competitors_from_audit(
+            audit=audit,
+            audit_domain=audit_domain,
+            vertical_hint=vertical_hint,
         )
         inferred_intent = ""
         secondary_keywords: List[str] = []
@@ -2378,8 +2378,9 @@ class GeoArticleEngineService:
                     }
                 )
 
-                if abort_on_first_timeout and GeoArticleEngineService._is_kimi_timeout_error(
-                    error_payload
+                if (
+                    abort_on_first_timeout
+                    and GeoArticleEngineService._is_kimi_timeout_error(error_payload)
                 ):
                     logger.warning(
                         "Aborting article batch=%s after first KIMI timeout (idx=%s).",

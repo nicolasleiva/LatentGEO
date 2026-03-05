@@ -199,19 +199,18 @@ def _reconcile_article_batch_runtime_state(
 
         if batch.status == "processing" and task_state in _FAILED_TASK_STATES:
             batch.status = "failed"
-            summary["failure_reason"] = (
-                f"BATCH_TASK_{task_state}: background task finished in {task_state}."
-            )
+            summary[
+                "failure_reason"
+            ] = f"BATCH_TASK_{task_state}: background task finished in {task_state}."
             summary["completed_at"] = now.isoformat()
             summary["last_progress_at"] = now.isoformat()
             changed = True
 
     stale_seconds = int(getattr(settings, "GEO_ARTICLE_STALE_SECONDS", 1200) or 0)
     if batch.status == "processing" and stale_seconds > 0:
-        last_progress = (
-            _parse_iso_datetime(summary.get("last_progress_at"))
-            or _parse_iso_datetime(summary.get("started_at"))
-        )
+        last_progress = _parse_iso_datetime(
+            summary.get("last_progress_at")
+        ) or _parse_iso_datetime(summary.get("started_at"))
         if not last_progress and batch.created_at is not None:
             last_progress = _coerce_utc_datetime(batch.created_at)
 
@@ -219,9 +218,9 @@ def _reconcile_article_batch_runtime_state(
             batch.status = "failed"
             if not task_state:
                 summary["task_state"] = "UNKNOWN"
-            summary["failure_reason"] = (
-                "BATCH_STALLED: processing exceeded stale timeout window."
-            )
+            summary[
+                "failure_reason"
+            ] = "BATCH_STALLED: processing exceeded stale timeout window."
             summary["completed_at"] = now.isoformat()
             summary["last_progress_at"] = now.isoformat()
             changed = True
