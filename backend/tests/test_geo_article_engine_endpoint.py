@@ -1,3 +1,6 @@
+from datetime import datetime, timedelta, timezone
+
+from app.core.config import settings
 from app.models import Audit, AuditStatus, GeoArticleBatch
 from app.services.geo_article_engine_service import (
     ArticleDataPackIncompleteError,
@@ -114,3 +117,75 @@ def test_article_engine_async_generate_and_status_endpoint(
     status_payload = status_res.json()
     assert status_payload["has_data"] is True
     assert status_payload["status"] == "processing"
+
+
+def test_article_engine_status_reconciles_task_failure_to_failed(
+    client, db_session, monkeypatch
+):
+    audit_id = _seed_audit(db_session)
+    batch = GeoArticleBatch(
+        audit_id=audit_id,
+        requested_count=2,
+        language="en",
+        tone="executive",
+        include_schema=True,
+        status="processing",
+        summary={
+            "task_id": "celery-task-failure",
+            "generated_count": 0,
+            "failed_count": 0,
+            "last_progress_at": datetime.now(timezone.utc).isoformat(),
+        },
+        articles=[],
+    )
+    db_session.add(batch)
+    db_session.commit()
+    db_session.refresh(batch)
+
+    class DummyResult:
+        state = "FAILURE"
+
+    monkeypatch.setattr(
+        "app.api.routes.geo.celery_app.AsyncResult", lambda _task_id: DummyResult()
+    )
+
+    response = client.get(f"/api/v1/geo/article-engine/status/{batch.id}")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "failed"
+    assert payload["summary"]["task_state"] == "FAILURE"
+    assert "BATCH_TASK_FAILURE" in payload["summary"]["failure_reason"]
+
+
+def test_article_engine_status_reconciles_stale_processing_to_failed(
+    client, db_session, monkeypatch
+):
+    audit_id = _seed_audit(db_session)
+    batch = GeoArticleBatch(
+        audit_id=audit_id,
+        requested_count=1,
+        language="en",
+        tone="executive",
+        include_schema=True,
+        status="processing",
+        summary={
+            "generated_count": 0,
+            "failed_count": 0,
+            "last_progress_at": (
+                datetime.now(timezone.utc) - timedelta(seconds=3600)
+            ).isoformat(),
+        },
+        articles=[],
+    )
+    db_session.add(batch)
+    db_session.commit()
+    db_session.refresh(batch)
+
+    monkeypatch.setattr(settings, "GEO_ARTICLE_STALE_SECONDS", 1200, raising=False)
+
+    response = client.get(f"/api/v1/geo/article-engine/status/{batch.id}")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "failed"
+    assert payload["summary"]["task_state"] == "UNKNOWN"
+    assert payload["summary"]["failure_reason"].startswith("BATCH_STALLED")

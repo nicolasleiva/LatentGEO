@@ -5,6 +5,7 @@ Celery Tasks for background processing.
 import asyncio
 import json
 from contextlib import contextmanager
+from datetime import datetime, timezone
 
 from app.core.config import settings
 from app.core.database import SessionLocal
@@ -13,7 +14,7 @@ from app.core.database import SessionLocal
 # Esto puede ser refactorizado a un módulo de utilidades común en el futuro
 from app.core.llm_kimi import get_llm_function
 from app.core.logger import get_logger
-from app.models import AuditStatus
+from app.models import AuditStatus, GeoArticleBatch
 from app.services.audit_local_service import AuditLocalService
 from app.services.audit_service import AuditService, ReportService
 from app.services.pdf_service import PDFService
@@ -710,6 +711,36 @@ def run_pagespeed_task(self, audit_id: int):
         raise
 
 
+def _set_article_batch_task_state(
+    db: Session,
+    *,
+    batch_id: int,
+    task_id: str | None = None,
+    task_state: str | None = None,
+    failure_reason: str | None = None,
+    mark_failed: bool = False,
+) -> None:
+    batch = db.query(GeoArticleBatch).filter(GeoArticleBatch.id == batch_id).first()
+    if not batch:
+        return
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    summary = dict(batch.summary or {})
+    if task_id:
+        summary["task_id"] = task_id
+    if task_state:
+        summary["task_state"] = task_state
+    summary["last_progress_at"] = now_iso
+    if failure_reason:
+        summary["failure_reason"] = failure_reason[:500]
+    if mark_failed:
+        batch.status = "failed"
+        summary["completed_at"] = now_iso
+
+    batch.summary = summary
+    db.commit()
+
+
 @celery_app.task(
     name="generate_article_batch_task",
     bind=True,
@@ -720,15 +751,54 @@ def run_pagespeed_task(self, audit_id: int):
 )
 def generate_article_batch_task(self, batch_id: int):
     """Background processing for GEO Article Engine batches."""
+    task_id = str(getattr(self.request, "id", "") or "")
     logger.info(f"Starting article batch task for batch_id={batch_id}")
     try:
         from app.services.geo_article_engine_service import GeoArticleEngineService
 
         with get_db_session() as db:
+            _set_article_batch_task_state(
+                db,
+                batch_id=batch_id,
+                task_id=task_id,
+                task_state="STARTED",
+            )
+
+        with get_db_session() as db:
             asyncio.run(GeoArticleEngineService.process_batch(db, batch_id))
-            logger.info(f"Article batch {batch_id} processed successfully.")
-            return {"batch_id": batch_id, "status": "completed"}
+
+        with get_db_session() as db:
+            _set_article_batch_task_state(
+                db,
+                batch_id=batch_id,
+                task_id=task_id,
+                task_state="SUCCESS",
+            )
+
+        logger.info(f"Article batch {batch_id} processed successfully.")
+        return {"batch_id": batch_id, "status": "completed"}
     except Exception as e:
+        max_retries = int(getattr(self, "max_retries", 0) or 0)
+        current_retry = int(getattr(self.request, "retries", 0) or 0)
+        will_retry = current_retry < max_retries
+        task_state = "RETRY" if will_retry else "FAILURE"
+        failure_reason = f"{type(e).__name__}: {e}"
+
+        try:
+            with get_db_session() as db:
+                _set_article_batch_task_state(
+                    db,
+                    batch_id=batch_id,
+                    task_id=task_id,
+                    task_state=task_state,
+                    failure_reason=failure_reason,
+                    mark_failed=not will_retry,
+                )
+        except Exception as status_exc:  # nosec B110
+            logger.warning(
+                f"Unable to persist article batch task state for batch {batch_id}: {status_exc}"
+            )
+
         logger.error(f"Error in article batch task {batch_id}: {e}", exc_info=True)
         raise
 

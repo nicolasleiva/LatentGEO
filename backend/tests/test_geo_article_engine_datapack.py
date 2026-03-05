@@ -2,6 +2,7 @@ import json
 
 import pytest
 from app.core.config import settings
+from app.core.llm_kimi import KimiGenerationError
 from app.models import AIContentSuggestion, Audit, AuditStatus, Keyword
 from app.services.geo_article_engine_service import (
     ArticleDataPackIncompleteError,
@@ -550,6 +551,79 @@ async def test_process_batch_fails_when_repair_disabled(db_session, monkeypatch)
     assert processed.status == "failed"
     assert processed.articles[0]["generation_status"] == "failed"
     assert processed.articles[0]["generation_error"]["code"] == "KIMI_GENERATION_FAILED"
+
+
+@pytest.mark.asyncio
+async def test_process_batch_aborts_remaining_articles_after_first_kimi_timeout(
+    db_session, monkeypatch
+):
+    audit = _seed_audit(db_session)
+    monkeypatch.setattr(
+        "app.services.geo_article_engine_service.is_kimi_configured", lambda: True
+    )
+    monkeypatch.setattr(
+        settings, "GEO_ARTICLE_ABORT_ON_FIRST_TIMEOUT", True, raising=False
+    )
+
+    batch = GeoArticleEngineService.create_batch(
+        db=db_session,
+        audit=audit,
+        article_count=3,
+        language="es",
+        tone="growth",
+        include_schema=True,
+    )
+
+    async def fake_llm(*, system_prompt, user_prompt):
+        return "{}"
+
+    async def fake_build_data_pack(**kwargs):
+        return {
+            "keyword_strategy": {
+                "primary_keyword": "test keyword",
+                "secondary_keywords": ["kw1", "kw2"],
+                "search_intent": "commercial",
+            },
+            "focus_url": "https://store.example.com/",
+            "required_sources": {
+                "all": [{"title": "Store", "url": "https://store.example.com/"}],
+            },
+            "top_competitors_for_keyword": [],
+            "competitor_gap_map": {},
+            "audit_signals": {},
+            "provider": "kimi-2.5-search",
+        }
+
+    generation_calls = {"count": 0}
+
+    async def fake_generate_content(**kwargs):
+        generation_calls["count"] += 1
+        raise KimiGenerationError("KIMI_TIMEOUT: forced timeout for fail-fast test")
+
+    monkeypatch.setattr(
+        "app.services.geo_article_engine_service.get_llm_function", lambda: fake_llm
+    )
+    monkeypatch.setattr(
+        GeoArticleEngineService,
+        "_build_article_data_pack",
+        staticmethod(fake_build_data_pack),
+    )
+    monkeypatch.setattr(
+        GeoArticleEngineService,
+        "_generate_article_content",
+        staticmethod(fake_generate_content),
+    )
+
+    processed = await GeoArticleEngineService.process_batch(db_session, batch.id)
+
+    assert processed.status == "failed"
+    assert len(processed.articles) == 3
+    assert generation_calls["count"] == 1
+    assert processed.summary["processed_count"] == 3
+    assert processed.summary["failure_reason"].startswith("KIMI_TIMEOUT_ABORTED")
+    assert processed.articles[0]["generation_error"]["code"] == "KIMI_GENERATION_FAILED"
+    assert processed.articles[1]["generation_error"]["code"] == "KIMI_TIMEOUT_ABORTED"
+    assert processed.articles[2]["generation_error"]["code"] == "KIMI_TIMEOUT_ABORTED"
 
 
 @pytest.mark.asyncio

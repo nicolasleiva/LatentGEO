@@ -2128,6 +2128,7 @@ class GeoArticleEngineService:
             status="processing",
             summary={
                 "requested_count": normalized_count,
+                "processed_count": 0,
                 "generated_count": 0,
                 "failed_count": 0,
                 "average_citation_readiness_score": 0.0,
@@ -2141,6 +2142,7 @@ class GeoArticleEngineService:
                     else "audit_plus_kimi_search_expansion"
                 ),
                 "started_at": datetime.now(timezone.utc).isoformat(),
+                "last_progress_at": datetime.now(timezone.utc).isoformat(),
             },
             articles=[],
         )
@@ -2148,6 +2150,46 @@ class GeoArticleEngineService:
         db.commit()
         db.refresh(batch)
         return batch
+
+    @staticmethod
+    def _is_kimi_timeout_error(error_payload: Dict[str, Any]) -> bool:
+        code = str(error_payload.get("code") or "").upper()
+        message = str(error_payload.get("message") or "").upper()
+        return "KIMI_TIMEOUT" in code or "KIMI_TIMEOUT" in message
+
+    @staticmethod
+    def _persist_batch_progress(
+        db: Session,
+        *,
+        batch: GeoArticleBatch,
+        status: str,
+        requested_count: int,
+        generated_articles: List[Dict[str, Any]],
+        success_count: int,
+        total_score: float,
+        extra_summary: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        processed_count = len(generated_articles)
+        failed_count = max(processed_count - success_count, 0)
+        summary = {
+            **(batch.summary or {}),
+            "requested_count": requested_count,
+            "processed_count": processed_count,
+            "generated_count": success_count,
+            "failed_count": failed_count,
+            "average_citation_readiness_score": round(
+                total_score / max(success_count, 1), 1
+            ),
+            "last_progress_at": datetime.now(timezone.utc).isoformat(),
+        }
+        if extra_summary:
+            summary.update(extra_summary)
+
+        batch.status = status
+        batch.articles = generated_articles
+        batch.summary = summary
+        db.commit()
+        db.refresh(batch)
 
     @staticmethod
     async def process_batch(db: Session, batch_id: int) -> GeoArticleBatch:
@@ -2200,26 +2242,43 @@ class GeoArticleEngineService:
             )
 
         generated_articles: List[Dict[str, Any]] = []
-        total_score = 0
+        total_score = 0.0
         success_count = 0
         requested_count = int(batch.requested_count or 1)
+        abort_on_first_timeout = bool(
+            getattr(settings, "GEO_ARTICLE_ABORT_ON_FIRST_TIMEOUT", True)
+        )
+        aborted_by_timeout = False
 
-        for index in range(requested_count):
-            ai_item = (
-                ai_strategy_items[index] if index < len(ai_strategy_items) else None
-            )
+        # Initialize runtime progress metadata for watchdog reconciliation.
+        batch.status = "processing"
+        batch.summary = {
+            **(batch.summary or {}),
+            "requested_count": requested_count,
+            "processed_count": 0,
+            "generated_count": 0,
+            "failed_count": 0,
+            "last_progress_at": datetime.now(timezone.utc).isoformat(),
+        }
+        db.commit()
+        db.refresh(batch)
+
+        brand_token = GeoArticleEngineService._extract_brand_token(audit)
+
+        def _build_article_context(
+            idx: int,
+        ) -> tuple[Optional[Dict[str, Any]], str, str, Dict[str, Any]]:
+            ai_item = ai_strategy_items[idx] if idx < len(ai_strategy_items) else None
             primary_keyword = (
                 str((ai_item or {}).get("target_keyword") or "").strip().lower()
-                or keyword_pool[index % len(keyword_pool)]
+                or keyword_pool[idx % len(keyword_pool)]
             )
-            brand_token = GeoArticleEngineService._extract_brand_token(audit)
             if brand_token and brand_token not in primary_keyword.lower():
                 primary_keyword = f"{brand_token} {primary_keyword}".strip()
-            focus_url = focus_urls[index % len(focus_urls)]
+            focus_url = focus_urls[idx % len(focus_urls)]
             title_hint = str((ai_item or {}).get("title") or "").strip()
-
             base_article = {
-                "index": index + 1,
+                "index": idx + 1,
                 "focus_url": focus_url,
                 "target_keyword": primary_keyword,
                 "title": title_hint or f"{primary_keyword.title()}: GEO + SEO Playbook",
@@ -2232,6 +2291,12 @@ class GeoArticleEngineService:
                 "citation_readiness_score": 0,
                 "created_at": datetime.now(timezone.utc).isoformat(),
             }
+            return ai_item, primary_keyword, focus_url, base_article
+
+        for index in range(requested_count):
+            ai_item, primary_keyword, focus_url, base_article = _build_article_context(
+                index
+            )
 
             try:
                 data_pack = await GeoArticleEngineService._build_article_data_pack(
@@ -2313,7 +2378,56 @@ class GeoArticleEngineService:
                     }
                 )
 
-        failed_count = requested_count - success_count
+                if abort_on_first_timeout and GeoArticleEngineService._is_kimi_timeout_error(
+                    error_payload
+                ):
+                    logger.warning(
+                        "Aborting article batch=%s after first KIMI timeout (idx=%s).",
+                        batch_id,
+                        index + 1,
+                    )
+                    for tail_idx in range(index + 1, requested_count):
+                        (
+                            _tail_ai_item,
+                            _tail_keyword,
+                            _tail_focus_url,
+                            tail_base_article,
+                        ) = _build_article_context(tail_idx)
+                        generated_articles.append(
+                            {
+                                **tail_base_article,
+                                "generation_status": "failed",
+                                "generation_error": {
+                                    "code": "KIMI_TIMEOUT_ABORTED",
+                                    "message": "Batch aborted after first KIMI timeout.",
+                                },
+                            }
+                        )
+                    GeoArticleEngineService._persist_batch_progress(
+                        db,
+                        batch=batch,
+                        status="processing",
+                        requested_count=requested_count,
+                        generated_articles=generated_articles,
+                        success_count=success_count,
+                        total_score=total_score,
+                        extra_summary={
+                            "failure_reason": "KIMI_TIMEOUT_ABORTED: Batch aborted after first KIMI timeout."
+                        },
+                    )
+                    aborted_by_timeout = True
+                    break
+
+            GeoArticleEngineService._persist_batch_progress(
+                db,
+                batch=batch,
+                status="processing",
+                requested_count=requested_count,
+                generated_articles=generated_articles,
+                success_count=success_count,
+                total_score=total_score,
+            )
+
         if success_count == requested_count:
             status = "completed"
         elif success_count == 0:
@@ -2321,20 +2435,23 @@ class GeoArticleEngineService:
         else:
             status = "partial_failed"
 
-        batch.status = status
-        batch.articles = generated_articles
-        batch.summary = {
-            **(batch.summary or {}),
-            "requested_count": requested_count,
-            "generated_count": success_count,
-            "failed_count": failed_count,
-            "average_citation_readiness_score": round(
-                total_score / max(success_count, 1), 1
-            ),
-            "completed_at": datetime.now(timezone.utc).isoformat(),
-        }
-        db.commit()
-        db.refresh(batch)
+        final_summary = {"completed_at": datetime.now(timezone.utc).isoformat()}
+        if aborted_by_timeout:
+            final_summary.setdefault(
+                "failure_reason",
+                "KIMI_TIMEOUT_ABORTED: Batch aborted after first KIMI timeout.",
+            )
+
+        GeoArticleEngineService._persist_batch_progress(
+            db,
+            batch=batch,
+            status=status,
+            requested_count=requested_count,
+            generated_articles=generated_articles,
+            success_count=success_count,
+            total_score=total_score,
+            extra_summary=final_summary,
+        )
         return batch
 
     @staticmethod
