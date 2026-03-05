@@ -265,9 +265,27 @@ async function main() {
 
   const manifestRaw = fs.readFileSync(ROUTE_MANIFEST_PATH, "utf8");
   const manifest = JSON.parse(manifestRaw);
-  const routes = Array.isArray(manifest.routes) ? manifest.routes : [];
-  if (routes.length === 0) {
+  const manifestRoutes = Array.isArray(manifest.routes) ? manifest.routes : [];
+  if (manifestRoutes.length === 0) {
     throw new Error("Route manifest is empty.");
+  }
+  const hasAuthCredentials = Boolean(PERF_AUTH_EMAIL && PERF_AUTH_PASSWORD);
+  const routes = hasAuthCredentials
+    ? manifestRoutes
+    : manifestRoutes.filter((routeItem) => {
+        const group = routeItem.group || "internal-auth";
+        return group !== "internal-auth";
+      });
+  const skippedRoutes = manifestRoutes.length - routes.length;
+  if (routes.length === 0) {
+    throw new Error(
+      "No routes available for Lighthouse sweep. Provide PERF_AUTH_EMAIL/PERF_AUTH_PASSWORD or add public routes to the manifest.",
+    );
+  }
+  if (!hasAuthCredentials && skippedRoutes > 0) {
+    console.warn(
+      `[quality:web:full] Missing PERF_AUTH_EMAIL/PERF_AUTH_PASSWORD. Skipping ${skippedRoutes} authenticated route(s) and auditing ${routes.length} public route(s).`,
+    );
   }
 
   const browser = await chromium.launch({
@@ -371,7 +389,9 @@ async function main() {
     generatedAt: new Date().toISOString(),
     baseUrl: BASE_URL,
     auditId: PERF_AUDIT_ID,
+    manifestTotal: manifestRoutes.length,
     login: loginState,
+    skippedAuthenticatedRoutes: skippedRoutes,
     auditedTotal: results.length,
     ok: results.filter((r) => r.status === "ok").length,
     thresholdFail: results.filter((r) => r.status === "threshold_fail").length,

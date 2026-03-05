@@ -47,8 +47,7 @@ jobs:
           fi
 
           if [[ -z "${PERF_AUTH_EMAIL:-}" || -z "${PERF_AUTH_PASSWORD:-}" ]]; then
-            echo "PERF_AUTH_EMAIL and PERF_AUTH_PASSWORD are required."
-            exit 1
+            echo "::warning::PERF_AUTH_EMAIL/PERF_AUTH_PASSWORD missing. Running public-only Lighthouse sweep."
           fi
 
       - name: Set up pnpm
