@@ -1480,12 +1480,12 @@ class GeoArticleEngineService:
         )
         serp_results: List[Dict[str, Any]] = []
         external_from_serp: List[Dict[str, Any]] = []
-        top_competitors: List[
-            Dict[str, Any]
-        ] = GeoArticleEngineService._extract_competitors_from_audit(
-            audit=audit,
-            audit_domain=audit_domain,
-            vertical_hint=vertical_hint,
+        top_competitors: List[Dict[str, Any]] = (
+            GeoArticleEngineService._extract_competitors_from_audit(
+                audit=audit,
+                audit_domain=audit_domain,
+                vertical_hint=vertical_hint,
+            )
         )
         inferred_intent = ""
         secondary_keywords: List[str] = []

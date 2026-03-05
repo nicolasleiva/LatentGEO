@@ -199,9 +199,9 @@ def _reconcile_article_batch_runtime_state(
 
         if batch.status == "processing" and task_state in _FAILED_TASK_STATES:
             batch.status = "failed"
-            summary[
-                "failure_reason"
-            ] = f"BATCH_TASK_{task_state}: background task finished in {task_state}."
+            summary["failure_reason"] = (
+                f"BATCH_TASK_{task_state}: background task finished in {task_state}."
+            )
             summary["completed_at"] = now.isoformat()
             summary["last_progress_at"] = now.isoformat()
             changed = True
@@ -218,9 +218,9 @@ def _reconcile_article_batch_runtime_state(
             batch.status = "failed"
             if not task_state:
                 summary["task_state"] = "UNKNOWN"
-            summary[
-                "failure_reason"
-            ] = "BATCH_STALLED: processing exceeded stale timeout window."
+            summary["failure_reason"] = (
+                "BATCH_STALLED: processing exceeded stale timeout window."
+            )
             summary["completed_at"] = now.isoformat()
             summary["last_progress_at"] = now.isoformat()
             changed = True
