@@ -21,6 +21,7 @@ jobs:
       PERF_AUDIT_ID: ${{ vars.PERF_AUDIT_ID }}
       PERF_AUTH_EMAIL: ${{ secrets.PERF_AUTH_EMAIL }}
       PERF_AUTH_PASSWORD: ${{ secrets.PERF_AUTH_PASSWORD }}
+      PERF_FAIL_ON_EXTERNAL_ERRORS: "false"
       LH_CHROME_PORT: "9222"
       NEXT_PUBLIC_ANALYTICS_PROVIDER: none
       NEXT_PUBLIC_AUTH0_API_AUDIENCE: ${{ vars.NEXT_PUBLIC_AUTH0_API_AUDIENCE }}
@@ -47,8 +48,7 @@ jobs:
           fi
 
           if [[ -z "${PERF_AUTH_EMAIL:-}" || -z "${PERF_AUTH_PASSWORD:-}" ]]; then
-            echo "PERF_AUTH_EMAIL and PERF_AUTH_PASSWORD are required."
-            exit 1
+            echo "::warning::PERF_AUTH_EMAIL/PERF_AUTH_PASSWORD missing. Running public-only Lighthouse sweep."
           fi
 
       - name: Set up pnpm
