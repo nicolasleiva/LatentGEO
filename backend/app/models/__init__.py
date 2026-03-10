@@ -142,7 +142,7 @@ class Audit(Base):
         try:
             parsed = json.loads(raw)
             return parsed if isinstance(parsed, dict) else None
-        except Exception:
+        except (TypeError, json.JSONDecodeError):
             return None
 
     @intake_profile.setter
@@ -155,7 +155,7 @@ class Audit(Base):
             return
         try:
             self._intake_profile_raw = json.dumps(value, ensure_ascii=False)
-        except Exception:
+        except (TypeError, ValueError):
             self._intake_profile_raw = None
 
     @property
@@ -168,7 +168,7 @@ class Audit(Base):
         try:
             parsed = json.loads(raw)
             return parsed if isinstance(parsed, list) else []
-        except Exception:
+        except (TypeError, json.JSONDecodeError):
             return []
 
     @runtime_diagnostics.setter
@@ -181,7 +181,7 @@ class Audit(Base):
             return
         try:
             self._runtime_diagnostics_raw = json.dumps(value, ensure_ascii=False)
-        except Exception:
+        except (TypeError, ValueError):
             self._runtime_diagnostics_raw = None
 
 
@@ -516,4 +516,3 @@ from .github import GitHubWebhookEvent as GitHubWebhookEvent
 from .hubspot import HubSpotChange as HubSpotChange  # noqa: E402
 from .hubspot import HubSpotConnection as HubSpotConnection
 from .hubspot import HubSpotPage as HubSpotPage
-

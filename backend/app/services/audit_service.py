@@ -412,7 +412,9 @@ class AuditService:
                     else "audit_status_update"
                 ),
                 severity="error" if status == AuditStatus.FAILED else "warning",
-                code="audit_failed" if status == AuditStatus.FAILED else "audit_warning",
+                code="audit_failed"
+                if status == AuditStatus.FAILED
+                else "audit_warning",
                 message=error_message,
                 commit=False,
             )

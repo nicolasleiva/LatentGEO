@@ -954,7 +954,13 @@ class PDFService:
         if dataset_name == "rankings":
             return isinstance(payload, dict) and any(
                 key in payload
-                for key in ("items", "rankings", "total", "total_keywords", "distribution")
+                for key in (
+                    "items",
+                    "rankings",
+                    "total",
+                    "total_keywords",
+                    "distribution",
+                )
             )
         return bool(payload)
 
@@ -968,7 +974,10 @@ class PDFService:
         rank_tracking_data: Any,
     ) -> List[str]:
         missing: List[str] = []
-        if not isinstance(getattr(audit, "target_audit", None), dict) or not audit.target_audit:
+        if (
+            not isinstance(getattr(audit, "target_audit", None), dict)
+            or not audit.target_audit
+        ):
             missing.append("target_audit")
         return missing
 
@@ -988,7 +997,9 @@ class PDFService:
             items = payload.get("items")
             if isinstance(items, list) and items:
                 return True
-            total = payload.get("total_keywords", payload.get("total_backlinks", payload.get("total")))
+            total = payload.get(
+                "total_keywords", payload.get("total_backlinks", payload.get("total"))
+            )
             try:
                 return int(total or 0) > 0
             except (TypeError, ValueError):
@@ -1151,21 +1162,45 @@ class PDFService:
         }
         if page_rows:
             issue_totals = {
-                "critical": sum(_safe_int_value(getattr(page, "critical_issues", 0), 0) or 0 for page in page_rows),
-                "high": sum(_safe_int_value(getattr(page, "high_issues", 0), 0) or 0 for page in page_rows),
-                "medium": sum(_safe_int_value(getattr(page, "medium_issues", 0), 0) or 0 for page in page_rows),
-                "low": sum(_safe_int_value(getattr(page, "low_issues", 0), 0) or 0 for page in page_rows),
+                "critical": sum(
+                    _safe_int_value(getattr(page, "critical_issues", 0), 0) or 0
+                    for page in page_rows
+                ),
+                "high": sum(
+                    _safe_int_value(getattr(page, "high_issues", 0), 0) or 0
+                    for page in page_rows
+                ),
+                "medium": sum(
+                    _safe_int_value(getattr(page, "medium_issues", 0), 0) or 0
+                    for page in page_rows
+                ),
+                "low": sum(
+                    _safe_int_value(getattr(page, "low_issues", 0), 0) or 0
+                    for page in page_rows
+                ),
             }
         else:
             issue_totals = {
-                "critical": issue_totals["critical"] or _safe_int_value(getattr(audit, "critical_issues", None), 0) or 0,
-                "high": issue_totals["high"] or _safe_int_value(getattr(audit, "high_issues", None), 0) or 0,
-                "medium": issue_totals["medium"] or _safe_int_value(getattr(audit, "medium_issues", None), 0) or 0,
-                "low": issue_totals["low"] or _safe_int_value(getattr(audit, "low_issues", None), 0) or 0,
+                "critical": issue_totals["critical"]
+                or _safe_int_value(getattr(audit, "critical_issues", None), 0)
+                or 0,
+                "high": issue_totals["high"]
+                or _safe_int_value(getattr(audit, "high_issues", None), 0)
+                or 0,
+                "medium": issue_totals["medium"]
+                or _safe_int_value(getattr(audit, "medium_issues", None), 0)
+                or 0,
+                "low": issue_totals["low"]
+                or _safe_int_value(getattr(audit, "low_issues", None), 0)
+                or 0,
             }
-        data_gaps = [str(item).strip() for item in (data_gaps or []) if str(item).strip()]
+        data_gaps = [
+            str(item).strip() for item in (data_gaps or []) if str(item).strip()
+        ]
 
-        observed_queries = PDFService._extract_query_texts(external.get("queries_to_run"))
+        observed_queries = PDFService._extract_query_texts(
+            external.get("queries_to_run")
+        )
         avg_overall_score = _score_from_pages("overall_score")
         avg_h1_score = _score_from_pages("h1_score")
         avg_structure_score = _score_from_pages("structure_score")
@@ -1181,7 +1216,8 @@ class PDFService:
             key=lambda page: (
                 -(_safe_int_value(getattr(page, "critical_issues", 0), 0) or 0),
                 -(_safe_int_value(getattr(page, "high_issues", 0), 0) or 0),
-                _safe_float_value(getattr(page, "overall_score", None), 9999.0) or 9999.0,
+                _safe_float_value(getattr(page, "overall_score", None), 9999.0)
+                or 9999.0,
             ),
         )[:8]
 
@@ -1242,9 +1278,7 @@ class PDFService:
             key=lambda row: PDFService._safe_float(row.get("opportunity_score"), 0.0),
             reverse=True,
         )[:5]
-        top_backlinks = [
-            item for item in backlink_items if isinstance(item, dict)
-        ][:5]
+        top_backlinks = [item for item in backlink_items if isinstance(item, dict)][:5]
         top_rankings = sorted(
             [item for item in ranking_items if isinstance(item, dict)],
             key=lambda row: PDFService._safe_int(row.get("position"), 9999),
@@ -1289,19 +1323,25 @@ class PDFService:
                         ]
                     )
                 )
-        competitor_domains = [str(value).strip() for value in competitor_domains if value]
+        competitor_domains = [
+            str(value).strip() for value in competitor_domains if value
+        ]
         derived_roadmap_items: List[str] = []
         h1_coverage = _safe_float_value(site_metrics.get("h1_coverage_percent"))
         if h1_coverage is not None and h1_coverage < 100:
             derived_roadmap_items.append(
                 f"Normalize H1 implementation across templates (observed coverage {h1_coverage:.1f}%)."
             )
-        header_issue_pages = _safe_int_value(site_metrics.get("header_hierarchy_issue_pages"))
+        header_issue_pages = _safe_int_value(
+            site_metrics.get("header_hierarchy_issue_pages")
+        )
         if header_issue_pages:
             derived_roadmap_items.append(
                 f"Repair heading hierarchy on {header_issue_pages} audited pages."
             )
-        image_alt_coverage = _safe_float_value(site_metrics.get("image_alt_coverage_percent"))
+        image_alt_coverage = _safe_float_value(
+            site_metrics.get("image_alt_coverage_percent")
+        )
         if image_alt_coverage is not None and image_alt_coverage < 100:
             derived_roadmap_items.append(
                 f"Improve image alt coverage from {image_alt_coverage:.1f}% to full coverage."
@@ -1311,7 +1351,9 @@ class PDFService:
             derived_roadmap_items.append(
                 "Add FAQ schema only where the audited content already supports question-and-answer blocks."
             )
-        offer_schema_pages = _safe_int_value(site_metrics.get("offer_schema_pages"), 0) or 0
+        offer_schema_pages = (
+            _safe_int_value(site_metrics.get("offer_schema_pages"), 0) or 0
+        )
         pages_with_price = _safe_int_value(site_metrics.get("pages_with_price"), 0) or 0
         if offer_schema_pages == 0 and pages_with_price:
             derived_roadmap_items.append(
@@ -1481,7 +1523,9 @@ class PDFService:
                     f"- {_safe_text(getattr(page, 'path', None) or getattr(page, 'url', None))} | overall={_safe_score(getattr(page, 'overall_score', None))} | critical={_safe_text(getattr(page, 'critical_issues', None), '0')} | high={_safe_text(getattr(page, 'high_issues', None), '0')} | schema={_safe_score(getattr(page, 'schema_score', None))}"
                 )
         else:
-            report_lines.append("- Individual page rows were not available in this run.")
+            report_lines.append(
+                "- Individual page rows were not available in this run."
+            )
 
         report_lines.extend(
             [
@@ -1715,11 +1759,12 @@ class PDFService:
             target_keyword = outline.get("target_keyword")
 
         return {
-            "title": str(getattr(raw, "topic", "") or getattr(raw, "title", "")).strip(),
+            "title": str(
+                getattr(raw, "topic", "") or getattr(raw, "title", "")
+            ).strip(),
             "target_keyword": str(target_keyword or "").strip(),
             "content_type": str(
-                getattr(raw, "suggestion_type", "")
-                or getattr(raw, "content_type", "")
+                getattr(raw, "suggestion_type", "") or getattr(raw, "content_type", "")
             ).strip(),
             "priority": str(getattr(raw, "priority", "medium") or "medium").strip()
             or "medium",
@@ -1792,7 +1837,9 @@ class PDFService:
                 volume_value = (
                     k.volume
                     if hasattr(k, "volume")
-                    else k.search_volume if hasattr(k, "search_volume") else 0
+                    else k.search_volume
+                    if hasattr(k, "search_volume")
+                    else 0
                 ) or 0
                 difficulty_value = (
                     k.difficulty if hasattr(k, "difficulty") else 0
@@ -1808,7 +1855,9 @@ class PDFService:
                         "keyword": (
                             k.term
                             if hasattr(k, "term")
-                            else k.keyword if hasattr(k, "keyword") else ""
+                            else k.keyword
+                            if hasattr(k, "keyword")
+                            else ""
                         ),
                         "search_volume": volume_value,
                         "difficulty": difficulty_value,
@@ -2618,7 +2667,12 @@ class PDFService:
         )
         has_cached_backlinks = any(
             key in cached_backlinks
-            for key in ("top_backlinks", "total_backlinks", "referring_domains", "summary")
+            for key in (
+                "top_backlinks",
+                "total_backlinks",
+                "referring_domains",
+                "summary",
+            )
         )
         backlinks_data = (
             PDFService._build_backlinks_payload(
@@ -2727,17 +2781,22 @@ class PDFService:
             should_refresh_keywords = force_fresh_geo or not _payload_has_observed_rows(
                 "keywords", keywords_data
             )
-            should_refresh_backlinks = force_fresh_geo or not _payload_has_observed_rows(
-                "backlinks", backlinks_data
+            should_refresh_backlinks = (
+                force_fresh_geo
+                or not _payload_has_observed_rows("backlinks", backlinks_data)
             )
             should_refresh_rankings = force_fresh_geo or not _payload_has_observed_rows(
                 "rankings", rank_tracking_data
             )
-            should_refresh_llm_visibility = force_fresh_geo or not _payload_has_observed_rows(
-                "llm_visibility", llm_visibility_data
+            should_refresh_llm_visibility = (
+                force_fresh_geo
+                or not _payload_has_observed_rows("llm_visibility", llm_visibility_data)
             )
-            should_refresh_ai_suggestions = force_fresh_geo or not _payload_has_observed_rows(
-                "ai_content_suggestions", ai_content_suggestions_list
+            should_refresh_ai_suggestions = (
+                force_fresh_geo
+                or not _payload_has_observed_rows(
+                    "ai_content_suggestions", ai_content_suggestions_list
+                )
             )
             refreshed_geo_context = any(
                 (
@@ -2759,7 +2818,9 @@ class PDFService:
                     f"ai_content={should_refresh_ai_suggestions}"
                 )
             else:
-                logger.info("All supporting GEO datasets are already available in cache.")
+                logger.info(
+                    "All supporting GEO datasets are already available in cache."
+                )
 
             # 1. Keywords (refresh when forced or missing)
             if should_refresh_keywords:
@@ -2840,9 +2901,7 @@ class PDFService:
                         for b in backlinks_objs
                     ]
 
-                    backlinks_data = PDFService._build_backlinks_payload(
-                        backlinks_list
-                    )
+                    backlinks_data = PDFService._build_backlinks_payload(backlinks_list)
                 except Exception as e:
                     logger.error(f"Error generating Backlinks for PDF: {e}")
 
@@ -3276,9 +3335,7 @@ class PDFService:
             and current_signature == cached_signature
         )
         safe_cached_markdown_available = (
-            has_valid_cached_markdown
-            and signature_match
-            and not missing_context
+            has_valid_cached_markdown and signature_match and not missing_context
         )
         report_cache_hit = (not force_report_refresh) and safe_cached_markdown_available
         report_regenerated = False
@@ -3298,7 +3355,11 @@ class PDFService:
             f"current_sig={current_signature[:12] if current_signature else 'none'}, "
             f"cached_sig={cached_signature[:12] if cached_signature else 'none'}"
         )
-        if has_valid_cached_markdown and not cached_markdown_is_deterministic and not signature_match:
+        if (
+            has_valid_cached_markdown
+            and not cached_markdown_is_deterministic
+            and not signature_match
+        ):
             generation_warnings.append(
                 "Ignoring persisted markdown report because its context signature does not match the current audit context."
             )
@@ -3312,12 +3373,9 @@ class PDFService:
             db.commit()
             report_markdown_for_pdf = fallback_markdown_report
 
-        deterministic_on_supporting_gaps = (
-            os.getenv("PDF_DETERMINISTIC_ON_SUPPORTING_GAPS", "false")
-            .strip()
-            .lower()
-            in {"1", "true", "yes", "on"}
-        )
+        deterministic_on_supporting_gaps = os.getenv(
+            "PDF_DETERMINISTIC_ON_SUPPORTING_GAPS", "false"
+        ).strip().lower() in {"1", "true", "yes", "on"}
         grounded_data_gap_threshold = 3
         should_use_grounded_report_for_data_gaps = (
             deterministic_on_supporting_gaps
@@ -3584,9 +3642,7 @@ class PDFService:
 
                 audit.fix_plan = fix_plan
                 db.commit()
-                PDFService._save_report_signature(
-                    audit_id, current_signature, db=db
-                )
+                PDFService._save_report_signature(audit_id, current_signature, db=db)
                 db.commit()
                 persisted_signature = PDFService._load_saved_report_signature(
                     audit_id, db=db
@@ -3616,27 +3672,33 @@ class PDFService:
                             "Validated PDF context is incomplete and deterministic fallback is disabled: "
                             + ", ".join(sorted(missing_context))
                         ) from e
-                    report_markdown_for_pdf = PDFService._build_deterministic_full_report(
-                        audit=audit,
-                        pagespeed_data=(
-                            pagespeed_data if isinstance(pagespeed_data, dict) else {}
-                        ),
-                        keywords_data=(
-                            keywords_data if isinstance(keywords_data, dict) else {}
-                        ),
-                        backlinks_data=(
-                            backlinks_data if isinstance(backlinks_data, dict) else {}
-                        ),
-                        rank_tracking_data=(
-                            rank_tracking_data
-                            if isinstance(rank_tracking_data, dict)
-                            else {}
-                        ),
-                        llm_visibility_data=llm_viz_for_report,
-                        ai_content_suggestions=ai_suggestions_for_report,
-                        fix_plan=[],
-                        reason="missing_context",
-                        data_gaps=missing_context,
+                    report_markdown_for_pdf = (
+                        PDFService._build_deterministic_full_report(
+                            audit=audit,
+                            pagespeed_data=(
+                                pagespeed_data
+                                if isinstance(pagespeed_data, dict)
+                                else {}
+                            ),
+                            keywords_data=(
+                                keywords_data if isinstance(keywords_data, dict) else {}
+                            ),
+                            backlinks_data=(
+                                backlinks_data
+                                if isinstance(backlinks_data, dict)
+                                else {}
+                            ),
+                            rank_tracking_data=(
+                                rank_tracking_data
+                                if isinstance(rank_tracking_data, dict)
+                                else {}
+                            ),
+                            llm_visibility_data=llm_viz_for_report,
+                            ai_content_suggestions=ai_suggestions_for_report,
+                            fix_plan=[],
+                            reason="missing_context",
+                            data_gaps=missing_context,
+                        )
                     )
                     if (
                         not report_markdown_for_pdf
@@ -3675,27 +3737,35 @@ class PDFService:
                             raise RuntimeError(
                                 "LLM report regeneration failed and deterministic fallbacks are disabled."
                             ) from e
-                        report_markdown_for_pdf = PDFService._build_deterministic_full_report(
-                            audit=audit,
-                            pagespeed_data=(
-                                pagespeed_data if isinstance(pagespeed_data, dict) else {}
-                            ),
-                            keywords_data=(
-                                keywords_data if isinstance(keywords_data, dict) else {}
-                            ),
-                            backlinks_data=(
-                                backlinks_data if isinstance(backlinks_data, dict) else {}
-                            ),
-                            rank_tracking_data=(
-                                rank_tracking_data
-                                if isinstance(rank_tracking_data, dict)
-                                else {}
-                            ),
-                            llm_visibility_data=llm_viz_for_report,
-                            ai_content_suggestions=ai_suggestions_for_report,
-                            fix_plan=[],
-                            reason="llm_failure",
-                            data_gaps=optional_context_gaps,
+                        report_markdown_for_pdf = (
+                            PDFService._build_deterministic_full_report(
+                                audit=audit,
+                                pagespeed_data=(
+                                    pagespeed_data
+                                    if isinstance(pagespeed_data, dict)
+                                    else {}
+                                ),
+                                keywords_data=(
+                                    keywords_data
+                                    if isinstance(keywords_data, dict)
+                                    else {}
+                                ),
+                                backlinks_data=(
+                                    backlinks_data
+                                    if isinstance(backlinks_data, dict)
+                                    else {}
+                                ),
+                                rank_tracking_data=(
+                                    rank_tracking_data
+                                    if isinstance(rank_tracking_data, dict)
+                                    else {}
+                                ),
+                                llm_visibility_data=llm_viz_for_report,
+                                ai_content_suggestions=ai_suggestions_for_report,
+                                fix_plan=[],
+                                reason="llm_failure",
+                                data_gaps=optional_context_gaps,
+                            )
                         )
                         if (
                             not report_markdown_for_pdf

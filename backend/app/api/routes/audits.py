@@ -174,7 +174,9 @@ def _persist_runtime_diagnostic_safely(
         )
 
 
-def _persist_generation_warnings(db: Session, audit_id: int, warnings: list[str]) -> None:
+def _persist_generation_warnings(
+    db: Session, audit_id: int, warnings: list[str]
+) -> None:
     for index, warning in enumerate(warnings or [], start=1):
         message = " ".join(str(warning or "").split()).strip()
         if not message:
@@ -372,8 +374,7 @@ async def _create_audit_internal(
         audit = await run_in_threadpool(AuditService.create_audit, db, audit_create)
     except (OperationalError, DBAPIError) as db_err:
         logger.error(
-            "create_audit_db_failed "
-            f"error_code=db_unavailable error={db_err}"
+            "create_audit_db_failed " f"error_code=db_unavailable error={db_err}"
         )
         raise _db_unavailable_http_exception("create_audit") from db_err
 
@@ -494,7 +495,9 @@ def get_audit_overview(
         id=audit.id,
         url=audit.url,
         domain=audit.domain,
-        status=audit.status.value if hasattr(audit.status, "value") else str(audit.status),
+        status=audit.status.value
+        if hasattr(audit.status, "value")
+        else str(audit.status),
         progress=int(round(audit.progress or 0)),
         created_at=audit.created_at,
         started_at=audit.started_at,

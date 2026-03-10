@@ -627,7 +627,9 @@ class GeoCommerceService:
         return fixes[:5]
 
     @staticmethod
-    def _build_merchandising_fixes(product_data: Dict[str, Any]) -> List[Dict[str, str]]:
+    def _build_merchandising_fixes(
+        product_data: Dict[str, Any]
+    ) -> List[Dict[str, str]]:
         if not product_data.get("is_ecommerce"):
             return []
 
@@ -635,9 +637,10 @@ class GeoCommerceService:
         schema_analysis = product_data.get("schema_analysis") or {}
         offer_issues = schema_analysis.get("offer_field_issues") or {}
 
-        if int(offer_issues.get("price_missing", 0) or 0) > 0 or int(
-            offer_issues.get("currency_missing", 0) or 0
-        ) > 0:
+        if (
+            int(offer_issues.get("price_missing", 0) or 0) > 0
+            or int(offer_issues.get("currency_missing", 0) or 0) > 0
+        ):
             fixes.append(
                 {
                     "priority": "P1",
@@ -681,8 +684,13 @@ class GeoCommerceService:
             example = str(gap.get("example") or "").strip()
             fixes.append(
                 {
-                    "priority": "P2" if str(gap.get("priority") or "").lower() == "medium" else "P1",
-                    "action": str(gap.get("description") or "Close the observed product content gap."),
+                    "priority": "P2"
+                    if str(gap.get("priority") or "").lower() == "medium"
+                    else "P1",
+                    "action": str(
+                        gap.get("description")
+                        or "Close the observed product content gap."
+                    ),
                     "expected_impact": "Medium",
                     "evidence": example or "Gap detected in product content coverage.",
                 }
@@ -698,22 +706,30 @@ class GeoCommerceService:
         for fix in PipelineService._extract_pagespeed_fixes(pagespeed_data)[:6]:
             issue_code = str(fix.get("issue_code") or "")
             normalized = issue_code.upper()
-            owner = "DevOps" if any(
-                key in normalized
-                for key in [
-                    "SERVER_RESPONSE_TIME",
-                    "NETWORK_RTT",
-                    "NETWORK_SERVER_LATENCY",
-                    "USES_LONG_CACHE_TTL",
-                    "TTFB_HIGH",
-                ]
-            ) else "Frontend / SEO"
+            owner = (
+                "DevOps"
+                if any(
+                    key in normalized
+                    for key in [
+                        "SERVER_RESPONSE_TIME",
+                        "NETWORK_RTT",
+                        "NETWORK_SERVER_LATENCY",
+                        "USES_LONG_CACHE_TTL",
+                        "TTFB_HIGH",
+                    ]
+                )
+                else "Frontend / SEO"
+            )
             watchouts.append(
                 {
                     "priority": str(fix.get("priority") or "MEDIUM"),
                     "owner": owner,
-                    "action": str(fix.get("suggestion") or fix.get("description") or ""),
-                    "evidence": str(fix.get("snippet") or fix.get("description") or issue_code),
+                    "action": str(
+                        fix.get("suggestion") or fix.get("description") or ""
+                    ),
+                    "evidence": str(
+                        fix.get("snippet") or fix.get("description") or issue_code
+                    ),
                 }
             )
         return watchouts

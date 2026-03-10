@@ -341,7 +341,11 @@ async def test_pdf_generation_uses_reloaded_canonical_context_for_signature_cach
 
     initial_context = {
         "keywords": [],
-        "backlinks": {"top_backlinks": [], "total_backlinks": 0, "referring_domains": 0},
+        "backlinks": {
+            "top_backlinks": [],
+            "total_backlinks": 0,
+            "referring_domains": 0,
+        },
         "rank_tracking": [],
         "llm_visibility": [],
         "ai_content_suggestions": [],
@@ -525,9 +529,7 @@ async def test_pdf_generation_ignores_cached_deterministic_report():
     mock_audit.rank_trackings = []
     mock_audit.llm_visibilities = []
     mock_audit.ai_content_suggestions = []
-    mock_audit.report_markdown = (
-        "# GEO Audit Report\n\n## Generation Mode\n- Mode: full_deterministic_regenerated\n"
-    )
+    mock_audit.report_markdown = "# GEO Audit Report\n\n## Generation Mode\n- Mode: full_deterministic_regenerated\n"
     mock_audit.fix_plan = []
 
     cached_context = {

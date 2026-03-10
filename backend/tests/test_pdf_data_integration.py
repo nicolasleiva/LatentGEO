@@ -223,7 +223,7 @@ async def test_pdf_service_partial_failure():
                             ) as mock_vis:
                                 mock_vis.return_value = []
                                 with patch(
-                                "app.services.ai_content_service.AIContentService.generate_suggestions",
+                                    "app.services.ai_content_service.AIContentService.generate_suggestions",
                                     new_callable=AsyncMock,
                                 ) as mock_ai:
                                     mock_ai.return_value = []
