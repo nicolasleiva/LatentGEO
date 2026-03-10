@@ -1133,8 +1133,6 @@ class PDFService:
             page_rows = []
 
         site_metrics = _as_dict(target.get("site_metrics"))
-        structure_data = _as_dict(target.get("structure"))
-        content_data = _as_dict(target.get("content"))
         eeat_data = _as_dict(target.get("eeat"))
         schema_data = _as_dict(target.get("schema"))
         transparency_signals = _as_dict(eeat_data.get("transparency_signals"))
