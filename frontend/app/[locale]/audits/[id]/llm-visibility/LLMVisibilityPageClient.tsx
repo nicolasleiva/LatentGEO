@@ -35,18 +35,23 @@ export default function LLMVisibilityPageClient({
   const [error, setError] = useState("");
 
   async function handleCheck() {
-    if (!brandName || !queries) return;
+    const normalizedBrandName = brandName.trim();
+    const queryList = queries
+      .split(",")
+      .map((query) => query.trim())
+      .filter(Boolean);
+
+    if (!normalizedBrandName || queryList.length === 0) {
+      setError("Enter a brand name and at least one query.");
+      return;
+    }
 
     setLoading(true);
     setError("");
     try {
-      const queryList = queries
-        .split(",")
-        .map((query) => query.trim())
-        .filter(Boolean);
       const newResults = await api.checkLLMVisibility(
         auditId,
-        brandName,
+        normalizedBrandName,
         queryList,
       );
       setResults((previous) => [...newResults, ...previous]);

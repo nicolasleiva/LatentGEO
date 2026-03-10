@@ -245,6 +245,8 @@ export default function AuditDetailPageClient({
   const [competitors, setCompetitors] = useState<any[]>(
     resolveInitialCompetitors(initialAudit, initialCompetitors),
   );
+  const pagesRef = useRef(pages);
+  const competitorsRef = useRef(competitors);
   const [loading, setLoading] = useState(!initialAudit);
   const [pageSpeedData, setPageSpeedData] = useState<any>(
     initialAudit?.pagespeed_data ?? null,
@@ -268,6 +270,14 @@ export default function AuditDetailPageClient({
   const [showAllPageFindings, setShowAllPageFindings] = useState(false);
   const [showFullBenchmark, setShowFullBenchmark] = useState(false);
   const deferredPages = useDeferredValue(pages);
+
+  useEffect(() => {
+    pagesRef.current = pages;
+  }, [pages]);
+
+  useEffect(() => {
+    competitorsRef.current = competitors;
+  }, [competitors]);
   const deferredCompetitors = useDeferredValue(competitors);
   const categoryDisplay = useMemo(
     () =>
@@ -465,11 +475,13 @@ export default function AuditDetailPageClient({
       if (!auditId) return;
 
       try {
+        const currentPages = pagesRef.current;
+        const currentCompetitors = competitorsRef.current;
         const shouldLoadCompetitors =
-          auditData?.status === "completed" && competitors.length === 0;
+          auditData?.status === "completed" && currentCompetitors.length === 0;
 
         const [pagesRes, compRes] = await Promise.all([
-          pages.length === 0
+          currentPages.length === 0
             ? fetchWithBackendAuth(
                 `${backendUrl}/api/v1/audits/${auditId}/pages`,
               )
@@ -500,7 +512,7 @@ export default function AuditDetailPageClient({
         console.error(err);
       }
     },
-    [auditId, backendUrl, competitors.length, pages.length],
+    [auditId, backendUrl],
   );
 
   const scheduleSupplementalLoad = useCallback(

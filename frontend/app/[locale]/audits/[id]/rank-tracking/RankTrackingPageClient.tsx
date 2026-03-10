@@ -59,17 +59,25 @@ export default function RankTrackingPageClient({
   };
 
   async function handleTrack() {
-    if (!form.domain || !form.keywords) return;
+    const normalizedDomain = form.domain.trim();
+    const keywordList = form.keywords
+      .split(",")
+      .map((keyword) => keyword.trim())
+      .filter(Boolean);
+
+    if (!normalizedDomain || keywordList.length === 0) {
+      setStatus({
+        loading: false,
+        error: "Enter a domain and at least one keyword.",
+      });
+      return;
+    }
 
     setStatus({ loading: true, error: "" });
     try {
-      const keywordList = form.keywords
-        .split(",")
-        .map((keyword) => keyword.trim())
-        .filter(Boolean);
       const newRankings = await api.trackRankings(
         auditId,
-        form.domain,
+        normalizedDomain,
         keywordList,
       );
       setRankings((previous) => [...newRankings, ...previous]);

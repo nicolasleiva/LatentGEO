@@ -87,6 +87,7 @@ export default function HubSpotApplyRecommendations({
 
   useEffect(() => {
     if (initialRecommendationsLoaded) {
+      setRecommendations(initialRecommendations);
       const autoFixable = new Set<string>(
         initialRecommendations
           .filter((recommendation) => recommendation.auto_fixable)

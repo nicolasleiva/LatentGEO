@@ -10,16 +10,23 @@ export default async function HubSpotApplyPage({
 
   await requireServerViewer(`/${locale}/audits/${id}/hubspot-apply`);
 
-  const data = await serverJson<{ recommendations?: any[] }>(
+  const recommendationsResult = await serverJson<{ recommendations?: any[] }>(
     `/api/v1/hubspot/recommendations/${id}`,
-  ).catch(() => ({ recommendations: [] }));
+  )
+    .then((data) => ({
+      recommendations: Array.isArray(data?.recommendations)
+        ? data.recommendations
+        : [],
+      loaded: true,
+    }))
+    .catch(() => ({ recommendations: [] as any[], loaded: false }));
 
   return (
     <div className="container mx-auto py-8">
       <HubSpotApplyRecommendations
         auditId={id}
-        initialRecommendations={data.recommendations || []}
-        initialRecommendationsLoaded
+        initialRecommendations={recommendationsResult.recommendations}
+        initialRecommendationsLoaded={recommendationsResult.loaded}
       />
     </div>
   );

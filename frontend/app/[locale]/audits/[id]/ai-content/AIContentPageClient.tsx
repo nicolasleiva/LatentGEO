@@ -34,19 +34,24 @@ export default function AIContentPageClient({
   const [error, setError] = useState("");
 
   async function handleGenerate() {
-    if (!form.domain || !form.topics) return;
+    const normalizedDomain = form.domain.trim();
+    const topicList = form.topics
+      .split(",")
+      .map((topic) => topic.trim())
+      .filter(Boolean);
+
+    if (!normalizedDomain || topicList.length === 0) {
+      setError("Enter a domain and at least one topic.");
+      return;
+    }
 
     setLoading(true);
     setError("");
 
     try {
-      const topicList = form.topics
-        .split(",")
-        .map((topic) => topic.trim())
-        .filter(Boolean);
       const newSuggestions = await api.generateAIContent(
         auditId,
-        form.domain,
+        normalizedDomain,
         topicList,
       );
       setSuggestions((previous) => [...newSuggestions, ...previous]);

@@ -43,7 +43,7 @@ export default function AuditFixPlanTab({
         <div className="space-y-3">
           {fixPlan.map((item: any, idx: number) => (
             <div
-              key={item?.title ?? item?.issue ?? JSON.stringify(item)}
+              key={`${item?.title ?? item?.issue ?? "fix"}-${idx}`}
               className="rounded-xl border border-border bg-muted/40 p-4"
             >
               <div className="flex items-start justify-between gap-4">

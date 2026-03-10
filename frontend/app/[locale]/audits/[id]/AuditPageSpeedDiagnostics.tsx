@@ -109,16 +109,17 @@ export default function AuditPageSpeedDiagnostics({
                 </div>
               </div>
             )}
-            {psData.metadata.benchmark_index && (
-              <div className="rounded-xl border border-border bg-muted/50 p-3">
-                <div className="text-xs text-muted-foreground">
-                  Benchmark Index
+            {psData.metadata.benchmark_index !== null &&
+              psData.metadata.benchmark_index !== undefined && (
+                <div className="rounded-xl border border-border bg-muted/50 p-3">
+                  <div className="text-xs text-muted-foreground">
+                    Benchmark Index
+                  </div>
+                  <div className="text-sm text-foreground">
+                    {psData.metadata.benchmark_index}
+                  </div>
                 </div>
-                <div className="text-sm text-foreground">
-                  {psData.metadata.benchmark_index}
-                </div>
-              </div>
-            )}
+              )}
             {psData.metadata.network_throttling && (
               <div className="rounded-xl border border-border bg-muted/50 p-3">
                 <div className="text-xs text-muted-foreground">

@@ -23,6 +23,36 @@ export default function AuditDetailActionsClient({
   const [pageSpeedLoading, setPageSpeedLoading] = useState(false);
   const [pdfGenerating, setPdfGenerating] = useState(false);
 
+  const fetchPdfDownloadUrl = async () => {
+    let lastError: Error | null = null;
+
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const downloadResponse = await fetchWithBackendAuth(
+        `${API_URL}/api/v1/audits/${auditId}/download-pdf-url`,
+      );
+
+      if (downloadResponse.ok) {
+        const downloadPayload = await downloadResponse.json().catch(() => null);
+        return getPdfDownloadUrlFromPayload(downloadPayload);
+      }
+
+      const payload = await downloadResponse.json().catch(() => ({}));
+      lastError = new Error(
+        payload?.detail || "Failed to obtain PDF download URL.",
+      );
+
+      if (downloadResponse.status !== 404 && downloadResponse.status !== 503) {
+        break;
+      }
+
+      await new Promise((resolve) =>
+        setTimeout(resolve, Math.min(1000 * (attempt + 1), 3000)),
+      );
+    }
+
+    throw lastError ?? new Error("Failed to obtain PDF download URL.");
+  };
+
   const analyzePageSpeed = async () => {
     setPageSpeedLoading(true);
     try {
@@ -77,20 +107,7 @@ export default function AuditDetailActionsClient({
         throw new Error(payload?.detail || "Failed to generate PDF.");
       }
 
-      await new Promise((resolve) => setTimeout(resolve, 500));
-
-      const downloadResponse = await fetchWithBackendAuth(
-        `${API_URL}/api/v1/audits/${auditId}/download-pdf-url`,
-      );
-      if (!downloadResponse.ok) {
-        const payload = await downloadResponse.json().catch(() => ({}));
-        throw new Error(
-          payload?.detail || "Failed to obtain PDF download URL.",
-        );
-      }
-
-      const downloadPayload = await downloadResponse.json().catch(() => null);
-      const downloadUrl = getPdfDownloadUrlFromPayload(downloadPayload);
+      const downloadUrl = await fetchPdfDownloadUrl();
       triggerFileDownload(downloadUrl, `audit_${auditId}_report.pdf`);
     } catch (error) {
       window.alert(
