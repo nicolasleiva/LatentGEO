@@ -292,9 +292,17 @@ type FixInputsResponse = {
 };
 
 const LANGUAGE_OPTIONS: BriefStepOption[] = [
-  { label: "English", value: "en", description: "Global or executive rollout." },
+  {
+    label: "English",
+    value: "en",
+    description: "Global or executive rollout.",
+  },
   { label: "Spanish", value: "es", description: "LATAM or Spain rollout." },
-  { label: "Portuguese", value: "pt-br", description: "Brazil-focused rollout." },
+  {
+    label: "Portuguese",
+    value: "pt-br",
+    description: "Brazil-focused rollout.",
+  },
   { label: "French", value: "fr", description: "French-speaking rollout." },
 ];
 
@@ -317,19 +325,28 @@ const GOAL_OPTIONS = (isEcommerce: boolean): BriefStepOption[] => [
           label: "Commercial Growth",
           value:
             "Improve commercial page visibility across homepage, category, and product templates.",
-          description: "Best for category, PDP, and homepage visibility growth.",
+          description:
+            "Best for category, PDP, and homepage visibility growth.",
         },
       ]
     : []),
 ];
 
 function formatLanguage(value: string) {
-  return LANGUAGE_OPTIONS.find((item) => item.value === value)?.label || value || "Not set";
+  return (
+    LANGUAGE_OPTIONS.find((item) => item.value === value)?.label ||
+    value ||
+    "Not set"
+  );
 }
 
-function deriveBriefDraft(audit: any, plan: PlanPayload | null | undefined): BriefDraft {
+function deriveBriefDraft(
+  audit: any,
+  plan: PlanPayload | null | undefined,
+): BriefDraft {
   const briefing = plan?.briefing_profile || {};
-  const articleCount = briefing.article_count ?? plan?.delivery_summary?.article_count;
+  const articleCount =
+    briefing.article_count ?? plan?.delivery_summary?.article_count;
   return {
     primary_goal: String(briefing.primary_goal || ""),
     market: String(briefing.market || audit?.market || ""),
@@ -421,12 +438,14 @@ function buildBriefSteps(
         {
           label: "Yes, include them",
           value: "yes",
-          description: "Adds article deliverables grounded in audited opportunities.",
+          description:
+            "Adds article deliverables grounded in audited opportunities.",
         },
         {
           label: "No, keep technical",
           value: "no",
-          description: "Keeps the pack focused on implementation fixes and templates.",
+          description:
+            "Keeps the pack focused on implementation fixes and templates.",
         },
       ],
     });
@@ -438,11 +457,16 @@ function buildBriefSteps(
       type: "choice",
       label: "Article count",
       required: true,
-      assistantMessage: "How many article deliverables should this rollout include?",
+      assistantMessage:
+        "How many article deliverables should this rollout include?",
       options: [
         { label: "3 articles", value: "3", description: "Lean rollout." },
         { label: "5 articles", value: "5", description: "Balanced rollout." },
-        { label: "8 articles", value: "8", description: "Broader editorial push." },
+        {
+          label: "8 articles",
+          value: "8",
+          description: "Broader editorial push.",
+        },
       ],
     });
   }
@@ -476,7 +500,9 @@ function buildBriefSteps(
       type: "text",
       label: "Delivery owner",
       required: false,
-      placeholder: isEcommerce ? "Regional ecommerce team" : "SEO / web content team",
+      placeholder: isEcommerce
+        ? "Regional ecommerce team"
+        : "SEO / web content team",
       assistantMessage: "Who will own implementation on the client side?",
     },
     {
@@ -486,7 +512,8 @@ function buildBriefSteps(
       required: false,
       placeholder:
         "Example: avoid checkout templates, keep legal pages untouched, prioritize homepage and top categories first.",
-      assistantMessage: "Add any rollout constraints that the Odoo team should respect.",
+      assistantMessage:
+        "Add any rollout constraints that the Odoo team should respect.",
     },
   );
 
@@ -581,12 +608,14 @@ export default function OdooDeliveryPageClient({
     deriveConnectionDraft(initialAudit, initialPlan),
   );
   const [connectionError, setConnectionError] = useState<string | null>(null);
-  const [connectionSuccess, setConnectionSuccess] = useState<string | null>(null);
-  const [connectionTesting, setConnectionTesting] = useState(false);
-  const [connectionSaving, setConnectionSaving] = useState(false);
-  const [assigningConnectionId, setAssigningConnectionId] = useState<string | null>(
+  const [connectionSuccess, setConnectionSuccess] = useState<string | null>(
     null,
   );
+  const [connectionTesting, setConnectionTesting] = useState(false);
+  const [connectionSaving, setConnectionSaving] = useState(false);
+  const [assigningConnectionId, setAssigningConnectionId] = useState<
+    string | null
+  >(null);
   const [syncing, setSyncing] = useState(false);
   const [preparingDrafts, setPreparingDrafts] = useState(false);
 
@@ -622,7 +651,8 @@ export default function OdooDeliveryPageClient({
   const isEcommerce = Boolean(plan?.delivery_summary?.is_ecommerce);
   const selectedConnection = plan?.selected_connection || null;
   const hasSelectedConnection = Boolean(selectedConnection?.id);
-  const capabilities = plan?.capabilities || selectedConnection?.capabilities || {};
+  const capabilities =
+    plan?.capabilities || selectedConnection?.capabilities || {};
   const supportsArticles = Boolean(capabilities.website_blog);
   const supportsEcommerce = Boolean(
     capabilities.website_sale || plan?.delivery_summary?.is_ecommerce,
@@ -649,25 +679,31 @@ export default function OdooDeliveryPageClient({
     ? "I’ll shape this as a client-ready Odoo rollout brief for templates, editorial scope, and ecommerce surfaces."
     : "I’ll shape this as a client-ready Odoo rollout brief for templates, editorial scope, and implementation constraints.";
 
-  const applyServerState = useCallback((nextAudit: any, nextPlan: PlanPayload) => {
-    startTransition(() => {
-      setAudit(nextAudit);
-      setPlan(nextPlan);
-      setMissingInputs(nextPlan?.required_inputs || []);
-      setSyncSummary(nextPlan?.sync_summary || {});
-      setConnectionDraft(deriveConnectionDraft(nextAudit, nextPlan));
-      setError(null);
-    });
-  }, []);
+  const applyServerState = useCallback(
+    (nextAudit: any, nextPlan: PlanPayload) => {
+      startTransition(() => {
+        setAudit(nextAudit);
+        setPlan(nextPlan);
+        setMissingInputs(nextPlan?.required_inputs || []);
+        setSyncSummary(nextPlan?.sync_summary || {});
+        setConnectionDraft(deriveConnectionDraft(nextAudit, nextPlan));
+        setError(null);
+      });
+    },
+    [],
+  );
 
   const loadPlan = useCallback(async () => {
     setRefreshing(true);
     try {
-      const [auditResponse, planResponse, connectionsResponse] = await Promise.all([
-        fetchWithBackendAuth(`${backendUrl}/api/v1/audits/${auditId}`),
-        fetchWithBackendAuth(`${backendUrl}/api/v1/odoo/delivery-plan/${auditId}`),
-        fetchWithBackendAuth(`${backendUrl}/api/v1/odoo/connections`),
-      ]);
+      const [auditResponse, planResponse, connectionsResponse] =
+        await Promise.all([
+          fetchWithBackendAuth(`${backendUrl}/api/v1/audits/${auditId}`),
+          fetchWithBackendAuth(
+            `${backendUrl}/api/v1/odoo/delivery-plan/${auditId}`,
+          ),
+          fetchWithBackendAuth(`${backendUrl}/api/v1/odoo/connections`),
+        ]);
       const [auditRaw, planRaw, connectionsRaw] = await Promise.all([
         auditResponse.text(),
         planResponse.text(),
@@ -681,10 +717,7 @@ export default function OdooDeliveryPageClient({
       }
       const nextPlan = parseJson<PlanPayload>(planRaw);
       const nextAudit = auditResponse.ok ? parseJson<any>(auditRaw) : audit;
-      applyServerState(
-        nextAudit,
-        nextPlan,
-      );
+      applyServerState(nextAudit, nextPlan);
       if (connectionsResponse.ok) {
         setConnections(parseJson<OdooConnectionItem[]>(connectionsRaw) || []);
       }
@@ -698,10 +731,14 @@ export default function OdooDeliveryPageClient({
           draftsResponse.text(),
         ]);
         if (syncResponse.ok) {
-          setSyncSummary((parseJson<any>(syncRaw)?.summary as OdooSyncSummary) || {});
+          setSyncSummary(
+            (parseJson<any>(syncRaw)?.summary as OdooSyncSummary) || {},
+          );
         }
         if (draftsResponse.ok) {
-          setDrafts(parseJson<OdooDraftsPayload>(draftsRaw) || emptyDraftsPayload());
+          setDrafts(
+            parseJson<OdooDraftsPayload>(draftsRaw) || emptyDraftsPayload(),
+          );
         } else {
           setDrafts(emptyDraftsPayload());
         }
@@ -753,7 +790,9 @@ export default function OdooDeliveryPageClient({
       language: briefDraft.language,
       add_articles: briefDraft.add_articles ? "yes" : "no",
       article_count: briefDraft.article_count,
-      improve_ecommerce_fixes: briefDraft.improve_ecommerce_fixes ? "yes" : "no",
+      improve_ecommerce_fixes: briefDraft.improve_ecommerce_fixes
+        ? "yes"
+        : "no",
       team_owner: briefDraft.team_owner,
       rollout_notes: briefDraft.rollout_notes,
     };
@@ -868,9 +907,10 @@ export default function OdooDeliveryPageClient({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             add_articles: supportsArticles ? briefDraft.add_articles : false,
-            article_count: supportsArticles && briefDraft.add_articles
-              ? Number(briefDraft.article_count || 3)
-              : null,
+            article_count:
+              supportsArticles && briefDraft.add_articles
+                ? Number(briefDraft.article_count || 3)
+                : null,
             improve_ecommerce_fixes: supportsEcommerce
               ? briefDraft.improve_ecommerce_fixes
               : false,
@@ -904,7 +944,9 @@ export default function OdooDeliveryPageClient({
         router.refresh();
       });
     } catch (nextError: any) {
-      setBriefError(nextError?.message || "Unable to save Odoo delivery brief.");
+      setBriefError(
+        nextError?.message || "Unable to save Odoo delivery brief.",
+      );
     } finally {
       setBriefSaving(false);
     }
@@ -983,7 +1025,8 @@ export default function OdooDeliveryPageClient({
       });
     } catch (nextError: any) {
       setConnectionError(
-        nextError?.message || "Unable to link the Odoo connection to this audit.",
+        nextError?.message ||
+          "Unable to link the Odoo connection to this audit.",
       );
     } finally {
       setAssigningConnectionId(null);
@@ -1079,13 +1122,19 @@ export default function OdooDeliveryPageClient({
       setConnectionSuccess("Draft pack prepared from the current Odoo sync.");
       await loadPlan();
     } catch (nextError: any) {
-      setConnectionError(nextError?.message || "Unable to prepare Odoo drafts.");
+      setConnectionError(
+        nextError?.message || "Unable to prepare Odoo drafts.",
+      );
     } finally {
       setPreparingDrafts(false);
     }
   };
 
-  const updateInputValue = (groupId: string, fieldKey: string, value: string) => {
+  const updateInputValue = (
+    groupId: string,
+    fieldKey: string,
+    value: string,
+  ) => {
     setInputValues((prev) => ({
       ...prev,
       [groupId]: {
@@ -1165,7 +1214,11 @@ export default function OdooDeliveryPageClient({
   );
 
   useEffect(() => {
-    if (!activeFixStep || activeFixStep.assistantMessage || activeFixStep.loading) {
+    if (
+      !activeFixStep ||
+      activeFixStep.assistantMessage ||
+      activeFixStep.loading
+    ) {
       return;
     }
     void fetchFixSuggestion(activeFixStep, currentFixStepIndex);
@@ -1180,7 +1233,9 @@ export default function OdooDeliveryPageClient({
   const handleNextFixStep = (step: FixChatStep) => {
     const value = (inputValues[step.groupId]?.[step.field.key] || "").trim();
     if (step.required && !value) {
-      setStepError("This field is required to finalize the Odoo delivery pack.");
+      setStepError(
+        "This field is required to finalize the Odoo delivery pack.",
+      );
       return;
     }
     setStepError(null);
@@ -1246,7 +1301,9 @@ export default function OdooDeliveryPageClient({
         router.refresh();
       });
     } catch (nextError: any) {
-      setStepError(nextError?.message || "Unable to save implementation inputs.");
+      setStepError(
+        nextError?.message || "Unable to save implementation inputs.",
+      );
     } finally {
       setInputsSaving(false);
     }
@@ -1313,8 +1370,14 @@ export default function OdooDeliveryPageClient({
           </div>
           <div className="flex flex-wrap gap-3">
             <Badge variant="outline">Audit {auditId}</Badge>
-            {isEcommerce ? <Badge variant="outline">Ecommerce detected</Badge> : null}
-            <Button onClick={() => void loadPlan()} variant="outline" disabled={refreshing}>
+            {isEcommerce ? (
+              <Badge variant="outline">Ecommerce detected</Badge>
+            ) : null}
+            <Button
+              onClick={() => void loadPlan()}
+              variant="outline"
+              disabled={refreshing}
+            >
               {refreshing ? (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               ) : (
@@ -1366,7 +1429,9 @@ export default function OdooDeliveryPageClient({
                     <div>
                       <CardTitle>Connection</CardTitle>
                       <CardDescription>
-                        Connect a real Odoo instance with URL, database, email, and API key. This tool does not touch PageSpeed, infrastructure, or live templates.
+                        Connect a real Odoo instance with URL, database, email,
+                        and API key. This tool does not touch PageSpeed,
+                        infrastructure, or live templates.
                       </CardDescription>
                     </div>
                   </div>
@@ -1416,7 +1481,11 @@ export default function OdooDeliveryPageClient({
                     </div>
                   </div>
                   <div className="flex flex-wrap gap-3">
-                    <Button variant="outline" onClick={() => void testConnection()} disabled={connectionTesting}>
+                    <Button
+                      variant="outline"
+                      onClick={() => void testConnection()}
+                      disabled={connectionTesting}
+                    >
                       {connectionTesting ? (
                         <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                       ) : (
@@ -1424,7 +1493,10 @@ export default function OdooDeliveryPageClient({
                       )}
                       Test connection
                     </Button>
-                    <Button onClick={() => void saveAndConnect()} disabled={connectionSaving}>
+                    <Button
+                      onClick={() => void saveAndConnect()}
+                      disabled={connectionSaving}
+                    >
                       {connectionSaving ? (
                         <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                       ) : (
@@ -1439,7 +1511,8 @@ export default function OdooDeliveryPageClient({
                       <p className="text-sm font-medium">Saved connections</p>
                       <div className="grid gap-3">
                         {connections.map((connection) => {
-                          const isSelected = selectedConnection?.id === connection.id;
+                          const isSelected =
+                            selectedConnection?.id === connection.id;
                           return (
                             <div
                               key={connection.id}
@@ -1447,16 +1520,25 @@ export default function OdooDeliveryPageClient({
                             >
                               <div className="flex flex-wrap items-center justify-between gap-3">
                                 <div>
-                                  <p className="font-medium">{connection.label || connection.base_url}</p>
+                                  <p className="font-medium">
+                                    {connection.label || connection.base_url}
+                                  </p>
                                   <p className="mt-1 text-xs text-muted-foreground">
-                                    {connection.base_url} · {connection.database}
-                                    {connection.odoo_version ? ` · ${connection.odoo_version}` : ""}
+                                    {connection.base_url} ·{" "}
+                                    {connection.database}
+                                    {connection.odoo_version
+                                      ? ` · ${connection.odoo_version}`
+                                      : ""}
                                   </p>
                                 </div>
                                 <Button
                                   variant={isSelected ? "secondary" : "outline"}
-                                  onClick={() => void assignConnection(connection.id)}
-                                  disabled={assigningConnectionId === connection.id}
+                                  onClick={() =>
+                                    void assignConnection(connection.id)
+                                  }
+                                  disabled={
+                                    assigningConnectionId === connection.id
+                                  }
                                 >
                                   {assigningConnectionId === connection.id ? (
                                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -1480,20 +1562,26 @@ export default function OdooDeliveryPageClient({
                     <div>
                       <CardTitle>Connection Status</CardTitle>
                       <CardDescription>
-                        Safe Odoo rollout only. No `ir.ui.view`, no layout writes, no infrastructure changes.
+                        Safe Odoo rollout only. No `ir.ui.view`, no layout
+                        writes, no infrastructure changes.
                       </CardDescription>
                     </div>
                   </div>
                 </CardHeader>
                 <CardContent className="space-y-4 text-sm">
                   <div className="rounded-2xl border border-border/70 bg-muted/30 p-4">
-                    <p className="text-xs uppercase tracking-wide text-muted-foreground">Selected connection</p>
+                    <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                      Selected connection
+                    </p>
                     <p className="mt-2 font-medium">
-                      {selectedConnection?.label || plan.connection_status?.message || "No Odoo connection selected yet."}
+                      {selectedConnection?.label ||
+                        plan.connection_status?.message ||
+                        "No Odoo connection selected yet."}
                     </p>
                     {selectedConnection ? (
                       <p className="mt-2 text-muted-foreground">
-                        {selectedConnection.base_url} · {selectedConnection.database}
+                        {selectedConnection.base_url} ·{" "}
+                        {selectedConnection.database}
                         {selectedConnection.detected_user?.email
                           ? ` · ${selectedConnection.detected_user.email}`
                           : ""}
@@ -1502,22 +1590,33 @@ export default function OdooDeliveryPageClient({
                   </div>
                   <div className="grid gap-3 sm:grid-cols-2">
                     <div className="rounded-2xl border border-border/70 bg-muted/30 p-4">
-                      <p className="text-xs uppercase tracking-wide text-muted-foreground">Capabilities</p>
+                      <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                        Capabilities
+                      </p>
                       <p className="mt-2 text-sm">
-                        Website {capabilities.website ? "on" : "off"} · Blog {supportsArticles ? "on" : "off"} · Ecommerce {supportsEcommerce ? "on" : "off"}
+                        Website {capabilities.website ? "on" : "off"} · Blog{" "}
+                        {supportsArticles ? "on" : "off"} · Ecommerce{" "}
+                        {supportsEcommerce ? "on" : "off"}
                       </p>
                     </div>
                     <div className="rounded-2xl border border-border/70 bg-muted/30 p-4">
-                      <p className="text-xs uppercase tracking-wide text-muted-foreground">Sync status</p>
+                      <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                        Sync status
+                      </p>
                       <p className="mt-2 text-sm">
-                        {syncSummary.status || "not_synced"} · mapped {syncSummary.mapped_count ?? 0} · unmapped {syncSummary.unmapped_count ?? 0}
+                        {syncSummary.status || "not_synced"} · mapped{" "}
+                        {syncSummary.mapped_count ?? 0} · unmapped{" "}
+                        {syncSummary.unmapped_count ?? 0}
                       </p>
                     </div>
                   </div>
                   {connectionWarnings.length > 0 ? (
                     <div className="space-y-2">
                       {connectionWarnings.map((warning) => (
-                        <div key={warning} className="flex items-start gap-3 rounded-2xl border border-amber-500/30 bg-amber-500/5 p-4">
+                        <div
+                          key={warning}
+                          className="flex items-start gap-3 rounded-2xl border border-amber-500/30 bg-amber-500/5 p-4"
+                        >
                           <AlertCircle className="mt-0.5 h-4 w-4 text-amber-500" />
                           <p>{warning}</p>
                         </div>
@@ -1525,7 +1624,10 @@ export default function OdooDeliveryPageClient({
                     </div>
                   ) : null}
                   {(plan.blocked_scope || []).map((item) => (
-                    <div key={item} className="flex items-start gap-3 rounded-2xl border border-border/70 bg-muted/30 p-4">
+                    <div
+                      key={item}
+                      className="flex items-start gap-3 rounded-2xl border border-border/70 bg-muted/30 p-4"
+                    >
                       <AlertCircle className="mt-0.5 h-4 w-4 text-muted-foreground" />
                       <p>{item}</p>
                     </div>
@@ -1539,470 +1641,797 @@ export default function OdooDeliveryPageClient({
                 <CardHeader>
                   <CardTitle>Select an Odoo connection to continue</CardTitle>
                   <CardDescription>
-                    The Odoo GeoTool starts with a real instance connection. Once a connection is attached to this audit, the briefing, sync, and draft pack blocks unlock below.
+                    The Odoo GeoTool starts with a real instance connection.
+                    Once a connection is attached to this audit, the briefing,
+                    sync, and draft pack blocks unlock below.
                   </CardDescription>
                 </CardHeader>
               </Card>
             ) : (
               <>
-            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-              <Card><CardHeader><CardDescription>Validated fixes</CardDescription><CardTitle className="text-3xl">{plan.delivery_summary?.fix_count ?? 0}</CardTitle></CardHeader></Card>
-              <Card><CardHeader><CardDescription>Article deliverables</CardDescription><CardTitle className="text-3xl">{plan.delivery_summary?.article_count ?? 0}</CardTitle></CardHeader></Card>
-              <Card><CardHeader><CardDescription>Native drafts</CardDescription><CardTitle className="text-3xl">{draftSummary.native_draft_count ?? plan.delivery_summary?.native_draft_count ?? 0}</CardTitle></CardHeader></Card>
-              <Card><CardHeader><CardDescription>Manual review items</CardDescription><CardTitle className="text-3xl">{draftSummary.manual_review_count ?? plan.delivery_summary?.manual_review_count ?? 0}</CardTitle></CardHeader></Card>
-            </div>
-
-            <div className="grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
-              <Card>
-                <CardHeader>
-                  <div className="flex items-center gap-3">
-                    <MessageSquareText className="h-5 w-5 text-sky-500" />
-                    <div>
-                      <CardTitle>Guided Odoo Briefing</CardTitle>
-                      <CardDescription>Conversational setup for scope, market, content, and ecommerce decisions.</CardDescription>
-                    </div>
-                  </div>
-                </CardHeader>
-                <CardContent className="space-y-5">
-                  <div className="rounded-2xl border border-sky-500/20 bg-sky-500/5 p-4 text-sm text-muted-foreground">
-                    <div className="flex items-start gap-3">
-                      <Bot className="mt-0.5 h-4 w-4 text-sky-500" />
-                      <p>{briefingIntro}</p>
-                    </div>
-                  </div>
-
-                  {activeBriefStep ? (
-                    <div className="rounded-2xl border border-border/70 bg-muted/30 p-4">
-                      <div className="flex items-start gap-3">
-                        <Bot className="mt-0.5 h-4 w-4 text-sky-500" />
-                        <div className="min-w-0 flex-1 space-y-4">
-                          <div>
-                            <p className="text-sm font-medium">{activeBriefStep.label}</p>
-                            <p className="mt-2 text-sm text-muted-foreground">
-                              {activeBriefStep.assistantMessage}
-                            </p>
-                          </div>
-                          {activeBriefStep.type === "choice" ? (
-                            <div className="grid gap-3 md:grid-cols-2">
-                              {(activeBriefStep.options || []).map((option) => (
-                                <button
-                                  type="button"
-                                  key={`${activeBriefStep.id}-${option.value}`}
-                                  onClick={() => handleBriefChoice(option)}
-                                  className="rounded-2xl border border-border/70 bg-background/70 p-4 text-left transition hover:border-sky-500/40 hover:bg-sky-500/5"
-                                >
-                                  <p className="font-medium">{option.label}</p>
-                                  <p className="mt-2 text-sm text-muted-foreground">{option.description}</p>
-                                </button>
-                              ))}
-                            </div>
-                          ) : (
-                            <div className="space-y-3">
-                              {activeBriefStep.type === "textarea" ? (
-                                <Textarea value={briefInputValue} onChange={(event) => setBriefInputValue(event.target.value)} placeholder={activeBriefStep.placeholder} />
-                              ) : (
-                                <Input value={briefInputValue} onChange={(event) => setBriefInputValue(event.target.value)} placeholder={activeBriefStep.placeholder} />
-                              )}
-                              <div className="flex flex-wrap gap-3">
-                                <Button onClick={() => submitBriefTextStep(false)}>
-                                  <SendHorizontal className="mr-2 h-4 w-4" />
-                                  Save answer
-                                </Button>
-                                {!activeBriefStep.required ? (
-                                  <Button variant="outline" onClick={() => submitBriefTextStep(true)}>Skip</Button>
-                                ) : null}
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/5 p-4 text-sm text-muted-foreground">
-                      Brief complete. Apply it now or restart the chat if you want to reshape the rollout.
-                    </div>
-                  )}
-
-                  {briefError ? <div className="rounded-2xl border border-amber-500/30 bg-amber-500/5 p-4 text-sm">{briefError}</div> : null}
-                  {briefSuccess ? <div className="rounded-2xl border border-emerald-500/30 bg-emerald-500/5 p-4 text-sm">{briefSuccess}</div> : null}
-
-                  <div className="flex flex-wrap gap-3">
-                    <Button onClick={() => void saveBriefing()} disabled={briefSaving}>
-                      {briefSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CheckCircle2 className="mr-2 h-4 w-4" />}
-                      Apply brief and refresh pack
-                    </Button>
-                    <Button variant="outline" onClick={restartBriefing}>Restart chat</Button>
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader>
-                  <div className="flex items-center gap-3">
-                    <Layers3 className="h-5 w-5 text-brand" />
-                    <div>
-                      <CardTitle>Current Brief</CardTitle>
-                      <CardDescription>Live briefing state for the client-facing pack.</CardDescription>
-                    </div>
-                  </div>
-                </CardHeader>
-                <CardContent className="grid gap-3 sm:grid-cols-2">
-                  {briefSummaryItems.map((item) => (
-                    <div key={item.label} className="rounded-2xl border border-border/70 bg-muted/30 p-4">
-                      <p className="text-xs uppercase tracking-wide text-muted-foreground">{item.label}</p>
-                      <p className="mt-2 text-sm font-medium">{item.value}</p>
-                    </div>
-                  ))}
-                  <div className="rounded-2xl border border-border/70 bg-muted/30 p-4 sm:col-span-2">
-                    <p className="text-xs uppercase tracking-wide text-muted-foreground">Rollout notes</p>
-                    <p className="mt-2 text-sm text-muted-foreground">{briefDraft.rollout_notes || "No extra constraints captured yet."}</p>
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-
-            <Card>
-              <CardHeader>
-                <div className="flex items-center gap-3">
-                  <UserRound className="h-5 w-5 text-amber-500" />
-                  <div>
-                    <CardTitle>Guided Implementation Inputs</CardTitle>
-                    <CardDescription>Complete missing validated values before treating the pack as implementation-final.</CardDescription>
-                  </div>
+                <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                  <Card>
+                    <CardHeader>
+                      <CardDescription>Validated fixes</CardDescription>
+                      <CardTitle className="text-3xl">
+                        {plan.delivery_summary?.fix_count ?? 0}
+                      </CardTitle>
+                    </CardHeader>
+                  </Card>
+                  <Card>
+                    <CardHeader>
+                      <CardDescription>Article deliverables</CardDescription>
+                      <CardTitle className="text-3xl">
+                        {plan.delivery_summary?.article_count ?? 0}
+                      </CardTitle>
+                    </CardHeader>
+                  </Card>
+                  <Card>
+                    <CardHeader>
+                      <CardDescription>Native drafts</CardDescription>
+                      <CardTitle className="text-3xl">
+                        {draftSummary.native_draft_count ??
+                          plan.delivery_summary?.native_draft_count ??
+                          0}
+                      </CardTitle>
+                    </CardHeader>
+                  </Card>
+                  <Card>
+                    <CardHeader>
+                      <CardDescription>Manual review items</CardDescription>
+                      <CardTitle className="text-3xl">
+                        {draftSummary.manual_review_count ??
+                          plan.delivery_summary?.manual_review_count ??
+                          0}
+                      </CardTitle>
+                    </CardHeader>
+                  </Card>
                 </div>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {activeFixStep ? (
-                  <div className="rounded-2xl border border-border/70 bg-muted/30 p-4">
-                    <div className="flex items-start gap-3">
-                      <Bot className="mt-0.5 h-4 w-4 text-amber-500" />
-                      <div className="min-w-0 flex-1 space-y-4">
-                        <div className="flex flex-wrap items-center gap-3">
-                          <p className="text-sm font-medium">{activeFixStep.issueCode} · {activeFixStep.pagePath}</p>
-                          <Badge variant="outline">{activeFixStep.required ? "Required" : "Optional"}</Badge>
-                          <Badge variant="outline">{currentFixStepIndex + 1}/{chatSteps.length}</Badge>
-                        </div>
-                        {activeFixStep.prompt ? <p className="text-sm text-muted-foreground">{activeFixStep.prompt}</p> : null}
-                        {activeFixStep.loading ? (
-                          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                            <Loader2 className="h-4 w-4 animate-spin" />
-                            Preparing grounded suggestion...
-                          </div>
-                        ) : activeFixStep.assistantMessage ? (
-                          <div className="rounded-2xl border border-border/70 bg-background/70 p-4 text-sm text-muted-foreground">
-                            {activeFixStep.assistantMessage}
-                          </div>
-                        ) : null}
-                        {activeFixStep.field.input_type === "textarea" ? (
-                          <Textarea
-                            value={inputValues[activeFixStep.groupId]?.[activeFixStep.field.key] || ""}
-                            onChange={(event) => updateInputValue(activeFixStep.groupId, activeFixStep.field.key, event.target.value)}
-                            placeholder={activeFixStep.field.placeholder}
-                          />
-                        ) : (
-                          <Input
-                            value={inputValues[activeFixStep.groupId]?.[activeFixStep.field.key] || ""}
-                            onChange={(event) => updateInputValue(activeFixStep.groupId, activeFixStep.field.key, event.target.value)}
-                            placeholder={activeFixStep.field.placeholder}
-                          />
-                        )}
-                        <div className="flex flex-wrap gap-3">
-                          {activeFixStep.suggestedValue ? (
-                            <Button variant="outline" onClick={() => handleUseSuggestion(activeFixStep)}>
-                              Use suggestion{activeFixStep.confidence === "evidence" ? " (grounded)" : ""}
-                            </Button>
-                          ) : null}
-                          <Button onClick={() => handleNextFixStep(activeFixStep)}>Next field</Button>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/5 p-4 text-sm text-muted-foreground">
-                    No implementation inputs are missing right now.
-                  </div>
-                )}
-                {stepError ? <div className="rounded-2xl border border-amber-500/30 bg-amber-500/5 p-4 text-sm">{stepError}</div> : null}
-                {fixSuccess ? <div className="rounded-2xl border border-emerald-500/30 bg-emerald-500/5 p-4 text-sm">{fixSuccess}</div> : null}
-                <div className="flex flex-wrap gap-3">
-                  <Button onClick={() => void saveFixInputs()} disabled={inputsSaving}>
-                    {inputsSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CheckCircle2 className="mr-2 h-4 w-4" />}
-                    Save implementation inputs
-                  </Button>
-                  <Badge variant="outline">{hasMissingRequired ? "Required fields pending" : "Required fields complete"}</Badge>
-                </div>
-              </CardContent>
-            </Card>
 
-            <div className="grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
-              <Card>
-                <CardHeader>
-                  <CardTitle>{plan.implementation_packet?.title || "Odoo delivery pack"}</CardTitle>
-                  <CardDescription>{plan.implementation_packet?.summary}</CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4 text-sm">
-                  <div className="rounded-2xl border border-border/70 bg-muted/30 p-4">
-                    <p className="text-xs uppercase tracking-wide text-muted-foreground">Branch suggestion</p>
-                    <p className="mt-2 font-mono">{plan.implementation_packet?.branch_name_suggestion || "odoo/delivery"}</p>
-                  </div>
-                  <div className="rounded-2xl border border-border/70 bg-muted/30 p-4">
-                    <p className="text-xs uppercase tracking-wide text-muted-foreground">Root snapshot</p>
-                    <p className="mt-2 font-medium">{plan.root_page_snapshot?.path || "/"}</p>
-                    <p className="mt-3 text-muted-foreground">Overall {plan.root_page_snapshot?.overall_score ?? "n/a"} · Schema {plan.root_page_snapshot?.schema_score ?? "n/a"} · H1 {plan.root_page_snapshot?.h1_score ?? "n/a"}</p>
-                  </div>
-                  {(plan.implementation_packet?.success_metrics || []).map((item) => (
-                    <div key={item} className="flex items-start gap-3 rounded-2xl border border-border/70 bg-muted/30 p-4">
-                      <CheckCircle2 className="mt-0.5 h-4 w-4 text-emerald-500" />
-                      <p>{item}</p>
-                    </div>
-                  ))}
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader>
-                  <CardTitle>QA Checklist</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  {(plan.qa_checklist || []).map((item) => (
-                    <div key={item} className="flex items-start gap-3 rounded-2xl border border-border/70 bg-muted/30 p-4">
-                      <CheckCircle2 className="mt-0.5 h-4 w-4 text-emerald-500" />
-                      <p className="text-sm">{item}</p>
-                    </div>
-                  ))}
-                </CardContent>
-              </Card>
-            </div>
-
-            <Card>
-              <CardHeader>
-                <CardTitle>Odoo Delivery Fixes</CardTitle>
-                <CardDescription>Validated fixes from the audit fix plan, excluding infrastructure-only work.</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {(plan.odoo_ready_fixes || []).map((item) => (
-                  <div key={`${item.issue_code}-${item.page_path}-${item.area}`} className="rounded-2xl border border-border/70 bg-muted/30 p-4">
-                    <div className="flex items-center justify-between gap-3">
-                      <div>
-                        <p className="font-medium">{item.area || "Fix"}</p>
-                        <p className="mt-1 text-xs text-muted-foreground">{item.page_path || "/"}</p>
-                      </div>
-                      <Badge variant="outline">{item.priority || "MEDIUM"}</Badge>
-                    </div>
-                    <p className="mt-3 text-sm">{item.what_to_change}</p>
-                    <p className="mt-2 text-xs text-muted-foreground">Surface: {item.recommended_odoo_surface}</p>
-                    <p className="mt-2 text-xs text-muted-foreground">Why: {item.why_it_matters}</p>
-                    <p className="mt-2 text-xs text-muted-foreground">QA: {item.qa_check}</p>
-                  </div>
-                ))}
-              </CardContent>
-            </Card>
-
-            {(plan.article_deliverables || []).length > 0 ? (
-              <Card>
-                <CardHeader>
-                  <div className="flex items-center gap-3">
-                    <FileText className="h-5 w-5 text-indigo-500" />
-                    <div>
-                      <CardTitle>Article Deliverables</CardTitle>
-                      <CardDescription>Content pieces to publish from Odoo blog and link back to commercial pages.</CardDescription>
-                    </div>
-                  </div>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  {(plan.article_deliverables || []).map((item) => (
-                    <div key={`${item.slug}-${item.title}`} className="rounded-2xl border border-border/70 bg-muted/30 p-4">
-                      <div className="flex items-center justify-between gap-3">
+                <div className="grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
+                  <Card>
+                    <CardHeader>
+                      <div className="flex items-center gap-3">
+                        <MessageSquareText className="h-5 w-5 text-sky-500" />
                         <div>
-                          <p className="font-medium">{item.title}</p>
-                          <p className="mt-1 text-xs text-muted-foreground">keyword: {item.target_keyword || "n/a"} · focus: {item.focus_url || "/"}</p>
+                          <CardTitle>Guided Odoo Briefing</CardTitle>
+                          <CardDescription>
+                            Conversational setup for scope, market, content, and
+                            ecommerce decisions.
+                          </CardDescription>
                         </div>
-                        <Badge variant="outline">{item.source === "article_engine_batch" ? "Generated" : "Suggested"}</Badge>
                       </div>
-                      <p className="mt-3 text-sm">{item.delivery_brief}</p>
-                    </div>
-                  ))}
-                </CardContent>
-              </Card>
-            ) : null}
-
-            {(plan.ecommerce_fixes || []).length > 0 || isEcommerce ? (
-              <Card>
-                <CardHeader>
-                  <div className="flex items-center gap-3">
-                    <ShoppingBag className="h-5 w-5 text-emerald-500" />
-                    <div>
-                      <CardTitle>Ecommerce Delivery Block</CardTitle>
-                      <CardDescription>Product, category, and homepage actions for Odoo ecommerce implementations.</CardDescription>
-                    </div>
-                  </div>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  {plan.commerce_context?.has_analysis ? (
-                    <div className="rounded-2xl border border-border/70 bg-muted/30 p-4 text-sm text-muted-foreground">
-                      Query context: {plan.commerce_context.query || "n/a"} · market {plan.commerce_context.market || "n/a"} · target position {plan.commerce_context.target_position ?? "n/a"} · top result {plan.commerce_context.top_result_domain || "n/a"}
-                    </div>
-                  ) : null}
-                  {(plan.commerce_root_causes || []).map((item, index) => (
-                    <div key={`${item.title}-${index}`} className="rounded-2xl border border-border/70 bg-muted/30 p-4">
-                      <p className="font-medium">{item.title}</p>
-                      <p className="mt-2 text-sm text-muted-foreground">{item.finding}</p>
-                    </div>
-                  ))}
-                  {(plan.ecommerce_fixes || []).map((item, index) => (
-                    <div key={`${item.area}-${index}-${item.what_to_change}`} className="rounded-2xl border border-border/70 bg-muted/30 p-4">
-                      <div className="flex items-center justify-between gap-3">
-                        <p className="font-medium">{item.area || "Ecommerce"}</p>
-                        <Badge variant="outline">{item.priority || "P2"}</Badge>
+                    </CardHeader>
+                    <CardContent className="space-y-5">
+                      <div className="rounded-2xl border border-sky-500/20 bg-sky-500/5 p-4 text-sm text-muted-foreground">
+                        <div className="flex items-start gap-3">
+                          <Bot className="mt-0.5 h-4 w-4 text-sky-500" />
+                          <p>{briefingIntro}</p>
+                        </div>
                       </div>
-                      <p className="mt-3 text-sm">{item.what_to_change}</p>
-                      <p className="mt-2 text-xs text-muted-foreground">Surface: {item.recommended_odoo_surface}</p>
-                    </div>
-                  ))}
-                </CardContent>
-              </Card>
-            ) : null}
 
-            <div className="grid gap-6 xl:grid-cols-[0.95fr_1.05fr]">
-              <Card>
-                <CardHeader>
-                  <CardTitle>Sync</CardTitle>
-                  <CardDescription>
-                    Pull real Odoo records before preparing drafts. This reads content only and never writes templates or infrastructure.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="flex flex-wrap gap-3">
-                    <Button onClick={() => void runSync()} disabled={syncing}>
-                      {syncing ? (
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      {activeBriefStep ? (
+                        <div className="rounded-2xl border border-border/70 bg-muted/30 p-4">
+                          <div className="flex items-start gap-3">
+                            <Bot className="mt-0.5 h-4 w-4 text-sky-500" />
+                            <div className="min-w-0 flex-1 space-y-4">
+                              <div>
+                                <p className="text-sm font-medium">
+                                  {activeBriefStep.label}
+                                </p>
+                                <p className="mt-2 text-sm text-muted-foreground">
+                                  {activeBriefStep.assistantMessage}
+                                </p>
+                              </div>
+                              {activeBriefStep.type === "choice" ? (
+                                <div className="grid gap-3 md:grid-cols-2">
+                                  {(activeBriefStep.options || []).map(
+                                    (option) => (
+                                      <button
+                                        type="button"
+                                        key={`${activeBriefStep.id}-${option.value}`}
+                                        onClick={() =>
+                                          handleBriefChoice(option)
+                                        }
+                                        className="rounded-2xl border border-border/70 bg-background/70 p-4 text-left transition hover:border-sky-500/40 hover:bg-sky-500/5"
+                                      >
+                                        <p className="font-medium">
+                                          {option.label}
+                                        </p>
+                                        <p className="mt-2 text-sm text-muted-foreground">
+                                          {option.description}
+                                        </p>
+                                      </button>
+                                    ),
+                                  )}
+                                </div>
+                              ) : (
+                                <div className="space-y-3">
+                                  {activeBriefStep.type === "textarea" ? (
+                                    <Textarea
+                                      value={briefInputValue}
+                                      onChange={(event) =>
+                                        setBriefInputValue(event.target.value)
+                                      }
+                                      placeholder={activeBriefStep.placeholder}
+                                    />
+                                  ) : (
+                                    <Input
+                                      value={briefInputValue}
+                                      onChange={(event) =>
+                                        setBriefInputValue(event.target.value)
+                                      }
+                                      placeholder={activeBriefStep.placeholder}
+                                    />
+                                  )}
+                                  <div className="flex flex-wrap gap-3">
+                                    <Button
+                                      onClick={() => submitBriefTextStep(false)}
+                                    >
+                                      <SendHorizontal className="mr-2 h-4 w-4" />
+                                      Save answer
+                                    </Button>
+                                    {!activeBriefStep.required ? (
+                                      <Button
+                                        variant="outline"
+                                        onClick={() =>
+                                          submitBriefTextStep(true)
+                                        }
+                                      >
+                                        Skip
+                                      </Button>
+                                    ) : null}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
                       ) : (
-                        <RefreshCw className="mr-2 h-4 w-4" />
+                        <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/5 p-4 text-sm text-muted-foreground">
+                          Brief complete. Apply it now or restart the chat if
+                          you want to reshape the rollout.
+                        </div>
                       )}
-                      Sync Odoo content
-                    </Button>
-                    <Button variant="outline" onClick={() => void prepareDraftPack()} disabled={preparingDrafts}>
-                      {preparingDrafts ? (
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      ) : (
-                        <Package className="mr-2 h-4 w-4" />
-                      )}
-                      Prepare draft pack
-                    </Button>
-                  </div>
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <div className="rounded-2xl border border-border/70 bg-muted/30 p-4">
-                      <p className="text-xs uppercase tracking-wide text-muted-foreground">Mapped audit URLs</p>
-                      <p className="mt-2 text-2xl font-semibold">{syncSummary.mapped_count ?? 0}</p>
-                    </div>
-                    <div className="rounded-2xl border border-border/70 bg-muted/30 p-4">
-                      <p className="text-xs uppercase tracking-wide text-muted-foreground">Unmapped URLs</p>
-                      <p className="mt-2 text-2xl font-semibold">{syncSummary.unmapped_count ?? 0}</p>
-                    </div>
-                  </div>
-                  {syncModelEntries.length > 0 ? (
-                    <div className="space-y-2">
-                      {syncModelEntries.map(([model, count]) => (
-                        <div key={model} className="flex items-center justify-between rounded-2xl border border-border/70 bg-muted/30 px-4 py-3 text-sm">
-                          <span>{model}</span>
-                          <Badge variant="outline">{count}</Badge>
+
+                      {briefError ? (
+                        <div className="rounded-2xl border border-amber-500/30 bg-amber-500/5 p-4 text-sm">
+                          {briefError}
+                        </div>
+                      ) : null}
+                      {briefSuccess ? (
+                        <div className="rounded-2xl border border-emerald-500/30 bg-emerald-500/5 p-4 text-sm">
+                          {briefSuccess}
+                        </div>
+                      ) : null}
+
+                      <div className="flex flex-wrap gap-3">
+                        <Button
+                          onClick={() => void saveBriefing()}
+                          disabled={briefSaving}
+                        >
+                          {briefSaving ? (
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          ) : (
+                            <CheckCircle2 className="mr-2 h-4 w-4" />
+                          )}
+                          Apply brief and refresh pack
+                        </Button>
+                        <Button variant="outline" onClick={restartBriefing}>
+                          Restart chat
+                        </Button>
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  <Card>
+                    <CardHeader>
+                      <div className="flex items-center gap-3">
+                        <Layers3 className="h-5 w-5 text-brand" />
+                        <div>
+                          <CardTitle>Current Brief</CardTitle>
+                          <CardDescription>
+                            Live briefing state for the client-facing pack.
+                          </CardDescription>
+                        </div>
+                      </div>
+                    </CardHeader>
+                    <CardContent className="grid gap-3 sm:grid-cols-2">
+                      {briefSummaryItems.map((item) => (
+                        <div
+                          key={item.label}
+                          className="rounded-2xl border border-border/70 bg-muted/30 p-4"
+                        >
+                          <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                            {item.label}
+                          </p>
+                          <p className="mt-2 text-sm font-medium">
+                            {item.value}
+                          </p>
                         </div>
                       ))}
-                    </div>
-                  ) : (
-                    <div className="rounded-2xl border border-border/70 bg-muted/30 p-4 text-sm text-muted-foreground">
-                      No Odoo records have been synced for this audit yet.
-                    </div>
-                  )}
-                  {(syncSummary.unmapped_paths || []).slice(0, 6).map((path) => (
-                    <div key={path} className="rounded-2xl border border-amber-500/30 bg-amber-500/5 p-4 text-sm">
-                      Unmapped audit path: {path}
-                    </div>
-                  ))}
-                </CardContent>
-              </Card>
+                      <div className="rounded-2xl border border-border/70 bg-muted/30 p-4 sm:col-span-2">
+                        <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                          Rollout notes
+                        </p>
+                        <p className="mt-2 text-sm text-muted-foreground">
+                          {briefDraft.rollout_notes ||
+                            "No extra constraints captured yet."}
+                        </p>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </div>
 
-              <Card>
-                <CardHeader>
-                  <CardTitle>Draft Pack</CardTitle>
-                  <CardDescription>
-                    Native drafts in Odoo when supported, structured draft actions for safe fields, and manual review for template-backed work.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                    <div className="rounded-2xl border border-border/70 bg-muted/30 p-4">
-                      <p className="text-xs uppercase tracking-wide text-muted-foreground">Native drafts</p>
-                      <p className="mt-2 text-2xl font-semibold">{draftSummary.native_draft_count ?? 0}</p>
+                <Card>
+                  <CardHeader>
+                    <div className="flex items-center gap-3">
+                      <UserRound className="h-5 w-5 text-amber-500" />
+                      <div>
+                        <CardTitle>Guided Implementation Inputs</CardTitle>
+                        <CardDescription>
+                          Complete missing validated values before treating the
+                          pack as implementation-final.
+                        </CardDescription>
+                      </div>
                     </div>
-                    <div className="rounded-2xl border border-border/70 bg-muted/30 p-4">
-                      <p className="text-xs uppercase tracking-wide text-muted-foreground">Structured drafts</p>
-                      <p className="mt-2 text-2xl font-semibold">{draftSummary.draft_count ?? 0}</p>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    {activeFixStep ? (
+                      <div className="rounded-2xl border border-border/70 bg-muted/30 p-4">
+                        <div className="flex items-start gap-3">
+                          <Bot className="mt-0.5 h-4 w-4 text-amber-500" />
+                          <div className="min-w-0 flex-1 space-y-4">
+                            <div className="flex flex-wrap items-center gap-3">
+                              <p className="text-sm font-medium">
+                                {activeFixStep.issueCode} ·{" "}
+                                {activeFixStep.pagePath}
+                              </p>
+                              <Badge variant="outline">
+                                {activeFixStep.required
+                                  ? "Required"
+                                  : "Optional"}
+                              </Badge>
+                              <Badge variant="outline">
+                                {currentFixStepIndex + 1}/{chatSteps.length}
+                              </Badge>
+                            </div>
+                            {activeFixStep.prompt ? (
+                              <p className="text-sm text-muted-foreground">
+                                {activeFixStep.prompt}
+                              </p>
+                            ) : null}
+                            {activeFixStep.loading ? (
+                              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                                Preparing grounded suggestion...
+                              </div>
+                            ) : activeFixStep.assistantMessage ? (
+                              <div className="rounded-2xl border border-border/70 bg-background/70 p-4 text-sm text-muted-foreground">
+                                {activeFixStep.assistantMessage}
+                              </div>
+                            ) : null}
+                            {activeFixStep.field.input_type === "textarea" ? (
+                              <Textarea
+                                value={
+                                  inputValues[activeFixStep.groupId]?.[
+                                    activeFixStep.field.key
+                                  ] || ""
+                                }
+                                onChange={(event) =>
+                                  updateInputValue(
+                                    activeFixStep.groupId,
+                                    activeFixStep.field.key,
+                                    event.target.value,
+                                  )
+                                }
+                                placeholder={activeFixStep.field.placeholder}
+                              />
+                            ) : (
+                              <Input
+                                value={
+                                  inputValues[activeFixStep.groupId]?.[
+                                    activeFixStep.field.key
+                                  ] || ""
+                                }
+                                onChange={(event) =>
+                                  updateInputValue(
+                                    activeFixStep.groupId,
+                                    activeFixStep.field.key,
+                                    event.target.value,
+                                  )
+                                }
+                                placeholder={activeFixStep.field.placeholder}
+                              />
+                            )}
+                            <div className="flex flex-wrap gap-3">
+                              {activeFixStep.suggestedValue ? (
+                                <Button
+                                  variant="outline"
+                                  onClick={() =>
+                                    handleUseSuggestion(activeFixStep)
+                                  }
+                                >
+                                  Use suggestion
+                                  {activeFixStep.confidence === "evidence"
+                                    ? " (grounded)"
+                                    : ""}
+                                </Button>
+                              ) : null}
+                              <Button
+                                onClick={() => handleNextFixStep(activeFixStep)}
+                              >
+                                Next field
+                              </Button>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/5 p-4 text-sm text-muted-foreground">
+                        No implementation inputs are missing right now.
+                      </div>
+                    )}
+                    {stepError ? (
+                      <div className="rounded-2xl border border-amber-500/30 bg-amber-500/5 p-4 text-sm">
+                        {stepError}
+                      </div>
+                    ) : null}
+                    {fixSuccess ? (
+                      <div className="rounded-2xl border border-emerald-500/30 bg-emerald-500/5 p-4 text-sm">
+                        {fixSuccess}
+                      </div>
+                    ) : null}
+                    <div className="flex flex-wrap gap-3">
+                      <Button
+                        onClick={() => void saveFixInputs()}
+                        disabled={inputsSaving}
+                      >
+                        {inputsSaving ? (
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        ) : (
+                          <CheckCircle2 className="mr-2 h-4 w-4" />
+                        )}
+                        Save implementation inputs
+                      </Button>
+                      <Badge variant="outline">
+                        {hasMissingRequired
+                          ? "Required fields pending"
+                          : "Required fields complete"}
+                      </Badge>
                     </div>
-                    <div className="rounded-2xl border border-border/70 bg-muted/30 p-4">
-                      <p className="text-xs uppercase tracking-wide text-muted-foreground">Manual review</p>
-                      <p className="mt-2 text-2xl font-semibold">{draftSummary.manual_review_count ?? 0}</p>
-                    </div>
-                    <div className="rounded-2xl border border-border/70 bg-muted/30 p-4">
-                      <p className="text-xs uppercase tracking-wide text-muted-foreground">Failed</p>
-                      <p className="mt-2 text-2xl font-semibold">{draftSummary.failed_count ?? 0}</p>
-                    </div>
-                  </div>
+                  </CardContent>
+                </Card>
 
-                  {drafts.native_created.map((item) => (
-                    <div key={item.id} className="rounded-2xl border border-emerald-500/20 bg-emerald-500/5 p-4">
-                      <p className="font-medium">{item.title || "Native Odoo draft"}</p>
-                      <p className="mt-2 text-sm text-muted-foreground">
-                        {item.target_model} {item.external_record_id ? `· record ${item.external_record_id}` : ""}
-                      </p>
-                    </div>
-                  ))}
-                  {drafts.draft.map((item) => (
-                    <div key={item.id} className="rounded-2xl border border-border/70 bg-muted/30 p-4">
-                      <p className="font-medium">{item.title || "Draft action"}</p>
-                      <p className="mt-2 text-sm text-muted-foreground">
-                        {item.target_model || "Draft"} · {item.target_path || "/"}
-                      </p>
-                    </div>
-                  ))}
-                  {drafts.manual_review.map((item) => (
-                    <div key={item.id} className="rounded-2xl border border-amber-500/30 bg-amber-500/5 p-4">
-                      <p className="font-medium">{item.title || "Manual review"}</p>
-                      <p className="mt-2 text-sm text-muted-foreground">
-                        {item.acceptance_criteria || "Review manually inside Odoo."}
-                      </p>
-                    </div>
-                  ))}
-                  {drafts.failed.map((item) => (
-                    <div key={item.id} className="rounded-2xl border border-destructive/30 bg-destructive/5 p-4">
-                      <p className="font-medium">{item.title || "Failed draft"}</p>
-                      <p className="mt-2 text-sm text-muted-foreground">
-                        {item.error_message || "Draft generation failed."}
-                      </p>
-                    </div>
-                  ))}
+                <div className="grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>
+                        {plan.implementation_packet?.title ||
+                          "Odoo delivery pack"}
+                      </CardTitle>
+                      <CardDescription>
+                        {plan.implementation_packet?.summary}
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-4 text-sm">
+                      <div className="rounded-2xl border border-border/70 bg-muted/30 p-4">
+                        <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                          Branch suggestion
+                        </p>
+                        <p className="mt-2 font-mono">
+                          {plan.implementation_packet?.branch_name_suggestion ||
+                            "odoo/delivery"}
+                        </p>
+                      </div>
+                      <div className="rounded-2xl border border-border/70 bg-muted/30 p-4">
+                        <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                          Root snapshot
+                        </p>
+                        <p className="mt-2 font-medium">
+                          {plan.root_page_snapshot?.path || "/"}
+                        </p>
+                        <p className="mt-3 text-muted-foreground">
+                          Overall{" "}
+                          {plan.root_page_snapshot?.overall_score ?? "n/a"} ·
+                          Schema{" "}
+                          {plan.root_page_snapshot?.schema_score ?? "n/a"} · H1{" "}
+                          {plan.root_page_snapshot?.h1_score ?? "n/a"}
+                        </p>
+                      </div>
+                      {(plan.implementation_packet?.success_metrics || []).map(
+                        (item) => (
+                          <div
+                            key={item}
+                            className="flex items-start gap-3 rounded-2xl border border-border/70 bg-muted/30 p-4"
+                          >
+                            <CheckCircle2 className="mt-0.5 h-4 w-4 text-emerald-500" />
+                            <p>{item}</p>
+                          </div>
+                        ),
+                      )}
+                    </CardContent>
+                  </Card>
 
-                  {drafts.native_created.length === 0 &&
-                  drafts.draft.length === 0 &&
-                  drafts.manual_review.length === 0 &&
-                  drafts.failed.length === 0 ? (
-                    <div className="rounded-2xl border border-border/70 bg-muted/30 p-4 text-sm text-muted-foreground">
-                      No Odoo drafts prepared yet. Run sync first, then prepare the draft pack.
-                    </div>
-                  ) : null}
-                </CardContent>
-              </Card>
-            </div>
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>QA Checklist</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-3">
+                      {(plan.qa_checklist || []).map((item) => (
+                        <div
+                          key={item}
+                          className="flex items-start gap-3 rounded-2xl border border-border/70 bg-muted/30 p-4"
+                        >
+                          <CheckCircle2 className="mt-0.5 h-4 w-4 text-emerald-500" />
+                          <p className="text-sm">{item}</p>
+                        </div>
+                      ))}
+                    </CardContent>
+                  </Card>
+                </div>
 
-            <Card>
-              <CardHeader><CardTitle>Notes</CardTitle></CardHeader>
-              <CardContent className="space-y-2 text-sm text-muted-foreground">
-                {(plan.notes || []).map((item) => <p key={item}>{item}</p>)}
-                {plan.product_intelligence?.is_ecommerce ? (
-                  <p>Product intelligence: platform {plan.product_intelligence.platform || "unknown"} · product pages {plan.product_intelligence.product_pages_count ?? "n/a"} · category pages {plan.product_intelligence.category_pages_count ?? "n/a"}</p>
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Odoo Delivery Fixes</CardTitle>
+                    <CardDescription>
+                      Validated fixes from the audit fix plan, excluding
+                      infrastructure-only work.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    {(plan.odoo_ready_fixes || []).map((item) => (
+                      <div
+                        key={`${item.issue_code}-${item.page_path}-${item.area}`}
+                        className="rounded-2xl border border-border/70 bg-muted/30 p-4"
+                      >
+                        <div className="flex items-center justify-between gap-3">
+                          <div>
+                            <p className="font-medium">{item.area || "Fix"}</p>
+                            <p className="mt-1 text-xs text-muted-foreground">
+                              {item.page_path || "/"}
+                            </p>
+                          </div>
+                          <Badge variant="outline">
+                            {item.priority || "MEDIUM"}
+                          </Badge>
+                        </div>
+                        <p className="mt-3 text-sm">{item.what_to_change}</p>
+                        <p className="mt-2 text-xs text-muted-foreground">
+                          Surface: {item.recommended_odoo_surface}
+                        </p>
+                        <p className="mt-2 text-xs text-muted-foreground">
+                          Why: {item.why_it_matters}
+                        </p>
+                        <p className="mt-2 text-xs text-muted-foreground">
+                          QA: {item.qa_check}
+                        </p>
+                      </div>
+                    ))}
+                  </CardContent>
+                </Card>
+
+                {(plan.article_deliverables || []).length > 0 ? (
+                  <Card>
+                    <CardHeader>
+                      <div className="flex items-center gap-3">
+                        <FileText className="h-5 w-5 text-indigo-500" />
+                        <div>
+                          <CardTitle>Article Deliverables</CardTitle>
+                          <CardDescription>
+                            Content pieces to publish from Odoo blog and link
+                            back to commercial pages.
+                          </CardDescription>
+                        </div>
+                      </div>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      {(plan.article_deliverables || []).map((item) => (
+                        <div
+                          key={`${item.slug}-${item.title}`}
+                          className="rounded-2xl border border-border/70 bg-muted/30 p-4"
+                        >
+                          <div className="flex items-center justify-between gap-3">
+                            <div>
+                              <p className="font-medium">{item.title}</p>
+                              <p className="mt-1 text-xs text-muted-foreground">
+                                keyword: {item.target_keyword || "n/a"} · focus:{" "}
+                                {item.focus_url || "/"}
+                              </p>
+                            </div>
+                            <Badge variant="outline">
+                              {item.source === "article_engine_batch"
+                                ? "Generated"
+                                : "Suggested"}
+                            </Badge>
+                          </div>
+                          <p className="mt-3 text-sm">{item.delivery_brief}</p>
+                        </div>
+                      ))}
+                    </CardContent>
+                  </Card>
                 ) : null}
-              </CardContent>
-            </Card>
+
+                {(plan.ecommerce_fixes || []).length > 0 || isEcommerce ? (
+                  <Card>
+                    <CardHeader>
+                      <div className="flex items-center gap-3">
+                        <ShoppingBag className="h-5 w-5 text-emerald-500" />
+                        <div>
+                          <CardTitle>Ecommerce Delivery Block</CardTitle>
+                          <CardDescription>
+                            Product, category, and homepage actions for Odoo
+                            ecommerce implementations.
+                          </CardDescription>
+                        </div>
+                      </div>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      {plan.commerce_context?.has_analysis ? (
+                        <div className="rounded-2xl border border-border/70 bg-muted/30 p-4 text-sm text-muted-foreground">
+                          Query context: {plan.commerce_context.query || "n/a"}{" "}
+                          · market {plan.commerce_context.market || "n/a"} ·
+                          target position{" "}
+                          {plan.commerce_context.target_position ?? "n/a"} · top
+                          result{" "}
+                          {plan.commerce_context.top_result_domain || "n/a"}
+                        </div>
+                      ) : null}
+                      {(plan.commerce_root_causes || []).map((item, index) => (
+                        <div
+                          key={`${item.title}-${index}`}
+                          className="rounded-2xl border border-border/70 bg-muted/30 p-4"
+                        >
+                          <p className="font-medium">{item.title}</p>
+                          <p className="mt-2 text-sm text-muted-foreground">
+                            {item.finding}
+                          </p>
+                        </div>
+                      ))}
+                      {(plan.ecommerce_fixes || []).map((item, index) => (
+                        <div
+                          key={`${item.area}-${index}-${item.what_to_change}`}
+                          className="rounded-2xl border border-border/70 bg-muted/30 p-4"
+                        >
+                          <div className="flex items-center justify-between gap-3">
+                            <p className="font-medium">
+                              {item.area || "Ecommerce"}
+                            </p>
+                            <Badge variant="outline">
+                              {item.priority || "P2"}
+                            </Badge>
+                          </div>
+                          <p className="mt-3 text-sm">{item.what_to_change}</p>
+                          <p className="mt-2 text-xs text-muted-foreground">
+                            Surface: {item.recommended_odoo_surface}
+                          </p>
+                        </div>
+                      ))}
+                    </CardContent>
+                  </Card>
+                ) : null}
+
+                <div className="grid gap-6 xl:grid-cols-[0.95fr_1.05fr]">
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>Sync</CardTitle>
+                      <CardDescription>
+                        Pull real Odoo records before preparing drafts. This
+                        reads content only and never writes templates or
+                        infrastructure.
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      <div className="flex flex-wrap gap-3">
+                        <Button
+                          onClick={() => void runSync()}
+                          disabled={syncing}
+                        >
+                          {syncing ? (
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          ) : (
+                            <RefreshCw className="mr-2 h-4 w-4" />
+                          )}
+                          Sync Odoo content
+                        </Button>
+                        <Button
+                          variant="outline"
+                          onClick={() => void prepareDraftPack()}
+                          disabled={preparingDrafts}
+                        >
+                          {preparingDrafts ? (
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          ) : (
+                            <Package className="mr-2 h-4 w-4" />
+                          )}
+                          Prepare draft pack
+                        </Button>
+                      </div>
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <div className="rounded-2xl border border-border/70 bg-muted/30 p-4">
+                          <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                            Mapped audit URLs
+                          </p>
+                          <p className="mt-2 text-2xl font-semibold">
+                            {syncSummary.mapped_count ?? 0}
+                          </p>
+                        </div>
+                        <div className="rounded-2xl border border-border/70 bg-muted/30 p-4">
+                          <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                            Unmapped URLs
+                          </p>
+                          <p className="mt-2 text-2xl font-semibold">
+                            {syncSummary.unmapped_count ?? 0}
+                          </p>
+                        </div>
+                      </div>
+                      {syncModelEntries.length > 0 ? (
+                        <div className="space-y-2">
+                          {syncModelEntries.map(([model, count]) => (
+                            <div
+                              key={model}
+                              className="flex items-center justify-between rounded-2xl border border-border/70 bg-muted/30 px-4 py-3 text-sm"
+                            >
+                              <span>{model}</span>
+                              <Badge variant="outline">{count}</Badge>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="rounded-2xl border border-border/70 bg-muted/30 p-4 text-sm text-muted-foreground">
+                          No Odoo records have been synced for this audit yet.
+                        </div>
+                      )}
+                      {(syncSummary.unmapped_paths || [])
+                        .slice(0, 6)
+                        .map((path) => (
+                          <div
+                            key={path}
+                            className="rounded-2xl border border-amber-500/30 bg-amber-500/5 p-4 text-sm"
+                          >
+                            Unmapped audit path: {path}
+                          </div>
+                        ))}
+                    </CardContent>
+                  </Card>
+
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>Draft Pack</CardTitle>
+                      <CardDescription>
+                        Native drafts in Odoo when supported, structured draft
+                        actions for safe fields, and manual review for
+                        template-backed work.
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                        <div className="rounded-2xl border border-border/70 bg-muted/30 p-4">
+                          <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                            Native drafts
+                          </p>
+                          <p className="mt-2 text-2xl font-semibold">
+                            {draftSummary.native_draft_count ?? 0}
+                          </p>
+                        </div>
+                        <div className="rounded-2xl border border-border/70 bg-muted/30 p-4">
+                          <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                            Structured drafts
+                          </p>
+                          <p className="mt-2 text-2xl font-semibold">
+                            {draftSummary.draft_count ?? 0}
+                          </p>
+                        </div>
+                        <div className="rounded-2xl border border-border/70 bg-muted/30 p-4">
+                          <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                            Manual review
+                          </p>
+                          <p className="mt-2 text-2xl font-semibold">
+                            {draftSummary.manual_review_count ?? 0}
+                          </p>
+                        </div>
+                        <div className="rounded-2xl border border-border/70 bg-muted/30 p-4">
+                          <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                            Failed
+                          </p>
+                          <p className="mt-2 text-2xl font-semibold">
+                            {draftSummary.failed_count ?? 0}
+                          </p>
+                        </div>
+                      </div>
+
+                      {drafts.native_created.map((item) => (
+                        <div
+                          key={item.id}
+                          className="rounded-2xl border border-emerald-500/20 bg-emerald-500/5 p-4"
+                        >
+                          <p className="font-medium">
+                            {item.title || "Native Odoo draft"}
+                          </p>
+                          <p className="mt-2 text-sm text-muted-foreground">
+                            {item.target_model}{" "}
+                            {item.external_record_id
+                              ? `· record ${item.external_record_id}`
+                              : ""}
+                          </p>
+                        </div>
+                      ))}
+                      {drafts.draft.map((item) => (
+                        <div
+                          key={item.id}
+                          className="rounded-2xl border border-border/70 bg-muted/30 p-4"
+                        >
+                          <p className="font-medium">
+                            {item.title || "Draft action"}
+                          </p>
+                          <p className="mt-2 text-sm text-muted-foreground">
+                            {item.target_model || "Draft"} ·{" "}
+                            {item.target_path || "/"}
+                          </p>
+                        </div>
+                      ))}
+                      {drafts.manual_review.map((item) => (
+                        <div
+                          key={item.id}
+                          className="rounded-2xl border border-amber-500/30 bg-amber-500/5 p-4"
+                        >
+                          <p className="font-medium">
+                            {item.title || "Manual review"}
+                          </p>
+                          <p className="mt-2 text-sm text-muted-foreground">
+                            {item.acceptance_criteria ||
+                              "Review manually inside Odoo."}
+                          </p>
+                        </div>
+                      ))}
+                      {drafts.failed.map((item) => (
+                        <div
+                          key={item.id}
+                          className="rounded-2xl border border-destructive/30 bg-destructive/5 p-4"
+                        >
+                          <p className="font-medium">
+                            {item.title || "Failed draft"}
+                          </p>
+                          <p className="mt-2 text-sm text-muted-foreground">
+                            {item.error_message || "Draft generation failed."}
+                          </p>
+                        </div>
+                      ))}
+
+                      {drafts.native_created.length === 0 &&
+                      drafts.draft.length === 0 &&
+                      drafts.manual_review.length === 0 &&
+                      drafts.failed.length === 0 ? (
+                        <div className="rounded-2xl border border-border/70 bg-muted/30 p-4 text-sm text-muted-foreground">
+                          No Odoo drafts prepared yet. Run sync first, then
+                          prepare the draft pack.
+                        </div>
+                      ) : null}
+                    </CardContent>
+                  </Card>
+                </div>
+
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Notes</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-2 text-sm text-muted-foreground">
+                    {(plan.notes || []).map((item) => (
+                      <p key={item}>{item}</p>
+                    ))}
+                    {plan.product_intelligence?.is_ecommerce ? (
+                      <p>
+                        Product intelligence: platform{" "}
+                        {plan.product_intelligence.platform || "unknown"} ·
+                        product pages{" "}
+                        {plan.product_intelligence.product_pages_count ?? "n/a"}{" "}
+                        · category pages{" "}
+                        {plan.product_intelligence.category_pages_count ??
+                          "n/a"}
+                      </p>
+                    ) : null}
+                  </CardContent>
+                </Card>
               </>
             )}
           </>

@@ -42,7 +42,10 @@ export default async function OdooDeliveryPage({
           .then((payload) => ({ payload, error: null }))
           .catch(() => ({ payload: null, error: null })),
       ])
-    : [{ payload: null, error: null }, { payload: null, error: null }];
+    : [
+        { payload: null, error: null },
+        { payload: null, error: null },
+      ];
 
   return (
     <OdooDeliveryPageClient
@@ -51,7 +54,9 @@ export default async function OdooDeliveryPage({
       initialAudit={audit}
       initialPlan={planResult.payload}
       initialConnections={connectionsResult.payload}
-      initialSyncSummary={syncResult.payload?.summary || planResult.payload?.sync_summary}
+      initialSyncSummary={
+        syncResult.payload?.summary || planResult.payload?.sync_summary
+      }
       initialDrafts={draftsResult.payload}
       initialError={planResult.error}
     />
