@@ -260,7 +260,15 @@ class Settings(BaseSettings):
         os.getenv("OPENAPI_DOCS_ENABLED", "False").lower() == "true"
     )
     PDF_ALLOW_DETERMINISTIC_FALLBACK: bool = (
-        os.getenv("PDF_ALLOW_DETERMINISTIC_FALLBACK", "True").lower() == "true"
+        os.getenv(
+            "PDF_ALLOW_DETERMINISTIC_FALLBACK",
+            (
+                "False"
+                if os.getenv("ENVIRONMENT", "development").lower() != "development"
+                else "True"
+            ),
+        ).lower()
+        == "true"
     )
 
     # ===== PRODUCTION SECURITY SETTINGS =====

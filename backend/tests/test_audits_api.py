@@ -359,4 +359,4 @@ def test_run_pagespeed_failure_persists_runtime_diagnostic(
     assert diagnostics[0]["source"] == "pagespeed"
     assert diagnostics[0]["severity"] == "error"
     assert diagnostics[0]["code"] == "pagespeed_failed"
-    assert diagnostics[0]["technical_detail"] == "Connector is closed."
+    assert diagnostics[0]["technical_detail"] == "RuntimeError"

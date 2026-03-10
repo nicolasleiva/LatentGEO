@@ -192,6 +192,16 @@ def _persist_generation_warnings(
         )
 
 
+def _runtime_technical_detail(exc: Exception) -> str | None:
+    if isinstance(exc, HTTPException):
+        if isinstance(exc.detail, dict):
+            error_code = exc.detail.get("error_code")
+            if error_code:
+                return f"HTTPException:{error_code}"
+        return f"HTTPException:{exc.status_code}"
+    return type(exc).__name__
+
+
 def _resolve_signed_pdf_download_url(
     audit_id: int,
     db: Session,
@@ -495,9 +505,9 @@ def get_audit_overview(
         id=audit.id,
         url=audit.url,
         domain=audit.domain,
-        status=audit.status.value
-        if hasattr(audit.status, "value")
-        else str(audit.status),
+        status=(
+            audit.status.value if hasattr(audit.status, "value") else str(audit.status)
+        ),
         progress=int(round(audit.progress or 0)),
         created_at=audit.created_at,
         started_at=audit.started_at,
@@ -982,7 +992,7 @@ async def run_pagespeed_analysis(
             message=(
                 "PageSpeed analysis failed before performance data could be refreshed."
             ),
-            technical_detail=str(exc),
+            technical_detail=_runtime_technical_detail(exc),
         )
         raise HTTPException(status_code=500, detail="Internal server error")
 
@@ -1157,7 +1167,7 @@ async def generate_audit_pdf(
                 severity="error",
                 code="pdf_generation_http_error",
                 message="PDF generation failed before the report could be delivered.",
-                technical_detail=str(exc.detail),
+                technical_detail=_runtime_technical_detail(exc),
             )
         raise
     except (OperationalError, DBAPIError) as db_err:
@@ -1176,7 +1186,7 @@ async def generate_audit_pdf(
             severity="error",
             code="pdf_generation_failed",
             message="PDF generation failed before the report could be delivered.",
-            technical_detail=str(exc),
+            technical_detail=_runtime_technical_detail(exc),
         )
         raise HTTPException(status_code=500, detail="Internal server error")
     finally:

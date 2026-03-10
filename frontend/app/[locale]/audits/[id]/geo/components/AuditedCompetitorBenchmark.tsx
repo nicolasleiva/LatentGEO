@@ -48,16 +48,19 @@ export default function AuditedCompetitorBenchmark({
   const [error, setError] = useState<string | null>(null);
   const [summary, setSummary] = useState<BenchmarkSummary | null>(null);
   const [competitors, setCompetitors] = useState<AuditedCompetitor[]>([]);
-  const [hasFetched, setHasFetched] = useState(false);
+  const [fetchedKey, setFetchedKey] = useState<string | null>(null);
+  const requestKey = `${backendUrl}|${auditId}`;
 
   useEffect(() => {
-    if (!active || hasFetched) return;
+    if (!active || fetchedKey === requestKey) return;
 
     let ignore = false;
 
     const run = async () => {
       setLoading(true);
       setError(null);
+      setSummary(null);
+      setCompetitors([]);
       try {
         const [summaryRes, competitorsRes] = await Promise.all([
           fetchWithBackendAuth(
@@ -83,7 +86,7 @@ export default function AuditedCompetitorBenchmark({
         setCompetitors(
           Array.isArray(competitorsPayload) ? competitorsPayload : [],
         );
-        setHasFetched(true);
+        setFetchedKey(requestKey);
       } catch (err: any) {
         if (ignore) return;
         setError(err?.message || "Failed to load competitor benchmark");
@@ -99,7 +102,7 @@ export default function AuditedCompetitorBenchmark({
     return () => {
       ignore = true;
     };
-  }, [active, auditId, backendUrl, hasFetched]);
+  }, [active, auditId, backendUrl, fetchedKey, requestKey]);
 
   const chartRows = useMemo(() => {
     const rows = [

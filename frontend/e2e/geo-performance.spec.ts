@@ -166,6 +166,7 @@ test("GEO cards p95 stays below threshold", async ({ page }) => {
     const fullReportPath = path.resolve(reportPath);
     fs.mkdirSync(path.dirname(fullReportPath), { recursive: true });
     fs.writeFileSync(fullReportPath, JSON.stringify(report, null, 2), "utf-8");
+    test.skip(true, "No accessible audit found for performance E2E.");
     return;
   }
 

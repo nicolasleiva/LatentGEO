@@ -412,9 +412,9 @@ class AuditService:
                     else "audit_status_update"
                 ),
                 severity="error" if status == AuditStatus.FAILED else "warning",
-                code="audit_failed"
-                if status == AuditStatus.FAILED
-                else "audit_warning",
+                code=(
+                    "audit_failed" if status == AuditStatus.FAILED else "audit_warning"
+                ),
                 message=error_message,
                 commit=False,
             )
@@ -1168,7 +1168,7 @@ class AuditService:
 
             # DB-level defensive cleanup: remove or nullify every FK that points to audits.id.
             # This prevents FK violations for tables that do not have ORM cascade configured.
-            for table in Base.metadata.sorted_tables:
+            for table in reversed(Base.metadata.sorted_tables):
                 if table.name == Audit.__tablename__:
                     continue
 

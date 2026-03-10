@@ -1167,10 +1167,13 @@ def create_comprehensive_pdf(report_folder_path, metadata=None):
             if isinstance(metadata, dict) and metadata.get("report_title_prefix")
             else REPORT_TITLE_PREFIX
         )
-        cover_title = (
+        raw_cover_title = (
             str(metadata.get("cover_title")).strip()
-            if isinstance(metadata, dict) and metadata.get("cover_title")
-            else f"{report_title_prefix}\n{os.path.basename(report_folder_path)}"
+            if isinstance(metadata, dict) and metadata.get("cover_title") is not None
+            else ""
+        )
+        cover_title = raw_cover_title or (
+            f"{report_title_prefix}\n{os.path.basename(report_folder_path)}"
         )
 
         # --- Cover ---
@@ -1474,6 +1477,25 @@ def create_comprehensive_pdf(report_folder_path, metadata=None):
         pdf.add_page()
         pdf.begin_section("Appendix E: Individual Page Reports (Summary)", level=1)
 
+        def _safe_page_float(value, default=0.0):
+            if value in (None, ""):
+                return default
+            try:
+                return float(value)
+            except (TypeError, ValueError):
+                return default
+
+        def _safe_page_int(value, default=0):
+            if value in (None, ""):
+                return default
+            try:
+                return int(value)
+            except (TypeError, ValueError):
+                try:
+                    return int(float(value))
+                except (TypeError, ValueError):
+                    return default
+
         page_summaries = []
         for page_file in page_json_files:
             try:
@@ -1490,24 +1512,36 @@ def create_comprehensive_pdf(report_folder_path, metadata=None):
                 {
                     "page_file": page_file,
                     "page_data": page_data,
-                    "url": str(page_data.get("url") or "n/a")
-                    if isinstance(page_data, dict)
-                    else "n/a",
-                    "overall_score": float(page_data.get("overall_score") or 0)
-                    if isinstance(page_data, dict)
-                    else 0.0,
-                    "critical_issues": int(page_data.get("critical_issues") or 0)
-                    if isinstance(page_data, dict)
-                    else 0,
-                    "high_issues": int(page_data.get("high_issues") or 0)
-                    if isinstance(page_data, dict)
-                    else 0,
-                    "schema_score": float(page_data.get("schema_score") or 0)
-                    if isinstance(page_data, dict)
-                    else 0.0,
-                    "eeat_score": float(page_data.get("eeat_score") or 0)
-                    if isinstance(page_data, dict)
-                    else 0.0,
+                    "url": (
+                        str(page_data.get("url") or "n/a")
+                        if isinstance(page_data, dict)
+                        else "n/a"
+                    ),
+                    "overall_score": (
+                        _safe_page_float(page_data.get("overall_score"))
+                        if isinstance(page_data, dict)
+                        else 0.0
+                    ),
+                    "critical_issues": (
+                        _safe_page_int(page_data.get("critical_issues"))
+                        if isinstance(page_data, dict)
+                        else 0
+                    ),
+                    "high_issues": (
+                        _safe_page_int(page_data.get("high_issues"))
+                        if isinstance(page_data, dict)
+                        else 0
+                    ),
+                    "schema_score": (
+                        _safe_page_float(page_data.get("schema_score"))
+                        if isinstance(page_data, dict)
+                        else 0.0
+                    ),
+                    "eeat_score": (
+                        _safe_page_float(page_data.get("eeat_score"))
+                        if isinstance(page_data, dict)
+                        else 0.0
+                    ),
                 }
             )
 

@@ -480,7 +480,14 @@ class GeoCommerceService:
                 root_page = page
                 break
         if root_page is None:
-            root_page = pages[0]
+            root_page = min(
+                pages,
+                key=lambda page: (
+                    str(page.path or ""),
+                    str(page.url or ""),
+                    int(getattr(page, "id", 0) or 0),
+                ),
+            )
 
         return {
             "path": root_page.path or "/",
@@ -628,7 +635,7 @@ class GeoCommerceService:
 
     @staticmethod
     def _build_merchandising_fixes(
-        product_data: Dict[str, Any]
+        product_data: Dict[str, Any],
     ) -> List[Dict[str, str]]:
         if not product_data.get("is_ecommerce"):
             return []
@@ -684,9 +691,11 @@ class GeoCommerceService:
             example = str(gap.get("example") or "").strip()
             fixes.append(
                 {
-                    "priority": "P2"
-                    if str(gap.get("priority") or "").lower() == "medium"
-                    else "P1",
+                    "priority": (
+                        "P2"
+                        if str(gap.get("priority") or "").lower() == "medium"
+                        else "P1"
+                    ),
                     "action": str(
                         gap.get("description")
                         or "Close the observed product content gap."
