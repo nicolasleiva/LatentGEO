@@ -248,6 +248,9 @@ class Settings(BaseSettings):
     AUTH0_JWKS_FETCH_TIMEOUT_MS: int = int(
         os.getenv("AUTH0_JWKS_FETCH_TIMEOUT_MS", "2000")
     )
+    AUTH0_ADMIN_EMAILS: list[str] = []
+    AUTH0_ADMIN_ROLE_NAMES: list[str] = []
+    AUTH0_ADMIN_PERMISSIONS: list[str] = []
     cors_origins: Optional[str] = None
     CORS_ORIGINS: list[str] = []
 
@@ -305,7 +308,13 @@ class Settings(BaseSettings):
     FRONTEND_URL: Optional[str] = os.getenv("FRONTEND_URL")
 
     @field_validator(
-        "CORS_ORIGINS", "TRUSTED_HOSTS", "FORWARDED_ALLOW_IPS", mode="before"
+        "CORS_ORIGINS",
+        "TRUSTED_HOSTS",
+        "FORWARDED_ALLOW_IPS",
+        "AUTH0_ADMIN_EMAILS",
+        "AUTH0_ADMIN_ROLE_NAMES",
+        "AUTH0_ADMIN_PERMISSIONS",
+        mode="before",
     )
     @classmethod
     def _normalize_list_fields(cls, value: Any) -> list[str]:
@@ -391,7 +400,6 @@ def validate_environment():
         or is_production
         or not settings.AUDIT_LOCAL_ARTIFACTS_ENABLED
     )
-
     def require(value, name):
         if not value:
             errors.append(f"{name} is missing!")

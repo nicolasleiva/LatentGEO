@@ -1,5 +1,6 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
+import { isAdminOnlyPath, isAdminSessionUser } from "./lib/admin";
 import { auth0 } from "./lib/auth0";
 
 // EN-first strategy
@@ -41,6 +42,13 @@ export async function proxy(request: NextRequest) {
     return NextResponse.next();
   }
 
+  if (
+    pathname === "/integrations/github/callback" ||
+    pathname.startsWith("/integrations/github/callback/")
+  ) {
+    return NextResponse.next();
+  }
+
   // 2. Skip middleware for static files and internal paths
   if (
     pathname.startsWith("/_next") ||
@@ -51,6 +59,37 @@ export async function proxy(request: NextRequest) {
     pathname.includes(".")
   ) {
     return NextResponse.next();
+  }
+
+  if (isAdminOnlyPath(pathname)) {
+    try {
+      const session = await auth0.getSession(request);
+      if (!session?.user) {
+        const loginUrl = request.nextUrl.clone();
+        loginUrl.pathname = "/auth/login";
+        loginUrl.search = "";
+        loginUrl.searchParams.set(
+          "returnTo",
+          `${pathname}${request.nextUrl.search || ""}`,
+        );
+        return NextResponse.redirect(loginUrl, 302);
+      }
+
+      const sessionUser =
+        typeof session.user === "object"
+          ? (session.user as Record<string, unknown>)
+          : null;
+      if (!isAdminSessionUser(sessionUser)) {
+        const forbiddenUrl = request.nextUrl.clone();
+        forbiddenUrl.pathname = `/${defaultLocale}`;
+        forbiddenUrl.search = "";
+        forbiddenUrl.searchParams.set("forbidden", "admin");
+        return NextResponse.redirect(forbiddenUrl, 302);
+      }
+    } catch (error) {
+      console.error("Admin route authorization failed:", error);
+      return NextResponse.redirect(new URL("/auth/login", request.url), 302);
+    }
   }
 
   // 3. Handle active locale directly

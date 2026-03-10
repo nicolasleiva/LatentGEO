@@ -16,15 +16,19 @@ type Auth0UserSummary = {
 
 type Auth0StatusResponse = {
   authenticated: boolean;
+  is_admin?: boolean;
   user: Auth0UserSummary | null;
 };
 
 type AppAuthState = {
   loading: boolean;
+  authenticated: boolean;
   // Legacy alias kept to avoid broad UI churn after dual-auth removal.
   supabase_ok: boolean;
   auth0_ok: boolean;
   ready: boolean;
+  is_admin: boolean;
+  forbidden: boolean;
   // Legacy slot kept for compatibility.
   supabase_user: null;
   auth0_user: Auth0UserSummary | null;
@@ -32,9 +36,12 @@ type AppAuthState = {
 
 const emptyState: AppAuthState = {
   loading: true,
+  authenticated: false,
   supabase_ok: false,
   auth0_ok: false,
   ready: false,
+  is_admin: false,
+  forbidden: false,
   supabase_user: null,
   auth0_user: null,
 };
@@ -69,33 +76,6 @@ const buildAuth0LoginUrl = (returnTo?: string): string => {
 };
 
 const fetchAuth0Status = async (): Promise<Auth0StatusResponse> => {
-  // Primary source: Auth0 SDK profile endpoint.
-  try {
-    const response = await fetch("/auth/profile", {
-      method: "GET",
-      credentials: "include",
-      cache: "no-store",
-      headers: { Accept: "application/json" },
-    });
-
-    if (response.ok) {
-      const payload = (await response.json()) as Partial<Auth0UserSummary>;
-      return {
-        authenticated: true,
-        user: {
-          sub: typeof payload.sub === "string" ? payload.sub : undefined,
-          email: typeof payload.email === "string" ? payload.email : undefined,
-          name: typeof payload.name === "string" ? payload.name : undefined,
-          picture:
-            typeof payload.picture === "string" ? payload.picture : undefined,
-        },
-      };
-    }
-  } catch {
-    // Fallback below.
-  }
-
-  // Fallback: internal status endpoint
   try {
     const response = await fetch("/api/auth/status", {
       method: "GET",
@@ -109,6 +89,7 @@ const fetchAuth0Status = async (): Promise<Auth0StatusResponse> => {
     const payload = (await response.json()) as Partial<Auth0StatusResponse>;
     return {
       authenticated: payload.authenticated === true,
+      is_admin: payload.is_admin === true,
       user: payload.user ?? null,
     };
   } catch {
@@ -125,9 +106,12 @@ export const useAppAuthState = (): AppAuthState => {
 
     setState({
       loading: false,
+      authenticated,
       supabase_ok: authenticated,
       auth0_ok: authenticated,
       ready: authenticated,
+      is_admin: auth0Result.is_admin === true,
+      forbidden: false,
       supabase_user: null,
       auth0_user: auth0Result.user,
     });
@@ -140,9 +124,23 @@ export const useAppAuthState = (): AppAuthState => {
   return state;
 };
 
-export const useRequireAppAuth = (signinPath = SIGNIN_PATH): AppAuthState => {
+export const useRequireAppAuth = ({
+  signinPath = SIGNIN_PATH,
+  requireAdmin = false,
+}: {
+  signinPath?: string;
+  requireAdmin?: boolean;
+} = {}): AppAuthState => {
   const router = useRouter();
   const auth = useAppAuthState();
+
+  const guardedAuth = useMemo(
+    () => ({
+      ...auth,
+      forbidden: requireAdmin && auth.authenticated && !auth.is_admin,
+    }),
+    [auth, requireAdmin],
+  );
 
   useEffect(() => {
     if (auth.loading || auth.ready || typeof window === "undefined") return;
@@ -169,7 +167,7 @@ export const useRequireAppAuth = (signinPath = SIGNIN_PATH): AppAuthState => {
     return () => window.clearTimeout(timer);
   }, [auth.loading, auth.ready, router, signinPath]);
 
-  return auth;
+  return guardedAuth;
 };
 
 export const useCombinedProfile = (auth: AppAuthState) => {

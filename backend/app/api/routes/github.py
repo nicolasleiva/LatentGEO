@@ -9,7 +9,15 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 from urllib.parse import urlparse
 
-from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Request
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    Header,
+    HTTPException,
+    Query,
+    Request,
+)
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy.orm import Session
 
@@ -23,7 +31,11 @@ from ...core.config import settings
 from ...core.database import get_db
 from ...core.llm_kimi import KimiGenerationError, KimiUnavailableError, get_llm_function
 from ...core.logger import get_logger
-from ...core.oauth_state import build_oauth_state, validate_oauth_state
+from ...core.oauth_state import (
+    build_oauth_state,
+    normalize_oauth_return_to,
+    validate_oauth_state,
+)
 from ...integrations.github.oauth import GitHubOAuth
 from ...integrations.github.service import GitHubService
 from ...models.github import (
@@ -94,6 +106,13 @@ class ConnectResponse(BaseModel):
 class CallbackRequest(BaseModel):
     code: str
     state: Optional[str] = None
+
+
+class CallbackResponse(BaseModel):
+    status: str
+    connection_id: str
+    username: str
+    return_to: Optional[str] = None
 
 
 class RepositoryResponse(BaseModel):
@@ -209,32 +228,50 @@ def _build_chat_fallback(field_label: str, issue_code: str, placeholder: str) ->
 
 
 @router.get("/auth-url", response_model=ConnectResponse)
-def get_auth_url(current_user: AuthUser = Depends(get_current_user)):
+def get_auth_url(
+    return_to: Optional[str] = Query(default=None),
+    current_user: AuthUser = Depends(get_current_user),
+):
     """Obtiene URL para iniciar OAuth con GitHub"""
     try:
-        state = build_oauth_state("github", current_user)
+        state = build_oauth_state(
+            "github",
+            current_user,
+            return_to=normalize_oauth_return_to(return_to),
+        )
         data = GitHubOAuth.get_authorization_url(state=state)
         return data
+    except HTTPException:
+        raise
     except Exception:
         logger.exception("Error generating GitHub auth URL")
         raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.get("/oauth/authorize")
-def oauth_authorize(current_user: AuthUser = Depends(get_current_user)):
+def oauth_authorize(
+    return_to: Optional[str] = Query(default=None),
+    current_user: AuthUser = Depends(get_current_user),
+):
     """Redirige directamente a GitHub OAuth (para compatibilidad con frontend)"""
     from fastapi.responses import RedirectResponse
 
     try:
-        state = build_oauth_state("github", current_user)
+        state = build_oauth_state(
+            "github",
+            current_user,
+            return_to=normalize_oauth_return_to(return_to),
+        )
         auth_data = GitHubOAuth.get_authorization_url(state=state)
         return RedirectResponse(url=auth_data["url"])
+    except HTTPException:
+        raise
     except Exception:
         logger.exception("Error redirecting to GitHub OAuth")
         raise HTTPException(status_code=500, detail="Internal server error")
 
 
-@router.post("/callback")
+@router.post("/callback", response_model=CallbackResponse)
 async def oauth_callback(
     request: CallbackRequest,
     background_tasks: BackgroundTasks,
@@ -243,7 +280,8 @@ async def oauth_callback(
 ):
     """Maneja callback de OAuth"""
     try:
-        validate_oauth_state(request.state or "", "github", current_user)
+        state_payload = validate_oauth_state(request.state or "", "github", current_user)
+        return_to = state_payload.get("return_to")
 
         # 1. Exchange code for token
         token_data = await GitHubOAuth.exchange_code(request.code)
@@ -267,6 +305,7 @@ async def oauth_callback(
             "status": "success",
             "connection_id": connection.id,
             "username": connection.github_username,
+            "return_to": return_to,
         }
 
     except HTTPException:
