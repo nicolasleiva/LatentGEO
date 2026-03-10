@@ -1,24 +1,16 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import HomePage from "@/app/[locale]/page";
+import HomePageClient from "@/app/[locale]/HomePageClient";
 import { usePathname, useRouter } from "next/navigation";
-import { useCombinedProfile, useRequireAppAuth } from "@/lib/app-auth";
-import { createAudit, listAudits } from "@/lib/api-client";
+import { createAudit } from "@/lib/api-client";
 
 vi.mock("next/navigation", () => ({
   useRouter: vi.fn(),
   usePathname: vi.fn(),
 }));
 
-vi.mock("@/lib/app-auth", () => ({
-  useRequireAppAuth: vi.fn(),
-  useCombinedProfile: vi.fn(),
-}));
-
 vi.mock("@/lib/api-client", () => ({
   createAudit: vi.fn(),
-  listAudits: vi.fn(),
 }));
 
 vi.mock("@/components/header", () => ({
@@ -26,21 +18,21 @@ vi.mock("@/components/header", () => ({
 }));
 
 const mockPush = vi.fn();
-
-const renderPage = () => {
-  const queryClient = new QueryClient({
-    defaultOptions: {
-      queries: { retry: false },
-      mutations: { retry: false },
-    },
-  });
-
-  return render(
-    <QueryClientProvider client={queryClient}>
-      <HomePage />
-    </QueryClientProvider>,
-  );
+const defaultViewer = {
+  id: "auth0|user-1",
+  email: "test@example.com",
+  name: "Test User",
+  picture: null,
 };
+
+const renderPage = (initialAudits: any[] = []) =>
+  render(
+    <HomePageClient
+      initialAudits={initialAudits}
+      locale="en"
+      viewer={defaultViewer}
+    />,
+  );
 
 describe("HomePage", () => {
   beforeEach(() => {
@@ -49,19 +41,6 @@ describe("HomePage", () => {
     window.sessionStorage.clear();
     (useRouter as jest.Mock).mockReturnValue({ push: mockPush });
     (usePathname as jest.Mock).mockReturnValue("/en");
-    (useRequireAppAuth as jest.Mock).mockReturnValue({
-      loading: false,
-      ready: true,
-      supabase_ok: true,
-      auth0_ok: true,
-    });
-    (useCombinedProfile as jest.Mock).mockReturnValue({
-      id: "user-1",
-      email: "test@example.com",
-      name: "Test User",
-      picture: null,
-    });
-    (listAudits as jest.Mock).mockResolvedValue([]);
     (createAudit as jest.Mock).mockResolvedValue({ id: 99 });
   });
 
@@ -130,12 +109,6 @@ describe("HomePage", () => {
 
   it("accepts a domain without protocol and normalizes it to https", async () => {
     const user = userEvent.setup();
-    (useCombinedProfile as jest.Mock).mockReturnValue({
-      id: "auth0|user-456",
-      email: "test@example.com",
-      name: "Test User",
-      picture: null,
-    });
 
     renderPage();
 
@@ -154,13 +127,7 @@ describe("HomePage", () => {
   });
 
   it("loads recent audits for authenticated users", async () => {
-    (useCombinedProfile as jest.Mock).mockReturnValue({
-      id: "auth0|user-123",
-      email: "test@example.com",
-      name: "Test User",
-      picture: null,
-    });
-    (listAudits as jest.Mock).mockResolvedValue([
+    renderPage([
       {
         id: 42,
         url: "https://example.com",
@@ -171,11 +138,6 @@ describe("HomePage", () => {
       },
     ]);
 
-    renderPage();
-
-    await waitFor(() => {
-      expect(listAudits).toHaveBeenCalled();
-    });
     expect(await screen.findByText(/^example\.com$/i)).toBeInTheDocument();
   });
 });
