@@ -94,7 +94,7 @@ def test_validate_environment_enforces_release_strict_pdf_flag(monkeypatch):
     monkeypatch.setattr(
         settings,
         "DATABASE_URL",
-        "postgresql://user:pass@db.supabase.co:5432/app",
+        "postgresql://db.supabase.co:5432/app",
         raising=False,
     )
     monkeypatch.setattr(settings, "AUTH0_API_AUDIENCE", "https://api.example.com")
