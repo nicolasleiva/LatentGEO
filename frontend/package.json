@@ -16,7 +16,8 @@
     "perf:e2e": "playwright test e2e/geo-performance.spec.ts",
     "perf:e2e:install": "playwright install --with-deps chromium",
     "quality:web:full": "node ./scripts/lighthouse-full-auth.mjs",
-    "start": "next start",
+    "release:smoke:e2e": "playwright test e2e/release-smoke.spec.ts",
+    "start": "node ./scripts/start-standalone.mjs",
     "test": "vitest",
     "test:ci": "vitest run --reporter=default",
     "type-check": "tsc -p tsconfig.typecheck.json --noEmit --incremental false"

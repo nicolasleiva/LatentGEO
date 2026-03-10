@@ -53,6 +53,7 @@ htmlcov/
 # ===================================================================
 .env
 .env.*
+!.env.example
 *.env.local
 scripts/aws/staging/config.env
 
@@ -112,6 +113,7 @@ test_output.txt
 security_test_output.txt
 worker_logs.txt
 nul
+artifacts/
 
 # ===================================================================
 # MyPy (Type checker)

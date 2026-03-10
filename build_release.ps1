@@ -53,7 +53,6 @@ $dotEnvMap = Get-DotEnvMap -Path $dotenvPath
 
 $requiredBuildVars = @(
     "NEXT_PUBLIC_API_URL",
-    "NEXT_PUBLIC_BACKEND_URL",
     "NEXT_PUBLIC_AUTH0_API_AUDIENCE"
 )
 
@@ -80,6 +79,11 @@ if ([string]::IsNullOrWhiteSpace($auth0Scopes)) {
     $auth0Scopes = "read:app"
 }
 
+$allowLocalhostApiOrigin = Resolve-ConfigValue -Name "ALLOW_LOCALHOST_API_ORIGIN" -DotEnvMap $dotEnvMap
+if ([string]::IsNullOrWhiteSpace($allowLocalhostApiOrigin)) {
+    $allowLocalhostApiOrigin = "0"
+}
+
 # 1. Compilar Backend (y Worker)
 Write-Host "Compilando Backend..."
 docker build -t auditor_geo-backend:latest -f Dockerfile.backend .
@@ -91,7 +95,7 @@ docker build `
   -t auditor_geo-frontend:latest `
   -f Dockerfile.frontend `
   --build-arg "NEXT_PUBLIC_API_URL=$($resolved["NEXT_PUBLIC_API_URL"])" `
-  --build-arg "NEXT_PUBLIC_BACKEND_URL=$($resolved["NEXT_PUBLIC_BACKEND_URL"])" `
+  --build-arg "ALLOW_LOCALHOST_API_ORIGIN=$allowLocalhostApiOrigin" `
   --build-arg "NEXT_PUBLIC_AUTH0_API_AUDIENCE=$($resolved["NEXT_PUBLIC_AUTH0_API_AUDIENCE"])" `
   --build-arg "NEXT_PUBLIC_AUTH0_API_SCOPES=$auth0Scopes" `
   .

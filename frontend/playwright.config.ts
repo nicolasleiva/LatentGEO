@@ -1,6 +1,6 @@
 import { defineConfig, devices } from "@playwright/test";
 
-const baseURL = process.env.PERF_BASE_URL || "http://127.0.0.1:3000";
+const baseURL = process.env.PERF_BASE_URL || "http://localhost:3000";
 const storageState = process.env.PERF_STORAGE_STATE_PATH || undefined;
 
 export default defineConfig({

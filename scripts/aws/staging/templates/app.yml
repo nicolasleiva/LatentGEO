@@ -178,6 +178,12 @@ Resources:
               ValueFrom: !Sub '${AppSecretArn}:TRUSTED_HOSTS::'
             - Name: FRONTEND_URL
               ValueFrom: !Sub '${AppSecretArn}:FRONTEND_URL::'
+            - Name: OPENAPI_DOCS_ENABLED
+              ValueFrom: !Sub '${AppSecretArn}:OPENAPI_DOCS_ENABLED::'
+            - Name: WEB_CONCURRENCY
+              ValueFrom: !Sub '${AppSecretArn}:WEB_CONCURRENCY::'
+            - Name: PDF_ALLOW_DETERMINISTIC_FALLBACK
+              ValueFrom: !Sub '${AppSecretArn}:PDF_ALLOW_DETERMINISTIC_FALLBACK::'
           LogConfiguration:
             LogDriver: awslogs
             Options:
@@ -209,8 +215,6 @@ Resources:
           Secrets:
             - Name: NEXT_PUBLIC_API_URL
               ValueFrom: !Sub '${AppSecretArn}:NEXT_PUBLIC_API_URL::'
-            - Name: NEXT_PUBLIC_BACKEND_URL
-              ValueFrom: !Sub '${AppSecretArn}:NEXT_PUBLIC_BACKEND_URL::'
             - Name: API_URL
               ValueFrom: !Sub '${AppSecretArn}:API_URL::'
             - Name: APP_BASE_URL
@@ -277,6 +281,8 @@ Resources:
               ValueFrom: !Sub '${AppSecretArn}:WEBHOOK_SECRET::'
             - Name: BACKEND_INTERNAL_JWT_SECRET
               ValueFrom: !Sub '${AppSecretArn}:BACKEND_INTERNAL_JWT_SECRET::'
+            - Name: PDF_ALLOW_DETERMINISTIC_FALLBACK
+              ValueFrom: !Sub '${AppSecretArn}:PDF_ALLOW_DETERMINISTIC_FALLBACK::'
           LogConfiguration:
             LogDriver: awslogs
             Options:

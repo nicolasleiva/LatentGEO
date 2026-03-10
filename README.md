@@ -55,7 +55,6 @@ Backend:
 Frontend/Compose:
 - `API_URL=http://backend:8000` (server-side en contenedor)
 - `NEXT_PUBLIC_API_URL=http://localhost:8000`
-- `NEXT_PUBLIC_BACKEND_URL=http://localhost:8000`
 
 ## Documentacion relacionada
 - `QUICK_START.md`

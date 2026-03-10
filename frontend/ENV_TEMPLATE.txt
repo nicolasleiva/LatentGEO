@@ -19,9 +19,17 @@ NEXT_PUBLIC_AUTH0_API_SCOPES=read:app
 
 # Backend API URLs
 NEXT_PUBLIC_API_URL=http://localhost:8000
-NEXT_PUBLIC_BACKEND_URL=http://localhost:8000
 API_URL=http://backend:8000
 
 # Backend runtime policy (set in root .env)
 # AUDIT_LOCAL_ARTIFACTS_ENABLED=false
+# OPENAPI_DOCS_ENABLED=false
+# PDF_ALLOW_DETERMINISTIC_FALLBACK=false
 # LEGACY_API_REDIRECT_ENABLED=false
+# WEB_CONCURRENCY=2
+
+# Release certification (staging/prod)
+# SMOKE_BASE_URL=https://staging.your-domain.com
+# SMOKE_BEARER_TOKEN=machine-or-staging-bearer-token
+# PERF_AUTH_EMAIL=qa-user@example.com
+# PERF_AUTH_PASSWORD=change-me
