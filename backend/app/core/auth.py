@@ -42,6 +42,7 @@ _ALLOW_INTERNAL_TEST_JWT_ENV = "ALLOW_INTERNAL_TEST_JWT"
 _jwks_lock = threading.Lock()
 _jwks_cache: dict[str, Any] = {"keys_by_kid": {}, "expires_at": 0.0}
 _auth_failure_counts: Counter[str] = Counter()
+_DEFAULT_ADMIN_ROLE_NAMES = frozenset({"admin", "ops-admin"})
 
 
 @dataclass(frozen=True)
@@ -499,7 +500,7 @@ def user_is_admin(user: AuthUser) -> bool:
         for item in settings.AUTH0_ADMIN_ROLE_NAMES
         if isinstance(item, str) and item.strip()
     }
-    admin_roles = configured_roles or {"admin", "ops-admin"}
+    admin_roles = configured_roles or _DEFAULT_ADMIN_ROLE_NAMES
     if any(role in admin_roles for role in user.roles):
         return True
 
