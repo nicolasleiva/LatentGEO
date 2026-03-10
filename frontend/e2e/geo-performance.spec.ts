@@ -60,6 +60,12 @@ const isRedirectAbort = (error: unknown) => {
   return message.includes("net::ERR_ABORTED");
 };
 
+const isAuthUrl = (value: string) =>
+  value.includes("/signin") ||
+  value.includes("/auth/login") ||
+  value.includes("/authorize") ||
+  value.includes("/u/login");
+
 const navigateWithAuthRedirectTolerance = async (
   page: Page,
   target: string,
@@ -78,6 +84,7 @@ const ensureAuthenticated = async (basePath: string, page: Page) => {
   await navigateWithAuthRedirectTolerance(page, basePathUrl);
   const toolCard = page.getByTestId("geo-tool-card-dashboard");
   if (await toolCard.isVisible().catch(() => false)) return;
+  if (!isAuthUrl(page.url())) return;
 
   if (!authEmail || !authPassword) {
     throw new Error(
@@ -107,18 +114,9 @@ const ensureAuthenticated = async (basePath: string, page: Page) => {
     )
     .first();
   await submitButton.click();
-  await page.waitForURL(
-    (url) => {
-      const value = url.toString();
-      return (
-        !value.includes("/signin") &&
-        !value.includes("/auth/login") &&
-        !value.includes("/authorize") &&
-        !value.includes("/u/login")
-      );
-    },
-    { timeout: 45_000 },
-  );
+  await page.waitForURL((url) => !isAuthUrl(url.toString()), {
+    timeout: 45_000,
+  });
   await navigateWithAuthRedirectTolerance(page, basePathUrl);
 };
 
@@ -130,10 +128,25 @@ const waitForGeoToolSuite = async (page: Page) => {
 
 const discoverAuditId = async (page: Page) => {
   if (auditId) {
-    return auditId;
+    const auditPathUrl = new URL(
+      `/${locale}/audits/${auditId}`,
+      baseUrl,
+    ).toString();
+    await page.goto(auditPathUrl, { waitUntil: "domcontentloaded" });
+    if (
+      await page
+        .getByTestId("geo-tool-card-dashboard")
+        .isVisible()
+        .catch(() => false)
+    ) {
+      return auditId;
+    }
+    return "";
   }
 
-  await page.goto(`/${locale}/audits`, { waitUntil: "domcontentloaded" });
+  await page.goto(new URL(`/${locale}/audits`, baseUrl).toString(), {
+    waitUntil: "domcontentloaded",
+  });
   const text = await page
     .locator("text=/Audit #\\d+/")
     .first()
@@ -173,7 +186,9 @@ test("GEO cards p95 stays below threshold", async ({ page }) => {
   }
 
   const auditPath = `/${locale}/audits/${effectiveAuditId}`;
-  await page.goto(auditPath, { waitUntil: "domcontentloaded" });
+  await page.goto(new URL(auditPath, baseUrl).toString(), {
+    waitUntil: "domcontentloaded",
+  });
   await waitForGeoToolSuite(page);
 
   const results: ScenarioResult[] = [];
@@ -181,7 +196,9 @@ test("GEO cards p95 stays below threshold", async ({ page }) => {
   for (const scenario of scenarios) {
     const durations: number[] = [];
     for (let i = 0; i < samples; i += 1) {
-      await page.goto(auditPath, { waitUntil: "domcontentloaded" });
+      await page.goto(new URL(auditPath, baseUrl).toString(), {
+        waitUntil: "domcontentloaded",
+      });
       await waitForGeoToolSuite(page);
       const card = page.getByTestId(scenario.cardTestId);
       await expect(card).toBeVisible();

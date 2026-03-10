@@ -483,7 +483,8 @@ class GeoCommerceService:
             root_page = min(
                 pages,
                 key=lambda page: (
-                    str(page.path or ""),
+                    0 if page.path else 1,
+                    str(page.path or "/"),
                     str(page.url or ""),
                     int(getattr(page, "id", 0) or 0),
                 ),

@@ -555,7 +555,7 @@ export default function CommerceCampaign({
                 Product footprint
               </p>
               <p className="text-2xl font-bold text-foreground">
-                {result.product_intelligence?.product_pages_count ?? 0}
+                {result.product_intelligence?.product_pages_count ?? "n/a"}
               </p>
               <p className="text-xs text-muted-foreground mt-1">
                 Platform: {platformLabel || "unknown"}
@@ -615,8 +615,8 @@ export default function CommerceCampaign({
                     </p>
                     <p className="text-xs text-muted-foreground mt-2">
                       Critical issues:{" "}
-                      {result.site_root_summary.critical_issues ?? 0} · High:{" "}
-                      {result.site_root_summary.high_issues ?? 0}
+                      {result.site_root_summary.critical_issues ?? "n/a"} ·
+                      High: {result.site_root_summary.high_issues ?? "n/a"}
                     </p>
                   </div>
                 </div>
@@ -638,7 +638,11 @@ export default function CommerceCampaign({
                     Ecommerce detected
                   </p>
                   <p className="text-base font-semibold text-foreground mt-1">
-                    {result.product_intelligence?.is_ecommerce ? "Yes" : "No"}
+                    {result.product_intelligence == null
+                      ? "Unknown"
+                      : result.product_intelligence.is_ecommerce
+                        ? "Yes"
+                        : "No"}
                   </p>
                 </div>
                 <div className="border border-border rounded-lg p-4 bg-muted/40">

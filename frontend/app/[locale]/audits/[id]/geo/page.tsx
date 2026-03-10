@@ -717,6 +717,7 @@ export default function GEODashboardPage() {
                 </div>
               </div>
               <ArticleEngine
+                key={`${auditId}-${articleCountPreset ?? "default"}`}
                 auditId={Number(auditId)}
                 backendUrl={backendUrl}
                 initialArticleCount={articleCountPreset}

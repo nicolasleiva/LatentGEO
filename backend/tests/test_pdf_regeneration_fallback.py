@@ -2,6 +2,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from app.core.config import settings
 from app.services.pdf_service import PDFService
 
 
@@ -97,6 +98,8 @@ async def test_pdf_generation_uses_deterministic_fallback_when_llm_fails():
     ), patch(
         "app.services.pdf_service.PDFService._load_saved_report_signature",
         return_value="sig-match",
+    ), patch.object(
+        settings, "PDF_ALLOW_DETERMINISTIC_FALLBACK", True
     ), patch(
         "app.services.pdf_service.PDFService.generate_comprehensive_pdf",
         new_callable=AsyncMock,
@@ -208,6 +211,8 @@ async def test_pdf_generation_uses_deterministic_fallback_without_cached_markdow
         "app.services.pipeline_service.PipelineService.generate_report",
         new_callable=AsyncMock,
         side_effect=RuntimeError("LLM unavailable"),
+    ), patch.object(
+        settings, "PDF_ALLOW_DETERMINISTIC_FALLBACK", True
     ), patch(
         "app.services.pdf_service.PDFService.generate_comprehensive_pdf",
         new_callable=AsyncMock,
@@ -287,6 +292,8 @@ async def test_pdf_generation_marks_incomplete_context_without_calling_llm():
         "app.services.pdf_service.PDFService.generate_comprehensive_pdf",
         new_callable=AsyncMock,
         return_value="dummy.pdf",
+    ), patch.object(
+        settings, "PDF_ALLOW_DETERMINISTIC_FALLBACK", True
     ):
         result = await PDFService.generate_pdf_with_complete_context(
             mock_db, 3, return_details=True

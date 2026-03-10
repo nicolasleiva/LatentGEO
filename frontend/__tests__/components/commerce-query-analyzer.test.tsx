@@ -14,7 +14,9 @@ describe("Commerce query analyzer", () => {
   });
 
   it("sends query+market payload and renders why_not_first/action_plan output", async () => {
-    (fetchWithBackendAuth as jest.Mock)
+    const fetchWithBackendAuthMock = vi.mocked(fetchWithBackendAuth);
+
+    fetchWithBackendAuthMock
       .mockResolvedValueOnce({
         ok: true,
         status: 200,
@@ -145,7 +147,7 @@ describe("Commerce query analyzer", () => {
       expect(fetchWithBackendAuth).toHaveBeenCalledTimes(2);
     });
 
-    const secondCall = (fetchWithBackendAuth as jest.Mock).mock.calls[1];
+    const secondCall = fetchWithBackendAuthMock.mock.calls[1];
     const requestBody = JSON.parse(secondCall[1].body as string);
     expect(requestBody).toMatchObject({
       audit_id: 3,

@@ -580,7 +580,7 @@ def validate_environment():
             f"  ERR: {error}" for error in errors
         )
         logger.error(error_message)
-        if strict:
+        if strict or release_strict:
             raise RuntimeError(error_message)
 
     logger.info("OK: Environment validation complete")

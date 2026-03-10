@@ -1482,7 +1482,7 @@ def create_comprehensive_pdf(report_folder_path, metadata=None):
                 return default
             try:
                 return float(value)
-            except (TypeError, ValueError):
+            except (TypeError, ValueError, OverflowError):
                 return default
 
         def _safe_page_int(value, default=0):
@@ -1490,10 +1490,10 @@ def create_comprehensive_pdf(report_folder_path, metadata=None):
                 return default
             try:
                 return int(value)
-            except (TypeError, ValueError):
+            except (TypeError, ValueError, OverflowError):
                 try:
                     return int(float(value))
-                except (TypeError, ValueError):
+                except (TypeError, ValueError, OverflowError):
                     return default
 
         page_summaries = []
