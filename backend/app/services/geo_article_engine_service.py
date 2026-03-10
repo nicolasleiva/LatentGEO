@@ -12,6 +12,7 @@ Strict GEO/SEO article engine:
 
 from __future__ import annotations
 
+import inspect
 import json
 import re
 from datetime import datetime, timezone
@@ -1480,12 +1481,12 @@ class GeoArticleEngineService:
         )
         serp_results: List[Dict[str, Any]] = []
         external_from_serp: List[Dict[str, Any]] = []
-        top_competitors: List[Dict[str, Any]] = (
-            GeoArticleEngineService._extract_competitors_from_audit(
-                audit=audit,
-                audit_domain=audit_domain,
-                vertical_hint=vertical_hint,
-            )
+        top_competitors: List[
+            Dict[str, Any]
+        ] = GeoArticleEngineService._extract_competitors_from_audit(
+            audit=audit,
+            audit_domain=audit_domain,
+            vertical_hint=vertical_hint,
         )
         inferred_intent = ""
         secondary_keywords: List[str] = []
@@ -2158,6 +2159,27 @@ class GeoArticleEngineService:
         return "KIMI_TIMEOUT" in code or "KIMI_TIMEOUT" in message
 
     @staticmethod
+    def _llm_supports_timeout_seconds(llm_function: callable) -> bool:
+        try:
+            signature = inspect.signature(llm_function)
+        except (TypeError, ValueError):
+            return False
+
+        parameters = signature.parameters.values()
+        if any(param.kind == inspect.Parameter.VAR_KEYWORD for param in parameters):
+            return True
+        return "timeout_seconds" in signature.parameters
+
+    @staticmethod
+    def _resolve_article_llm_timeout_seconds() -> float:
+        configured_timeout = float(
+            getattr(settings, "GEO_ARTICLE_LLM_TIMEOUT_SECONDS", 0) or 0
+        )
+        if configured_timeout > 0:
+            return configured_timeout
+        return float(getattr(settings, "NVIDIA_TIMEOUT_SECONDS", 300))
+
+    @staticmethod
     def _persist_batch_progress(
         db: Session,
         *,
@@ -2209,6 +2231,33 @@ class GeoArticleEngineService:
         llm_function = get_llm_function()
         if llm_function is None:
             raise KimiUnavailableError("Kimi provider function is unavailable.")
+
+        article_llm_timeout_seconds = (
+            GeoArticleEngineService._resolve_article_llm_timeout_seconds()
+        )
+        llm_supports_timeout = GeoArticleEngineService._llm_supports_timeout_seconds(
+            llm_function
+        )
+
+        async def article_llm_function(
+            *, system_prompt: str, user_prompt: str, max_tokens: Optional[int] = None
+        ) -> str:
+            llm_kwargs: Dict[str, Any] = {
+                "system_prompt": system_prompt,
+                "user_prompt": user_prompt,
+            }
+            if max_tokens is not None:
+                llm_kwargs["max_tokens"] = max_tokens
+            if llm_supports_timeout:
+                llm_kwargs["timeout_seconds"] = article_llm_timeout_seconds
+            return await llm_function(**llm_kwargs)
+
+        logger.info(
+            "Article batch %s will use KIMI timeout=%.1fs (supports_timeout_param=%s).",
+            batch_id,
+            article_llm_timeout_seconds,
+            llm_supports_timeout,
+        )
 
         market = str(
             (batch.summary or {}).get("market")
@@ -2305,14 +2354,14 @@ class GeoArticleEngineService:
                     market=market,
                     language=language,
                     focus_url=focus_url,
-                    llm_function=llm_function,
+                    llm_function=article_llm_function,
                     internal_sources=internal_sources,
                     fallback_external_sources=fallback_external_sources,
                     ai_strategy_item=ai_item,
                     audit_keywords=audit_keywords,
                 )
                 generated = await GeoArticleEngineService._generate_article_content(
-                    llm_function=llm_function,
+                    llm_function=article_llm_function,
                     data_pack=data_pack,
                     tone=tone,
                     include_schema=include_schema,

@@ -29,7 +29,7 @@ vi.mock("@/components/header", () => ({
   Header: () => <div data-testid="header">Header</div>,
 }));
 
-vi.mock("@/lib/api", () => ({
+vi.mock("@/lib/api-client", () => ({
   API_URL: "http://localhost:8000",
 }));
 
@@ -84,3 +84,6 @@ describe("GEO tool menu", () => {
     );
   });
 });
+
+
+

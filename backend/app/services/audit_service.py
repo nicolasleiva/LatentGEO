@@ -15,6 +15,7 @@ from sqlalchemy import desc, or_
 from sqlalchemy.orm import Session
 
 from ..core.config import settings
+from ..core.database import Base
 from ..core.logger import get_logger
 from ..models import Audit, AuditedPage, AuditStatus, Competitor, Report
 from ..schemas import AuditCreate
@@ -26,6 +27,8 @@ logger = get_logger(__name__)
 
 
 class AuditService:
+    MAX_RUNTIME_DIAGNOSTICS = 12
+
     @staticmethod
     def _local_artifacts_enabled() -> bool:
         return bool(getattr(settings, "AUDIT_LOCAL_ARTIFACTS_ENABLED", False))
@@ -42,6 +45,166 @@ class AuditService:
         if not owner_clauses:
             return None
         return or_(*owner_clauses)
+
+    @staticmethod
+    def _normalize_intake_profile(
+        *,
+        existing: Optional[Dict[str, Any]] = None,
+        add_articles: Optional[bool] = None,
+        article_count: Optional[int] = None,
+        improve_ecommerce_fixes: Optional[bool] = None,
+        primary_goal: Optional[str] = None,
+        team_owner: Optional[str] = None,
+        rollout_notes: Optional[str] = None,
+    ) -> Optional[Dict[str, Any]]:
+        profile = dict(existing or {})
+
+        def _normalized_text(value: Optional[str], *, max_length: int) -> Optional[str]:
+            if value is None:
+                return None
+            normalized = " ".join(str(value).split()).strip()
+            if not normalized:
+                return ""
+            return normalized[:max_length]
+
+        if add_articles is not None:
+            profile["add_articles"] = bool(add_articles)
+
+        if article_count is not None:
+            try:
+                normalized_count = max(1, min(12, int(article_count)))
+            except (TypeError, ValueError):
+                normalized_count = None
+            if normalized_count is not None:
+                profile["article_count"] = normalized_count
+
+        if improve_ecommerce_fixes is not None:
+            profile["improve_ecommerce_fixes"] = bool(improve_ecommerce_fixes)
+
+        if primary_goal is not None:
+            normalized_goal = _normalized_text(primary_goal, max_length=120)
+            if normalized_goal:
+                profile["odoo_primary_goal"] = normalized_goal
+            else:
+                profile.pop("odoo_primary_goal", None)
+
+        if team_owner is not None:
+            normalized_owner = _normalized_text(team_owner, max_length=120)
+            if normalized_owner:
+                profile["odoo_team_owner"] = normalized_owner
+            else:
+                profile.pop("odoo_team_owner", None)
+
+        if rollout_notes is not None:
+            normalized_notes = _normalized_text(rollout_notes, max_length=600)
+            if normalized_notes:
+                profile["odoo_rollout_notes"] = normalized_notes
+            else:
+                profile.pop("odoo_rollout_notes", None)
+
+        if profile.get("add_articles") is False:
+            profile.pop("article_count", None)
+        elif profile.get("add_articles") and "article_count" not in profile:
+            profile["article_count"] = 3
+
+        return profile or None
+
+    @staticmethod
+    def _normalize_runtime_diagnostic(
+        *,
+        source: str,
+        stage: str,
+        severity: str,
+        code: str,
+        message: str,
+        technical_detail: Optional[str] = None,
+        created_at: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        normalized_source = (source or "pipeline").strip().lower()[:40] or "pipeline"
+        normalized_stage = (
+            " ".join(str(stage or "unknown").split()).strip().lower()[:80] or "unknown"
+        )
+        normalized_severity = (
+            " ".join(str(severity or "info").split()).strip().lower()[:20] or "info"
+        )
+        if normalized_severity not in {"error", "warning", "info"}:
+            normalized_severity = "info"
+        normalized_code = (
+            re.sub(r"[^a-z0-9_.-]+", "_", str(code or "runtime_event").lower())[:80]
+            or "runtime_event"
+        )
+        normalized_message = " ".join(str(message or "").split()).strip()[:400]
+        normalized_detail = " ".join(str(technical_detail or "").split()).strip()
+        if normalized_detail:
+            normalized_detail = normalized_detail[:500]
+        return {
+            "source": normalized_source,
+            "stage": normalized_stage,
+            "severity": normalized_severity,
+            "code": normalized_code,
+            "message": normalized_message,
+            "technical_detail": normalized_detail or None,
+            "created_at": created_at
+            or datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        }
+
+    @staticmethod
+    def summarize_runtime_diagnostics(
+        diagnostics: Optional[List[Dict[str, Any]]], limit: int = 4
+    ) -> List[Dict[str, Any]]:
+        items = diagnostics if isinstance(diagnostics, list) else []
+        if not items:
+            return []
+        safe_limit = max(1, min(int(limit or 4), AuditService.MAX_RUNTIME_DIAGNOSTICS))
+        return list(reversed(items[-safe_limit:]))
+
+    @staticmethod
+    def append_runtime_diagnostic(
+        db: Session,
+        audit_id: int,
+        *,
+        source: str,
+        stage: str,
+        severity: str,
+        code: str,
+        message: str,
+        technical_detail: Optional[str] = None,
+        commit: bool = True,
+    ) -> Optional[Audit]:
+        audit = db.query(Audit).filter(Audit.id == audit_id).first()
+        if not audit:
+            return None
+
+        entry = AuditService._normalize_runtime_diagnostic(
+            source=source,
+            stage=stage,
+            severity=severity,
+            code=code,
+            message=message,
+            technical_detail=technical_detail,
+        )
+        diagnostics = list(audit.runtime_diagnostics or [])
+
+        if diagnostics:
+            latest = diagnostics[-1]
+            if (
+                latest.get("source") == entry["source"]
+                and latest.get("stage") == entry["stage"]
+                and latest.get("severity") == entry["severity"]
+                and latest.get("code") == entry["code"]
+                and latest.get("message") == entry["message"]
+            ):
+                diagnostics[-1] = entry
+            else:
+                diagnostics.append(entry)
+        else:
+            diagnostics.append(entry)
+
+        audit.runtime_diagnostics = diagnostics[-AuditService.MAX_RUNTIME_DIAGNOSTICS :]
+        if commit:
+            db.commit()
+            db.refresh(audit)
+        return audit
 
     @staticmethod
     def create_audit(db: Session, audit_create: AuditCreate) -> Audit:
@@ -239,6 +402,20 @@ class AuditService:
 
         if error_message:
             audit.error_message = error_message
+            AuditService.append_runtime_diagnostic(
+                db,
+                audit_id,
+                source="pipeline",
+                stage=(
+                    status.value
+                    if status is not None and hasattr(status, "value")
+                    else "audit_status_update"
+                ),
+                severity="error" if status == AuditStatus.FAILED else "warning",
+                code="audit_failed" if status == AuditStatus.FAILED else "audit_warning",
+                message=error_message,
+                commit=False,
+            )
 
         db.commit()
         db.refresh(audit)
@@ -969,10 +1146,72 @@ class AuditService:
         audit = db.query(Audit).filter(Audit.id == audit_id).first()
         if not audit:
             return False
-        db.delete(audit)
-        db.commit()
-        logger.info(f"AuditorÃ­a {audit_id} eliminada")
-        return True
+
+        deleted_rows = 0
+        nullified_rows = 0
+        try:
+            task_id = str(getattr(audit, "task_id", "") or "").strip()
+            if task_id:
+                try:
+                    from ..workers.celery_app import celery_app
+
+                    celery_app.control.revoke(task_id, terminate=True)
+                    logger.info(
+                        f"Revoked running task for audit {audit_id} (task_id={task_id})"
+                    )
+                except Exception as revoke_err:
+                    logger.warning(
+                        f"Could not revoke task {task_id} for audit {audit_id}: {revoke_err}"
+                    )
+
+            # DB-level defensive cleanup: remove or nullify every FK that points to audits.id.
+            # This prevents FK violations for tables that do not have ORM cascade configured.
+            for table in Base.metadata.sorted_tables:
+                if table.name == Audit.__tablename__:
+                    continue
+
+                referencing_columns = []
+                for column in table.columns:
+                    for fk in column.foreign_keys:
+                        target_column = fk.column
+                        if (
+                            target_column.table.name == Audit.__tablename__
+                            and target_column.name == "id"
+                        ):
+                            referencing_columns.append(column)
+                            break
+
+                for column in referencing_columns:
+                    if column.nullable:
+                        result = db.execute(
+                            table.update()
+                            .where(column == audit_id)
+                            .values({column.name: None})
+                        )
+                        affected = (
+                            int(result.rowcount)
+                            if result.rowcount is not None and result.rowcount >= 0
+                            else 0
+                        )
+                        nullified_rows += affected
+                    else:
+                        result = db.execute(table.delete().where(column == audit_id))
+                        affected = (
+                            int(result.rowcount)
+                            if result.rowcount is not None and result.rowcount >= 0
+                            else 0
+                        )
+                        deleted_rows += affected
+
+            db.delete(audit)
+            db.commit()
+            logger.info(
+                f"AuditorÃ­a {audit_id} eliminada (child_deleted={deleted_rows}, child_nullified={nullified_rows})"
+            )
+            return True
+        except Exception:
+            db.rollback()
+            raise
 
     @staticmethod
     def get_stats_summary(
@@ -1116,6 +1355,7 @@ class AuditService:
             "search_results": audit.search_results or {},
             "competitor_audits": audit.competitor_audits or [],
             "pagespeed": audit.pagespeed_data or {},
+            "intake_profile": audit.intake_profile or {},
             "keywords": {"items": keywords, "total": len(keywords)},
             "backlinks": {"items": backlinks_list, "total": len(backlinks_list)},
             "rank_tracking": {"items": rank_tracking, "total": len(rank_tracking)},

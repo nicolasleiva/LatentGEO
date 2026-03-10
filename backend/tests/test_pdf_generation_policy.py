@@ -84,11 +84,12 @@ async def test_external_intel_not_refreshed_when_complete_even_if_report_refresh
         new_callable=AsyncMock,
         return_value=[],
     ), patch(
-        "app.services.llm_visibility_service.LLMVisibilityService.generate_llm_visibility",
+        "app.services.llm_visibility_service.LLMVisibilityService.check_visibility",
         new_callable=AsyncMock,
         return_value=[],
     ), patch(
-        "app.services.ai_content_service.AIContentService.generate_content_suggestions",
+        "app.services.ai_content_service.AIContentService.generate_suggestions",
+        new_callable=AsyncMock,
         return_value=[],
     ), patch(
         "app.services.product_intelligence_service.ProductIntelligenceService.analyze",
@@ -169,11 +170,12 @@ async def test_external_intel_with_dict_queries_is_treated_as_complete():
         new_callable=AsyncMock,
         return_value=[],
     ), patch(
-        "app.services.llm_visibility_service.LLMVisibilityService.generate_llm_visibility",
+        "app.services.llm_visibility_service.LLMVisibilityService.check_visibility",
         new_callable=AsyncMock,
         return_value=[],
     ), patch(
-        "app.services.ai_content_service.AIContentService.generate_content_suggestions",
+        "app.services.ai_content_service.AIContentService.generate_suggestions",
+        new_callable=AsyncMock,
         return_value=[],
     ), patch(
         "app.services.product_intelligence_service.ProductIntelligenceService.analyze",
@@ -261,11 +263,12 @@ async def test_external_intel_refreshed_when_missing():
         new_callable=AsyncMock,
         return_value=[],
     ), patch(
-        "app.services.llm_visibility_service.LLMVisibilityService.generate_llm_visibility",
+        "app.services.llm_visibility_service.LLMVisibilityService.check_visibility",
         new_callable=AsyncMock,
         return_value=[],
     ), patch(
-        "app.services.ai_content_service.AIContentService.generate_content_suggestions",
+        "app.services.ai_content_service.AIContentService.generate_suggestions",
+        new_callable=AsyncMock,
         return_value=[],
     ), patch(
         "app.services.pipeline_service.get_pipeline_service",

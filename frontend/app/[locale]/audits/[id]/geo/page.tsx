@@ -28,9 +28,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { API_URL } from "@/lib/api";
+import { API_URL } from "@/lib/api-client";
 import { fetchWithBackendAuth } from "@/lib/backend-auth";
 import { withLocale } from "@/lib/locale-routing";
+import AuditedCompetitorBenchmark from "./components/AuditedCompetitorBenchmark";
 import {
   CitationsTableSkeleton,
   HistorySkeleton,
@@ -167,6 +168,7 @@ export default function GEODashboardPage() {
   const [data, setData] = useState<GEODashboardData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState(DEFAULT_TAB);
+  const [articleCountPreset, setArticleCountPreset] = useState<number>();
   const requestIdRef = useRef(0);
 
   const backendUrl = API_URL;
@@ -176,10 +178,15 @@ export default function GEODashboardPage() {
     if (typeof window === "undefined") return;
 
     const syncTabFromUrl = () => {
-      const nextTab = getSafeTab(
-        new URLSearchParams(window.location.search).get("tab"),
-      );
+      const params = new URLSearchParams(window.location.search);
+      const nextTab = getSafeTab(params.get("tab"));
+      const requestedCount = Number(params.get("articleCount"));
       setActiveTab((prev) => (prev === nextTab ? prev : nextTab));
+      if (Number.isFinite(requestedCount) && requestedCount > 0) {
+        setArticleCountPreset(Math.max(1, Math.min(12, requestedCount)));
+      } else {
+        setArticleCountPreset(undefined);
+      }
     };
 
     syncTabFromUrl();
@@ -309,15 +316,16 @@ export default function GEODashboardPage() {
       >
         {/* Header */}
         <div className="mb-12">
-          <Link href={auditDetailHref}>
-            <Button
-              variant="ghost"
-              className="text-muted-foreground hover:text-foreground hover:bg-muted/40 mb-6 pl-0"
-            >
+          <Button
+            asChild
+            variant="ghost"
+            className="text-muted-foreground hover:text-foreground hover:bg-muted/40 mb-6 pl-0"
+          >
+            <Link href={auditDetailHref}>
               <ArrowLeft className="w-4 h-4 mr-2" />
               Back to Audit Summary
-            </Button>
-          </Link>
+            </Link>
+          </Button>
 
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
             <div>
@@ -638,10 +646,26 @@ export default function GEODashboardPage() {
                   </p>
                 </div>
               </div>
-              <CompetitorAnalysis
+              <AuditedCompetitorBenchmark
                 auditId={Number(auditId)}
                 backendUrl={backendUrl}
+                active={activeTab === "competitors"}
               />
+              <div className="mt-8 border-t border-border pt-8">
+                <div className="mb-5">
+                  <h3 className="text-lg font-semibold text-foreground">
+                    Ad Hoc Benchmark
+                  </h3>
+                  <p className="text-sm text-muted-foreground">
+                    Run a manual benchmark against domains or brands that are
+                    not already part of the audited competitor set.
+                  </p>
+                </div>
+                <CompetitorAnalysis
+                  auditId={Number(auditId)}
+                  backendUrl={backendUrl}
+                />
+              </div>
             </div>
           </TabsContent>
 
@@ -695,6 +719,7 @@ export default function GEODashboardPage() {
               <ArticleEngine
                 auditId={Number(auditId)}
                 backendUrl={backendUrl}
+                initialArticleCount={articleCountPreset}
               />
             </div>
           </TabsContent>
@@ -793,3 +818,4 @@ export default function GEODashboardPage() {
     </div>
   );
 }
+

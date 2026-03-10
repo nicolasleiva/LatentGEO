@@ -85,6 +85,8 @@ interface BatchResponse {
 interface ArticleEngineProps {
   auditId: number;
   backendUrl: string;
+  initialArticleCount?: number;
+  initialLanguage?: string;
 }
 
 const TERMINAL_BATCH_STATUSES = new Set([
@@ -197,9 +199,11 @@ const parseErrorMessage = async (res: Response): Promise<string> => {
 export default function ArticleEngine({
   auditId,
   backendUrl,
+  initialArticleCount,
+  initialLanguage,
 }: ArticleEngineProps) {
-  const [count, setCount] = useState(3);
-  const [language, setLanguage] = useState("en");
+  const [count, setCount] = useState(initialArticleCount ?? 3);
+  const [language, setLanguage] = useState(initialLanguage ?? "en");
   const [tone, setTone] = useState("executive");
   const [includeSchema, setIncludeSchema] = useState(true);
   const [loading, setLoading] = useState(false);

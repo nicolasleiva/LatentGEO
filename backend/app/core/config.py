@@ -59,7 +59,7 @@ class Settings(BaseSettings):
     DB_MAX_OVERFLOW: int = int(os.getenv("DB_MAX_OVERFLOW", "5"))
     DB_POOL_TIMEOUT: int = int(os.getenv("DB_POOL_TIMEOUT", "15"))
     DB_POOL_RECYCLE: int = int(os.getenv("DB_POOL_RECYCLE", "900"))
-    DB_POOL_PRE_PING: bool = os.getenv("DB_POOL_PRE_PING", "False").lower() == "true"
+    DB_POOL_PRE_PING: bool = os.getenv("DB_POOL_PRE_PING", "True").lower() == "true"
     DB_CONNECT_TIMEOUT_SECONDS: int = int(os.getenv("DB_CONNECT_TIMEOUT_SECONDS", "5"))
 
     # APIs externas
@@ -133,6 +133,9 @@ class Settings(BaseSettings):
         os.getenv("GEO_ARTICLE_EXTRA_SEARCH_TOP_K", "10")
     )
     GEO_ARTICLE_STALE_SECONDS: int = int(os.getenv("GEO_ARTICLE_STALE_SECONDS", "1200"))
+    GEO_ARTICLE_LLM_TIMEOUT_SECONDS: float = float(
+        os.getenv("GEO_ARTICLE_LLM_TIMEOUT_SECONDS", "420")
+    )
     GEO_ARTICLE_ABORT_ON_FIRST_TIMEOUT: bool = (
         os.getenv("GEO_ARTICLE_ABORT_ON_FIRST_TIMEOUT", "True").lower() == "true"
     )
@@ -253,6 +256,12 @@ class Settings(BaseSettings):
     AUTH0_ADMIN_PERMISSIONS: list[str] = []
     cors_origins: Optional[str] = None
     CORS_ORIGINS: list[str] = []
+    OPENAPI_DOCS_ENABLED: bool = (
+        os.getenv("OPENAPI_DOCS_ENABLED", "False").lower() == "true"
+    )
+    PDF_ALLOW_DETERMINISTIC_FALLBACK: bool = (
+        os.getenv("PDF_ALLOW_DETERMINISTIC_FALLBACK", "True").lower() == "true"
+    )
 
     # ===== PRODUCTION SECURITY SETTINGS =====
     TRUSTED_HOSTS: list[str] = []
@@ -400,6 +409,7 @@ def validate_environment():
         or is_production
         or not settings.AUDIT_LOCAL_ARTIFACTS_ENABLED
     )
+    release_strict = settings.STRICT_CONFIG or is_non_dev
 
     def require(value, name):
         if not value:
@@ -517,6 +527,14 @@ def validate_environment():
             errors.append("SSE_HEARTBEAT_SECONDS must be > 0.")
         if settings.SSE_RETRY_MS <= 0:
             errors.append("SSE_RETRY_MS must be > 0.")
+
+    if release_strict and settings.OPENAPI_DOCS_ENABLED:
+        errors.append("OPENAPI_DOCS_ENABLED must be false in strict/prod release mode.")
+
+    if release_strict and settings.PDF_ALLOW_DETERMINISTIC_FALLBACK:
+        errors.append(
+            "PDF_ALLOW_DETERMINISTIC_FALLBACK must be false in strict/prod release mode."
+        )
 
     # AI Keys
     if not any(

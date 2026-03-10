@@ -3,11 +3,16 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   AlertCircle,
+  Blocks,
+  Bot,
   ExternalLink,
   Search,
+  ShoppingBag,
   Sparkles,
   Target,
+  TrendingUp,
   Trophy,
+  Zap,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -48,6 +53,42 @@ interface CommerceEvidenceItem {
   url: string;
 }
 
+interface CommerceRootSummary {
+  path: string;
+  url: string;
+  overall_score: number | null;
+  schema_score: number | null;
+  content_score: number | null;
+  h1_score: number | null;
+  critical_issues: number | null;
+  high_issues: number | null;
+}
+
+interface CommerceRootCauseItem {
+  title: string;
+  finding: string;
+  owner: string;
+}
+
+interface CommerceTechnicalWatchout {
+  priority: string;
+  owner: string;
+  action: string;
+  evidence: string;
+}
+
+interface CommerceProductIntelligence {
+  is_ecommerce: boolean;
+  confidence_score: number | null;
+  platform: string;
+  product_pages_count: number | null;
+  category_pages_count: number | null;
+  schema_analysis?: {
+    average_completeness?: number | null;
+    schema_coverage_percent?: number | null;
+  };
+}
+
 interface CommerceQueryAnalysis {
   analysis_id?: number;
   query: string;
@@ -59,6 +100,12 @@ interface CommerceQueryAnalysis {
   why_not_first: string[];
   disadvantages_vs_top1: CommerceGapItem[];
   action_plan: CommerceActionItem[];
+  site_root_summary: CommerceRootSummary | null;
+  root_cause_summary: CommerceRootCauseItem[];
+  search_engine_fixes: CommerceActionItem[];
+  merchandising_fixes: CommerceActionItem[];
+  technical_watchouts: CommerceTechnicalWatchout[];
+  product_intelligence: CommerceProductIntelligence | null;
   evidence: CommerceEvidenceItem[];
   provider?: string;
 }
@@ -92,15 +139,26 @@ const normalizeResultItem = (
   const url = toNonEmptyString(item.url);
   const domain = toNonEmptyString(item.domain);
   if (!url || !domain) return null;
-  const position = toNumberOrNull(item.position) ?? index + 1;
   return {
-    position,
+    position: toNumberOrNull(item.position) ?? index + 1,
     title: toNonEmptyString(item.title, domain),
     url,
     domain,
     snippet: toNonEmptyString(item.snippet),
   };
 };
+
+const normalizeActionItems = (items: any): CommerceActionItem[] =>
+  Array.isArray(items)
+    ? items
+        .map((item: any) => ({
+          priority: toNonEmptyString(item?.priority, "P2"),
+          action: toNonEmptyString(item?.action),
+          expected_impact: toNonEmptyString(item?.expected_impact, "Medium"),
+          evidence: toNonEmptyString(item?.evidence),
+        }))
+        .filter((item: CommerceActionItem) => item.action.length > 0)
+    : [];
 
 const normalizeAnalysis = (payload: any): CommerceQueryAnalysis | null => {
   if (!payload || typeof payload !== "object") return null;
@@ -137,16 +195,75 @@ const normalizeAnalysis = (payload: any): CommerceQueryAnalysis | null => {
           }))
           .filter((item: CommerceGapItem) => item.gap.length > 0)
       : [],
-    action_plan: Array.isArray(payload.action_plan)
-      ? payload.action_plan
+    action_plan: normalizeActionItems(payload.action_plan),
+    site_root_summary:
+      payload.site_root_summary && typeof payload.site_root_summary === "object"
+        ? {
+            path: toNonEmptyString(payload.site_root_summary.path, "/"),
+            url: toNonEmptyString(payload.site_root_summary.url),
+            overall_score: toNumberOrNull(payload.site_root_summary.overall_score),
+            schema_score: toNumberOrNull(payload.site_root_summary.schema_score),
+            content_score: toNumberOrNull(payload.site_root_summary.content_score),
+            h1_score: toNumberOrNull(payload.site_root_summary.h1_score),
+            critical_issues: toNumberOrNull(
+              payload.site_root_summary.critical_issues,
+            ),
+            high_issues: toNumberOrNull(payload.site_root_summary.high_issues),
+          }
+        : null,
+    root_cause_summary: Array.isArray(payload.root_cause_summary)
+      ? payload.root_cause_summary
           .map((item: any) => ({
-            priority: toNonEmptyString(item?.priority, "P2"),
+            title: toNonEmptyString(item?.title, "Root cause"),
+            finding: toNonEmptyString(item?.finding),
+            owner: toNonEmptyString(item?.owner, "SEO / Product"),
+          }))
+          .filter((item: CommerceRootCauseItem) => item.finding.length > 0)
+      : [],
+    search_engine_fixes: normalizeActionItems(payload.search_engine_fixes),
+    merchandising_fixes: normalizeActionItems(payload.merchandising_fixes),
+    technical_watchouts: Array.isArray(payload.technical_watchouts)
+      ? payload.technical_watchouts
+          .map((item: any) => ({
+            priority: toNonEmptyString(item?.priority, "Medium"),
+            owner: toNonEmptyString(item?.owner, "Frontend / SEO"),
             action: toNonEmptyString(item?.action),
-            expected_impact: toNonEmptyString(item?.expected_impact, "Medium"),
             evidence: toNonEmptyString(item?.evidence),
           }))
-          .filter((item: CommerceActionItem) => item.action.length > 0)
+          .filter(
+            (item: CommerceTechnicalWatchout) => item.action.length > 0,
+          )
       : [],
+    product_intelligence:
+      payload.product_intelligence && typeof payload.product_intelligence === "object"
+        ? {
+            is_ecommerce: Boolean(payload.product_intelligence.is_ecommerce),
+            confidence_score: toNumberOrNull(
+              payload.product_intelligence.confidence_score,
+            ),
+            platform: toNonEmptyString(payload.product_intelligence.platform),
+            product_pages_count: toNumberOrNull(
+              payload.product_intelligence.product_pages_count,
+            ),
+            category_pages_count: toNumberOrNull(
+              payload.product_intelligence.category_pages_count,
+            ),
+            schema_analysis:
+              payload.product_intelligence.schema_analysis &&
+              typeof payload.product_intelligence.schema_analysis === "object"
+                ? {
+                    average_completeness: toNumberOrNull(
+                      payload.product_intelligence.schema_analysis
+                        .average_completeness,
+                    ),
+                    schema_coverage_percent: toNumberOrNull(
+                      payload.product_intelligence.schema_analysis
+                        .schema_coverage_percent,
+                    ),
+                  }
+                : undefined,
+          }
+        : null,
     evidence: Array.isArray(payload.evidence)
       ? payload.evidence
           .map((item: any) => ({
@@ -161,6 +278,54 @@ const normalizeAnalysis = (payload: any): CommerceQueryAnalysis | null => {
     provider: toNonEmptyString(payload.provider),
   };
 };
+
+function ActionBlock({
+  title,
+  icon,
+  items,
+  emptyMessage,
+}: {
+  title: string;
+  icon: React.ReactNode;
+  items: CommerceActionItem[];
+  emptyMessage: string;
+}) {
+  return (
+    <div className="bg-muted/30 border border-border rounded-xl p-6">
+      <h3 className="font-semibold text-foreground text-xl mb-3 flex items-center gap-2">
+        {icon}
+        {title}
+      </h3>
+      {items.length > 0 ? (
+        <div className="space-y-3">
+          {items.map((step, idx) => (
+            <div
+              key={`${title}-${idx}`}
+              className="border border-border rounded-lg p-4 bg-muted/40"
+            >
+              <div className="flex items-center gap-2">
+                <span className="px-2 py-1 rounded-md text-xs border border-brand/30 bg-brand/10 text-foreground">
+                  {step.priority}
+                </span>
+                <span className="text-xs text-muted-foreground">
+                  Impact: {step.expected_impact}
+                </span>
+              </div>
+              <p className="text-sm text-foreground mt-2">{step.action}</p>
+              {step.evidence ? (
+                <p className="text-xs text-muted-foreground mt-2">
+                  Evidence: {step.evidence}
+                </p>
+              ) : null}
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="text-sm text-muted-foreground">{emptyMessage}</p>
+      )}
+    </div>
+  );
+}
 
 export default function CommerceCampaign({
   auditId,
@@ -209,6 +374,11 @@ export default function CommerceCampaign({
     if (result.target_position === 1) return "Ranking #1";
     return `Ranking #${result.target_position}`;
   }, [result, topK]);
+
+  const platformLabel = useMemo(() => {
+    const value = result?.product_intelligence?.platform || "unknown";
+    return value.replace(/_/g, " ");
+  }, [result?.product_intelligence?.platform]);
 
   const analyzeQuery = async () => {
     const safeQuery = query.trim();
@@ -348,7 +518,7 @@ export default function CommerceCampaign({
 
       {result && (
         <div className="space-y-6">
-          <div className="grid md:grid-cols-4 gap-4">
+          <div className="grid md:grid-cols-2 xl:grid-cols-5 gap-4">
             <div className="bg-muted/30 border border-border rounded-xl p-4">
               <p className="text-sm text-muted-foreground mb-1">Query</p>
               <p className="text-lg font-semibold text-foreground">
@@ -375,6 +545,17 @@ export default function CommerceCampaign({
                 {rankMessage}
               </p>
             </div>
+            <div className="bg-muted/30 border border-border rounded-xl p-4">
+              <p className="text-sm text-muted-foreground mb-1">
+                Product footprint
+              </p>
+              <p className="text-2xl font-bold text-foreground">
+                {result.product_intelligence?.product_pages_count ?? 0}
+              </p>
+              <p className="text-xs text-muted-foreground mt-1">
+                Platform: {platformLabel || "unknown"}
+              </p>
+            </div>
           </div>
 
           {result.top_result && (
@@ -397,6 +578,111 @@ export default function CommerceCampaign({
               </p>
             </div>
           )}
+
+          <div className="grid xl:grid-cols-[1.1fr_1fr] gap-6">
+            <div className="bg-muted/30 border border-border rounded-xl p-6">
+              <h3 className="font-semibold text-foreground text-xl mb-3 flex items-center gap-2">
+                <Blocks className="w-5 h-5 text-sky-500" />
+                Root Domain Snapshot
+              </h3>
+              {result.site_root_summary ? (
+                <div className="grid sm:grid-cols-2 gap-4">
+                  <div className="border border-border rounded-lg p-4 bg-muted/40">
+                    <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                      Root path
+                    </p>
+                    <p className="text-base font-semibold text-foreground mt-1">
+                      {result.site_root_summary.path || "/"}
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-2">
+                      Overall score:{" "}
+                      {result.site_root_summary.overall_score ?? "n/a"}
+                    </p>
+                  </div>
+                  <div className="border border-border rounded-lg p-4 bg-muted/40">
+                    <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                      Structure signals
+                    </p>
+                    <p className="text-sm text-foreground mt-1">
+                      Schema: {result.site_root_summary.schema_score ?? "n/a"} ·
+                      Content: {result.site_root_summary.content_score ?? "n/a"} ·
+                      H1: {result.site_root_summary.h1_score ?? "n/a"}
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-2">
+                      Critical issues:{" "}
+                      {result.site_root_summary.critical_issues ?? 0} · High:{" "}
+                      {result.site_root_summary.high_issues ?? 0}
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  Root-level audited signals are not available for this run.
+                </p>
+              )}
+            </div>
+
+            <div className="bg-muted/30 border border-border rounded-xl p-6">
+              <h3 className="font-semibold text-foreground text-xl mb-3 flex items-center gap-2">
+                <Bot className="w-5 h-5 text-violet-500" />
+                Ecommerce Intelligence
+              </h3>
+              <div className="grid gap-3">
+                <div className="border border-border rounded-lg p-4 bg-muted/40">
+                  <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                    Ecommerce detected
+                  </p>
+                  <p className="text-base font-semibold text-foreground mt-1">
+                    {result.product_intelligence?.is_ecommerce ? "Yes" : "No"}
+                  </p>
+                </div>
+                <div className="border border-border rounded-lg p-4 bg-muted/40">
+                  <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                    Schema completeness
+                  </p>
+                  <p className="text-base font-semibold text-foreground mt-1">
+                    {result.product_intelligence?.schema_analysis
+                      ?.average_completeness ?? "n/a"}
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-2">
+                    Confidence:{" "}
+                    {result.product_intelligence?.confidence_score ?? "n/a"}
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-muted/30 border border-border rounded-xl p-6">
+            <h3 className="font-semibold text-foreground text-xl mb-3 flex items-center gap-2">
+              <TrendingUp className="w-5 h-5 text-brand" />
+              Root Cause Summary
+            </h3>
+            {result.root_cause_summary.length > 0 ? (
+              <div className="grid lg:grid-cols-2 gap-3">
+                {result.root_cause_summary.map((item, idx) => (
+                  <div
+                    key={`root-cause-${idx}`}
+                    className="border border-border rounded-lg p-4 bg-muted/40"
+                  >
+                    <p className="text-sm font-semibold text-foreground">
+                      {item.title}
+                    </p>
+                    <p className="text-sm text-muted-foreground mt-2">
+                      {item.finding}
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-3">
+                      Owner: {item.owner}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                No root-cause summary available yet.
+              </p>
+            )}
+          </div>
 
           <div className="bg-muted/30 border border-border rounded-xl p-6">
             <h3 className="font-semibold text-foreground text-xl mb-3 flex items-center gap-2">
@@ -453,43 +739,64 @@ export default function CommerceCampaign({
             )}
           </div>
 
-          <div className="bg-muted/30 border border-border rounded-xl p-6">
-            <h3 className="font-semibold text-foreground text-xl mb-3 flex items-center gap-2">
-              <Sparkles className="w-5 h-5 text-emerald-400" />
-              Action Plan
-            </h3>
-            {result.action_plan.length > 0 ? (
-              <div className="space-y-3">
-                {result.action_plan.map((step, idx) => (
-                  <div
-                    key={`plan-${idx}`}
-                    className="border border-border rounded-lg p-4 bg-muted/40"
-                  >
-                    <div className="flex items-center gap-2">
-                      <span className="px-2 py-1 rounded-md text-xs border border-brand/30 bg-brand/10 text-foreground">
-                        {step.priority}
-                      </span>
-                      <span className="text-xs text-muted-foreground">
-                        Expected impact: {step.expected_impact}
-                      </span>
-                    </div>
-                    <p className="text-sm text-foreground mt-2">
-                      {step.action}
-                    </p>
-                    {step.evidence ? (
-                      <p className="text-xs text-muted-foreground mt-2">
-                        Evidence: {step.evidence}
+          <div className="grid xl:grid-cols-3 gap-6">
+            <ActionBlock
+              title="Search Engine Fixes"
+              icon={<Sparkles className="w-5 h-5 text-emerald-400" />}
+              items={result.search_engine_fixes}
+              emptyMessage="No search engine fixes generated yet."
+            />
+            <ActionBlock
+              title="Merchandising Fixes"
+              icon={<ShoppingBag className="w-5 h-5 text-amber-500" />}
+              items={result.merchandising_fixes}
+              emptyMessage="No merchandising recommendations were generated for this domain snapshot."
+            />
+            <div className="bg-muted/30 border border-border rounded-xl p-6">
+              <h3 className="font-semibold text-foreground text-xl mb-3 flex items-center gap-2">
+                <Zap className="w-5 h-5 text-orange-500" />
+                Technical Watchouts
+              </h3>
+              {result.technical_watchouts.length > 0 ? (
+                <div className="space-y-3">
+                  {result.technical_watchouts.map((step, idx) => (
+                    <div
+                      key={`tech-${idx}`}
+                      className="border border-border rounded-lg p-4 bg-muted/40"
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className="px-2 py-1 rounded-md text-xs border border-brand/30 bg-brand/10 text-foreground">
+                          {step.priority}
+                        </span>
+                        <span className="text-xs text-muted-foreground">
+                          Owner: {step.owner}
+                        </span>
+                      </div>
+                      <p className="text-sm text-foreground mt-2">
+                        {step.action}
                       </p>
-                    ) : null}
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p className="text-sm text-muted-foreground">
-                No action plan generated yet.
-              </p>
-            )}
+                      {step.evidence ? (
+                        <p className="text-xs text-muted-foreground mt-2">
+                          Evidence: {step.evidence}
+                        </p>
+                      ) : null}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  No technical watchouts generated yet.
+                </p>
+              )}
+            </div>
           </div>
+
+          <ActionBlock
+            title="Query-Level Action Plan"
+            icon={<Sparkles className="w-5 h-5 text-emerald-400" />}
+            items={result.action_plan}
+            emptyMessage="No action plan generated yet."
+          />
 
           <div className="bg-muted/30 border border-border rounded-xl p-6">
             <h3 className="font-semibold text-foreground text-xl mb-3">

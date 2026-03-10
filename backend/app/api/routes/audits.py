@@ -13,6 +13,7 @@ from app.models import Audit, AuditStatus, Competitor
 from app.schemas import (
     AuditConfigRequest,
     AuditCreate,
+    AuditOverview,
     AuditResponse,
     AuditSummary,
     ChatMessage,
@@ -143,6 +144,50 @@ def _db_unavailable_http_exception(action: str) -> HTTPException:
             "message": "Database is temporarily unavailable. Retry in a few seconds.",
         },
     )
+
+
+def _persist_runtime_diagnostic_safely(
+    db: Session,
+    audit_id: int,
+    *,
+    source: str,
+    stage: str,
+    severity: str,
+    code: str,
+    message: str,
+    technical_detail: str | None = None,
+) -> None:
+    try:
+        AuditService.append_runtime_diagnostic(
+            db,
+            audit_id,
+            source=source,
+            stage=stage,
+            severity=severity,
+            code=code,
+            message=message,
+            technical_detail=technical_detail,
+        )
+    except Exception as diag_err:
+        logger.warning(
+            f"runtime_diagnostic_persist_failed audit_id={audit_id} code={code} error={diag_err}"
+        )
+
+
+def _persist_generation_warnings(db: Session, audit_id: int, warnings: list[str]) -> None:
+    for index, warning in enumerate(warnings or [], start=1):
+        message = " ".join(str(warning or "").split()).strip()
+        if not message:
+            continue
+        _persist_runtime_diagnostic_safely(
+            db,
+            audit_id,
+            source="pdf",
+            stage="generate-pdf",
+            severity="warning",
+            code=f"pdf_generation_warning_{index}",
+            message=message,
+        )
 
 
 def _resolve_signed_pdf_download_url(
@@ -323,7 +368,14 @@ async def _create_audit_internal(
     # Run sync database operation in threadpool
     from starlette.concurrency import run_in_threadpool
 
-    audit = await run_in_threadpool(AuditService.create_audit, db, audit_create)
+    try:
+        audit = await run_in_threadpool(AuditService.create_audit, db, audit_create)
+    except (OperationalError, DBAPIError) as db_err:
+        logger.error(
+            "create_audit_db_failed "
+            f"error_code=db_unavailable error={db_err}"
+        )
+        raise _db_unavailable_http_exception("create_audit") from db_err
 
     # Solo iniciar pipeline si tiene configuración completa
     if audit_create.competitors or audit_create.market:
@@ -415,6 +467,79 @@ def get_audit_status(
     return audit
 
 
+@router.get("/{audit_id}/overview", response_model=AuditOverview)
+def get_audit_overview(
+    audit_id: int,
+    db: Session = Depends(get_db),
+    current_user: AuthUser = Depends(get_current_user),
+):
+    """
+    Get a production-friendly overview payload for the audit detail shell.
+    Excludes heavy JSON blobs such as target_audit, report_markdown, and fix_plan.
+    """
+    audit = _get_owned_audit(db, audit_id, current_user)
+
+    fix_plan = audit.fix_plan if isinstance(audit.fix_plan, list) else []
+    external_intelligence = (
+        audit.external_intelligence
+        if isinstance(audit.external_intelligence, dict)
+        else None
+    )
+    competitor_count = (
+        db.query(Competitor).filter(Competitor.audit_id == audit_id).count()
+    )
+    if competitor_count <= 0:
+        competitor_count = len(audit.competitor_audits or [])
+    return AuditOverview(
+        id=audit.id,
+        url=audit.url,
+        domain=audit.domain,
+        status=audit.status.value if hasattr(audit.status, "value") else str(audit.status),
+        progress=int(round(audit.progress or 0)),
+        created_at=audit.created_at,
+        started_at=audit.started_at,
+        completed_at=audit.completed_at,
+        geo_score=audit.geo_score,
+        total_pages=audit.total_pages,
+        critical_issues=audit.critical_issues,
+        high_issues=audit.high_issues,
+        medium_issues=audit.medium_issues,
+        source=audit.source,
+        language=audit.language,
+        category=audit.category,
+        market=audit.market,
+        intake_profile=audit.intake_profile,
+        diagnostics_summary=AuditService.summarize_runtime_diagnostics(
+            audit.runtime_diagnostics, limit=4
+        ),
+        odoo_connection_id=getattr(audit, "odoo_connection_id", None),
+        error_message=audit.error_message,
+        competitor_count=competitor_count,
+        fix_plan_count=len(fix_plan),
+        report_ready=bool(audit.report_markdown),
+        pagespeed_available=bool(audit.pagespeed_data),
+        pdf_available=bool(getattr(audit, "report_pdf_path", None)),
+        external_intelligence=external_intelligence,
+    )
+
+
+@router.get("/{audit_id}/diagnostics", response_model=dict)
+def get_audit_diagnostics(
+    audit_id: int,
+    db: Session = Depends(get_db),
+    current_user: AuthUser = Depends(get_current_user),
+):
+    audit = _get_owned_audit(db, audit_id, current_user)
+    diagnostics = AuditService.summarize_runtime_diagnostics(
+        audit.runtime_diagnostics,
+        limit=AuditService.MAX_RUNTIME_DIAGNOSTICS,
+    )
+    return {
+        "audit_id": audit.id,
+        "diagnostics": diagnostics,
+    }
+
+
 @router.get("/{audit_id}", response_model=AuditResponse)
 def get_audit(
     audit_id: int,
@@ -428,10 +553,6 @@ def get_audit(
     Frontend should display "Generate PDF" for full analysis.
     """
     audit = _get_owned_audit(db, audit_id, current_user)
-
-    # Load audited pages (fast operation)
-    pages = AuditService.get_audited_pages(db, audit_id)
-    audit.pages = pages
 
     # Recalcular GEO score si hay datos suficientes (evita valores falsos)
     if isinstance(audit.target_audit, dict):
@@ -846,15 +967,27 @@ async def run_pagespeed_analysis(
             "message": "PageSpeed analysis completed",
             "strategies_analyzed": list(pagespeed_data.keys()),
         }
-    except Exception:
+    except Exception as exc:
         logger.error(f"PageSpeed analysis failed for audit {audit_id}", exc_info=True)
+        _persist_runtime_diagnostic_safely(
+            db,
+            audit_id,
+            source="pagespeed",
+            stage="run-pagespeed",
+            severity="error",
+            code="pagespeed_failed",
+            message=(
+                "PageSpeed analysis failed before performance data could be refreshed."
+            ),
+            technical_detail=str(exc),
+        )
         raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.post("/{audit_id}/generate-pdf")
 async def generate_audit_pdf(
     audit_id: int,
-    force_pagespeed_refresh: bool = True,
+    force_pagespeed_refresh: bool = False,
     force_report_refresh: bool = False,
     force_external_intel_refresh: bool = False,
     background_tasks: BackgroundTasks = None,
@@ -981,6 +1114,11 @@ async def generate_audit_pdf(
 
         # Refresh audit to get updated pagespeed_data
         db.refresh(audit)
+        _persist_generation_warnings(
+            db,
+            audit_id,
+            generation_result.get("generation_warnings", []),
+        )
 
         logger.info("=== PDF generation completed successfully ===")
         logger.info(f"PDF saved at: {pdf_path}")
@@ -994,6 +1132,7 @@ async def generate_audit_pdf(
             "file_size": file_size,
             "report_cache_hit": bool(generation_result.get("report_cache_hit")),
             "report_regenerated": bool(generation_result.get("report_regenerated")),
+            "report_persisted": bool(generation_result.get("report_persisted")),
             "generation_mode": generation_result.get("generation_mode", "unknown"),
             "external_intel_refreshed": bool(
                 generation_result.get("external_intel_refreshed")
@@ -1001,18 +1140,41 @@ async def generate_audit_pdf(
             "external_intel_refresh_reason": generation_result.get(
                 "external_intel_refresh_reason", "not_needed"
             ),
+            "missing_context": generation_result.get("missing_context", []),
+            "generation_warnings": generation_result.get("generation_warnings", []),
         }
 
-    except HTTPException:
+    except HTTPException as exc:
+        if exc.status_code >= 500:
+            _persist_runtime_diagnostic_safely(
+                db,
+                audit_id,
+                source="pdf",
+                stage="generate-pdf",
+                severity="error",
+                code="pdf_generation_http_error",
+                message="PDF generation failed before the report could be delivered.",
+                technical_detail=str(exc.detail),
+            )
         raise
     except (OperationalError, DBAPIError) as db_err:
         logger.error(
             f"generate_pdf_db_failed audit_id={audit_id} error_code=db_unavailable error={db_err}"
         )
         raise _db_unavailable_http_exception("generate_pdf_persist") from db_err
-    except Exception:
+    except Exception as exc:
         logger.error(f"=== Error generating PDF for audit {audit_id} ===")
         logger.exception("Error generating PDF")
+        _persist_runtime_diagnostic_safely(
+            db,
+            audit_id,
+            source="pdf",
+            stage="generate-pdf",
+            severity="error",
+            code="pdf_generation_failed",
+            message="PDF generation failed before the report could be delivered.",
+            technical_detail=str(exc),
+        )
         raise HTTPException(status_code=500, detail="Internal server error")
     finally:
         _release_pdf_generation_lock(audit_id, lock_token, lock_mode)

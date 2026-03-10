@@ -5,6 +5,7 @@ Modelos de Base de Datos
 # ruff: noqa: E402
 
 import enum
+import json
 from datetime import datetime, timezone
 
 from sqlalchemy import (
@@ -77,6 +78,8 @@ class Audit(Base):
     language = Column(String(10), default="en")
     competitors = Column(JSON, nullable=True)  # Lista de URLs de competidores
     market = Column(String(50), nullable=True)  # "us", "latam", "emea", etc.
+    _intake_profile_raw = Column("intake_profile", Text, nullable=True)
+    _runtime_diagnostics_raw = Column("runtime_diagnostics", Text, nullable=True)
 
     # Timestamps
     created_at = Column(
@@ -128,6 +131,58 @@ class Audit(Base):
     @report_pdf_path.setter
     def report_pdf_path(self, value):
         self._report_pdf_path = value
+
+    @property
+    def intake_profile(self):
+        raw = self._intake_profile_raw
+        if not raw:
+            return None
+        if isinstance(raw, dict):
+            return raw
+        try:
+            parsed = json.loads(raw)
+            return parsed if isinstance(parsed, dict) else None
+        except Exception:
+            return None
+
+    @intake_profile.setter
+    def intake_profile(self, value):
+        if value in (None, "", {}):
+            self._intake_profile_raw = None
+            return
+        if isinstance(value, str):
+            self._intake_profile_raw = value
+            return
+        try:
+            self._intake_profile_raw = json.dumps(value, ensure_ascii=False)
+        except Exception:
+            self._intake_profile_raw = None
+
+    @property
+    def runtime_diagnostics(self):
+        raw = self._runtime_diagnostics_raw
+        if not raw:
+            return []
+        if isinstance(raw, list):
+            return raw
+        try:
+            parsed = json.loads(raw)
+            return parsed if isinstance(parsed, list) else []
+        except Exception:
+            return []
+
+    @runtime_diagnostics.setter
+    def runtime_diagnostics(self, value):
+        if value in (None, "", [], {}):
+            self._runtime_diagnostics_raw = None
+            return
+        if isinstance(value, str):
+            self._runtime_diagnostics_raw = value
+            return
+        try:
+            self._runtime_diagnostics_raw = json.dumps(value, ensure_ascii=False)
+        except Exception:
+            self._runtime_diagnostics_raw = None
 
 
 class Report(Base):
@@ -461,3 +516,4 @@ from .github import GitHubWebhookEvent as GitHubWebhookEvent
 from .hubspot import HubSpotChange as HubSpotChange  # noqa: E402
 from .hubspot import HubSpotConnection as HubSpotConnection
 from .hubspot import HubSpotPage as HubSpotPage
+

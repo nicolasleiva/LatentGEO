@@ -147,8 +147,13 @@ async def test_pdf_generation_with_kimi_failure_errors_when_fallbacks_disabled(
     mock_audit = MagicMock()
     mock_audit.id = 7
     mock_audit.url = "https://example.com"
-    mock_audit.target_audit = {}
-    mock_audit.external_intelligence = {}
+    mock_audit.target_audit = {"market": "argentina", "geo_score": 70}
+    mock_audit.external_intelligence = {
+        "category": "Education",
+        "subcategory": "Bootcamp",
+        "market": "argentina",
+        "queries_to_run": ["coding bootcamp argentina"],
+    }
     mock_audit.search_results = {}
     mock_audit.competitor_audits = []
     mock_audit.pagespeed_data = {
@@ -194,11 +199,12 @@ async def test_pdf_generation_with_kimi_failure_errors_when_fallbacks_disabled(
         new_callable=AsyncMock,
         return_value=[],
     ), patch(
-        "app.services.llm_visibility_service.LLMVisibilityService.generate_llm_visibility",
+        "app.services.llm_visibility_service.LLMVisibilityService.check_visibility",
         new_callable=AsyncMock,
         return_value=[],
     ), patch(
-        "app.services.ai_content_service.AIContentService.generate_content_suggestions",
+        "app.services.ai_content_service.AIContentService.generate_suggestions",
+        new_callable=AsyncMock,
         return_value=[],
     ), patch(
         "app.services.product_intelligence_service.ProductIntelligenceService.analyze",

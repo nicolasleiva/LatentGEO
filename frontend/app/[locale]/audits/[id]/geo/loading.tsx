@@ -15,15 +15,16 @@ export function GEOSkeleton({ auditId = "" }: { auditId?: string }) {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Header Skeleton */}
         <div className="mb-12">
-          <Link href={auditDetailHref}>
-            <Button
-              variant="ghost"
-              className="text-muted-foreground hover:text-foreground hover:bg-muted/40 mb-6 pl-0"
-            >
+          <Button
+            asChild
+            variant="ghost"
+            className="text-muted-foreground hover:text-foreground hover:bg-muted/40 mb-6 pl-0"
+          >
+            <Link href={auditDetailHref}>
               <ArrowLeft className="w-4 h-4 mr-2" />
               Back to Audit
-            </Button>
-          </Link>
+            </Link>
+          </Button>
 
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
             <div className="space-y-3">
