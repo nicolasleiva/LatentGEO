@@ -367,11 +367,7 @@ async function startBrowserSession(sessionLabel) {
     chromePath: browserExecutablePath,
     userDataDir: chromeProfileDir,
     logLevel: LIGHTHOUSE_LOG_LEVEL,
-    chromeFlags: [
-      "--headless=new",
-      "--no-sandbox",
-      "--disable-dev-shm-usage",
-    ],
+    chromeFlags: ["--headless=new", "--no-sandbox", "--disable-dev-shm-usage"],
   });
   const browser = await puppeteer.connect({
     browserURL: `http://127.0.0.1:${launchedChrome.port}`,
@@ -476,8 +472,15 @@ async function auditRouteBatch({
           : `retrying near-threshold route=${route}`,
       );
       await prewarmRoute(page, requestedUrl);
-      const retryBasePath = path.resolve(OUTPUT_DIR, `${slug}-retry-${nowStamp}`);
-      const retryRun = await runLighthouse(requestedUrl, retryBasePath, chromePort);
+      const retryBasePath = path.resolve(
+        OUTPUT_DIR,
+        `${slug}-retry-${nowStamp}`,
+      );
+      const retryRun = await runLighthouse(
+        requestedUrl,
+        retryBasePath,
+        chromePort,
+      );
       trace(`retry finished route=${route} code=${retryRun.code}`);
 
       const retryHtmlReport = `${retryBasePath}.report.html`;
@@ -496,7 +499,7 @@ async function auditRouteBatch({
           retryRow.thresholdPassed ||
           (hasInvalidLighthouseMetrics(row) &&
             !hasInvalidLighthouseMetrics(retryRow)) ||
-          ((retryRow.performance ?? 0) > (row.performance ?? 0))
+          (retryRow.performance ?? 0) > (row.performance ?? 0)
         ) {
           row = retryRow;
         }
@@ -596,7 +599,9 @@ function getThresholdForGroup(group) {
 }
 
 function getThresholdForRoute(routeItem = {}) {
-  const groupThreshold = getThresholdForGroup(routeItem.group || "internal-auth");
+  const groupThreshold = getThresholdForGroup(
+    routeItem.group || "internal-auth",
+  );
   if (!groupThreshold) {
     return null;
   }
@@ -651,7 +656,8 @@ function buildResultRow({
       failedChecks: [],
       critical: Boolean(routeItem?.critical),
       performanceThreshold: threshold?.performance ?? null,
-      errorSnippet: "Skipped: route redirected due to missing admin permission.",
+      errorSnippet:
+        "Skipped: route redirected due to missing admin permission.",
       htmlReport,
       jsonReport,
     };

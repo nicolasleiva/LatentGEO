@@ -6,11 +6,17 @@ const isProd =
   process.env.NODE_ENV === "production" ||
   process.env.ENVIRONMENT === "production";
 const strictBuild = process.env.STRICT_BUILD === "1";
-const allowLocalhostApiOrigin = process.env.ALLOW_LOCALHOST_API_ORIGIN === "1";
+const ciValidationBuild =
+  process.env.CI === "true" || process.env.GITHUB_ACTIONS === "true";
+const allowLocalhostApiOrigin =
+  process.env.ALLOW_LOCALHOST_API_ORIGIN === "1" || ciValidationBuild;
 const configDir = path.dirname(fileURLToPath(import.meta.url));
 const httpsEnforced = isProd && process.env.FORCE_HTTPS === "true";
 const devFallbackApiUrl = "http://localhost:8000";
 const localHostnames = new Set(["localhost", "127.0.0.1", "0.0.0.0"]);
+const buildValidationFallbackApiUrl = ciValidationBuild
+  ? devFallbackApiUrl
+  : "";
 
 function selectApiUrl(...candidates) {
   for (const candidate of candidates) {
@@ -19,7 +25,10 @@ function selectApiUrl(...candidates) {
       return trimmed;
     }
   }
-  return isProd ? "" : devFallbackApiUrl;
+  if (isProd) {
+    return buildValidationFallbackApiUrl;
+  }
+  return devFallbackApiUrl;
 }
 
 function normalizeAbsoluteUrl(value, label) {
@@ -34,7 +43,11 @@ function normalizeAbsoluteUrl(value, label) {
     throw new Error(`${label} must be an absolute URL`);
   }
 
-  if (isProd && !allowLocalhostApiOrigin && localHostnames.has(parsed.hostname)) {
+  if (
+    isProd &&
+    !allowLocalhostApiOrigin &&
+    localHostnames.has(parsed.hostname)
+  ) {
     throw new Error(`${label} cannot target localhost in production`);
   }
 

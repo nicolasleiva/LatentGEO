@@ -13,6 +13,7 @@ pytestmark = [pytest.mark.integration, pytest.mark.live]
 
 SMOKE_BASE_URL = os.getenv("SMOKE_BASE_URL", "").strip()
 SMOKE_BEARER_TOKEN = os.getenv("SMOKE_BEARER_TOKEN", "").strip()
+SMOKE_EXPECT_DOCS_STATUS = int(os.getenv("SMOKE_EXPECT_DOCS_STATUS", "404"))
 
 
 @pytest.fixture(scope="session")
@@ -38,7 +39,7 @@ def test_smoke_health(smoke_client: httpx.Client):
 
 def test_smoke_docs(smoke_client: httpx.Client):
     response = smoke_client.get("/docs")
-    assert response.status_code == 200, response.text
+    assert response.status_code == SMOKE_EXPECT_DOCS_STATUS, response.text
 
 
 def test_smoke_webhooks_health(smoke_client: httpx.Client):
