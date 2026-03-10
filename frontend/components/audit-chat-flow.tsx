@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { Input } from "@/components/ui/input";
 import { Send, Sparkles, Globe, Flag, CheckCircle } from "lucide-react";
-import { API_URL } from "@/lib/api";
+import { API_URL } from "@/lib/api-client";
 import { fetchWithBackendAuth } from "@/lib/backend-auth";
 
 interface AuditChatFlowProps {
@@ -122,6 +122,7 @@ export function AuditChatFlow({ auditId, onComplete }: AuditChatFlowProps) {
         : userMessage;
       setConfig((prev) => ({ ...prev, market }));
       setStep("done");
+      const finalMarket = market.trim() || null;
       sendAIMessage(
         "Confirmed. Launching your comprehensive audit now. This takes a few minutes.",
       );
@@ -145,7 +146,7 @@ export function AuditChatFlow({ auditId, onComplete }: AuditChatFlowProps) {
               language: "en",
               competitors:
                 config.competitors.length > 0 ? config.competitors : null,
-              market: market || null,
+              market: finalMarket,
             }),
           });
           onComplete();
@@ -160,7 +161,7 @@ export function AuditChatFlow({ auditId, onComplete }: AuditChatFlowProps) {
                 language: "en",
                 competitors:
                   config.competitors.length > 0 ? config.competitors : null,
-                market: market || null,
+                market: finalMarket,
               }),
             },
           );
@@ -188,7 +189,8 @@ export function AuditChatFlow({ auditId, onComplete }: AuditChatFlowProps) {
             Audit configuration
           </h2>
           <p className="text-sm text-muted-foreground mt-2">
-            Two quick questions to personalize your analysis.
+            Two quick questions to personalize your analysis before the audit
+            starts.
           </p>
         </div>
 

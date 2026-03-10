@@ -1,31 +1,23 @@
-"use client";
+import {
+  ExternalLink,
+  Globe,
+  Link as LinkIcon,
+  Minus,
+  Network,
+  ThumbsDown,
+  ThumbsUp,
+} from "lucide-react";
 
-import { useState, useEffect, useCallback } from "react";
-import { useParams } from "next/navigation";
-import { api } from "@/lib/api";
-import { Backlink } from "@/lib/types";
 import { Header } from "@/components/header";
+import { Badge } from "@/components/ui/badge";
 import {
   Card,
   CardContent,
+  CardDescription,
   CardHeader,
   CardTitle,
-  CardDescription,
 } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import {
-  Loader2,
-  Link as LinkIcon,
-  ExternalLink,
-  Network,
-  Globe,
-  ThumbsUp,
-  ThumbsDown,
-  Minus,
-} from "lucide-react";
 import {
   Table,
   TableBody,
@@ -34,95 +26,88 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { requireServerViewer, serverJson } from "@/lib/server-api";
+import type { Backlink } from "@/lib/types";
 
-export default function BacklinksPage() {
-  const params = useParams();
-  const auditId = params.id as string;
+import BacklinksAnalyzeForm from "./BacklinksAnalyzeForm";
 
-  const [domain, setDomain] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [backlinks, setBacklinks] = useState<Backlink[]>([]);
-  const [error, setError] = useState("");
+type MentionAnalysis = {
+  sentiment: string;
+  topic: string;
+  snippet: string;
+  recommendation: string;
+  relevance_score: number;
+};
 
-  const loadData = useCallback(async () => {
-    try {
-      const data = await api.getBacklinks(auditId);
-      setBacklinks(data);
-      try {
-        const audit = await api.getAudit(auditId);
-        if (audit.url) {
-          const url = new URL(audit.url);
-          setDomain(url.hostname);
-        }
-      } catch {}
-    } catch (e) {
-      console.error(e);
-    }
-  }, [auditId]);
-
-  useEffect(() => {
-    loadData();
-  }, [loadData]);
-
-  async function handleAnalyze() {
-    if (!domain) return;
-
-    setLoading(true);
-    setError("");
-
-    try {
-      await api.analyzeBacklinks(auditId, domain);
-      const allBacklinks = await api.getBacklinks(auditId);
-      setBacklinks(allBacklinks);
-    } catch (e) {
-      setError("Failed to analyze links.");
-    } finally {
-      setLoading(false);
-    }
+function parseMentionAnalysis(anchorText: string): MentionAnalysis {
+  try {
+    return JSON.parse(anchorText) as MentionAnalysis;
+  } catch {
+    return {
+      sentiment: "neutral",
+      topic: "Unknown",
+      snippet: anchorText,
+      recommendation: "N/A",
+      relevance_score: 0,
+    };
   }
+}
 
+function getSentimentIcon(sentiment: string) {
+  if (sentiment === "positive") {
+    return <ThumbsUp className="h-4 w-4 text-foreground" />;
+  }
+  if (sentiment === "negative") {
+    return <ThumbsDown className="h-4 w-4 text-muted-foreground" />;
+  }
+  return <Minus className="h-4 w-4 text-muted-foreground/50" />;
+}
+
+function resolveDomain(url: string | null | undefined) {
+  if (!url) return "";
+  try {
+    return new URL(url).hostname;
+  } catch {
+    return "";
+  }
+}
+
+export default async function BacklinksPage({
+  params,
+}: {
+  params: Promise<{ locale: string; id: string }>;
+}) {
+  const { locale, id: auditId } = await params;
+  await requireServerViewer(`/${locale}/audits/${auditId}/backlinks`);
+
+  const [backlinks, audit] = await Promise.all([
+    serverJson<Backlink[]>(`/api/v1/backlinks/${auditId}`).catch(() => []),
+    serverJson<{ url?: string }>(`/api/v1/audits/${auditId}`).catch(() => ({})),
+  ]);
+
+  const auditUrl =
+    "url" in audit && typeof audit.url === "string" ? audit.url : "";
+  const domain = resolveDomain(auditUrl);
   const internalLinks = backlinks.filter(
-    (bl) => bl.source_url === "INTERNAL_NETWORK",
+    (backlink) => backlink.source_url === "INTERNAL_NETWORK",
   );
   const technicalBacklinks = backlinks.filter(
-    (bl) => bl.source_url === "TECHNICAL_BACKLINK",
+    (backlink) => backlink.source_url === "TECHNICAL_BACKLINK",
   );
   const brandMentions = backlinks.filter(
-    (bl) => bl.source_url === "BRAND_MENTION",
+    (backlink) => backlink.source_url === "BRAND_MENTION",
   );
-
-  function parseMentionAnalysis(anchorText: string) {
-    try {
-      return JSON.parse(anchorText);
-    } catch {
-      return {
-        sentiment: "neutral",
-        topic: "Unknown",
-        snippet: anchorText,
-        recommendation: "N/A",
-        relevance_score: 0,
-      };
-    }
-  }
-
-  function getSentimentIcon(sentiment: string) {
-    if (sentiment === "positive")
-      return <ThumbsUp className="h-4 w-4 text-foreground" />;
-    if (sentiment === "negative")
-      return <ThumbsDown className="h-4 w-4 text-muted-foreground" />;
-    return <Minus className="h-4 w-4 text-muted-foreground/50" />;
-  }
 
   return (
     <div className="min-h-screen bg-background text-foreground">
       <Header />
-      <main className="max-w-6xl mx-auto px-6 py-12 space-y-8">
-        <div className="flex justify-between items-center animate-fade-up">
+      <main className="mx-auto max-w-6xl space-y-8 px-6 py-12">
+        <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-3xl md:text-4xl font-semibold tracking-tight">
+            <h1 className="text-3xl font-semibold tracking-tight md:text-4xl">
               Link & Mention Analysis
             </h1>
-            <p className="text-muted-foreground mt-2">
+            <p className="mt-2 text-muted-foreground">
               Internal structure, technical backlinks, and AI-powered brand
               analysis.
             </p>
@@ -136,50 +121,26 @@ export default function BacklinksPage() {
               Comprehensive analysis of all link types and brand mentions.
             </CardDescription>
           </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex flex-col md:flex-row gap-4">
-              <Input
-                className="glass-input max-w-md"
-                placeholder="example.com"
-                value={domain}
-                onChange={(e) => setDomain(e.target.value)}
-              />
-              <Button
-                onClick={handleAnalyze}
-                disabled={loading}
-                className="glass-button-primary"
-              >
-                {loading ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />{" "}
-                    Analyzing...
-                  </>
-                ) : (
-                  <>
-                    <Network className="mr-2 h-4 w-4" /> Analyze All
-                  </>
-                )}
-              </Button>
-            </div>
-            {error && <p className="text-red-500 text-sm">{error}</p>}
+          <CardContent>
+            <BacklinksAnalyzeForm auditId={auditId} initialDomain={domain} />
           </CardContent>
         </Card>
 
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
           <Card className="glass-card p-5">
-            <div className="text-xs uppercase tracking-widest text-muted-foreground mb-2">
+            <div className="mb-2 text-xs uppercase tracking-widest text-muted-foreground">
               Total
             </div>
             <div className="text-2xl font-semibold">{backlinks.length}</div>
           </Card>
           <Card className="glass-card p-5">
-            <div className="text-xs uppercase tracking-widest text-muted-foreground mb-2">
+            <div className="mb-2 text-xs uppercase tracking-widest text-muted-foreground">
               Internal
             </div>
             <div className="text-2xl font-semibold">{internalLinks.length}</div>
           </Card>
           <Card className="glass-card p-5">
-            <div className="text-xs uppercase tracking-widest text-muted-foreground mb-2">
+            <div className="mb-2 text-xs uppercase tracking-widest text-muted-foreground">
               Technical
             </div>
             <div className="text-2xl font-semibold">
@@ -187,7 +148,7 @@ export default function BacklinksPage() {
             </div>
           </Card>
           <Card className="glass-card p-5">
-            <div className="text-xs uppercase tracking-widest text-muted-foreground mb-2">
+            <div className="mb-2 text-xs uppercase tracking-widest text-muted-foreground">
               Mentions
             </div>
             <div className="text-2xl font-semibold">{brandMentions.length}</div>
@@ -227,40 +188,42 @@ export default function BacklinksPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {internalLinks.map((bl) => (
-                      <TableRow key={bl.id}>
-                        <TableCell className="font-medium break-all">
-                          {bl.target_url}
+                    {internalLinks.map((backlink) => (
+                      <TableRow key={backlink.id}>
+                        <TableCell className="break-all font-medium">
+                          {backlink.target_url}
                         </TableCell>
                         <TableCell>
                           <Badge variant="secondary">Internal Network</Badge>
                         </TableCell>
-                        <TableCell>{bl.anchor_text}</TableCell>
+                        <TableCell>{backlink.anchor_text}</TableCell>
                         <TableCell>
                           <Badge
                             variant="outline"
                             className={
-                              bl.is_dofollow
-                                ? "text-emerald-600 border-emerald-500/30"
+                              backlink.is_dofollow
+                                ? "border-emerald-500/30 text-emerald-600"
                                 : ""
                             }
                           >
-                            {bl.is_dofollow ? "Dofollow" : "Nofollow"}
+                            {backlink.is_dofollow ? "Dofollow" : "Nofollow"}
                           </Badge>
                         </TableCell>
-                        <TableCell>{bl.domain_authority ?? "—"}</TableCell>
+                        <TableCell>
+                          {backlink.domain_authority ?? "—"}
+                        </TableCell>
                       </TableRow>
                     ))}
-                    {internalLinks.length === 0 && !loading && (
+                    {internalLinks.length === 0 ? (
                       <TableRow>
                         <TableCell
                           colSpan={5}
-                          className="text-center py-8 text-muted-foreground"
+                          className="py-8 text-center text-muted-foreground"
                         >
                           No internal link data found.
                         </TableCell>
                       </TableRow>
-                    )}
+                    ) : null}
                   </TableBody>
                 </Table>
               </CardContent>
@@ -287,50 +250,52 @@ export default function BacklinksPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {technicalBacklinks.map((bl) => (
-                      <TableRow key={bl.id}>
-                        <TableCell className="font-medium break-all">
+                    {technicalBacklinks.map((backlink) => (
+                      <TableRow key={backlink.id}>
+                        <TableCell className="break-all font-medium">
                           <a
-                            href={bl.target_url}
+                            href={backlink.target_url}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="flex items-center hover:underline text-brand"
+                            className="flex items-center text-brand hover:underline"
                           >
-                            {bl.target_url}{" "}
+                            {backlink.target_url}
                             <ExternalLink className="ml-1 h-3 w-3" />
                           </a>
                         </TableCell>
-                        <TableCell>{bl.anchor_text}</TableCell>
+                        <TableCell>{backlink.anchor_text}</TableCell>
                         <TableCell>
                           <Badge variant="outline">
-                            {new URL(bl.target_url).hostname}
+                            {resolveDomain(backlink.target_url) || "Unknown"}
                           </Badge>
                         </TableCell>
                         <TableCell>
                           <Badge
                             variant="outline"
                             className={
-                              bl.is_dofollow
-                                ? "text-emerald-600 border-emerald-500/30"
+                              backlink.is_dofollow
+                                ? "border-emerald-500/30 text-emerald-600"
                                 : ""
                             }
                           >
-                            {bl.is_dofollow ? "Dofollow" : "Nofollow"}
+                            {backlink.is_dofollow ? "Dofollow" : "Nofollow"}
                           </Badge>
                         </TableCell>
-                        <TableCell>{bl.domain_authority ?? "—"}</TableCell>
+                        <TableCell>
+                          {backlink.domain_authority ?? "—"}
+                        </TableCell>
                       </TableRow>
                     ))}
-                    {technicalBacklinks.length === 0 && !loading && (
+                    {technicalBacklinks.length === 0 ? (
                       <TableRow>
                         <TableCell
                           colSpan={5}
-                          className="text-center py-8 text-muted-foreground"
+                          className="py-8 text-center text-muted-foreground"
                         >
                           No technical backlinks found.
                         </TableCell>
                       </TableRow>
-                    )}
+                    ) : null}
                   </TableBody>
                 </Table>
               </CardContent>
@@ -348,26 +313,27 @@ export default function BacklinksPage() {
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
-                  {brandMentions.map((bl) => {
-                    const analysis = parseMentionAnalysis(bl.anchor_text);
+                  {brandMentions.map((backlink) => {
+                    const analysis = parseMentionAnalysis(backlink.anchor_text);
                     return (
                       <div
-                        key={bl.id}
-                        className="border border-border rounded-lg p-4 space-y-2 glass-panel"
+                        key={backlink.id}
+                        className="glass-panel space-y-2 rounded-lg border border-border p-4"
                       >
                         <div className="flex items-start justify-between gap-4">
                           <div className="flex-1">
                             <a
-                              href={bl.target_url}
+                              href={backlink.target_url}
                               target="_blank"
                               rel="noopener noreferrer"
-                              className="text-brand hover:underline font-medium flex items-center"
+                              className="flex items-center font-medium text-brand hover:underline"
                             >
-                              {new URL(bl.target_url).hostname}{" "}
+                              {resolveDomain(backlink.target_url) ||
+                                backlink.target_url}
                               <ExternalLink className="ml-1 h-3 w-3" />
                             </a>
-                            <p className="text-sm text-muted-foreground mt-1">
-                              {bl.target_url}
+                            <p className="mt-1 text-sm text-muted-foreground">
+                              {backlink.target_url}
                             </p>
                           </div>
                           <div className="flex items-center gap-2">
@@ -385,7 +351,7 @@ export default function BacklinksPage() {
                             </Badge>
                           </div>
                         </div>
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm text-muted-foreground">
+                        <div className="grid grid-cols-1 gap-4 text-sm text-muted-foreground md:grid-cols-3">
                           <div>
                             <span className="font-semibold text-foreground">
                               Topic:
@@ -402,10 +368,10 @@ export default function BacklinksPage() {
                             <span className="font-semibold text-foreground">
                               Follow:
                             </span>{" "}
-                            {bl.is_dofollow ? "Dofollow" : "Nofollow"}
+                            {backlink.is_dofollow ? "Dofollow" : "Nofollow"}
                           </div>
                         </div>
-                        <div className="bg-muted/50 p-3 rounded border border-border">
+                        <div className="rounded border border-border bg-muted/50 p-3">
                           <p className="text-sm">
                             <span className="font-semibold text-foreground">
                               Context:
@@ -413,7 +379,7 @@ export default function BacklinksPage() {
                             {analysis.snippet}
                           </p>
                         </div>
-                        <div className="bg-brand/10 p-3 rounded border-l-4 border-brand">
+                        <div className="rounded border-l-4 border-brand bg-brand/10 p-3">
                           <p className="text-sm">
                             <span className="font-semibold text-foreground">
                               Recommendation:
@@ -422,17 +388,18 @@ export default function BacklinksPage() {
                           </p>
                         </div>
                         <div className="text-xs text-muted-foreground">
-                          ID: #{bl.id} · DA: {bl.domain_authority ?? "—"}
+                          ID: #{backlink.id} · DA:{" "}
+                          {backlink.domain_authority ?? "—"}
                         </div>
                       </div>
                     );
                   })}
-                  {brandMentions.length === 0 && !loading && (
-                    <div className="text-center py-8 text-muted-foreground">
+                  {brandMentions.length === 0 ? (
+                    <div className="py-8 text-center text-muted-foreground">
                       No brand mentions found. Run the analysis to discover
                       citations.
                     </div>
-                  )}
+                  ) : null}
                 </div>
               </CardContent>
             </Card>

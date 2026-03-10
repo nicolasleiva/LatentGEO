@@ -2,7 +2,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import KeywordsPage from "@/app/[locale]/audits/[id]/keywords/page";
 import { useParams } from "next/navigation";
-import { api } from "@/lib/api";
+import { api } from "@/lib/api-client";
 
 vi.mock("next/navigation", () => ({
   useParams: vi.fn(),
@@ -12,7 +12,7 @@ vi.mock("@/components/header", () => ({
   Header: () => <div data-testid="header">Header</div>,
 }));
 
-vi.mock("@/lib/api", () => ({
+vi.mock("@/lib/api-client", () => ({
   api: {
     getKeywords: vi.fn(),
     getAudit: vi.fn(),

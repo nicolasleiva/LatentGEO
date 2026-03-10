@@ -22,7 +22,7 @@ import {
   ExternalLink,
   Zap,
 } from "lucide-react";
-import { API_URL } from "@/lib/api";
+import { API_URL } from "@/lib/api-client";
 import { fetchWithBackendAuth } from "@/lib/backend-auth";
 
 interface HubSpotRecommendation {
@@ -46,16 +46,20 @@ interface ApplyResult {
 
 export default function HubSpotApplyRecommendations({
   auditId,
+  initialRecommendations = [],
+  initialRecommendationsLoaded = false,
 }: {
   auditId: string;
+  initialRecommendations?: HubSpotRecommendation[];
+  initialRecommendationsLoaded?: boolean;
 }) {
   const [recommendations, setRecommendations] = useState<
     HubSpotRecommendation[]
-  >([]);
+  >(initialRecommendations);
   const [selectedRecs, setSelectedRecs] = useState<Set<string>>(new Set());
   const [applying, setApplying] = useState(false);
   const [results, setResults] = useState<ApplyResult[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!initialRecommendationsLoaded);
 
   const fetchRecommendations = useCallback(async () => {
     try {
@@ -63,11 +67,13 @@ export default function HubSpotApplyRecommendations({
         `${API_URL}/api/v1/hubspot/recommendations/${auditId}`,
       );
       const data = await response.json();
-      setRecommendations(data.recommendations);
+      const nextRecommendations = Array.isArray(data.recommendations)
+        ? data.recommendations
+        : [];
+      setRecommendations(nextRecommendations);
 
-      // Auto-select all auto-fixable recommendations
       const autoFixable = new Set<string>(
-        data.recommendations
+        nextRecommendations
           .filter((r: HubSpotRecommendation) => r.auto_fixable)
           .map((r: HubSpotRecommendation) => r.id),
       );
@@ -80,8 +86,23 @@ export default function HubSpotApplyRecommendations({
   }, [auditId]);
 
   useEffect(() => {
-    fetchRecommendations();
-  }, [fetchRecommendations]);
+    if (initialRecommendationsLoaded) {
+      const autoFixable = new Set<string>(
+        initialRecommendations
+          .filter((recommendation) => recommendation.auto_fixable)
+          .map((recommendation) => recommendation.id),
+      );
+      setSelectedRecs(autoFixable);
+      setLoading(false);
+      return;
+    }
+
+    void fetchRecommendations();
+  }, [
+    fetchRecommendations,
+    initialRecommendations,
+    initialRecommendationsLoaded,
+  ]);
 
   const toggleRecommendation = (id: string) => {
     const newSelected = new Set(selectedRecs);

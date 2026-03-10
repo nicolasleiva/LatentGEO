@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useParams } from "next/navigation";
-import { api } from "@/lib/api";
+import { api } from "@/lib/api-client";
 import { Keyword } from "@/lib/types";
 import { Header } from "@/components/header";
 import {

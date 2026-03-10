@@ -1,20 +1,14 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import LLMVisibilityPage from "@/app/[locale]/audits/[id]/llm-visibility/page";
-import { useParams } from "next/navigation";
-import { api } from "@/lib/api";
-
-vi.mock("next/navigation", () => ({
-  useParams: vi.fn(),
-}));
+import LLMVisibilityPageClient from "@/app/[locale]/audits/[id]/llm-visibility/LLMVisibilityPageClient";
+import { api } from "@/lib/api-client";
 
 vi.mock("@/components/header", () => ({
   Header: () => <div data-testid="header">Header</div>,
 }));
 
-vi.mock("@/lib/api", () => ({
+vi.mock("@/lib/api-client", () => ({
   api: {
-    getLLMVisibility: vi.fn(),
     checkLLMVisibility: vi.fn(),
   },
 }));
@@ -22,8 +16,6 @@ vi.mock("@/lib/api", () => ({
 describe("LLMVisibilityPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    (useParams as jest.Mock).mockReturnValue({ id: "1" });
-    (api.getLLMVisibility as jest.Mock).mockResolvedValue([]);
   });
 
   it("shows Kimi detail errors for visibility checks", async () => {
@@ -34,11 +26,13 @@ describe("LLMVisibilityPage", () => {
       ),
     );
 
-    render(<LLMVisibilityPage />);
-
-    await waitFor(() => {
-      expect(api.getLLMVisibility).toHaveBeenCalledWith("1");
-    });
+    render(
+      <LLMVisibilityPageClient
+        auditId="1"
+        initialResults={[]}
+        initialBrandName="example"
+      />,
+    );
 
     await user.type(screen.getByPlaceholderText(/acme corp/i), "Example");
     await user.type(

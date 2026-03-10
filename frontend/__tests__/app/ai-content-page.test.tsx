@@ -1,18 +1,13 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import AIContentPage from "@/app/[locale]/audits/[id]/ai-content/page";
-import { useParams } from "next/navigation";
-import { api } from "@/lib/api";
-
-vi.mock("next/navigation", () => ({
-  useParams: vi.fn(),
-}));
+import AIContentPageClient from "@/app/[locale]/audits/[id]/ai-content/AIContentPageClient";
+import { api } from "@/lib/api-client";
 
 vi.mock("@/components/header", () => ({
   Header: () => <div data-testid="header">Header</div>,
 }));
 
-vi.mock("@/lib/api", () => ({
+vi.mock("@/lib/api-client", () => ({
   api: {
     getAIContent: vi.fn(),
     getAudit: vi.fn(),
@@ -23,11 +18,6 @@ vi.mock("@/lib/api", () => ({
 describe("AIContentPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    (useParams as jest.Mock).mockReturnValue({ id: "1" });
-    (api.getAIContent as jest.Mock).mockResolvedValue([]);
-    (api.getAudit as jest.Mock).mockResolvedValue({
-      url: "https://example.com",
-    });
   });
 
   it("shows Kimi backend detail errors and not legacy OpenAI/Gemini message", async () => {
@@ -38,11 +28,13 @@ describe("AIContentPage", () => {
       ),
     );
 
-    render(<AIContentPage />);
-
-    await waitFor(() => {
-      expect(api.getAIContent).toHaveBeenCalledWith("1");
-    });
+    render(
+      <AIContentPageClient
+        auditId="1"
+        initialDomain="example.com"
+        initialSuggestions={[]}
+      />,
+    );
 
     const topicsInput = screen.getByPlaceholderText(/cloud computing, devops/i);
     await user.type(topicsInput, "AI");
@@ -54,5 +46,10 @@ describe("AIContentPage", () => {
       await screen.findByText(/Kimi provider is not configured/i),
     ).toBeInTheDocument();
     expect(screen.queryByText(/OpenAI\/Gemini/i)).not.toBeInTheDocument();
+    await waitFor(() => {
+      expect(api.generateAIContent).toHaveBeenCalledWith("1", "example.com", [
+        "AI",
+      ]);
+    });
   });
 });
