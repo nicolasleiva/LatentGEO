@@ -95,8 +95,11 @@ export default function LLMVisibilityPageClient({
           <CardContent className="space-y-4">
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               <div className="space-y-2">
-                <label className="text-sm font-medium">Brand Name</label>
+                <label htmlFor="llm-brand-name" className="text-sm font-medium">
+                  Brand Name
+                </label>
                 <Input
+                  id="llm-brand-name"
                   className="glass-input"
                   placeholder="e.g. Acme Corp"
                   value={brandName}
@@ -104,10 +107,14 @@ export default function LLMVisibilityPageClient({
                 />
               </div>
               <div className="space-y-2">
-                <label className="text-sm font-medium">
+                <label
+                  htmlFor="llm-brand-queries"
+                  className="text-sm font-medium"
+                >
                   Queries (comma separated)
                 </label>
                 <Input
+                  id="llm-brand-queries"
                   className="glass-input"
                   placeholder="e.g. best seo tools, top marketing agencies"
                   value={queries}

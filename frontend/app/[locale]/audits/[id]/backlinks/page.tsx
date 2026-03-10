@@ -41,7 +41,28 @@ type MentionAnalysis = {
 
 function parseMentionAnalysis(anchorText: string): MentionAnalysis {
   try {
-    return JSON.parse(anchorText) as MentionAnalysis;
+    const parsed = JSON.parse(anchorText) as Record<string, unknown> | null;
+    if (!parsed || Array.isArray(parsed)) {
+      throw new Error("Invalid mention analysis payload");
+    }
+
+    const relevanceScore =
+      typeof parsed.relevance_score === "number" &&
+      Number.isFinite(parsed.relevance_score)
+        ? Math.min(Math.max(parsed.relevance_score, 0), 100)
+        : 0;
+
+    return {
+      sentiment:
+        typeof parsed.sentiment === "string" ? parsed.sentiment : "neutral",
+      topic: typeof parsed.topic === "string" ? parsed.topic : "Unknown",
+      snippet: typeof parsed.snippet === "string" ? parsed.snippet : anchorText,
+      recommendation:
+        typeof parsed.recommendation === "string"
+          ? parsed.recommendation
+          : "N/A",
+      relevance_score: relevanceScore,
+    };
   } catch {
     return {
       sentiment: "neutral",

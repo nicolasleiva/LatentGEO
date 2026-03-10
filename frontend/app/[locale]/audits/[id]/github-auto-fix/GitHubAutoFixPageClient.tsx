@@ -108,6 +108,7 @@ export default function GitHubAutoFixPageClient({
   >([]);
   const [stepError, setStepError] = useState<string | null>(null);
   const chatSectionRef = useRef<HTMLDivElement>(null);
+  const repoRequestIdRef = useRef(0);
 
   const backendUrl = API_URL;
   const hasMissingRequired = missingInputs.some((group) => group.required);
@@ -248,25 +249,35 @@ export default function GitHubAutoFixPageClient({
 
   const fetchRepositories = useCallback(
     async (connectionId: string) => {
+      const requestId = repoRequestIdRef.current + 1;
+      repoRequestIdRef.current = requestId;
       setReposLoading(true);
+      setRepositories([]);
+      setSelectedRepo(null);
       try {
         const res = await fetchWithBackendAuth(
           `${backendUrl}/api/v1/github/repos/${connectionId}`,
         );
         if (res.ok) {
           const data = await res.json();
-          setRepositories(data);
-          if (!selectedRepo && Array.isArray(data) && data.length > 0) {
-            setSelectedRepo(String(data[0].id));
+          if (repoRequestIdRef.current !== requestId) {
+            return;
+          }
+          const nextRepositories = Array.isArray(data) ? data : [];
+          setRepositories(nextRepositories);
+          if (nextRepositories.length > 0) {
+            setSelectedRepo(String(nextRepositories[0].id));
           }
         }
       } catch (err) {
         console.error("Error fetching repositories:", err);
       } finally {
-        setReposLoading(false);
+        if (repoRequestIdRef.current === requestId) {
+          setReposLoading(false);
+        }
       }
     },
-    [backendUrl, selectedRepo],
+    [backendUrl],
   );
 
   useEffect(() => {
@@ -288,7 +299,6 @@ export default function GitHubAutoFixPageClient({
 
   const handleConnectionChange = (connectionId: string) => {
     setSelectedConnection(connectionId);
-    setSelectedRepo(null);
     void fetchRepositories(connectionId);
   };
 
@@ -322,7 +332,7 @@ export default function GitHubAutoFixPageClient({
             field_label: step.field.label,
             placeholder: step.field.placeholder,
             current_values: inputValues[step.groupId] || {},
-            language: "en",
+            language: locale || "en",
             history: chatHistory.slice(-6),
           }),
         },

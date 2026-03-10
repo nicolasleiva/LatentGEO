@@ -33,6 +33,8 @@ export default function AuditPageFindingsSection({
         ) : (
           visiblePages.map((page: any) => {
             const issues = [];
+            const semanticHtmlScore =
+              page.audit_data?.structure?.semantic_html?.score_percent;
             if (page.audit_data?.structure?.h1_check?.status !== "pass") {
               issues.push({
                 severity: "critical",
@@ -54,7 +56,11 @@ export default function AuditPageFindingsSection({
                 msg: "Author not identified",
               });
             }
-            if (page.audit_data?.structure?.semantic_html?.score_percent < 50) {
+            if (
+              semanticHtmlScore === null ||
+              semanticHtmlScore === undefined ||
+              semanticHtmlScore < 50
+            ) {
               issues.push({
                 severity: "medium",
                 msg: "Low semantic HTML score",
