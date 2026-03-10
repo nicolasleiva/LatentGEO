@@ -149,10 +149,16 @@ export default function HubSpotApplyRecommendations({
       );
 
       const data = await response.json();
-      setResults(data.details.applied.concat(data.details.failed));
+      const applied = Array.isArray(data?.details?.applied)
+        ? data.details.applied
+        : [];
+      const failed = Array.isArray(data?.details?.failed)
+        ? data.details.failed
+        : [];
+      setResults(applied.concat(failed));
 
       // Show success message
-      alert(`✅ Applied ${data.applied} changes successfully!`);
+      alert(`✅ Applied ${data?.applied ?? 0} changes successfully!`);
 
       // Reload recommendations to show updated state
       await fetchRecommendations();

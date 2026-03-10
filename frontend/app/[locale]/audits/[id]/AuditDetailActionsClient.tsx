@@ -45,9 +45,11 @@ export default function AuditDetailActionsClient({
         break;
       }
 
-      await new Promise((resolve) =>
-        setTimeout(resolve, Math.min(1000 * (attempt + 1), 3000)),
-      );
+      if (attempt < 4) {
+        await new Promise((resolve) =>
+          setTimeout(resolve, Math.min(1000 * (attempt + 1), 3000)),
+        );
+      }
     }
 
     throw lastError ?? new Error("Failed to obtain PDF download URL.");
