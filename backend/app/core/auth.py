@@ -115,7 +115,9 @@ def _normalize_claim_items(value: Any) -> tuple[str, ...]:
     return ()
 
 
-def _collect_claim_items(payload: Dict[str, Any], canonical_key: str) -> tuple[str, ...]:
+def _collect_claim_items(
+    payload: Dict[str, Any], canonical_key: str
+) -> tuple[str, ...]:
     collected: list[str] = []
     for key, value in payload.items():
         if key == canonical_key or key.endswith(f"/{canonical_key}"):

@@ -400,6 +400,7 @@ def validate_environment():
         or is_production
         or not settings.AUDIT_LOCAL_ARTIFACTS_ENABLED
     )
+
     def require(value, name):
         if not value:
             errors.append(f"{name} is missing!")

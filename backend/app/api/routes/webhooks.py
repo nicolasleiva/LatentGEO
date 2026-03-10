@@ -89,7 +89,9 @@ def _validate_hubspot_signature(
     try:
         timestamp_ms = int(request_timestamp)
     except ValueError as exc:
-        raise HTTPException(status_code=401, detail="Invalid HubSpot timestamp") from exc
+        raise HTTPException(
+            status_code=401, detail="Invalid HubSpot timestamp"
+        ) from exc
 
     now_ms = int(time.time() * 1000)
     if abs(now_ms - timestamp_ms) > 300_000:
@@ -97,10 +99,7 @@ def _validate_hubspot_signature(
 
     request_uri = unquote(str(request.url))
     source = (
-        request.method.upper()
-        + request_uri
-        + body.decode("utf-8")
-        + request_timestamp
+        request.method.upper() + request_uri + body.decode("utf-8") + request_timestamp
     )
     expected_signature = base64.b64encode(
         hmac.new(

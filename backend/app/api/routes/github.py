@@ -280,7 +280,9 @@ async def oauth_callback(
 ):
     """Maneja callback de OAuth"""
     try:
-        state_payload = validate_oauth_state(request.state or "", "github", current_user)
+        state_payload = validate_oauth_state(
+            request.state or "", "github", current_user
+        )
         return_to = state_payload.get("return_to")
 
         # 1. Exchange code for token
