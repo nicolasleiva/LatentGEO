@@ -6,10 +6,11 @@ import asyncio
 import hashlib
 import json
 import os
+import re
 import shutil
 import tempfile
 import time
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Dict, List, Optional
 from urllib.parse import urlparse
@@ -41,6 +42,11 @@ class PDFService:
     """Encapsula la lÃ³gica para crear archivos PDF a partir de contenido."""
 
     REPORT_CONTEXT_PROMPT_VERSION = "report_generation_v2"
+    REPORT_SIGNATURE_REPORT_TYPE = "REPORT_CONTEXT_SIGNATURE"
+    DETERMINISTIC_REPORT_MARKERS = (
+        "full_deterministic_regenerated",
+        "digital audit report (deterministic fallback)",
+    )
 
     @staticmethod
     def _timeout_from_env(env_var: str, default_seconds: float) -> Optional[float]:
@@ -442,7 +448,16 @@ class PDFService:
         llm_signature = {
             "total": len(llm_rows),
             "visible_total": len(
-                [item for item in llm_rows if bool(item.get("is_visible"))]
+                [
+                    item
+                    for item in llm_rows
+                    if bool(
+                        item.get(
+                            "is_visible",
+                            item.get("mentioned", item.get("visible")),
+                        )
+                    )
+                ]
             ),
         }
         ai_signature = {
@@ -554,32 +569,81 @@ class PDFService:
         return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
 
     @staticmethod
-    def _load_saved_report_signature(audit_id: int) -> str:
-        if not settings.AUDIT_LOCAL_ARTIFACTS_ENABLED:
-            return ""
-        signature_path = PDFService._report_context_signature_path(audit_id)
-        if not os.path.exists(signature_path):
-            return ""
-        try:
-            with open(signature_path, "r", encoding="utf-8") as f:
-                return f.read().strip()
-        except Exception as exc:
-            logger.warning(f"Could not read report signature cache: {exc}")
+    def _load_saved_report_signature(audit_id: int, db: Any = None) -> str:
+        if settings.AUDIT_LOCAL_ARTIFACTS_ENABLED:
+            signature_path = PDFService._report_context_signature_path(audit_id)
+            if os.path.exists(signature_path):
+                try:
+                    with open(signature_path, "r", encoding="utf-8") as f:
+                        signature = f.read().strip()
+                    if signature:
+                        return signature
+                except Exception as exc:
+                    logger.warning(f"Could not read report signature cache: {exc}")
+
+        if db is None:
             return ""
 
+        try:
+            from ..models import Report
+
+            cached_signature = (
+                db.query(Report)
+                .filter(
+                    Report.audit_id == int(audit_id),
+                    Report.report_type == PDFService.REPORT_SIGNATURE_REPORT_TYPE,
+                )
+                .order_by(Report.id.desc())
+                .first()
+            )
+            if cached_signature and isinstance(cached_signature.file_path, str):
+                return cached_signature.file_path.strip()
+        except Exception as exc:
+            logger.warning(f"Could not read report signature cache from DB: {exc}")
+
+        return ""
+
     @staticmethod
-    def _save_report_signature(audit_id: int, signature: str) -> None:
-        if not settings.AUDIT_LOCAL_ARTIFACTS_ENABLED:
-            return
+    def _save_report_signature(audit_id: int, signature: str, db: Any = None) -> None:
         if not signature:
             return
-        signature_path = PDFService._report_context_signature_path(audit_id)
-        os.makedirs(os.path.dirname(signature_path), exist_ok=True)
+
+        if settings.AUDIT_LOCAL_ARTIFACTS_ENABLED:
+            signature_path = PDFService._report_context_signature_path(audit_id)
+            os.makedirs(os.path.dirname(signature_path), exist_ok=True)
+            try:
+                with open(signature_path, "w", encoding="utf-8") as f:
+                    f.write(signature)
+            except Exception as exc:
+                logger.warning(f"Could not persist report signature cache: {exc}")
+
+        if db is None:
+            return
+
         try:
-            with open(signature_path, "w", encoding="utf-8") as f:
-                f.write(signature)
+            from ..models import Report
+
+            cached_signature = (
+                db.query(Report)
+                .filter(
+                    Report.audit_id == int(audit_id),
+                    Report.report_type == PDFService.REPORT_SIGNATURE_REPORT_TYPE,
+                )
+                .order_by(Report.id.desc())
+                .first()
+            )
+            if cached_signature is None:
+                cached_signature = Report(
+                    audit_id=int(audit_id),
+                    report_type=PDFService.REPORT_SIGNATURE_REPORT_TYPE,
+                    file_path=signature,
+                )
+                db.add(cached_signature)
+            else:
+                cached_signature.file_path = signature
+            db.flush()
         except Exception as exc:
-            logger.warning(f"Could not persist report signature cache: {exc}")
+            logger.warning(f"Could not persist report signature cache in DB: {exc}")
 
     @staticmethod
     def _compact_report_inputs_for_retry(
@@ -654,6 +718,355 @@ class PDFService:
         }
 
     @staticmethod
+    def _build_keywords_payload(
+        items: Optional[List[Dict[str, Any]]] = None, total: Optional[int] = None
+    ) -> Dict[str, Any]:
+        keyword_items = [
+            row for row in (items or []) if isinstance(row, dict) and row.get("keyword")
+        ]
+        total_keywords = len(keyword_items) if total is None else max(int(total), 0)
+        return {
+            "items": keyword_items,
+            "keywords": keyword_items,
+            "total": total_keywords,
+            "total_keywords": total_keywords,
+            "top_opportunities": sorted(
+                keyword_items,
+                key=lambda row: PDFService._safe_float(
+                    row.get("opportunity_score"), 0.0
+                ),
+                reverse=True,
+            )[:10],
+        }
+
+    @staticmethod
+    def _build_backlinks_payload(
+        items: Optional[List[Dict[str, Any]]] = None,
+        total: Optional[int] = None,
+        referring_domains: Optional[int] = None,
+        summary: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        backlink_items = [row for row in (items or []) if isinstance(row, dict)]
+        total_backlinks = len(backlink_items) if total is None else max(int(total), 0)
+        referring_domains_count = (
+            len(
+                {
+                    urlparse(row["source_url"]).netloc
+                    for row in backlink_items
+                    if isinstance(row.get("source_url"), str)
+                    and "://" in row["source_url"]
+                }
+            )
+            if referring_domains is None
+            else max(int(referring_domains), 0)
+        )
+        backlink_summary = summary if isinstance(summary, dict) else {}
+        if not backlink_summary:
+            backlink_summary = {
+                "average_domain_authority": (
+                    round(
+                        sum(
+                            float(row.get("domain_authority") or 0)
+                            for row in backlink_items
+                        )
+                        / len(backlink_items),
+                        1,
+                    )
+                    if backlink_items
+                    else 0
+                ),
+                "dofollow_count": len(
+                    [row for row in backlink_items if row.get("is_dofollow")]
+                ),
+                "nofollow_count": len(
+                    [row for row in backlink_items if not row.get("is_dofollow")]
+                ),
+            }
+        return {
+            "items": backlink_items[:20],
+            "top_backlinks": backlink_items[:20],
+            "total": total_backlinks,
+            "total_backlinks": total_backlinks,
+            "referring_domains": referring_domains_count,
+            "summary": backlink_summary,
+        }
+
+    @staticmethod
+    def _build_rankings_payload(
+        items: Optional[List[Dict[str, Any]]] = None, total: Optional[int] = None
+    ) -> Dict[str, Any]:
+        ranking_items = [row for row in (items or []) if isinstance(row, dict)]
+        total_keywords = len(ranking_items) if total is None else max(int(total), 0)
+        return {
+            "items": ranking_items,
+            "rankings": ranking_items,
+            "total": total_keywords,
+            "total_keywords": total_keywords,
+            "distribution": {
+                "top_3": len(
+                    [
+                        row
+                        for row in ranking_items
+                        if (row.get("position") or 100) <= 3
+                        and (row.get("position") or 0) > 0
+                    ]
+                ),
+                "top_10": len(
+                    [
+                        row
+                        for row in ranking_items
+                        if (row.get("position") or 100) <= 10
+                        and (row.get("position") or 0) > 0
+                    ]
+                ),
+                "top_20": len(
+                    [
+                        row
+                        for row in ranking_items
+                        if (row.get("position") or 100) <= 20
+                        and (row.get("position") or 0) > 0
+                    ]
+                ),
+                "beyond_20": len(
+                    [
+                        row
+                        for row in ranking_items
+                        if (row.get("position") or 100) > 20
+                        or (row.get("position") or 0) == 0
+                    ]
+                ),
+            },
+        }
+
+    @staticmethod
+    def _build_signature_inputs_from_complete_context(
+        complete_context: Dict[str, Any],
+        fallback_pagespeed_data: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        context = complete_context if isinstance(complete_context, dict) else {}
+
+        keyword_rows = (
+            context.get("keywords", [])
+            if isinstance(context.get("keywords", []), list)
+            else []
+        )
+        backlinks_snapshot = (
+            context.get("backlinks", {})
+            if isinstance(context.get("backlinks", {}), dict)
+            else {}
+        )
+        backlink_rows = (
+            backlinks_snapshot.get("top_backlinks", [])
+            if isinstance(backlinks_snapshot.get("top_backlinks", []), list)
+            else []
+        )
+        ranking_rows = (
+            context.get("rank_tracking", [])
+            if isinstance(context.get("rank_tracking", []), list)
+            else []
+        )
+        llm_rows = (
+            context.get("llm_visibility", [])
+            if isinstance(context.get("llm_visibility", []), list)
+            else []
+        )
+        ai_rows = (
+            context.get("ai_content_suggestions", [])
+            if isinstance(context.get("ai_content_suggestions", []), list)
+            else []
+        )
+        pagespeed_snapshot = (
+            context.get("pagespeed", {})
+            if isinstance(context.get("pagespeed", {}), dict)
+            else {}
+        )
+
+        normalized_llm_rows: List[Dict[str, Any]] = []
+        for row in llm_rows:
+            if not isinstance(row, dict):
+                continue
+            normalized_llm_rows.append(
+                {
+                    "query": str(row.get("query", "")).strip(),
+                    "is_visible": bool(
+                        row.get("is_visible", row.get("mentioned", row.get("visible")))
+                    ),
+                }
+            )
+
+        normalized_ai_rows = [
+            PDFService._normalize_ai_suggestion_row(row)
+            for row in ai_rows
+            if isinstance(row, dict)
+        ]
+
+        return {
+            "pagespeed_data": (
+                pagespeed_snapshot
+                if isinstance(pagespeed_snapshot, dict) and pagespeed_snapshot
+                else (
+                    fallback_pagespeed_data
+                    if isinstance(fallback_pagespeed_data, dict)
+                    else {}
+                )
+            ),
+            "keywords_data": PDFService._build_keywords_payload(
+                keyword_rows,
+                total=len(keyword_rows),
+            ),
+            "backlinks_data": PDFService._build_backlinks_payload(
+                backlink_rows,
+                total=backlinks_snapshot.get("total_backlinks", len(backlink_rows)),
+                referring_domains=backlinks_snapshot.get("referring_domains", 0),
+                summary=backlinks_snapshot.get("summary", {}),
+            ),
+            "rank_tracking_data": PDFService._build_rankings_payload(
+                ranking_rows,
+                total=len(ranking_rows),
+            ),
+            "llm_visibility_data": normalized_llm_rows,
+            "ai_content_suggestions": normalized_ai_rows,
+        }
+
+    @staticmethod
+    def _has_pdf_dataset(dataset_name: str, payload: Any) -> bool:
+        if dataset_name == "pagespeed":
+            return isinstance(payload, dict) and any(
+                isinstance(payload.get(key), dict) and bool(payload.get(key))
+                for key in ("mobile", "desktop")
+            )
+        if dataset_name == "keywords":
+            return isinstance(payload, dict) and any(
+                key in payload
+                for key in ("items", "keywords", "total", "total_keywords")
+            )
+        if dataset_name == "backlinks":
+            return isinstance(payload, dict) and any(
+                key in payload
+                for key in (
+                    "items",
+                    "top_backlinks",
+                    "total",
+                    "total_backlinks",
+                    "referring_domains",
+                )
+            )
+        if dataset_name == "rankings":
+            return isinstance(payload, dict) and any(
+                key in payload
+                for key in (
+                    "items",
+                    "rankings",
+                    "total",
+                    "total_keywords",
+                    "distribution",
+                )
+            )
+        return bool(payload)
+
+    @staticmethod
+    def _detect_missing_pdf_context(
+        *,
+        audit: Audit,
+        pagespeed_data: Any,
+        keywords_data: Any,
+        backlinks_data: Any,
+        rank_tracking_data: Any,
+    ) -> List[str]:
+        missing: List[str] = []
+        if (
+            not isinstance(getattr(audit, "target_audit", None), dict)
+            or not audit.target_audit
+        ):
+            missing.append("target_audit")
+        return missing
+
+    @staticmethod
+    def _detect_optional_pdf_context_gaps(
+        *,
+        pagespeed_data: Any,
+        keywords_data: Any,
+        backlinks_data: Any,
+        rank_tracking_data: Any,
+    ) -> List[str]:
+        def _has_observed_rows(dataset_name: str, payload: Any) -> bool:
+            if dataset_name == "pagespeed":
+                return PDFService._has_pdf_dataset(dataset_name, payload)
+            if not isinstance(payload, dict):
+                return False
+            items = payload.get("items")
+            if isinstance(items, list) and items:
+                return True
+            total = payload.get(
+                "total_keywords", payload.get("total_backlinks", payload.get("total"))
+            )
+            try:
+                return int(total or 0) > 0
+            except (TypeError, ValueError):
+                return False
+
+        gaps: List[str] = []
+        if not _has_observed_rows("pagespeed", pagespeed_data):
+            gaps.append("pagespeed")
+        if not _has_observed_rows("keywords", keywords_data):
+            gaps.append("keywords")
+        if not _has_observed_rows("backlinks", backlinks_data):
+            gaps.append("backlinks")
+        if not _has_observed_rows("rankings", rank_tracking_data):
+            gaps.append("rankings")
+        return gaps
+
+    @staticmethod
+    def _is_deterministic_report_markdown(markdown: Any) -> bool:
+        text = str(markdown or "").strip().lower()
+        if not text:
+            return False
+        return any(marker in text for marker in PDFService.DETERMINISTIC_REPORT_MARKERS)
+
+    @staticmethod
+    def _normalize_markdown_for_pdf_render(markdown: Any) -> str:
+        text = str(markdown or "").replace("\r\n", "\n").strip()
+        if not text:
+            return ""
+
+        lines = text.split("\n")
+        output: List[str] = []
+        idx = 0
+        seen_real_content = False
+        scaffold_titles = {
+            "geo audit report",
+            "digital audit report",
+            "cover",
+            "table of contents",
+            "indice",
+            "índice",
+        }
+
+        while idx < len(lines):
+            line = lines[idx]
+            heading_match = re.match(r"^\s*(#{1,6})\s+(.*)$", line)
+            if not seen_real_content and heading_match:
+                heading_title = heading_match.group(2).strip().lower()
+                if heading_title in scaffold_titles:
+                    idx += 1
+                    while idx < len(lines):
+                        next_line = lines[idx]
+                        if re.match(r"^\s*#{1,6}\s+", next_line):
+                            break
+                        idx += 1
+                    continue
+            if not seen_real_content and not line.strip():
+                idx += 1
+                continue
+            output.append(line)
+            if line.strip():
+                seen_real_content = True
+            idx += 1
+
+        normalized = "\n".join(output).strip()
+        return normalized or text
+
+    @staticmethod
     def _build_deterministic_full_report(
         *,
         audit: Audit,
@@ -663,6 +1076,9 @@ class PDFService:
         rank_tracking_data: Dict[str, Any],
         llm_visibility_data: List[Dict[str, Any]],
         ai_content_suggestions: List[Dict[str, Any]],
+        fix_plan: Optional[List[Dict[str, Any]]] = None,
+        reason: str = "llm_failure",
+        data_gaps: Optional[List[str]] = None,
     ) -> str:
         """
         Build a deterministic report when LLM report generation is unavailable.
@@ -677,15 +1093,133 @@ class PDFService:
             except (TypeError, ValueError):
                 return "not_available"
 
+        def _safe_text(value: Any, default: str = "not_available") -> str:
+            text = str(value or "").strip()
+            return text or default
+
+        def _safe_int_value(value: Any, default: Optional[int] = None) -> Optional[int]:
+            try:
+                return int(value)
+            except (TypeError, ValueError):
+                return default
+
+        def _safe_float_value(
+            value: Any, default: Optional[float] = None
+        ) -> Optional[float]:
+            try:
+                return float(value)
+            except (TypeError, ValueError):
+                return default
+
+        def _as_dict(value: Any) -> Dict[str, Any]:
+            return value if isinstance(value, dict) else {}
+
+        def _avg(values: List[float]) -> Optional[float]:
+            numeric = [value for value in values if value is not None]
+            if not numeric:
+                return None
+            return round(sum(numeric) / len(numeric), 1)
+
+        def _score_from_pages(attribute: str) -> Optional[float]:
+            values: List[float] = []
+            for page in page_rows:
+                raw_value = getattr(page, attribute, None)
+                numeric = _safe_float_value(raw_value)
+                if numeric is not None:
+                    values.append(numeric)
+            return _avg(values)
+
+        def _bool_flag(value: Any) -> str:
+            return "yes" if bool(value) else "no"
+
         target = audit.target_audit if isinstance(audit.target_audit, dict) else {}
-        external = (
-            audit.external_intelligence
-            if isinstance(audit.external_intelligence, dict)
-            else {}
-        )
+        external = _as_dict(audit.external_intelligence)
         competitors = (
             audit.competitor_audits if isinstance(audit.competitor_audits, list) else []
         )
+        raw_pages = getattr(audit, "pages", None)
+        try:
+            page_rows = list(raw_pages or [])
+        except Exception:
+            page_rows = []
+
+        site_metrics = _as_dict(target.get("site_metrics"))
+        eeat_data = _as_dict(target.get("eeat"))
+        schema_data = _as_dict(target.get("schema"))
+        transparency_signals = _as_dict(eeat_data.get("transparency_signals"))
+        citation_signals = _as_dict(eeat_data.get("citations_and_sources"))
+        page_count = (
+            len(page_rows)
+            or _safe_int_value(target.get("audited_pages_count"))
+            or _safe_int_value(getattr(audit, "total_pages", None), 0)
+            or 0
+        )
+        issue_totals = {
+            "critical": _safe_int_value(target.get("critical_issues_count")),
+            "high": _safe_int_value(target.get("high_issues_count")),
+            "medium": _safe_int_value(target.get("medium_issues_count")),
+            "low": _safe_int_value(target.get("low_issues_count")),
+        }
+        if page_rows:
+            issue_totals = {
+                "critical": sum(
+                    _safe_int_value(getattr(page, "critical_issues", 0), 0) or 0
+                    for page in page_rows
+                ),
+                "high": sum(
+                    _safe_int_value(getattr(page, "high_issues", 0), 0) or 0
+                    for page in page_rows
+                ),
+                "medium": sum(
+                    _safe_int_value(getattr(page, "medium_issues", 0), 0) or 0
+                    for page in page_rows
+                ),
+                "low": sum(
+                    _safe_int_value(getattr(page, "low_issues", 0), 0) or 0
+                    for page in page_rows
+                ),
+            }
+        else:
+            issue_totals = {
+                "critical": issue_totals["critical"]
+                or _safe_int_value(getattr(audit, "critical_issues", None), 0)
+                or 0,
+                "high": issue_totals["high"]
+                or _safe_int_value(getattr(audit, "high_issues", None), 0)
+                or 0,
+                "medium": issue_totals["medium"]
+                or _safe_int_value(getattr(audit, "medium_issues", None), 0)
+                or 0,
+                "low": issue_totals["low"]
+                or _safe_int_value(getattr(audit, "low_issues", None), 0)
+                or 0,
+            }
+        data_gaps = [
+            str(item).strip() for item in (data_gaps or []) if str(item).strip()
+        ]
+
+        observed_queries = PDFService._extract_query_texts(
+            external.get("queries_to_run")
+        )
+        avg_overall_score = _score_from_pages("overall_score")
+        avg_h1_score = _score_from_pages("h1_score")
+        avg_structure_score = _score_from_pages("structure_score")
+        avg_content_score = _score_from_pages("content_score")
+        avg_eeat_score = _score_from_pages("eeat_score")
+        avg_schema_score = _score_from_pages("schema_score")
+        risky_pages = sorted(
+            [
+                page
+                for page in page_rows
+                if hasattr(page, "path") or hasattr(page, "url")
+            ],
+            key=lambda page: (
+                -(_safe_int_value(getattr(page, "critical_issues", 0), 0) or 0),
+                -(_safe_int_value(getattr(page, "high_issues", 0), 0) or 0),
+                _safe_float_value(getattr(page, "overall_score", None), 9999.0)
+                or 9999.0,
+            ),
+        )[:8]
 
         mobile = (
             pagespeed_data.get("mobile", {}) if isinstance(pagespeed_data, dict) else {}
@@ -728,53 +1262,314 @@ class PDFService:
             )
         if not isinstance(ranking_items, list):
             ranking_items = []
-
-        critical_issues = target.get("critical_issues_count", "not_available")
-        high_issues = target.get("high_issues_count", "not_available")
-        medium_issues = target.get("medium_issues_count", "not_available")
-        low_issues = target.get("low_issues_count", "not_available")
         geo_score = target.get("geo_score", "not_available")
-        structure_score = target.get("structure_score", "not_available")
-        eeat_score = target.get("eeat_score", "not_available")
+
+        fix_plan = fix_plan if fix_plan is not None else getattr(audit, "fix_plan", [])
+        if isinstance(fix_plan, str):
+            try:
+                fix_plan = json.loads(fix_plan)
+            except Exception:
+                fix_plan = []
+        if not isinstance(fix_plan, list):
+            fix_plan = []
+
+        top_keywords = sorted(
+            [item for item in keyword_items if isinstance(item, dict)],
+            key=lambda row: PDFService._safe_float(row.get("opportunity_score"), 0.0),
+            reverse=True,
+        )[:5]
+        top_backlinks = [item for item in backlink_items if isinstance(item, dict)][:5]
+        top_rankings = sorted(
+            [item for item in ranking_items if isinstance(item, dict)],
+            key=lambda row: PDFService._safe_int(row.get("position"), 9999),
+        )[:5]
+        roadmap_items = [
+            item
+            for item in fix_plan
+            if isinstance(item, dict) and (item.get("issue") or item.get("title"))
+        ][:6]
+        category = _safe_text(external.get("category"))
+        subcategory = _safe_text(external.get("subcategory"))
+        market = _safe_text(external.get("market") or target.get("market"))
+        competitor_domains = []
+        for competitor in competitors[:5]:
+            if isinstance(competitor, dict):
+                comp_schema = _as_dict(competitor.get("schema"))
+                comp_schema_presence = _as_dict(comp_schema.get("schema_presence"))
+                competitor_domains.append(
+                    "|".join(
+                        [
+                            _safe_text(
+                                competitor.get("domain")
+                                or competitor.get("url")
+                                or f"competitor_{len(competitor_domains) + 1}"
+                            ),
+                            f"geo={_safe_score(competitor.get('geo_score'))}",
+                            f"schema={_safe_text(comp_schema_presence.get('status'))}",
+                        ]
+                    )
+                )
+            else:
+                competitor_domains.append(
+                    "|".join(
+                        [
+                            _safe_text(
+                                getattr(competitor, "domain", None)
+                                or getattr(competitor, "url", None)
+                                or f"competitor_{len(competitor_domains) + 1}"
+                            ),
+                            f"geo={_safe_score(getattr(competitor, 'geo_score', None))}",
+                            "schema=not_available",
+                        ]
+                    )
+                )
+        competitor_domains = [
+            str(value).strip() for value in competitor_domains if value
+        ]
+        derived_roadmap_items: List[str] = []
+        h1_coverage = _safe_float_value(site_metrics.get("h1_coverage_percent"))
+        if h1_coverage is not None and h1_coverage < 100:
+            derived_roadmap_items.append(
+                f"Normalize H1 implementation across templates (observed coverage {h1_coverage:.1f}%)."
+            )
+        header_issue_pages = _safe_int_value(
+            site_metrics.get("header_hierarchy_issue_pages")
+        )
+        if header_issue_pages:
+            derived_roadmap_items.append(
+                f"Repair heading hierarchy on {header_issue_pages} audited pages."
+            )
+        image_alt_coverage = _safe_float_value(
+            site_metrics.get("image_alt_coverage_percent")
+        )
+        if image_alt_coverage is not None and image_alt_coverage < 100:
+            derived_roadmap_items.append(
+                f"Improve image alt coverage from {image_alt_coverage:.1f}% to full coverage."
+            )
+        faq_schema_pages = _safe_int_value(site_metrics.get("faq_schema_pages"), 0) or 0
+        if faq_schema_pages == 0:
+            derived_roadmap_items.append(
+                "Add FAQ schema only where the audited content already supports question-and-answer blocks."
+            )
+        offer_schema_pages = (
+            _safe_int_value(site_metrics.get("offer_schema_pages"), 0) or 0
+        )
+        pages_with_price = _safe_int_value(site_metrics.get("pages_with_price"), 0) or 0
+        if offer_schema_pages == 0 and pages_with_price:
+            derived_roadmap_items.append(
+                f"Extend offer/price structured data to the {pages_with_price} pages that already expose price information."
+            )
+
+        reason_lines = {
+            "llm_failure": [
+                "- Report mode: grounded deterministic report using only observed audit data.",
+                "- Reason: LLM regeneration was unavailable during this run.",
+            ],
+            "supporting_data_gap": [
+                "- Report mode: grounded deterministic report using only observed audit, page, and competitor data.",
+                "- Reason: multiple supporting datasets were unavailable, so the LLM path was intentionally skipped.",
+            ],
+            "missing_context": [
+                "- Report mode: grounded deterministic report using only the validated subset of collected audit data.",
+                "- Reason: core audit context was incomplete for LLM regeneration.",
+            ],
+        }
+        active_reason_lines = reason_lines.get(reason, reason_lines["llm_failure"])
 
         report_lines = [
-            "# GEO Audit Report",
-            "",
-            "## Generation Mode",
-            "- Mode: full_deterministic_regenerated",
-            "- Reason: LLM report regeneration timed out; deterministic report generated from collected data.",
-            f"- Generated at (UTC): {datetime.utcnow().isoformat()}Z",
-            "",
-            "## Target",
-            f"- URL: {getattr(audit, 'url', 'not_available')}",
-            f"- Domain: {getattr(audit, 'domain', 'not_available')}",
-            f"- Category: {external.get('category', 'not_available')}",
-            f"- Subcategory: {external.get('subcategory', 'not_available')}",
-            "",
-            "## Executive Snapshot",
+            "# 1. Executive Summary",
+            f"- Target: {_safe_text(getattr(audit, 'domain', None) or getattr(audit, 'url', None))}",
+            f"- Audit URL: {_safe_text(getattr(audit, 'url', None))}",
+            f"- Market: {market}",
+            f"- Category: {category}",
+            f"- Subcategory: {subcategory}",
+            f"- Generated at (UTC): {datetime.now(UTC).isoformat()}",
+            *active_reason_lines,
+            f"- Pages analysed: {page_count}",
+            f"- Observed competitor records: {len(competitors)}",
+            f"- Observed query set: {len(observed_queries)}",
             f"- GEO score: {_safe_score(geo_score)}",
-            f"- Structure score: {_safe_score(structure_score)}",
-            f"- E-E-A-T score: {_safe_score(eeat_score)}",
-            f"- Issues: critical={critical_issues}, high={high_issues}, medium={medium_issues}, low={low_issues}",
-            f"- Competitors analyzed: {len(competitors)}",
+            f"- Average audited page score: {_safe_score(avg_overall_score)}",
+            f"- Average structure score: {_safe_score(avg_structure_score)}",
+            f"- Average content score: {_safe_score(avg_content_score)}",
+            f"- Average E-E-A-T score: {_safe_score(avg_eeat_score)}",
+            f"- Issue totals: critical={issue_totals['critical']}, high={issue_totals['high']}, medium={issue_totals['medium']}, low={issue_totals['low']}",
             "",
-            "## Performance Snapshot",
+            "### Observed Data Coverage",
+            f"- PageSpeed dataset available: {_bool_flag(PDFService._has_pdf_dataset('pagespeed', pagespeed_data))}",
+            f"- Keyword rows available: {len(keyword_items)}",
+            f"- Backlink rows available: {len(backlink_items)}",
+            f"- Ranking rows available: {len(ranking_items)}",
+            f"- LLM visibility rows available: {len(llm_visibility_data) if isinstance(llm_visibility_data, list) else 0}",
+            f"- AI content suggestions available: {len(ai_content_suggestions) if isinstance(ai_content_suggestions, list) else 0}",
+            "",
+            "# 2. Competitive Intelligence Matrix",
+            f"- Competitor records available: {len(competitors)}",
+            f"- Reference domains: {', '.join(competitor_domains) if competitor_domains else 'not_available'}",
+            "",
+            "### Competitive Gap Analysis",
+            f"- External category: {category}",
+            f"- External subcategory: {subcategory}",
+            f"- Market context: {market}",
+            f"- Observed query seeds: {', '.join(observed_queries[:8]) if observed_queries else 'not_available'}",
+            "",
+            "# 3. Technical Performance & Financial Impact",
             f"- Mobile performance score: {_safe_score(mobile_perf)}",
             f"- Desktop performance score: {_safe_score(desktop_perf)}",
             f"- Mobile LCP: {_safe_score(mobile_lcp)}",
+            f"- Pages analysed in site metrics: {_safe_text(site_metrics.get('pages_analyzed'))}",
+            f"- Product pages observed: {_safe_text(site_metrics.get('product_page_count'))}",
+            f"- Average images per page: {_safe_score(site_metrics.get('avg_images_per_page'))}",
             "",
-            "## GEO Tools Coverage",
-            f"- Keywords collected: {len(keyword_items)}",
-            f"- Backlinks collected: {len(backlink_items)}",
-            f"- Rankings collected: {len(ranking_items)}",
-            f"- LLM visibility entries: {len(llm_visibility_data) if isinstance(llm_visibility_data, list) else 0}",
-            f"- AI content suggestions: {len(ai_content_suggestions) if isinstance(ai_content_suggestions, list) else 0}",
+            "### Core Web Vitals & Performance Economics",
+            "- Financial impact is not estimated unless revenue and traffic inputs are explicitly present in the collected audit context.",
+            f"- Header hierarchy issue pages: {_safe_text(site_metrics.get('header_hierarchy_issue_pages'))}",
+            f"- Homepage H1 status: {_safe_text(site_metrics.get('homepage_h1_status'))}",
             "",
-            "## Notes",
-            "- This report contains only observed data from this run.",
-            "- Any missing metric is marked as not_available and should be enriched in subsequent runs.",
+            "# 4. SEO Foundation",
+            f"- Critical issues: {issue_totals['critical']}",
+            f"- High issues: {issue_totals['high']}",
+            f"- Medium issues: {issue_totals['medium']}",
+            f"- Low issues: {issue_totals['low']}",
+            f"- H1 coverage percent: {_safe_score(site_metrics.get('h1_coverage_percent'))}",
+            f"- Header hierarchy coverage percent: {_safe_score(site_metrics.get('header_hierarchy_coverage_percent'))}",
+            f"- Meta description coverage percent: {_safe_score(site_metrics.get('meta_description_coverage_percent'))}",
+            f"- Meta keywords coverage percent: {_safe_score(site_metrics.get('meta_keywords_coverage_percent'))}",
+            f"- Schema coverage percent: {_safe_score(site_metrics.get('schema_coverage_percent'))}",
             "",
+            "# 5. Content Strategy & GEO Optimisation",
+            f"- Average H1 score: {_safe_score(avg_h1_score)}",
+            f"- Average schema score: {_safe_score(avg_schema_score)}",
+            f"- Average text sample length: {_safe_score(site_metrics.get('avg_text_sample_length'))}",
+            f"- AI content suggestions available: {len(ai_content_suggestions) if isinstance(ai_content_suggestions, list) else 0}",
+            f"- LLM visibility records available: {len(llm_visibility_data) if isinstance(llm_visibility_data, list) else 0}",
+            "",
+            "# 6. Authority & Backlink Profile",
+            f"- Backlinks captured: {len(backlink_items)}",
+            f"- Referring domains: {_safe_text(backlinks_data.get('referring_domains') if isinstance(backlinks_data, dict) else None, '0')}",
+            f"- About page detected: {_bool_flag(transparency_signals.get('about'))}",
+            f"- Contact page detected: {_bool_flag(transparency_signals.get('contact'))}",
+            f"- Privacy page detected: {_bool_flag(transparency_signals.get('privacy'))}",
+            f"- Observed authoritative links: {_safe_text(citation_signals.get('authoritative_links'), '0')}",
         ]
+
+        if top_backlinks:
+            report_lines.append("### Observed Backlinks")
+            for row in top_backlinks:
+                report_lines.append(
+                    f"- {_safe_text(row.get('source_url'))} | authority={_safe_score(row.get('domain_authority'))} | dofollow={bool(row.get('is_dofollow'))}"
+                )
+        else:
+            report_lines.append("- No backlink rows were available for this run.")
+
+        report_lines.extend(
+            [
+                "",
+                "# 7. Keyword Strategy & Intent Mapping",
+                f"- Keywords collected: {len(keyword_items)}",
+                f"- Rankings collected: {len(ranking_items)}",
+                f"- External query seeds: {', '.join(observed_queries[:10]) if observed_queries else 'not_available'}",
+            ]
+        )
+        if top_keywords:
+            report_lines.append("### Top Opportunities")
+            for row in top_keywords:
+                report_lines.append(
+                    f"- {_safe_text(row.get('keyword'))} | volume={_safe_score(row.get('search_volume'))} | difficulty={_safe_score(row.get('difficulty'))} | source={_safe_text(row.get('metrics_source'))}"
+                )
+        else:
+            report_lines.append("- Keyword research is not available in this run.")
+
+        report_lines.extend(
+            [
+                "",
+                "# 8. LLM Visibility & AI Mentions",
+                f"- LLM visibility entries: {len(llm_visibility_data) if isinstance(llm_visibility_data, list) else 0}",
+                f"- Visible mentions: {len([row for row in llm_visibility_data if isinstance(row, dict) and row.get('is_visible')]) if isinstance(llm_visibility_data, list) else 0}",
+                "",
+                "# 9. Product Intelligence",
+                f"- Category context: {category}",
+                f"- Subcategory context: {subcategory}",
+                f"- Product pages observed: {_safe_text(site_metrics.get('product_page_count'))}",
+                f"- Pages with price observed: {_safe_text(site_metrics.get('pages_with_price'))}",
+                f"- Price samples observed: {_safe_text(site_metrics.get('price_samples_count'))}",
+                f"- Average observed price: {_safe_score(site_metrics.get('avg_price'))}",
+                f"- Price currency: {_safe_text(site_metrics.get('price_currency'))}",
+                f"- Product schema pages: {_safe_text(site_metrics.get('product_schema_pages'))}",
+                f"- Offer schema pages: {_safe_text(site_metrics.get('offer_schema_pages'))}",
+                f"- Review schema pages: {_safe_text(site_metrics.get('review_schema_pages'))}",
+                f"- FAQ schema pages: {_safe_text(site_metrics.get('faq_schema_pages'))}",
+                "",
+                "# 10. 90-Day Strategic Roadmap",
+            ]
+        )
+        if roadmap_items:
+            for idx, item in enumerate(roadmap_items, start=1):
+                report_lines.append(
+                    f"- P{idx}: {_safe_text(item.get('title') or item.get('issue'))}"
+                )
+        elif derived_roadmap_items:
+            for idx, item in enumerate(derived_roadmap_items[:6], start=1):
+                report_lines.append(f"- P{idx}: {item}")
+        else:
+            report_lines.append(
+                "- No validated action plan items were available at PDF generation time."
+            )
+
+        report_lines.extend(["", "### Highest-Risk URLs"])
+        if risky_pages:
+            for page in risky_pages:
+                report_lines.append(
+                    f"- {_safe_text(getattr(page, 'path', None) or getattr(page, 'url', None))} | overall={_safe_score(getattr(page, 'overall_score', None))} | critical={_safe_text(getattr(page, 'critical_issues', None), '0')} | high={_safe_text(getattr(page, 'high_issues', None), '0')} | schema={_safe_score(getattr(page, 'schema_score', None))}"
+                )
+        else:
+            report_lines.append(
+                "- Individual page rows were not available in this run."
+            )
+
+        report_lines.extend(
+            [
+                "",
+                "# 11. Appendices",
+                "- Appendix C reflects the validated `fix_plan.json` when present.",
+                "- Appendix D reflects only datasets physically available in this run.",
+                "",
+                "### Data Quality Notes",
+            ]
+        )
+        report_lines.extend(
+            [
+                f"- Keywords collected: {len(keyword_items)}",
+                f"- Backlinks collected: {len(backlink_items)}",
+                f"- Rankings collected: {len(ranking_items)}",
+                f"- LLM visibility entries: {len(llm_visibility_data) if isinstance(llm_visibility_data, list) else 0}",
+                f"- AI content suggestions: {len(ai_content_suggestions) if isinstance(ai_content_suggestions, list) else 0}",
+                f"- Schema types observed: {', '.join(schema_data.get('schema_types', [])) if isinstance(schema_data.get('schema_types'), list) and schema_data.get('schema_types') else 'not_available'}",
+                f"- Transparency signals: about={_bool_flag(transparency_signals.get('about'))}, contact={_bool_flag(transparency_signals.get('contact'))}, privacy={_bool_flag(transparency_signals.get('privacy'))}",
+            ]
+        )
+        if data_gaps:
+            report_lines.append(
+                f"- Missing supporting datasets for this run: {', '.join(sorted(set(data_gaps)))}"
+            )
+        if top_rankings:
+            report_lines.extend(["", "### Observed Rankings"])
+            for row in top_rankings:
+                report_lines.append(
+                    f"- {_safe_text(row.get('keyword'))} | position={_safe_score(row.get('position'))} | url={_safe_text(row.get('url'))}"
+                )
+        else:
+            report_lines.append("- Ranking data was not available in this run.")
+
+        report_lines.extend(
+            [
+                "",
+                "### Notes",
+                "- This report contains only observed data from this run.",
+                "- No unverified revenue, market-share, traffic, or ROI claims were added.",
+                "- Any missing metric is marked as not_available and should be enriched in subsequent runs.",
+            ]
+        )
 
         return "\n".join(report_lines).strip()
 
@@ -868,6 +1663,119 @@ class PDFService:
         return ordered_seeds
 
     @staticmethod
+    def _extract_external_queries(audit: Audit) -> List[str]:
+        external = (
+            audit.external_intelligence
+            if isinstance(audit.external_intelligence, dict)
+            else {}
+        )
+        raw_queries = external.get("queries_to_run", [])
+        ordered_queries: List[str] = []
+        seen = set()
+
+        if not isinstance(raw_queries, list):
+            return ordered_queries
+
+        for raw_query in raw_queries:
+            if isinstance(raw_query, str):
+                term = raw_query.strip()
+            elif isinstance(raw_query, dict):
+                term = str(raw_query.get("query") or "").strip()
+            else:
+                term = str(raw_query or "").strip()
+
+            normalized = " ".join(term.lower().split())
+            if not normalized or normalized in seen:
+                continue
+            seen.add(normalized)
+            ordered_queries.append(term)
+
+        return ordered_queries
+
+    @staticmethod
+    def _collect_geo_query_terms(
+        *,
+        audit: Audit,
+        domain: str,
+        keywords_data_list: List[Dict[str, Any]],
+        seed_keywords: List[str],
+        limit: int,
+    ) -> List[str]:
+        ordered_terms: List[str] = []
+        seen = set()
+
+        def _add_term(raw_term: Any) -> None:
+            term = str(raw_term or "").strip()
+            normalized = " ".join(term.lower().split())
+            if not normalized or normalized in seen:
+                return
+            seen.add(normalized)
+            ordered_terms.append(term)
+
+        for row in keywords_data_list or []:
+            if not isinstance(row, dict):
+                continue
+            _add_term(row.get("keyword") or row.get("term") or row.get("query"))
+            if len(ordered_terms) >= limit:
+                return ordered_terms[:limit]
+
+        for raw_query in PDFService._extract_external_queries(audit):
+            _add_term(raw_query)
+            if len(ordered_terms) >= limit:
+                return ordered_terms[:limit]
+
+        for seed in seed_keywords or []:
+            _add_term(seed)
+            if len(ordered_terms) >= limit:
+                return ordered_terms[:limit]
+
+        if not ordered_terms and domain:
+            _add_term(domain.split(".")[0])
+
+        return ordered_terms[:limit]
+
+    @staticmethod
+    def _normalize_ai_suggestion_row(raw: Any) -> Dict[str, Any]:
+        if isinstance(raw, dict):
+            outline = raw.get("outline", raw.get("content_outline", {}))
+            target_keyword = raw.get("target_keyword")
+            return {
+                "title": str(raw.get("title") or raw.get("topic") or "").strip(),
+                "target_keyword": str(target_keyword or "").strip(),
+                "content_type": str(
+                    raw.get("content_type") or raw.get("suggestion_type") or ""
+                ).strip(),
+                "priority": str(raw.get("priority") or "medium").strip() or "medium",
+                "estimated_traffic": PDFService._safe_int(
+                    raw.get("estimated_traffic"), 0
+                ),
+                "difficulty": PDFService._safe_int(raw.get("difficulty"), 0),
+                "outline": outline if isinstance(outline, (dict, list)) else {},
+            }
+
+        outline = getattr(raw, "content_outline", None)
+        target_keyword = getattr(raw, "target_keyword", None)
+        if not target_keyword and isinstance(outline, dict):
+            target_keyword = outline.get("target_keyword")
+
+        return {
+            "title": str(
+                getattr(raw, "topic", "") or getattr(raw, "title", "")
+            ).strip(),
+            "target_keyword": str(target_keyword or "").strip(),
+            "content_type": str(
+                getattr(raw, "suggestion_type", "") or getattr(raw, "content_type", "")
+            ).strip(),
+            "priority": str(getattr(raw, "priority", "medium") or "medium").strip()
+            or "medium",
+            "estimated_traffic": PDFService._safe_int(
+                getattr(raw, "estimated_traffic", 0), 0
+            ),
+            "difficulty": PDFService._safe_int(getattr(raw, "difficulty", 0), 0),
+            "outline": outline if isinstance(outline, (dict, list)) else {},
+        }
+
+    @staticmethod
     def _build_pdf_metadata(audit: Audit) -> Dict[str, str]:
         audit_url = str(getattr(audit, "url", "") or "").strip()
         if audit_url and "://" not in audit_url:
@@ -878,11 +1786,10 @@ class PDFService:
             domain = (parsed.hostname or "").lower()
         domain = domain[4:] if domain.startswith("www.") else domain
 
-        prepared_by = (
-            getattr(audit, "user_email", None)
-            or getattr(audit, "user_id", None)
-            or "Auditor GEO"
-        )
+        prepared_by = str(getattr(audit, "user_email", "") or "").strip()
+        if not prepared_by or "|" in prepared_by:
+            prepared_by = "Auditor GEO"
+        cover_subject = domain or audit_url or "Digital Audit"
         footer_left = audit_url or "N/A"
         footer_right = domain or "Audit"
 
@@ -891,6 +1798,7 @@ class PDFService:
             "footer_left": str(footer_left),
             "footer_right": str(footer_right),
             "report_title_prefix": "GEO Audit Report",
+            "cover_title": f"GEO Audit Report\n{cover_subject}",
         }
 
     @staticmethod
@@ -1079,40 +1987,11 @@ class PDFService:
                     }
                 )
         else:
-            # Generate on-demand when missing
             logger.info(
-                f"AI content suggestions not found in DB for audit {audit_id}, generating on-demand"
+                "AI content suggestions not found in DB for audit %s. "
+                "They will be refreshed later in the PDF pipeline if required.",
+                audit_id,
             )
-            try:
-                from .ai_content_service import AIContentService
-
-                # Generate suggestions based on keywords
-                generated_suggestions = AIContentService.generate_content_suggestions(
-                    keywords=keywords, url=str(audit.url)
-                )
-
-                # Convert to expected format
-                for suggestion in generated_suggestions:
-                    ai_content_suggestions.append(
-                        {
-                            "title": suggestion.get("title", ""),
-                            "target_keyword": suggestion.get("target_keyword", ""),
-                            "content_type": suggestion.get("content_type", ""),
-                            "priority": suggestion.get("priority", "medium"),
-                            "estimated_traffic": suggestion.get("estimated_traffic", 0),
-                            "difficulty": suggestion.get("difficulty", 0),
-                            "outline": suggestion.get("outline", {}),
-                        }
-                    )
-
-                logger.info(
-                    f"Generated {len(ai_content_suggestions)} AI content suggestions on-demand"
-                )
-            except Exception as e:
-                logger.error(
-                    f"Error generating AI content suggestions: {e}", exc_info=True
-                )
-                # Continue with empty list
 
         context = {
             # Core audit data
@@ -1347,7 +2226,7 @@ class PDFService:
         lines = [
             "# Digital Audit Report (Deterministic Fallback)",
             "",
-            f"Generated: {datetime.utcnow().isoformat()}Z",
+            f"Generated: {datetime.now(UTC).isoformat()}",
             f"Target URL: {audit_url}",
             "",
             "## Executive Snapshot",
@@ -1529,8 +2408,11 @@ class PDFService:
             f"=== Starting PDF generation with complete context for audit {audit_id} ==="
         )
         always_full_mode = os.getenv(
-            "PDF_ALWAYS_FULL_MODE", "true"
+            "PDF_ALWAYS_FULL_MODE", "false"
         ).strip().lower() in {"1", "true", "yes", "on"}
+        deterministic_fallback_enabled = (
+            False if always_full_mode else settings.PDF_ALLOW_DETERMINISTIC_FALLBACK
+        )
 
         started_at = time.monotonic()
         total_budget_seconds = PDFService._timeout_from_env(
@@ -1541,6 +2423,38 @@ class PDFService:
         )
         geo_stage_timeout_seconds = PDFService._timeout_from_env(
             "PDF_GEO_STAGE_TIMEOUT_SECONDS", 90.0
+        )
+        keyword_stage_timeout_seconds = PDFService._timeout_from_env(
+            "PDF_KEYWORD_STAGE_TIMEOUT_SECONDS",
+            max(
+                geo_stage_timeout_seconds or 0.0,
+                float(settings.NVIDIA_TIMEOUT_SECONDS) + 15.0,
+            ),
+        )
+        backlink_stage_timeout_seconds = PDFService._timeout_from_env(
+            "PDF_BACKLINK_STAGE_TIMEOUT_SECONDS",
+            max(geo_stage_timeout_seconds or 0.0, 120.0),
+        )
+        rankings_stage_timeout_seconds = PDFService._timeout_from_env(
+            "PDF_RANKINGS_STAGE_TIMEOUT_SECONDS",
+            max(
+                geo_stage_timeout_seconds or 0.0,
+                max(120.0, float(settings.SERPER_TIMEOUT_SECONDS) * 12.0),
+            ),
+        )
+        llm_visibility_stage_timeout_seconds = PDFService._timeout_from_env(
+            "PDF_LLM_VISIBILITY_STAGE_TIMEOUT_SECONDS",
+            max(
+                geo_stage_timeout_seconds or 0.0,
+                float(settings.NVIDIA_TIMEOUT_SECONDS) + 15.0,
+            ),
+        )
+        ai_content_stage_timeout_seconds = PDFService._timeout_from_env(
+            "PDF_AI_CONTENT_STAGE_TIMEOUT_SECONDS",
+            max(
+                geo_stage_timeout_seconds or 0.0,
+                float(settings.NVIDIA_TIMEOUT_SECONDS) + 15.0,
+            ),
         )
         report_timeout_seconds = PDFService._timeout_from_env(
             "PDF_REPORT_TIMEOUT_SECONDS", 300.0
@@ -1567,6 +2481,31 @@ class PDFService:
             if geo_stage_timeout_seconds is not None
             else "disabled"
         )
+        timeout_keyword_label = (
+            f"{keyword_stage_timeout_seconds:.1f}s"
+            if keyword_stage_timeout_seconds is not None
+            else "disabled"
+        )
+        timeout_backlink_label = (
+            f"{backlink_stage_timeout_seconds:.1f}s"
+            if backlink_stage_timeout_seconds is not None
+            else "disabled"
+        )
+        timeout_rankings_label = (
+            f"{rankings_stage_timeout_seconds:.1f}s"
+            if rankings_stage_timeout_seconds is not None
+            else "disabled"
+        )
+        timeout_llm_visibility_label = (
+            f"{llm_visibility_stage_timeout_seconds:.1f}s"
+            if llm_visibility_stage_timeout_seconds is not None
+            else "disabled"
+        )
+        timeout_ai_content_label = (
+            f"{ai_content_stage_timeout_seconds:.1f}s"
+            if ai_content_stage_timeout_seconds is not None
+            else "disabled"
+        )
         timeout_report_label = (
             f"{report_timeout_seconds:.1f}s"
             if report_timeout_seconds is not None
@@ -1586,7 +2525,12 @@ class PDFService:
             "PDF timeouts configured: "
             f"total={timeout_total_label}, "
             f"pagespeed={timeout_pagespeed_label}, "
-            f"geo_stage={timeout_geo_label}, "
+            f"geo_stage_default={timeout_geo_label}, "
+            f"keywords={timeout_keyword_label}, "
+            f"backlinks={timeout_backlink_label}, "
+            f"rankings={timeout_rankings_label}, "
+            f"llm_visibility={timeout_llm_visibility_label}, "
+            f"ai_content={timeout_ai_content_label}, "
             f"report={timeout_report_label}, "
             f"external_intel={timeout_external_intel_label}, "
             f"product_intel={timeout_product_intel_label}, "
@@ -1597,6 +2541,7 @@ class PDFService:
         audit = AuditService.get_audit(db, audit_id)
         if not audit:
             raise ValueError(f"Audit {audit_id} not found")
+        pagespeed_generation_warnings: List[str] = []
 
         # 2. Check if PageSpeed data exists and is recent
         pagespeed_data = audit.pagespeed_data
@@ -1630,6 +2575,9 @@ class PDFService:
                 logger.info("âœ“ PageSpeed data collected and stored")
             except Exception as e:
                 logger.error(f"PageSpeed collection failed: {e}")
+                pagespeed_generation_warnings.append(
+                    "PageSpeed data could not be refreshed in time for this PDF run."
+                )
                 # Fallback to existing (stale) data if available
                 # Fallback to existing (stale) data if available
                 try:
@@ -1705,93 +2653,36 @@ class PDFService:
 
         # Initialize from cached context first (fast path)
         keywords_data_list = cached_keywords[:200]
-        keywords_data = (
-            {
-                "items": keywords_data_list,
-                "keywords": keywords_data_list,
-                "total": len(cached_keywords),
-                "total_keywords": len(cached_keywords),
-                "top_opportunities": sorted(
-                    keywords_data_list,
-                    key=_keyword_opportunity_score,
-                    reverse=True,
-                )[:10],
-            }
-            if keywords_data_list
-            else {}
+        keywords_data = PDFService._build_keywords_payload(
+            keywords_data_list, total=len(cached_keywords)
         )
         backlinks_top = (
             cached_backlinks.get("top_backlinks", [])
             if isinstance(cached_backlinks.get("top_backlinks", []), list)
             else []
         )
-        has_cached_backlinks = bool(backlinks_top) or bool(
-            cached_backlinks.get("total_backlinks")
+        has_cached_backlinks = any(
+            key in cached_backlinks
+            for key in (
+                "top_backlinks",
+                "total_backlinks",
+                "referring_domains",
+                "summary",
+            )
         )
         backlinks_data = (
-            {
-                "items": backlinks_top[:20],
-                "top_backlinks": backlinks_top[:20],
-                "total": cached_backlinks.get("total_backlinks", len(backlinks_top)),
-                "total_backlinks": cached_backlinks.get(
-                    "total_backlinks", len(backlinks_top)
-                ),
-                "referring_domains": cached_backlinks.get("referring_domains", 0),
-                "summary": cached_backlinks.get("summary", {}),
-            }
+            PDFService._build_backlinks_payload(
+                backlinks_top,
+                total=cached_backlinks.get("total_backlinks", len(backlinks_top)),
+                referring_domains=cached_backlinks.get("referring_domains", 0),
+                summary=cached_backlinks.get("summary", {}),
+            )
             if has_cached_backlinks
             else {}
         )
         rankings_list = cached_rankings[:100]
-        rank_tracking_data = (
-            {
-                "items": rankings_list,
-                "rankings": rankings_list,
-                "total": len(cached_rankings),
-                "total_keywords": len(cached_rankings),
-                "distribution": {
-                    "top_3": len(
-                        [
-                            r
-                            for r in rankings_list
-                            if isinstance(r, dict)
-                            and (r.get("position") or 100) <= 3
-                            and (r.get("position") or 0) > 0
-                        ]
-                    ),
-                    "top_10": len(
-                        [
-                            r
-                            for r in rankings_list
-                            if isinstance(r, dict)
-                            and (r.get("position") or 100) <= 10
-                            and (r.get("position") or 0) > 0
-                        ]
-                    ),
-                    "top_20": len(
-                        [
-                            r
-                            for r in rankings_list
-                            if isinstance(r, dict)
-                            and (r.get("position") or 100) <= 20
-                            and (r.get("position") or 0) > 0
-                        ]
-                    ),
-                    "beyond_20": len(
-                        [
-                            r
-                            for r in rankings_list
-                            if isinstance(r, dict)
-                            and (
-                                (r.get("position") or 100) > 20
-                                or (r.get("position") or 0) == 0
-                            )
-                        ]
-                    ),
-                },
-            }
-            if rankings_list
-            else {}
+        rank_tracking_data = PDFService._build_rankings_payload(
+            rankings_list, total=len(cached_rankings)
         )
         llm_visibility_data = cached_llm_visibility[:60]
         ai_content_suggestions_list = cached_ai_suggestions[:50]
@@ -1807,9 +2698,7 @@ class PDFService:
             audit_url = str(audit.url)
             domain = urlparse(audit_url).netloc.replace("www.", "")
             seed_keywords = PDFService._build_seed_keywords(audit, domain)
-            should_refresh_keywords = force_fresh_geo
-            should_refresh_backlinks = force_fresh_geo
-            should_refresh_rankings = force_fresh_geo
+            brand_name = (domain.split(".")[0] if domain else "").strip()
 
             def _safe_int(value: Any, default: int = 0) -> int:
                 try:
@@ -1859,7 +2748,77 @@ class PDFService:
                     "metrics_source": metrics_source,
                 }
 
-            # 1. Keywords (fresh only when explicitly enabled)
+            def _payload_has_observed_rows(dataset_name: str, payload: Any) -> bool:
+                if dataset_name in {"llm_visibility", "ai_content_suggestions"}:
+                    return isinstance(payload, list) and len(payload) > 0
+                if not isinstance(payload, dict):
+                    return False
+
+                if dataset_name == "keywords":
+                    rows = payload.get("items") or payload.get("keywords") or []
+                    total = payload.get("total_keywords", payload.get("total"))
+                elif dataset_name == "backlinks":
+                    rows = payload.get("items") or payload.get("top_backlinks") or []
+                    total = payload.get("total_backlinks", payload.get("total"))
+                elif dataset_name == "rankings":
+                    rows = payload.get("items") or payload.get("rankings") or []
+                    total = payload.get("total_keywords", payload.get("total"))
+                else:
+                    rows = []
+                    total = 0
+
+                if isinstance(rows, list) and rows:
+                    return True
+                try:
+                    return int(total or 0) > 0
+                except (TypeError, ValueError):
+                    return False
+
+            should_refresh_keywords = force_fresh_geo or not _payload_has_observed_rows(
+                "keywords", keywords_data
+            )
+            should_refresh_backlinks = (
+                force_fresh_geo
+                or not _payload_has_observed_rows("backlinks", backlinks_data)
+            )
+            should_refresh_rankings = force_fresh_geo or not _payload_has_observed_rows(
+                "rankings", rank_tracking_data
+            )
+            should_refresh_llm_visibility = (
+                force_fresh_geo
+                or not _payload_has_observed_rows("llm_visibility", llm_visibility_data)
+            )
+            should_refresh_ai_suggestions = (
+                force_fresh_geo
+                or not _payload_has_observed_rows(
+                    "ai_content_suggestions", ai_content_suggestions_list
+                )
+            )
+            refreshed_geo_context = any(
+                (
+                    should_refresh_keywords,
+                    should_refresh_backlinks,
+                    should_refresh_rankings,
+                    should_refresh_llm_visibility,
+                    should_refresh_ai_suggestions,
+                )
+            )
+
+            if refreshed_geo_context:
+                logger.info(
+                    "Selective GEO refresh for PDF: "
+                    f"keywords={should_refresh_keywords}, "
+                    f"backlinks={should_refresh_backlinks}, "
+                    f"rankings={should_refresh_rankings}, "
+                    f"llm_visibility={should_refresh_llm_visibility}, "
+                    f"ai_content={should_refresh_ai_suggestions}"
+                )
+            else:
+                logger.info(
+                    "All supporting GEO datasets are already available in cache."
+                )
+
+            # 1. Keywords (refresh when forced or missing)
             if should_refresh_keywords:
                 try:
                     keyword_svc = KeywordService(db)
@@ -1869,7 +2828,7 @@ class PDFService:
                         coroutine_factory=lambda: keyword_svc.research_keywords(
                             audit_id, domain, seed_keywords=seed_keywords
                         ),
-                        stage_timeout_seconds=geo_stage_timeout_seconds,
+                        stage_timeout_seconds=keyword_stage_timeout_seconds,
                         started_at=started_at,
                         total_budget_seconds=total_budget_seconds,
                     )
@@ -1883,17 +2842,9 @@ class PDFService:
                         k for k in keywords_data_list if k.get("keyword")
                     ][:200]
 
-                    keywords_data = {
-                        "items": keywords_data_list,
-                        "keywords": keywords_data_list,
-                        "total": len(keywords_data_list),
-                        "total_keywords": len(keywords_data_list),
-                        "top_opportunities": sorted(
-                            keywords_data_list,
-                            key=_keyword_opportunity_score,
-                            reverse=True,
-                        )[:10],
-                    }
+                    keywords_data = PDFService._build_keywords_payload(
+                        keywords_data_list
+                    )
                 except Exception as e:
                     logger.error(f"Error generating Keywords for PDF: {e}")
 
@@ -1912,17 +2863,9 @@ class PDFService:
                         keywords_data_list = [
                             k for k in keywords_data_list if k.get("keyword")
                         ]
-                        keywords_data = {
-                            "items": keywords_data_list,
-                            "keywords": keywords_data_list,
-                            "total": len(keywords_data_list),
-                            "total_keywords": len(keywords_data_list),
-                            "top_opportunities": sorted(
-                                keywords_data_list,
-                                key=_keyword_opportunity_score,
-                                reverse=True,
-                            )[:10],
-                        }
+                        keywords_data = PDFService._build_keywords_payload(
+                            keywords_data_list
+                        )
                 except Exception as fb_err:
                     logger.error(f"Fallback for Keywords failed: {fb_err}")
 
@@ -1936,7 +2879,7 @@ class PDFService:
                         coroutine_factory=lambda: backlink_svc.analyze_backlinks(
                             audit_id, domain
                         ),
-                        stage_timeout_seconds=geo_stage_timeout_seconds,
+                        stage_timeout_seconds=backlink_stage_timeout_seconds,
                         started_at=started_at,
                         total_budget_seconds=total_budget_seconds,
                     )
@@ -1954,36 +2897,7 @@ class PDFService:
                         for b in backlinks_objs
                     ]
 
-                    backlinks_data = {
-                        "items": backlinks_list[:20],
-                        "total": len(backlinks_list),
-                        "total_backlinks": len(backlinks_list),
-                        "referring_domains": len(
-                            set(
-                                urlparse(b["source_url"]).netloc
-                                for b in backlinks_list
-                                if "://" in b["source_url"]
-                            )
-                        ),
-                        "top_backlinks": backlinks_list[:20],
-                        "summary": {
-                            "average_domain_authority": (
-                                round(
-                                    sum(b["domain_authority"] for b in backlinks_list)
-                                    / len(backlinks_list),
-                                    1,
-                                )
-                                if backlinks_list
-                                else 0
-                            ),
-                            "dofollow_count": len(
-                                [b for b in backlinks_list if b["is_dofollow"]]
-                            ),
-                            "nofollow_count": len(
-                                [b for b in backlinks_list if not b["is_dofollow"]]
-                            ),
-                        },
-                    }
+                    backlinks_data = PDFService._build_backlinks_payload(backlinks_list)
                 except Exception as e:
                     logger.error(f"Error generating Backlinks for PDF: {e}")
 
@@ -2009,39 +2923,9 @@ class PDFService:
                             for b in backlinks_objs
                         ]
 
-                        backlinks_data = {
-                            "items": backlinks_list[:20],
-                            "total": len(backlinks_list),
-                            "total_backlinks": len(backlinks_list),
-                            "referring_domains": len(
-                                set(
-                                    urlparse(b["source_url"]).netloc
-                                    for b in backlinks_list
-                                    if "://" in b["source_url"]
-                                )
-                            ),
-                            "top_backlinks": backlinks_list[:20],
-                            "summary": {
-                                "average_domain_authority": (
-                                    round(
-                                        sum(
-                                            b["domain_authority"]
-                                            for b in backlinks_list
-                                        )
-                                        / len(backlinks_list),
-                                        1,
-                                    )
-                                    if backlinks_list
-                                    else 0
-                                ),
-                                "dofollow_count": len(
-                                    [b for b in backlinks_list if b["is_dofollow"]]
-                                ),
-                                "nofollow_count": len(
-                                    [b for b in backlinks_list if not b["is_dofollow"]]
-                                ),
-                            },
-                        }
+                        backlinks_data = PDFService._build_backlinks_payload(
+                            backlinks_list
+                        )
                 except Exception as fb_err:
                     logger.error(f"Fallback for Backlinks failed: {fb_err}")
 
@@ -2050,14 +2934,13 @@ class PDFService:
                 try:
                     rank_svc = RankTrackerService(db)
                     logger.info("  - Performing fresh rankings tracking for PDF...")
-                    kw_terms = []
-                    for item in keywords_data_list[:20]:
-                        if isinstance(item, dict):
-                            raw_term = item.get("keyword") or item.get("term")
-                            if isinstance(raw_term, str) and raw_term.strip():
-                                kw_terms.append(raw_term.strip())
-                        elif isinstance(item, str) and item.strip():
-                            kw_terms.append(item.strip())
+                    kw_terms = PDFService._collect_geo_query_terms(
+                        audit=audit,
+                        domain=domain,
+                        keywords_data_list=keywords_data_list,
+                        seed_keywords=seed_keywords,
+                        limit=20,
+                    )
 
                     if kw_terms:
                         rankings_objs = await PDFService._run_stage_with_timeout(
@@ -2065,7 +2948,7 @@ class PDFService:
                             coroutine_factory=lambda: rank_svc.track_rankings(
                                 audit_id, domain, kw_terms
                             ),
-                            stage_timeout_seconds=geo_stage_timeout_seconds,
+                            stage_timeout_seconds=rankings_stage_timeout_seconds,
                             started_at=started_at,
                             total_budget_seconds=total_budget_seconds,
                         )
@@ -2095,46 +2978,9 @@ class PDFService:
                                 }
                             )
 
-                    rank_tracking_data = {
-                        "items": rankings_list,
-                        "total": len(rankings_list),
-                        "total_keywords": len(rankings_list),
-                        "rankings": rankings_list,
-                        "distribution": {
-                            "top_3": len(
-                                [
-                                    r
-                                    for r in rankings_list
-                                    if r.get("position", 100) <= 3
-                                    and r.get("position", 0) > 0
-                                ]
-                            ),
-                            "top_10": len(
-                                [
-                                    r
-                                    for r in rankings_list
-                                    if r.get("position", 100) <= 10
-                                    and r.get("position", 0) > 0
-                                ]
-                            ),
-                            "top_20": len(
-                                [
-                                    r
-                                    for r in rankings_list
-                                    if r.get("position", 100) <= 20
-                                    and r.get("position", 0) > 0
-                                ]
-                            ),
-                            "beyond_20": len(
-                                [
-                                    r
-                                    for r in rankings_list
-                                    if r.get("position", 100) > 20
-                                    or r.get("position", 0) == 0
-                                ]
-                            ),
-                        },
-                    }
+                    rank_tracking_data = PDFService._build_rankings_payload(
+                        rankings_list
+                    )
                 except Exception as e:
                     logger.error(f"Error generating Rankings for PDF: {e}")
 
@@ -2159,63 +3005,42 @@ class PDFService:
                             for r in rankings_objs
                         ]
 
-                        rank_tracking_data = {
-                            "rankings": rankings_list,
-                            "total_keywords": len(rankings_list),
-                            "distribution": {
-                                "top_3": len(
-                                    [
-                                        r
-                                        for r in rankings_list
-                                        if r.get("position", 100) <= 3
-                                        and r.get("position", 0) > 0
-                                    ]
-                                ),
-                                "top_10": len(
-                                    [
-                                        r
-                                        for r in rankings_list
-                                        if r.get("position", 100) <= 10
-                                        and r.get("position", 0) > 0
-                                    ]
-                                ),
-                                "top_20": len(
-                                    [
-                                        r
-                                        for r in rankings_list
-                                        if r.get("position", 100) <= 20
-                                        and r.get("position", 0) > 0
-                                    ]
-                                ),
-                                "beyond_20": len(
-                                    [
-                                        r
-                                        for r in rankings_list
-                                        if r.get("position", 100) > 20
-                                        or r.get("position", 0) == 0
-                                    ]
-                                ),
-                            },
-                        }
+                        rank_tracking_data = PDFService._build_rankings_payload(
+                            rankings_list
+                        )
                 except Exception as fb_err:
                     logger.error(f"Fallback for Rankings failed: {fb_err}")
 
             # 4. LLM Visibility (refresh when forced or missing cache)
-            if force_fresh_geo:
+            if should_refresh_llm_visibility:
                 try:
-                    if keywords_data_list:
+                    llm_queries = PDFService._collect_geo_query_terms(
+                        audit=audit,
+                        domain=domain,
+                        keywords_data_list=keywords_data_list,
+                        seed_keywords=seed_keywords,
+                        limit=10,
+                    )
+                    if llm_queries:
+                        visibility_svc = LLMVisibilityService(db)
                         refreshed_visibility = await PDFService._run_stage_with_timeout(
                             stage_name="LLM visibility analysis",
-                            coroutine_factory=lambda: LLMVisibilityService.generate_llm_visibility(
-                                keywords_data_list[:10], audit_url
+                            coroutine_factory=lambda: visibility_svc.check_visibility(
+                                audit_id,
+                                brand_name or domain,
+                                llm_queries,
                             ),
-                            stage_timeout_seconds=geo_stage_timeout_seconds,
+                            stage_timeout_seconds=llm_visibility_stage_timeout_seconds,
                             started_at=started_at,
                             total_budget_seconds=total_budget_seconds,
                         )
                         if refreshed_visibility is None:
                             raise TimeoutError("LLM visibility analysis timed out")
-                        llm_visibility_data = refreshed_visibility
+                        llm_visibility_data = [
+                            row
+                            for row in (refreshed_visibility or [])
+                            if isinstance(row, dict)
+                        ]
                     else:
                         llm_visibility_data = []
                 except Exception as e:
@@ -2238,14 +3063,32 @@ class PDFService:
                         pass
 
             # 5. AI Content Suggestions (refresh when forced or missing cache)
-            if force_fresh_geo:
+            if should_refresh_ai_suggestions:
                 try:
-                    if keywords_data_list:
-                        ai_content_suggestions_list = (
-                            AIContentService.generate_content_suggestions(
-                                keywords=keywords_data_list[:25], url=audit_url
-                            )
+                    ai_topics = PDFService._collect_geo_query_terms(
+                        audit=audit,
+                        domain=domain,
+                        keywords_data_list=keywords_data_list,
+                        seed_keywords=seed_keywords,
+                        limit=8,
+                    )
+                    if ai_topics:
+                        ai_content_svc = AIContentService(db)
+                        ai_content_suggestions_list = await PDFService._run_stage_with_timeout(
+                            stage_name="AI content suggestions",
+                            coroutine_factory=lambda: ai_content_svc.generate_suggestions(
+                                audit_id, domain, ai_topics
+                            ),
+                            stage_timeout_seconds=ai_content_stage_timeout_seconds,
+                            started_at=started_at,
+                            total_budget_seconds=total_budget_seconds,
                         )
+                        if ai_content_suggestions_list is None:
+                            raise TimeoutError("AI content suggestions timed out")
+                        ai_content_suggestions_list = [
+                            PDFService._normalize_ai_suggestion_row(row)
+                            for row in (ai_content_suggestions_list or [])
+                        ]
                     else:
                         ai_content_suggestions_list = []
                 except Exception as e:
@@ -2257,13 +3100,7 @@ class PDFService:
                         db.refresh(audit)
                         if audit.ai_content_suggestions:
                             ai_content_suggestions_list = [
-                                {
-                                    "topic": a.topic,
-                                    "suggestion_type": a.suggestion_type,
-                                    "content_outline": a.content_outline,
-                                    "priority": a.priority,
-                                    "page_url": a.page_url,
-                                }
+                                PDFService._normalize_ai_suggestion_row(a)
                                 for a in audit.ai_content_suggestions
                             ]
                     except Exception:  # nosec B110
@@ -2279,9 +3116,10 @@ class PDFService:
                 exc_info=True,
             )
             # Fallback is handled by initialization values
+            refreshed_geo_context = False
 
         # 5. Load COMPLETE context from ALL features (refresh only if we ran fresh GEO)
-        if force_fresh_geo:
+        if refreshed_geo_context:
             complete_context = PDFService._load_complete_audit_context(db, audit_id)
         logger.info(
             f"âœ“ Complete context loaded with {len(complete_context)} feature types"
@@ -2425,27 +3263,77 @@ class PDFService:
             if isinstance(ai_content_suggestions_list, list)
             else []
         )
+        try:
+            db.refresh(audit)
+        except Exception:
+            refreshed_audit = AuditService.get_audit(db, audit_id)
+            if refreshed_audit is not None:
+                audit = refreshed_audit
+        signature_inputs = PDFService._build_signature_inputs_from_complete_context(
+            complete_context=complete_context,
+            fallback_pagespeed_data=(
+                pagespeed_data if isinstance(pagespeed_data, dict) else {}
+            ),
+        )
 
         current_signature = PDFService._compute_report_context_signature(
             audit=audit,
-            pagespeed_data=pagespeed_data if isinstance(pagespeed_data, dict) else {},
-            keywords_data=keywords_data if isinstance(keywords_data, dict) else {},
-            backlinks_data=backlinks_data if isinstance(backlinks_data, dict) else {},
-            rank_tracking_data=(
-                rank_tracking_data if isinstance(rank_tracking_data, dict) else {}
-            ),
-            llm_visibility_data=llm_viz_for_report,
-            ai_content_suggestions=ai_suggestions_for_report,
+            pagespeed_data=signature_inputs["pagespeed_data"],
+            keywords_data=signature_inputs["keywords_data"],
+            backlinks_data=signature_inputs["backlinks_data"],
+            rank_tracking_data=signature_inputs["rank_tracking_data"],
+            llm_visibility_data=signature_inputs["llm_visibility_data"],
+            ai_content_suggestions=signature_inputs["ai_content_suggestions"],
         )
-        cached_signature = PDFService._load_saved_report_signature(audit_id)
-        has_valid_cached_markdown = len(fallback_markdown_report.strip()) > 100
+        cached_signature = PDFService._load_saved_report_signature(audit_id, db=db)
+        cached_markdown_is_deterministic = PDFService._is_deterministic_report_markdown(
+            fallback_markdown_report
+        )
+        has_valid_cached_markdown = (
+            len(fallback_markdown_report.strip()) > 100
+            and not cached_markdown_is_deterministic
+        )
+        missing_context = PDFService._detect_missing_pdf_context(
+            audit=audit,
+            pagespeed_data=pagespeed_data,
+            keywords_data=keywords_data,
+            backlinks_data=backlinks_data,
+            rank_tracking_data=rank_tracking_data,
+        )
+        optional_context_gaps = PDFService._detect_optional_pdf_context_gaps(
+            pagespeed_data=pagespeed_data,
+            keywords_data=keywords_data,
+            backlinks_data=backlinks_data,
+            rank_tracking_data=rank_tracking_data,
+        )
+        generation_warnings: List[str] = []
+        report_markdown_for_pdf = fallback_markdown_report
+        report_persisted = False
+        if cached_markdown_is_deterministic:
+            generation_warnings.append(
+                "Ignoring cached deterministic fallback report and attempting regeneration."
+            )
+        if missing_context:
+            generation_warnings.append(
+                "Validated PDF context is incomplete: "
+                + ", ".join(sorted(missing_context))
+            )
+        if optional_context_gaps:
+            generation_warnings.append(
+                "Supporting PDF datasets are unavailable for this run: "
+                + ", ".join(sorted(optional_context_gaps))
+            )
+        generation_warnings.extend(pagespeed_generation_warnings)
 
-        report_cache_hit = (
-            (not force_report_refresh)
-            and bool(current_signature)
+        signature_match = bool(
+            current_signature
+            and cached_signature
             and current_signature == cached_signature
-            and has_valid_cached_markdown
         )
+        safe_cached_markdown_available = (
+            has_valid_cached_markdown and signature_match and not missing_context
+        )
+        report_cache_hit = (not force_report_refresh) and safe_cached_markdown_available
         report_regenerated = False
         generation_mode = (
             "report_cache_hit"
@@ -2457,10 +3345,20 @@ class PDFService:
             f"cache_hit={report_cache_hit}, "
             f"force_report_refresh={force_report_refresh}, "
             f"has_valid_cached_markdown={has_valid_cached_markdown}, "
-            f"signature_match={bool(current_signature and current_signature == cached_signature)}, "
+            f"cached_markdown_is_deterministic={cached_markdown_is_deterministic}, "
+            f"missing_context={missing_context}, "
+            f"signature_match={signature_match}, "
             f"current_sig={current_signature[:12] if current_signature else 'none'}, "
             f"cached_sig={cached_signature[:12] if cached_signature else 'none'}"
         )
+        if (
+            has_valid_cached_markdown
+            and not cached_markdown_is_deterministic
+            and not signature_match
+        ):
+            generation_warnings.append(
+                "Ignoring persisted markdown report because its context signature does not match the current audit context."
+            )
 
         if report_cache_hit:
             logger.info(
@@ -2469,9 +3367,65 @@ class PDFService:
             audit.report_markdown = fallback_markdown_report
             audit.fix_plan = fallback_fix_plan
             db.commit()
+            report_markdown_for_pdf = fallback_markdown_report
 
-        if not report_cache_hit:
+        deterministic_on_supporting_gaps = os.getenv(
+            "PDF_DETERMINISTIC_ON_SUPPORTING_GAPS", "false"
+        ).strip().lower() in {"1", "true", "yes", "on"}
+        grounded_data_gap_threshold = 3
+        should_use_grounded_report_for_data_gaps = (
+            deterministic_on_supporting_gaps
+            and not report_cache_hit
+            and not missing_context
+            and len(optional_context_gaps) >= grounded_data_gap_threshold
+        )
+        if should_use_grounded_report_for_data_gaps:
+            if not deterministic_fallback_enabled:
+                raise RuntimeError(
+                    "Supporting PDF datasets are unavailable and deterministic fallbacks are disabled: "
+                    + ", ".join(sorted(optional_context_gaps))
+                )
+            report_markdown_for_pdf = PDFService._build_deterministic_full_report(
+                audit=audit,
+                pagespeed_data=(
+                    pagespeed_data if isinstance(pagespeed_data, dict) else {}
+                ),
+                keywords_data=(
+                    keywords_data if isinstance(keywords_data, dict) else {}
+                ),
+                backlinks_data=(
+                    backlinks_data if isinstance(backlinks_data, dict) else {}
+                ),
+                rank_tracking_data=(
+                    rank_tracking_data if isinstance(rank_tracking_data, dict) else {}
+                ),
+                llm_visibility_data=llm_viz_for_report,
+                ai_content_suggestions=ai_suggestions_for_report,
+                fix_plan=fallback_fix_plan,
+                reason="supporting_data_gap",
+                data_gaps=optional_context_gaps,
+            )
+            audit.report_markdown = report_markdown_for_pdf
+            audit.fix_plan = fallback_fix_plan
+            db.commit()
+            report_regenerated = True
+            report_persisted = True
+            generation_mode = "deterministic_grounded_supporting_data_gap"
+            generation_warnings.append(
+                "Supporting datasets were unavailable; generated a grounded deterministic report instead of invoking the LLM."
+            )
+            logger.warning(
+                "Skipping LLM report regeneration because supporting datasets are unavailable: %s",
+                ", ".join(sorted(optional_context_gaps)),
+            )
+
+        if not report_cache_hit and not should_use_grounded_report_for_data_gaps:
             try:
+                if missing_context:
+                    raise RuntimeError(
+                        "Validated PDF context is incomplete: "
+                        + ", ".join(sorted(missing_context))
+                    )
                 llm_function = get_llm_function()
 
                 # Product Intelligence (ecommerce) - for LLM product positioning
@@ -2684,21 +3638,144 @@ class PDFService:
 
                 audit.fix_plan = fix_plan
                 db.commit()
-                PDFService._save_report_signature(audit_id, current_signature)
+                PDFService._save_report_signature(audit_id, current_signature, db=db)
+                db.commit()
+                persisted_signature = PDFService._load_saved_report_signature(
+                    audit_id, db=db
+                )
+                if persisted_signature != current_signature:
+                    logger.warning(
+                        "Report signature persistence mismatch after regeneration. "
+                        f"audit_id={audit_id} current_sig={current_signature[:12]} "
+                        f"persisted_sig={persisted_signature[:12] if persisted_signature else 'none'}"
+                    )
+                report_markdown_for_pdf = markdown_report
                 report_regenerated = True
+                report_persisted = True
                 generation_mode = (
                     "full_regenerated" if always_full_mode else "report_regenerated"
                 )
 
                 logger.info(f"Fix plan length: {len(fix_plan) if fix_plan else 0}")
             except Exception as e:
-                logger.error(
-                    "LLM report regeneration failed; aborting PDF generation to avoid fallbacks.",
-                    exc_info=True,
-                )
-                raise RuntimeError(
-                    "Report regeneration failed and fallbacks are disabled."
-                ) from e
+                if missing_context:
+                    logger.warning(
+                        "Skipping LLM report regeneration because validated context is incomplete.",
+                        exc_info=False,
+                    )
+                    if not deterministic_fallback_enabled:
+                        raise RuntimeError(
+                            "Validated PDF context is incomplete and deterministic fallback is disabled: "
+                            + ", ".join(sorted(missing_context))
+                        ) from e
+                    report_markdown_for_pdf = (
+                        PDFService._build_deterministic_full_report(
+                            audit=audit,
+                            pagespeed_data=(
+                                pagespeed_data
+                                if isinstance(pagespeed_data, dict)
+                                else {}
+                            ),
+                            keywords_data=(
+                                keywords_data if isinstance(keywords_data, dict) else {}
+                            ),
+                            backlinks_data=(
+                                backlinks_data
+                                if isinstance(backlinks_data, dict)
+                                else {}
+                            ),
+                            rank_tracking_data=(
+                                rank_tracking_data
+                                if isinstance(rank_tracking_data, dict)
+                                else {}
+                            ),
+                            llm_visibility_data=llm_viz_for_report,
+                            ai_content_suggestions=ai_suggestions_for_report,
+                            fix_plan=[],
+                            reason="missing_context",
+                            data_gaps=missing_context,
+                        )
+                    )
+                    if (
+                        not report_markdown_for_pdf
+                        or len(report_markdown_for_pdf.strip()) <= 100
+                    ):
+                        raise RuntimeError(
+                            "Validated context is incomplete and deterministic fallback report is too short."
+                        ) from e
+                    report_regenerated = True
+                    generation_mode = "deterministic_missing_context"
+                    generation_warnings.append(
+                        "Generated a deterministic PDF report without persisting or caching it because validated context is incomplete."
+                    )
+                else:
+                    if safe_cached_markdown_available:
+                        logger.warning(
+                            "LLM report regeneration failed; reusing persisted markdown report for this PDF.",
+                            exc_info=True,
+                        )
+                        report_markdown_for_pdf = fallback_markdown_report
+                        generation_mode = "report_cached_llm_failure"
+                        generation_warnings.append(
+                            "LLM report regeneration failed; reused the last persisted markdown report for this PDF."
+                        )
+                    else:
+                        if has_valid_cached_markdown and not signature_match:
+                            logger.warning(
+                                "LLM report regeneration failed and the persisted markdown report was rejected because its context signature does not match the current audit context.",
+                                exc_info=False,
+                            )
+                        logger.error(
+                            "LLM report regeneration failed; switching to deterministic fallback report for this PDF only.",
+                            exc_info=True,
+                        )
+                        if not deterministic_fallback_enabled:
+                            raise RuntimeError(
+                                "LLM report regeneration failed and deterministic fallbacks are disabled."
+                            ) from e
+                        report_markdown_for_pdf = (
+                            PDFService._build_deterministic_full_report(
+                                audit=audit,
+                                pagespeed_data=(
+                                    pagespeed_data
+                                    if isinstance(pagespeed_data, dict)
+                                    else {}
+                                ),
+                                keywords_data=(
+                                    keywords_data
+                                    if isinstance(keywords_data, dict)
+                                    else {}
+                                ),
+                                backlinks_data=(
+                                    backlinks_data
+                                    if isinstance(backlinks_data, dict)
+                                    else {}
+                                ),
+                                rank_tracking_data=(
+                                    rank_tracking_data
+                                    if isinstance(rank_tracking_data, dict)
+                                    else {}
+                                ),
+                                llm_visibility_data=llm_viz_for_report,
+                                ai_content_suggestions=ai_suggestions_for_report,
+                                fix_plan=[],
+                                reason="llm_failure",
+                                data_gaps=optional_context_gaps,
+                            )
+                        )
+                        if (
+                            not report_markdown_for_pdf
+                            or len(report_markdown_for_pdf.strip()) <= 100
+                        ):
+                            raise RuntimeError(
+                                "Report regeneration failed and deterministic fallback report is too short."
+                            ) from e
+
+                        report_regenerated = True
+                        generation_mode = "deterministic_fallback_transient"
+                        generation_warnings.append(
+                            "LLM report regeneration failed; generated a deterministic report for this PDF only without persisting or caching it."
+                        )
 
         # 7. Get pages and competitors
         pages = AuditService.get_audited_pages(db, audit_id)
@@ -2718,6 +3795,7 @@ class PDFService:
             backlinks_data=backlinks_data,
             rank_tracking_data=rank_tracking_data,
             llm_visibility_data=llm_visibility_data,
+            report_markdown_override=report_markdown_for_pdf,
         )
         pdf_file_size = getattr(audit, "_generated_pdf_size_bytes", None)
 
@@ -2731,9 +3809,12 @@ class PDFService:
                 "pdf_path": pdf_path,
                 "report_cache_hit": report_cache_hit,
                 "report_regenerated": report_regenerated,
+                "report_persisted": report_persisted,
                 "generation_mode": generation_mode,
                 "external_intel_refreshed": external_intel_refreshed,
                 "external_intel_refresh_reason": external_intel_refresh_reason,
+                "missing_context": missing_context,
+                "generation_warnings": generation_warnings,
                 "file_size": pdf_file_size,
             }
         return pdf_path
@@ -2748,6 +3829,7 @@ class PDFService:
         backlinks_data: dict = None,
         rank_tracking_data: dict = None,
         llm_visibility_data: list = None,
+        report_markdown_override: Optional[str] = None,
     ) -> str:
         """
         Genera un PDF completo con todos los datos de la auditorÃ­a:
@@ -2769,6 +3851,7 @@ class PDFService:
             backlinks_data: Datos de Backlinks (opcional)
             rank_tracking_data: Datos de Rank Tracking (opcional)
             llm_visibility_data: Datos de LLM Visibility (opcional)
+            report_markdown_override: Markdown report a renderizar sin persistirlo
 
         Returns:
             La ruta completa al archivo PDF generado
@@ -2787,12 +3870,20 @@ class PDFService:
         try:
             os.makedirs(reports_dir, exist_ok=True)
             PDFService._clean_previous_pdf_artifacts(reports_dir)
+            report_markdown_value = (
+                report_markdown_override
+                if report_markdown_override is not None
+                else audit.report_markdown
+            )
+            report_markdown_value = PDFService._normalize_markdown_for_pdf_render(
+                report_markdown_value
+            )
 
             # 1. Guardar markdown report
-            if audit.report_markdown:
+            if report_markdown_value:
                 md_file_path = os.path.join(reports_dir, "ag2_report.md")
                 with open(md_file_path, "w", encoding="utf-8") as f:
-                    f.write(audit.report_markdown)
+                    f.write(report_markdown_value)
 
             # 2. Guardar fix_plan.json
             if audit.fix_plan:

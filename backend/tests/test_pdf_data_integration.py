@@ -1,3 +1,4 @@
+import os
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -55,20 +56,27 @@ def test_rank_tracking_service_no_invented_data():
 @pytest.mark.asyncio
 async def test_pdf_service_real_data_flow():
     """
-    Verifica que PDFService llame a los servicios reales cuando no hay datos en la BD.
-    Este test simula la generación del PDF y verifica que se intenten obtener datos reales.
+    Verifica que PDFService refresque selectivamente GEO cuando faltan datasets
+    de soporte aunque PDF_FORCE_FRESH_GEO esté deshabilitado.
     """
     mock_db = MagicMock()
     mock_audit = MagicMock()
     mock_audit.id = 1
     mock_audit.url = "https://example.com"
-    mock_audit.target_audit = {}
-    mock_audit.external_intelligence = {}
+    mock_audit.target_audit = {"market": "argentina", "geo_score": 70}
+    mock_audit.external_intelligence = {
+        "category": "Education",
+        "subcategory": "Bootcamp",
+        "market": "argentina",
+        "queries_to_run": ["coding bootcamp argentina"],
+    }
     mock_audit.search_results = {}
     mock_audit.competitor_audits = []
 
     # Simular que no hay nada en la BD
-    mock_audit.pagespeed_data = None
+    mock_audit.pagespeed_data = {
+        "mobile": {"metadata": {"fetch_time": "2099-01-01T00:00:00Z"}}
+    }
     mock_audit.keywords = []
     mock_audit.backlinks = []
     mock_audit.rank_trackings = []
@@ -111,17 +119,27 @@ async def test_pdf_service_real_data_flow():
                             new_callable=AsyncMock,
                         ) as mock_pdf_gen:
                             mock_pdf_gen.return_value = "dummy.pdf"
+                            with patch(
+                                "app.services.llm_visibility_service.LLMVisibilityService.check_visibility",
+                                new_callable=AsyncMock,
+                            ) as mock_visibility:
+                                mock_visibility.return_value = []
+                                with patch(
+                                    "app.services.ai_content_service.AIContentService.generate_suggestions",
+                                    new_callable=AsyncMock,
+                                ) as mock_ai:
+                                    mock_ai.return_value = []
 
-                            # Ejecutar la lógica de generación
-                            await PDFService.generate_pdf_with_complete_context(
-                                mock_db, 1
-                            )
+                                    # Ejecutar la lógica de generación
+                                    await PDFService.generate_pdf_with_complete_context(
+                                        mock_db, 1
+                                    )
 
-                            # Verificar que se intentó obtener datos reales (porque la BD estaba vacía)
-                            mock_research.assert_called_once()
-                            mock_backlinks.assert_called_once()
-                            # Rank tracking se llama si hay keywords. En este caso research_keywords devolvió [] así que no se llama.
-                            # Pero el punto es que se llamó a la investigación real.
+                                    mock_research.assert_awaited_once()
+                                    mock_backlinks.assert_awaited_once()
+                                    mock_rank.assert_awaited_once()
+                                    mock_visibility.assert_awaited_once()
+                                    mock_ai.assert_awaited_once()
 
     print("\n[OK] Todos los tests de integración de datos pasaron satisfactoriamente.")
 
@@ -135,12 +153,19 @@ async def test_pdf_service_partial_failure():
     mock_audit = MagicMock()
     mock_audit.id = 1
     mock_audit.url = "https://example.com"
-    mock_audit.target_audit = {}
-    mock_audit.external_intelligence = {}
+    mock_audit.target_audit = {"market": "argentina", "geo_score": 70}
+    mock_audit.external_intelligence = {
+        "category": "Education",
+        "subcategory": "Bootcamp",
+        "market": "argentina",
+        "queries_to_run": ["coding bootcamp argentina"],
+    }
     mock_audit.search_results = {}
     mock_audit.competitor_audits = []
 
-    mock_audit.pagespeed_data = None
+    mock_audit.pagespeed_data = {
+        "mobile": {"metadata": {"fetch_time": "2099-01-01T00:00:00Z"}}
+    }
     mock_audit.keywords = []
     mock_audit.backlinks = []
     mock_audit.rank_trackings = []
@@ -158,7 +183,11 @@ async def test_pdf_service_partial_failure():
     mock_keyword_obj.cpc = 1.0
     mock_keyword_obj.intent = "Commercial"
 
-    with patch(
+    with patch.dict(
+        os.environ,
+        {"PDF_FORCE_FRESH_GEO": "true"},
+        clear=False,
+    ), patch(
         "app.services.keyword_service.KeywordService.research_keywords",
         new_callable=AsyncMock,
     ) as mock_research:
@@ -189,14 +218,15 @@ async def test_pdf_service_partial_failure():
                         ) as mock_rank:
                             mock_rank.return_value = []
                             with patch(
-                                "app.services.llm_visibility_service.LLMVisibilityService.generate_llm_visibility",
+                                "app.services.llm_visibility_service.LLMVisibilityService.check_visibility",
                                 new_callable=AsyncMock,
                             ) as mock_vis:
                                 mock_vis.return_value = []
                                 with patch(
-                                    "app.services.ai_content_service.AIContentService.generate_content_suggestions",
-                                    return_value=[],
-                                ):
+                                    "app.services.ai_content_service.AIContentService.generate_suggestions",
+                                    new_callable=AsyncMock,
+                                ) as mock_ai:
+                                    mock_ai.return_value = []
                                     await PDFService.generate_pdf_with_complete_context(
                                         mock_db, 1
                                     )
@@ -210,11 +240,10 @@ async def test_pdf_service_partial_failure():
                                         passed_keywords.get("total_keywords") == 1
                                     ), "Keywords should be present even if Backlinks failed"
 
-                                    # Verify Backlinks were passed as empty dict
+                                    # Verify Backlinks were passed as a structured empty payload
                                     passed_backlinks = kwargs.get("backlinks_data", {})
-                                    assert (
-                                        passed_backlinks == {}
-                                    ), "Backlinks should be empty dict on failure"
+                                    assert passed_backlinks.get("total_backlinks") == 0
+                                    assert passed_backlinks.get("items") == []
 
     print("\n[OK] Test de fallo parcial exitoso.")
 
@@ -228,8 +257,13 @@ async def test_pdf_service_fallback_to_db():
     mock_audit = MagicMock()
     mock_audit.id = 1
     mock_audit.url = "https://example.com"
-    mock_audit.target_audit = {}
-    mock_audit.external_intelligence = {}
+    mock_audit.target_audit = {"market": "argentina", "geo_score": 70}
+    mock_audit.external_intelligence = {
+        "category": "Education",
+        "subcategory": "Bootcamp",
+        "market": "argentina",
+        "queries_to_run": ["coding bootcamp argentina"],
+    }
     mock_audit.search_results = {}
     mock_audit.competitor_audits = []
 
@@ -288,13 +322,14 @@ async def test_pdf_service_fallback_to_db():
                         ) as mock_pdf_gen:
                             mock_pdf_gen.return_value = "dummy.pdf"
                             with patch(
-                                "app.services.llm_visibility_service.LLMVisibilityService.generate_llm_visibility",
+                                "app.services.llm_visibility_service.LLMVisibilityService.check_visibility",
                                 new_callable=AsyncMock,
                             ):
                                 with patch(
-                                    "app.services.ai_content_service.AIContentService.generate_content_suggestions",
-                                    return_value=[],
-                                ):
+                                    "app.services.ai_content_service.AIContentService.generate_suggestions",
+                                    new_callable=AsyncMock,
+                                ) as mock_ai:
+                                    mock_ai.return_value = []
                                     await PDFService.generate_pdf_with_complete_context(
                                         mock_db, 1
                                     )

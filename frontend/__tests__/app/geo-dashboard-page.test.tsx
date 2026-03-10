@@ -27,7 +27,7 @@ vi.mock("@/components/header", () => ({
   Header: () => <div data-testid="header">Header</div>,
 }));
 
-vi.mock("@/lib/api", () => ({
+vi.mock("@/lib/api-client", () => ({
   API_URL: "http://localhost:8000",
 }));
 
@@ -51,6 +51,50 @@ const dashboardPayload = {
     your_mentions: 0,
   },
 };
+
+const competitorSummaryPayload = {
+  audit_id: 3,
+  total_competitors: 2,
+  your_geo_score: 61,
+  average_competitor_score: 54,
+  position: "Por encima del promedio",
+  competitors: [
+    {
+      domain: "leader.example.com",
+      url: "https://leader.example.com",
+      geo_score: 68,
+    },
+    {
+      domain: "runnerup.example.com",
+      url: "https://runnerup.example.com",
+      geo_score: 40,
+    },
+  ],
+  identified_gaps: ["Schema faltante: FAQPage"],
+};
+
+const auditedCompetitorsPayload = [
+  {
+    domain: "leader.example.com",
+    url: "https://leader.example.com",
+    geo_score: 68,
+    schema_present: true,
+    structure_score: 74,
+    eeat_score: 80,
+    h1_present: true,
+    tone_score: 7.2,
+  },
+  {
+    domain: "runnerup.example.com",
+    url: "https://runnerup.example.com",
+    geo_score: 40,
+    schema_present: false,
+    structure_score: 42,
+    eeat_score: 35,
+    h1_present: false,
+    tone_score: 3.8,
+  },
+];
 
 describe("GEO dashboard page", () => {
   beforeEach(() => {
@@ -98,5 +142,54 @@ describe("GEO dashboard page", () => {
         /generate audit-grounded article batches focused on citation and conversion outcomes/i,
       ),
     ).toBeInTheDocument();
+  });
+
+  it("renders audited competitor benchmark automatically in the benchmark tab", async () => {
+    window.history.replaceState({}, "", "/en/audits/3/geo?tab=competitors");
+    (useSearchParams as jest.Mock).mockReturnValue({
+      get: (key: string) => (key === "tab" ? "competitors" : null),
+      toString: () => "tab=competitors",
+    });
+    (fetchWithBackendAuth as jest.Mock).mockImplementation((url: string) => {
+      if (url.endsWith("/api/v1/geo/dashboard/3")) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: async () => dashboardPayload,
+        });
+      }
+      if (url.endsWith("/api/v1/analytics/competitors/3")) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: async () => competitorSummaryPayload,
+        });
+      }
+      if (url.includes("/api/v1/audits/3/competitors")) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: async () => auditedCompetitorsPayload,
+        });
+      }
+      return Promise.resolve({
+        ok: false,
+        status: 404,
+        json: async () => ({}),
+      });
+    });
+
+    render(<GEODashboardPage />);
+
+    await screen.findByText("Audited Competitor Ranking");
+    expect(screen.getAllByText("leader.example.com").length).toBeGreaterThan(0);
+    expect(screen.getByText("Schema faltante: FAQPage")).toBeInTheDocument();
+    expect(screen.getByText("Ad Hoc Benchmark")).toBeInTheDocument();
+
+    await waitFor(() => {
+      expect(fetchWithBackendAuth).toHaveBeenCalledWith(
+        "http://localhost:8000/api/v1/analytics/competitors/3",
+      );
+    });
   });
 });

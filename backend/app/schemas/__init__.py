@@ -26,6 +26,8 @@ class AuditCreate(BaseModel):
     user_id: Optional[str] = None  # Auth0 user sub
     user_email: Optional[str] = None  # User email
 
+    model_config = ConfigDict(extra="ignore")
+
     @field_validator("url")
     @classmethod
     def validate_audit_url(cls, v):
@@ -93,6 +95,9 @@ class AuditResponse(BaseModel):
     category: Optional[str] = None  # Business category (e.g., "AI coding assistant")
     competitors: Optional[List[str]] = None
     market: Optional[str] = None
+    intake_profile: Optional[Dict[str, Any]] = None
+    runtime_diagnostics: Optional[List[Dict[str, Any]]] = None
+    odoo_connection_id: Optional[str] = None
     geo_score: float = 0  # GEO Score (0-100)
 
     model_config = ConfigDict(from_attributes=True)
@@ -107,6 +112,38 @@ class AuditSummary(BaseModel):
     created_at: datetime
     geo_score: Optional[float] = 0
     total_pages: Optional[int] = 0
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class AuditOverview(BaseModel):
+    id: int
+    url: str
+    domain: Optional[str] = None
+    status: str
+    progress: int
+    created_at: datetime
+    started_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
+    geo_score: Optional[float] = 0
+    total_pages: Optional[int] = 0
+    critical_issues: Optional[int] = None
+    high_issues: Optional[int] = None
+    medium_issues: Optional[int] = None
+    source: Optional[str] = None
+    language: Optional[str] = None
+    category: Optional[str] = None
+    market: Optional[str] = None
+    intake_profile: Optional[Dict[str, Any]] = None
+    diagnostics_summary: Optional[List[Dict[str, Any]]] = None
+    odoo_connection_id: Optional[str] = None
+    error_message: Optional[str] = None
+    competitor_count: int = 0
+    fix_plan_count: int = 0
+    report_ready: bool = False
+    pagespeed_available: bool = False
+    pdf_available: bool = False
+    external_intelligence: Optional[Dict[str, Any]] = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -173,6 +210,8 @@ class AuditConfigRequest(BaseModel):
     language: Optional[str] = None
     competitors: Optional[List[str]] = None
     market: Optional[str] = None
+
+    model_config = ConfigDict(extra="ignore")
 
     @field_validator("competitors")
     @classmethod

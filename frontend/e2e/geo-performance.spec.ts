@@ -10,6 +10,12 @@ type ScenarioResult = {
   p95_ms: number;
 };
 
+type Scenario = {
+  cardTestId: string;
+  tabTestId?: string;
+  label: string;
+};
+
 const readInt = (raw: string | undefined, fallback: number) => {
   const parsed = Number.parseInt(raw || "", 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
@@ -24,6 +30,7 @@ const percentile = (values: number[], ratio: number) => {
 
 const reportPath =
   process.env.PERF_REPORT_PATH || "playwright-report/geo-performance.json";
+const baseUrl = process.env.PERF_BASE_URL || "http://localhost:3000";
 const locale = process.env.PERF_LOCALE || "en";
 const auditId = process.env.PERF_AUDIT_ID || "";
 const samples = readInt(process.env.PERF_SAMPLES, 20);
@@ -31,7 +38,11 @@ const thresholdMs = readInt(process.env.PERF_THRESHOLD_MS, 2000);
 const authEmail = process.env.PERF_AUTH_EMAIL || "";
 const authPassword = process.env.PERF_AUTH_PASSWORD || "";
 
-const scenarios = [
+const scenarios: Scenario[] = [
+  {
+    cardTestId: "geo-tool-card-dashboard",
+    label: "dashboard",
+  },
   {
     cardTestId: "geo-tool-card-commerce",
     tabTestId: "geo-tab-commerce",
@@ -42,12 +53,38 @@ const scenarios = [
     tabTestId: "geo-tab-article-engine",
     label: "article-engine",
   },
-] as const;
+];
+
+const isRedirectAbort = (error: unknown) => {
+  const message = error instanceof Error ? error.message : String(error);
+  return message.includes("net::ERR_ABORTED");
+};
+
+const isAuthUrl = (value: string) =>
+  value.includes("/signin") ||
+  value.includes("/auth/login") ||
+  value.includes("/authorize") ||
+  value.includes("/u/login");
+
+const navigateWithAuthRedirectTolerance = async (
+  page: Page,
+  target: string,
+) => {
+  try {
+    await page.goto(target, { waitUntil: "domcontentloaded" });
+  } catch (error) {
+    if (!isRedirectAbort(error)) {
+      throw error;
+    }
+  }
+};
 
 const ensureAuthenticated = async (basePath: string, page: Page) => {
-  await page.goto(basePath, { waitUntil: "domcontentloaded" });
+  const basePathUrl = new URL(basePath, baseUrl).toString();
+  await navigateWithAuthRedirectTolerance(page, basePathUrl);
   const toolCard = page.getByTestId("geo-tool-card-dashboard");
   if (await toolCard.isVisible().catch(() => false)) return;
+  if (!isAuthUrl(page.url())) return;
 
   if (!authEmail || !authPassword) {
     throw new Error(
@@ -55,7 +92,10 @@ const ensureAuthenticated = async (basePath: string, page: Page) => {
     );
   }
 
-  await page.goto("/signin", { waitUntil: "domcontentloaded" });
+  await navigateWithAuthRedirectTolerance(
+    page,
+    new URL("/signin", baseUrl).toString(),
+  );
   const emailInput = page
     .locator('input[type="email"], input[name="email"], input[name="username"]')
     .first();
@@ -74,38 +114,111 @@ const ensureAuthenticated = async (basePath: string, page: Page) => {
     )
     .first();
   await submitButton.click();
-  await page.waitForURL(new RegExp(`/audits/${auditId}`), { timeout: 45_000 });
+  await page.waitForURL((url) => !isAuthUrl(url.toString()), {
+    timeout: 45_000,
+  });
+  await navigateWithAuthRedirectTolerance(page, basePathUrl);
+};
+
+const waitForGeoToolSuite = async (page: Page) => {
   await expect(page.getByTestId("geo-tool-card-dashboard")).toBeVisible();
+  await expect(page.getByTestId("geo-tool-card-commerce")).toBeVisible();
+  await expect(page.getByTestId("geo-tool-card-article-engine")).toBeVisible();
+};
+
+const discoverAuditId = async (page: Page) => {
+  if (auditId) {
+    const auditPathUrl = new URL(
+      `/${locale}/audits/${auditId}`,
+      baseUrl,
+    ).toString();
+    await page.goto(auditPathUrl, { waitUntil: "domcontentloaded" });
+    if (
+      await page
+        .getByTestId("geo-tool-card-dashboard")
+        .isVisible()
+        .catch(() => false)
+    ) {
+      return auditId;
+    }
+    return "";
+  }
+
+  await page.goto(new URL(`/${locale}/audits`, baseUrl).toString(), {
+    waitUntil: "domcontentloaded",
+  });
+  const text = await page
+    .locator("text=/Audit #\\d+/")
+    .first()
+    .textContent({ timeout: 1_000 })
+    .catch(() => null);
+  const match = text?.match(/Audit #(\d+)/i);
+  return match?.[1] || "";
 };
 
 test("GEO cards p95 stays below threshold", async ({ page }) => {
-  test.skip(!auditId, "Set PERF_AUDIT_ID to run GEO performance E2E.");
-  const auditPath = `/${locale}/audits/${auditId}`;
-  await ensureAuthenticated(auditPath, page);
+  test.setTimeout(Math.max(120_000, samples * scenarios.length * 20_000));
+
+  const seedPath = auditId
+    ? `/${locale}/audits/${auditId}`
+    : `/${locale}/audits`;
+  await ensureAuthenticated(seedPath, page);
+  const effectiveAuditId = await discoverAuditId(page);
+  if (!effectiveAuditId) {
+    const report = {
+      generated_at: new Date().toISOString(),
+      base_url: process.env.PERF_BASE_URL || "",
+      audit_id: "",
+      effective_audit_id: "",
+      locale,
+      samples_per_scenario: 0,
+      threshold_ms: thresholdMs,
+      skipped: true,
+      reason: "No accessible audit found for performance E2E.",
+      scenarios: [],
+    };
+
+    const fullReportPath = path.resolve(reportPath);
+    fs.mkdirSync(path.dirname(fullReportPath), { recursive: true });
+    fs.writeFileSync(fullReportPath, JSON.stringify(report, null, 2), "utf-8");
+    test.skip(true, "No accessible audit found for performance E2E.");
+    return;
+  }
+
+  const auditPath = `/${locale}/audits/${effectiveAuditId}`;
+  await page.goto(new URL(auditPath, baseUrl).toString(), {
+    waitUntil: "domcontentloaded",
+  });
+  await waitForGeoToolSuite(page);
 
   const results: ScenarioResult[] = [];
 
   for (const scenario of scenarios) {
     const durations: number[] = [];
     for (let i = 0; i < samples; i += 1) {
-      await page.goto(auditPath, { waitUntil: "domcontentloaded" });
+      await page.goto(new URL(auditPath, baseUrl).toString(), {
+        waitUntil: "domcontentloaded",
+      });
+      await waitForGeoToolSuite(page);
       const card = page.getByTestId(scenario.cardTestId);
       await expect(card).toBeVisible();
 
       const startedAt = Date.now();
       await Promise.all([
-        page.waitForURL(new RegExp(`/audits/${auditId}/geo`), {
+        page.waitForURL(new RegExp(`/audits/${effectiveAuditId}/geo`), {
           timeout: 20_000,
         }),
         card.click(),
       ]);
 
       await expect(page.getByTestId("geo-dashboard-page")).toBeVisible();
-      await expect(
-        page.locator(
-          `[data-testid="${scenario.tabTestId}"][data-state="active"]`,
-        ),
-      ).toBeVisible();
+      if (scenario.tabTestId) {
+        await expect(
+          page.locator(
+            `[data-testid="${scenario.tabTestId}"][data-state="active"]`,
+          ),
+        ).toBeVisible();
+      }
 
       durations.push(Date.now() - startedAt);
     }
@@ -124,7 +237,8 @@ test("GEO cards p95 stays below threshold", async ({ page }) => {
   const report = {
     generated_at: new Date().toISOString(),
     base_url: process.env.PERF_BASE_URL || "",
-    audit_id: auditId,
+    audit_id: effectiveAuditId,
+    effective_audit_id: effectiveAuditId,
     locale,
     samples_per_scenario: samples,
     threshold_ms: thresholdMs,

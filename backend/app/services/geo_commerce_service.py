@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import re
+from dataclasses import asdict
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 from urllib.parse import urlparse
@@ -20,7 +21,10 @@ from urllib.parse import urlparse
 from app.core.llm_kimi import kimi_search_serp
 from app.core.logger import get_logger
 from app.models import Audit, GeoCommerceCampaign
+from app.services.audit_service import AuditService
 from app.services.competitive_intel_service import CompetitiveIntelService
+from app.services.pipeline_service import PipelineService
+from app.services.product_intelligence_service import ProductIntelligenceService
 from sqlalchemy.orm import Session
 
 logger = get_logger(__name__)
@@ -465,6 +469,282 @@ class GeoCommerceService:
         }
 
     @staticmethod
+    def _build_root_page_snapshot(db: Session, audit: Audit) -> Dict[str, Any]:
+        pages = AuditService.get_audited_pages(db, audit.id)
+        if not pages:
+            return {}
+
+        root_page = None
+        for page in pages:
+            if page.path == "/":
+                root_page = page
+                break
+        if root_page is None:
+            root_page = min(
+                pages,
+                key=lambda page: (
+                    0 if page.path else 1,
+                    str(page.path or "/"),
+                    str(page.url or ""),
+                    int(getattr(page, "id", 0) or 0),
+                ),
+            )
+
+        return {
+            "path": root_page.path or "/",
+            "url": root_page.url,
+            "overall_score": float(root_page.overall_score or 0),
+            "schema_score": float(root_page.schema_score or 0),
+            "content_score": float(root_page.content_score or 0),
+            "h1_score": float(root_page.h1_score or 0),
+            "critical_issues": int(root_page.critical_issues or 0),
+            "high_issues": int(root_page.high_issues or 0),
+        }
+
+    @staticmethod
+    async def _build_product_intelligence_snapshot(
+        db: Session,
+        audit: Audit,
+    ) -> Dict[str, Any]:
+        pages = AuditService.get_audited_pages(db, audit.id)
+        pages_data = AuditService._build_pages_data_for_product_intel(pages)
+        service = ProductIntelligenceService(llm_function=None)
+        result = await service.analyze(
+            audit_data=getattr(audit, "target_audit", None) or {},
+            pages_data=pages_data,
+            llm_visibility_data=None,
+            competitor_data=getattr(audit, "competitor_audits", None) or None,
+        )
+        payload = asdict(result)
+        platform = payload.get("platform")
+        if hasattr(platform, "value"):
+            payload["platform"] = platform.value
+        return payload
+
+    @staticmethod
+    def _build_root_cause_summary(
+        *,
+        target_position: Optional[int],
+        top_k: int,
+        site_signals: Dict[str, Any],
+        product_data: Dict[str, Any],
+        root_snapshot: Dict[str, Any],
+        pagespeed_data: Dict[str, Any],
+    ) -> List[Dict[str, str]]:
+        summary: List[Dict[str, str]] = []
+        if target_position is None:
+            summary.append(
+                {
+                    "title": "No product-level SERP foothold yet",
+                    "finding": f"The audited domain is outside the top {top_k}, so ranking improvements need both query relevance and stronger product-page trust signals.",
+                    "owner": "SEO / content / merchandising",
+                }
+            )
+        elif target_position > 3:
+            summary.append(
+                {
+                    "title": "The domain is visible but not competitive enough",
+                    "finding": f"The current position is #{target_position}, which indicates the query intent is only partially matched.",
+                    "owner": "SEO / content",
+                }
+            )
+
+        if float(site_signals.get("schema_coverage_percent", 0) or 0) < 60:
+            summary.append(
+                {
+                    "title": "Entity markup coverage is still weak",
+                    "finding": "Schema coverage is below the healthy threshold, reducing eligibility for rich and generative results.",
+                    "owner": "Technical SEO",
+                }
+            )
+
+        if product_data.get("is_ecommerce") and (
+            (product_data.get("schema_analysis") or {}).get("average_completeness", 0)
+            < 75
+        ):
+            summary.append(
+                {
+                    "title": "Product offer data is not complete enough",
+                    "finding": "Product schema completeness is limiting price, availability, shipping, and review visibility in search engines and AI answers.",
+                    "owner": "Merchandising / technical SEO",
+                }
+            )
+
+        if root_snapshot and float(root_snapshot.get("schema_score", 0) or 0) < 50:
+            summary.append(
+                {
+                    "title": "The root page is not carrying enough authority signals",
+                    "finding": "Homepage/root-level structure and schema remain too weak to reinforce the commercial entity behind product pages.",
+                    "owner": "SEO / content / brand",
+                }
+            )
+
+        mobile_score = (pagespeed_data.get("mobile", {}) or {}).get("performance_score")
+        try:
+            mobile_score_value = float(mobile_score)
+        except (TypeError, ValueError):
+            mobile_score_value = None
+        if mobile_score_value is not None and mobile_score_value < 60:
+            summary.append(
+                {
+                    "title": "Performance is suppressing product competitiveness",
+                    "finding": f"Mobile performance is {mobile_score_value:.0f}, which can weaken both organic ranking resilience and conversion on product entry pages.",
+                    "owner": "Frontend / DevOps",
+                }
+            )
+
+        return summary[:6]
+
+    @staticmethod
+    def _build_search_engine_fixes(
+        *,
+        site_signals: Dict[str, Any],
+        root_snapshot: Dict[str, Any],
+        query: str,
+        market: str,
+    ) -> List[Dict[str, str]]:
+        fixes: List[Dict[str, str]] = [
+            {
+                "priority": "P1",
+                "action": f"Create or tighten a page section that answers the exact intent behind '{query}' for market {market}.",
+                "expected_impact": "High",
+                "evidence": "The current query snapshot shows a direct intent gap between the searched phrasing and the audited domain coverage.",
+            }
+        ]
+
+        if float(site_signals.get("faq_page_count", 0) or 0) == 0:
+            fixes.append(
+                {
+                    "priority": "P1",
+                    "action": "Add FAQ and comparison blocks that answer pre-purchase objections in concise language.",
+                    "expected_impact": "High",
+                    "evidence": "No FAQ footprint was detected in the audited signals.",
+                }
+            )
+
+        if root_snapshot:
+            fixes.append(
+                {
+                    "priority": "P2",
+                    "action": "Strengthen the root page so it reinforces category authority, internal linking, and trust for the target product cluster.",
+                    "expected_impact": "Medium",
+                    "evidence": f"Root page score snapshot: overall={root_snapshot.get('overall_score', 0):.1f}, schema={root_snapshot.get('schema_score', 0):.1f}.",
+                }
+            )
+
+        return fixes[:5]
+
+    @staticmethod
+    def _build_merchandising_fixes(
+        product_data: Dict[str, Any],
+    ) -> List[Dict[str, str]]:
+        if not product_data.get("is_ecommerce"):
+            return []
+
+        fixes: List[Dict[str, str]] = []
+        schema_analysis = product_data.get("schema_analysis") or {}
+        offer_issues = schema_analysis.get("offer_field_issues") or {}
+
+        if (
+            int(offer_issues.get("price_missing", 0) or 0) > 0
+            or int(offer_issues.get("currency_missing", 0) or 0) > 0
+        ):
+            fixes.append(
+                {
+                    "priority": "P1",
+                    "action": "Expose price and currency consistently in visible PDP copy and in Product/Offer schema.",
+                    "expected_impact": "High",
+                    "evidence": "Offer data is missing price or currency on part of the product footprint.",
+                }
+            )
+
+        if int(offer_issues.get("availability_missing", 0) or 0) > 0:
+            fixes.append(
+                {
+                    "priority": "P1",
+                    "action": "Publish live stock availability language and mark it up explicitly for every product page.",
+                    "expected_impact": "High",
+                    "evidence": "Availability coverage is incomplete in current product signals.",
+                }
+            )
+
+        if int(offer_issues.get("shipping_missing", 0) or 0) > 0:
+            fixes.append(
+                {
+                    "priority": "P2",
+                    "action": "Add shipping speed, cost, and coverage details above the fold and in structured data.",
+                    "expected_impact": "Medium",
+                    "evidence": "Shipping details are missing from the product footprint.",
+                }
+            )
+
+        if int(offer_issues.get("returns_missing", 0) or 0) > 0:
+            fixes.append(
+                {
+                    "priority": "P2",
+                    "action": "Clarify return policy, return window, and exchange/refund conditions on each PDP.",
+                    "expected_impact": "Medium",
+                    "evidence": "Return policy data is absent from the current product signals.",
+                }
+            )
+
+        for gap in (product_data.get("content_gaps") or [])[:3]:
+            example = str(gap.get("example") or "").strip()
+            fixes.append(
+                {
+                    "priority": (
+                        "P2"
+                        if str(gap.get("priority") or "").lower() == "medium"
+                        else "P1"
+                    ),
+                    "action": str(
+                        gap.get("description")
+                        or "Close the observed product content gap."
+                    ),
+                    "expected_impact": "Medium",
+                    "evidence": example or "Gap detected in product content coverage.",
+                }
+            )
+
+        return fixes[:6]
+
+    @staticmethod
+    def _build_technical_watchouts(
+        pagespeed_data: Dict[str, Any],
+    ) -> List[Dict[str, str]]:
+        watchouts: List[Dict[str, str]] = []
+        for fix in PipelineService._extract_pagespeed_fixes(pagespeed_data)[:6]:
+            issue_code = str(fix.get("issue_code") or "")
+            normalized = issue_code.upper()
+            owner = (
+                "DevOps"
+                if any(
+                    key in normalized
+                    for key in [
+                        "SERVER_RESPONSE_TIME",
+                        "NETWORK_RTT",
+                        "NETWORK_SERVER_LATENCY",
+                        "USES_LONG_CACHE_TTL",
+                        "TTFB_HIGH",
+                    ]
+                )
+                else "Frontend / SEO"
+            )
+            watchouts.append(
+                {
+                    "priority": str(fix.get("priority") or "MEDIUM"),
+                    "owner": owner,
+                    "action": str(
+                        fix.get("suggestion") or fix.get("description") or ""
+                    ),
+                    "evidence": str(
+                        fix.get("snippet") or fix.get("description") or issue_code
+                    ),
+                }
+            )
+        return watchouts
+
+    @staticmethod
     def _fallback_query_diagnosis(
         *,
         query: str,
@@ -686,6 +966,10 @@ class GeoCommerceService:
                 break
 
         site_signals = GeoCommerceService._extract_site_signals(audit)
+        root_snapshot = GeoCommerceService._build_root_page_snapshot(db, audit)
+        product_data = await GeoCommerceService._build_product_intelligence_snapshot(
+            db, audit
+        )
         fallback = GeoCommerceService._fallback_query_diagnosis(
             query=query,
             market=market,
@@ -734,6 +1018,35 @@ class GeoCommerceService:
             "disadvantages_vs_top1": disadvantages,
             "action_plan": action_plan,
             "site_signals": site_signals,
+            "site_root_summary": root_snapshot,
+            "product_intelligence": {
+                "is_ecommerce": bool(product_data.get("is_ecommerce")),
+                "confidence_score": product_data.get("confidence_score"),
+                "platform": product_data.get("platform"),
+                "product_pages_count": product_data.get("product_pages_count", 0),
+                "category_pages_count": product_data.get("category_pages_count", 0),
+                "schema_analysis": product_data.get("schema_analysis", {}),
+            },
+            "root_cause_summary": GeoCommerceService._build_root_cause_summary(
+                target_position=target_position,
+                top_k=top_k,
+                site_signals=site_signals,
+                product_data=product_data,
+                root_snapshot=root_snapshot,
+                pagespeed_data=audit.pagespeed_data or {},
+            ),
+            "search_engine_fixes": GeoCommerceService._build_search_engine_fixes(
+                site_signals=site_signals,
+                root_snapshot=root_snapshot,
+                query=query,
+                market=market.upper(),
+            ),
+            "merchandising_fixes": GeoCommerceService._build_merchandising_fixes(
+                product_data
+            ),
+            "technical_watchouts": GeoCommerceService._build_technical_watchouts(
+                audit.pagespeed_data or {}
+            ),
             "evidence": evidence,
             "provider": search_payload.get("provider", "kimi-2.5-search"),
         }

@@ -1167,10 +1167,18 @@ def create_comprehensive_pdf(report_folder_path, metadata=None):
             if isinstance(metadata, dict) and metadata.get("report_title_prefix")
             else REPORT_TITLE_PREFIX
         )
+        raw_cover_title = (
+            str(metadata.get("cover_title")).strip()
+            if isinstance(metadata, dict) and metadata.get("cover_title") is not None
+            else ""
+        )
+        cover_title = raw_cover_title or (
+            f"{report_title_prefix}\n{os.path.basename(report_folder_path)}"
+        )
 
         # --- Cover ---
         pdf.create_cover_page(
-            f"{report_title_prefix}\n{os.path.basename(report_folder_path)}",
+            cover_title,
             url_base,
             fecha_str,
             version="v9.2",
@@ -1200,6 +1208,8 @@ def create_comprehensive_pdf(report_folder_path, metadata=None):
         static_toc_entries += 1  # Appendix D
         if pagespeed_data:
             static_toc_entries += 1  # D.1
+            if isinstance(pagespeed_data, dict) and pagespeed_data.get("desktop"):
+                static_toc_entries += 1  # D.1.b
         if keywords_data:
             static_toc_entries += 1  # D.2
         if backlinks_data:
@@ -1209,6 +1219,7 @@ def create_comprehensive_pdf(report_folder_path, metadata=None):
         if llm_visibility_data:
             static_toc_entries += 1  # D.5
         static_toc_entries += 1  # Appendix E
+        static_toc_entries += 1  # Appendix E.1
         static_toc_entries += 1  # Appendix F
 
         toc_entry_estimate = (
@@ -1300,6 +1311,11 @@ def create_comprehensive_pdf(report_folder_path, metadata=None):
         if pagespeed_data:
             # Extract mobile data if it exists
             mobile_data = pagespeed_data.get("mobile", pagespeed_data)
+            desktop_data = (
+                pagespeed_data.get("desktop", {})
+                if isinstance(pagespeed_data, dict)
+                else {}
+            )
             if mobile_data:
 
                 def _format_ms(value):
@@ -1370,6 +1386,54 @@ def create_comprehensive_pdf(report_folder_path, metadata=None):
                 pdf.write_json_summary_box(
                     ps_summary, top_n=5, filename_hint="pagespeed.json"
                 )
+                if desktop_data:
+                    pdf.add_page()
+                    pdf.begin_section(
+                        "Appendix D.1.b: PageSpeed Desktop Detail", level=2
+                    )
+                    desktop_summary = {
+                        "Performance Score": desktop_data.get(
+                            "performance_score", "N/A"
+                        ),
+                        "Accessibility Score": desktop_data.get(
+                            "accessibility_score", "N/A"
+                        ),
+                        "Best Practices Score": desktop_data.get(
+                            "best_practices_score", "N/A"
+                        ),
+                        "SEO Score": desktop_data.get("seo_score", "N/A"),
+                        "Strategy": desktop_data.get("strategy", "N/A"),
+                        "Core Web Vitals": {
+                            "LCP": _format_ms(
+                                desktop_data.get("core_web_vitals", {}).get(
+                                    "lcp", "N/A"
+                                )
+                            ),
+                            "FID": _format_ms(
+                                desktop_data.get("core_web_vitals", {}).get(
+                                    "fid", "N/A"
+                                )
+                            ),
+                            "CLS": desktop_data.get("core_web_vitals", {}).get(
+                                "cls", "N/A"
+                            ),
+                            "FCP": _format_ms(
+                                desktop_data.get("core_web_vitals", {}).get(
+                                    "fcp", "N/A"
+                                )
+                            ),
+                            "TTFB": _format_ms(
+                                desktop_data.get("core_web_vitals", {}).get(
+                                    "ttfb", "N/A"
+                                )
+                            ),
+                        },
+                    }
+                    pdf.write_json_summary_box(
+                        desktop_summary,
+                        top_n=5,
+                        filename_hint="pagespeed-desktop.json",
+                    )
 
         # --- Appendix D.2 (Keywords) ---
         if keywords_data:
@@ -1413,13 +1477,163 @@ def create_comprehensive_pdf(report_folder_path, metadata=None):
         pdf.add_page()
         pdf.begin_section("Appendix E: Individual Page Reports (Summary)", level=1)
 
+        def _safe_page_float(value, default=0.0):
+            if value in (None, ""):
+                return default
+            try:
+                return float(value)
+            except (TypeError, ValueError, OverflowError):
+                return default
+
+        def _safe_page_int(value, default=0):
+            if value in (None, ""):
+                return default
+            try:
+                return int(value)
+            except (TypeError, ValueError, OverflowError):
+                try:
+                    return int(float(value))
+                except (TypeError, ValueError, OverflowError):
+                    return default
+
+        page_summaries = []
+        for page_file in page_json_files:
+            try:
+                with open(page_file, "r", encoding="utf-8") as f:
+                    page_data = json.load(f)
+                logger.info(
+                    f"DEBUG: Cargado {os.path.basename(page_file)}. Keys: {list(page_data.keys()) if isinstance(page_data, dict) else 'No dict'}"
+                )
+            except Exception as e:
+                logger.error(f"DEBUG: Error cargando {page_file}: {e}")
+                page_data = None
+
+            page_summaries.append(
+                {
+                    "page_file": page_file,
+                    "page_data": page_data,
+                    "url": (
+                        str(page_data.get("url") or "n/a")
+                        if isinstance(page_data, dict)
+                        else "n/a"
+                    ),
+                    "overall_score": (
+                        _safe_page_float(page_data.get("overall_score"))
+                        if isinstance(page_data, dict)
+                        else 0.0
+                    ),
+                    "critical_issues": (
+                        _safe_page_int(page_data.get("critical_issues"))
+                        if isinstance(page_data, dict)
+                        else 0
+                    ),
+                    "high_issues": (
+                        _safe_page_int(page_data.get("high_issues"))
+                        if isinstance(page_data, dict)
+                        else 0
+                    ),
+                    "schema_score": (
+                        _safe_page_float(page_data.get("schema_score"))
+                        if isinstance(page_data, dict)
+                        else 0.0
+                    ),
+                    "eeat_score": (
+                        _safe_page_float(page_data.get("eeat_score"))
+                        if isinstance(page_data, dict)
+                        else 0.0
+                    ),
+                }
+            )
+
         if not page_json_files:
             pdf.set_font(
                 "Roboto" if "Roboto" in pdf._fonts_added else "helvetica", "", 10
             )
             pdf.multi_cell(0, 5, "(No individual page reports found in 'pages' folder)")
+        else:
+            pdf.set_font(
+                "Roboto" if "Roboto" in pdf._fonts_added else "helvetica", "", 10
+            )
+            pdf.multi_cell(
+                0,
+                5,
+                "This appendix starts with a high-risk URL matrix and then includes compact snapshots for each audited page file.",
+            )
+            pdf.ln(4)
 
-        for i, page_file in enumerate(page_json_files):
+            pdf.begin_section("Appendix E.1: Highest-Risk URL Matrix", level=2)
+            ranked_pages = sorted(
+                page_summaries,
+                key=lambda item: (
+                    -item["critical_issues"],
+                    -item["high_issues"],
+                    item["overall_score"],
+                    item["url"],
+                ),
+            )[:15]
+
+            pdf.set_font(
+                "Roboto" if "Roboto" in pdf._fonts_added else "helvetica", "B", 9
+            )
+            matrix_col_widths = [88, 22, 18, 18, 22, 22]
+            matrix_headers = ["URL", "Overall", "Crit", "High", "Schema", "E-E-A-T"]
+            for width, header in zip(matrix_col_widths, matrix_headers):
+                pdf.cell(width, 6, header, border=1, align="C")
+            pdf.ln(6)
+
+            pdf.set_font(
+                "Roboto" if "Roboto" in pdf._fonts_added else "helvetica", "", 8
+            )
+            for item in ranked_pages:
+                pdf.cell(
+                    matrix_col_widths[0],
+                    6,
+                    pdf.clean_latin1(item["url"][:56]),
+                    border=1,
+                )
+                pdf.cell(
+                    matrix_col_widths[1],
+                    6,
+                    f"{item['overall_score']:.1f}",
+                    border=1,
+                    align="C",
+                )
+                pdf.cell(
+                    matrix_col_widths[2],
+                    6,
+                    str(item["critical_issues"]),
+                    border=1,
+                    align="C",
+                )
+                pdf.cell(
+                    matrix_col_widths[3],
+                    6,
+                    str(item["high_issues"]),
+                    border=1,
+                    align="C",
+                )
+                pdf.cell(
+                    matrix_col_widths[4],
+                    6,
+                    f"{item['schema_score']:.1f}",
+                    border=1,
+                    align="C",
+                )
+                pdf.cell(
+                    matrix_col_widths[5],
+                    6,
+                    f"{item['eeat_score']:.1f}",
+                    border=1,
+                    align="C",
+                    new_x=XPos.LMARGIN,
+                    new_y=YPos.NEXT,
+                )
+
+            pdf.add_page()
+            pdf.begin_section("Appendix E.2: Individual Page Report Snapshots", level=2)
+
+        for i, item in enumerate(page_summaries):
+            page_file = item["page_file"]
             page_title = pdf._sanitize_for_current_font(
                 f"File: {os.path.basename(page_file)}"
             )
@@ -1441,21 +1655,11 @@ def create_comprehensive_pdf(report_folder_path, metadata=None):
                 0, LINE_HEIGHT * 1.3, page_title, new_x=XPos.LMARGIN, new_y=YPos.NEXT
             )
             pdf.ln(6)
-
-            try:
-                with open(page_file, "r", encoding="utf-8") as f:
-                    page_data = json.load(f)
-                # DEBUG LOG
-                logger.info(
-                    f"DEBUG: Cargado {os.path.basename(page_file)}. Keys: {list(page_data.keys()) if isinstance(page_data, dict) else 'No dict'}"
-                )
-            except Exception as e:
-                logger.error(f"DEBUG: Error cargando {page_file}: {e}")
-                page_data = None
+            page_data = item["page_data"]
 
             pdf.write_json_summary_box(
                 page_data,
-                top_n=3,
+                top_n=5,
                 filename_hint=os.path.join("pages", os.path.basename(page_file)),
             )
 

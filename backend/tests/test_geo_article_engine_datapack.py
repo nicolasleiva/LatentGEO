@@ -627,6 +627,86 @@ async def test_process_batch_aborts_remaining_articles_after_first_kimi_timeout(
 
 
 @pytest.mark.asyncio
+async def test_process_batch_uses_article_specific_llm_timeout(db_session, monkeypatch):
+    audit = _seed_audit(db_session)
+    monkeypatch.setattr(
+        "app.services.geo_article_engine_service.is_kimi_configured", lambda: True
+    )
+    monkeypatch.setattr(settings, "GEO_ARTICLE_LLM_TIMEOUT_SECONDS", 480, raising=False)
+
+    batch = GeoArticleEngineService.create_batch(
+        db=db_session,
+        audit=audit,
+        article_count=1,
+        language="es",
+        tone="growth",
+        include_schema=True,
+    )
+
+    observed_timeouts = []
+
+    async def fake_llm(
+        *, system_prompt, user_prompt, max_tokens=None, timeout_seconds=None
+    ):
+        observed_timeouts.append(timeout_seconds)
+        return "{}"
+
+    async def fake_build_data_pack(**kwargs):
+        await kwargs["llm_function"](system_prompt="system", user_prompt="user")
+        return {
+            "keyword_strategy": {
+                "primary_keyword": "plataforma5",
+                "secondary_keywords": ["plataforma5 coding bootcamp"],
+                "search_intent": "commercial",
+            },
+            "focus_url": "https://store.example.com/",
+            "required_sources": {
+                "all": [{"title": "Store", "url": "https://store.example.com/"}],
+            },
+            "top_competitors_for_keyword": [],
+            "competitor_gap_map": {},
+            "audit_signals": {},
+            "provider": "kimi-2.5-search",
+        }
+
+    async def fake_generate_content(**kwargs):
+        return {
+            "title": "Generated title",
+            "markdown": (
+                "# Draft body\n\n"
+                "[Source: https://store.example.com/]\n\n"
+                "## FAQ\n"
+                "Q: Que es plataforma5?\n"
+                "A: Es una academia con enfoque practico. "
+                "[Source: https://store.example.com/]\n"
+            ),
+            "meta_title": "Generated meta title",
+            "meta_description": "Generated meta description",
+            "evidence_summary": [],
+        }
+
+    monkeypatch.setattr(
+        "app.services.geo_article_engine_service.get_llm_function", lambda: fake_llm
+    )
+    monkeypatch.setattr(
+        GeoArticleEngineService,
+        "_build_article_data_pack",
+        staticmethod(fake_build_data_pack),
+    )
+    monkeypatch.setattr(
+        GeoArticleEngineService,
+        "_generate_article_content",
+        staticmethod(fake_generate_content),
+    )
+
+    processed = await GeoArticleEngineService.process_batch(db_session, batch.id)
+
+    assert processed.status == "completed"
+    assert observed_timeouts
+    assert all(timeout == 480 for timeout in observed_timeouts)
+
+
+@pytest.mark.asyncio
 async def test_citation_url_normalization_allows_www_and_http(db_session, monkeypatch):
     audit = _seed_audit(db_session)
     monkeypatch.setattr(

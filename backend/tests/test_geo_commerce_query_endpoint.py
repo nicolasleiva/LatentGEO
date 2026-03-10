@@ -88,6 +88,55 @@ def test_commerce_query_analyze_endpoint_shape(client, db_session, monkeypatch):
                     "url": "https://www.mercadolibre.com.ar/zapatillas",
                 }
             ],
+            "site_root_summary": {
+                "path": "/",
+                "url": "https://store.example.com",
+                "overall_score": 58,
+                "schema_score": 20,
+                "content_score": 42,
+                "h1_score": 30,
+                "critical_issues": 3,
+                "high_issues": 2,
+            },
+            "product_intelligence": {
+                "is_ecommerce": True,
+                "confidence_score": 88,
+                "platform": "shopify",
+                "product_pages_count": 12,
+                "category_pages_count": 4,
+                "schema_analysis": {"average_completeness": 51},
+            },
+            "root_cause_summary": [
+                {
+                    "title": "Root authority is weak",
+                    "finding": "Homepage schema coverage is too low.",
+                    "owner": "SEO",
+                }
+            ],
+            "search_engine_fixes": [
+                {
+                    "priority": "P1",
+                    "action": "Tighten the query-intent block on the root page.",
+                    "expected_impact": "High",
+                    "evidence": "Root page snapshot.",
+                }
+            ],
+            "merchandising_fixes": [
+                {
+                    "priority": "P1",
+                    "action": "Expose price and stock details on PDPs.",
+                    "expected_impact": "High",
+                    "evidence": "Offer data gap.",
+                }
+            ],
+            "technical_watchouts": [
+                {
+                    "priority": "HIGH",
+                    "owner": "DevOps",
+                    "action": "Reduce origin response time.",
+                    "evidence": "TTFB > 800ms.",
+                }
+            ],
             "provider": "kimi-2.5-search",
         }
         row = GeoCommerceCampaign(
@@ -123,6 +172,10 @@ def test_commerce_query_analyze_endpoint_shape(client, db_session, monkeypatch):
     assert payload["top_result"]["domain"] == "mercadolibre.com.ar"
     assert payload["why_not_first"]
     assert payload["action_plan"]
+    assert payload["site_root_summary"]["path"] == "/"
+    assert payload["product_intelligence"]["is_ecommerce"] is True
+    assert payload["root_cause_summary"][0]["title"] == "Root authority is weak"
+    assert payload["technical_watchouts"][0]["owner"] == "DevOps"
 
 
 def test_commerce_query_requires_query_and_market(client, db_session):

@@ -87,6 +87,37 @@ def test_validate_environment_requires_forwarded_allow_ips_in_production(monkeyp
     assert "FORWARDED_ALLOW_IPS is missing in production." in str(exc_info.value)
 
 
+def test_validate_environment_enforces_release_strict_pdf_flag(monkeypatch):
+    monkeypatch.setattr(settings, "ENVIRONMENT", "staging", raising=False)
+    monkeypatch.setattr(settings, "STRICT_CONFIG", False, raising=False)
+    monkeypatch.setattr(settings, "AUDIT_LOCAL_ARTIFACTS_ENABLED", True, raising=False)
+    monkeypatch.setattr(
+        settings,
+        "DATABASE_URL",
+        "postgresql://db.supabase.co:5432/app",
+        raising=False,
+    )
+    monkeypatch.setattr(settings, "AUTH0_API_AUDIENCE", "https://api.example.com")
+    monkeypatch.setattr(
+        settings,
+        "AUTH0_ISSUER_BASE_URL",
+        "https://tenant.us.auth0.com/",
+        raising=False,
+    )
+    monkeypatch.setattr(settings, "OPENAPI_DOCS_ENABLED", False, raising=False)
+    monkeypatch.setattr(
+        settings, "PDF_ALLOW_DETERMINISTIC_FALLBACK", True, raising=False
+    )
+
+    with pytest.raises(RuntimeError) as exc_info:
+        validate_environment()
+
+    assert (
+        "PDF_ALLOW_DETERMINISTIC_FALLBACK must be false in strict/prod release mode."
+        in str(exc_info.value)
+    )
+
+
 def test_csp_excludes_unsafe_eval_when_enabled():
     app = FastAPI()
     app.add_middleware(SecurityHeadersMiddleware, csp_enabled=True)

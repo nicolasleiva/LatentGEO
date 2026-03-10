@@ -14,7 +14,9 @@ describe("Commerce query analyzer", () => {
   });
 
   it("sends query+market payload and renders why_not_first/action_plan output", async () => {
-    (fetchWithBackendAuth as jest.Mock)
+    const fetchWithBackendAuthMock = vi.mocked(fetchWithBackendAuth);
+
+    fetchWithBackendAuthMock
       .mockResolvedValueOnce({
         ok: true,
         status: 200,
@@ -62,6 +64,55 @@ describe("Commerce query analyzer", () => {
                 evidence: "Audit signals",
               },
             ],
+            site_root_summary: {
+              path: "/",
+              url: "https://store.example.com",
+              overall_score: 62,
+              schema_score: 20,
+              content_score: 45,
+              h1_score: 35,
+              critical_issues: 3,
+              high_issues: 2,
+            },
+            product_intelligence: {
+              is_ecommerce: true,
+              confidence_score: 88,
+              platform: "shopify",
+              product_pages_count: 12,
+              category_pages_count: 4,
+              schema_analysis: { average_completeness: 51 },
+            },
+            root_cause_summary: [
+              {
+                title: "Root authority is weak",
+                finding: "Homepage schema coverage is too low.",
+                owner: "SEO",
+              },
+            ],
+            search_engine_fixes: [
+              {
+                priority: "P1",
+                action: "Tighten the root query-intent block",
+                expected_impact: "High",
+                evidence: "Root page snapshot",
+              },
+            ],
+            merchandising_fixes: [
+              {
+                priority: "P1",
+                action: "Expose price and stock details on PDPs",
+                expected_impact: "High",
+                evidence: "Offer data gap",
+              },
+            ],
+            technical_watchouts: [
+              {
+                priority: "HIGH",
+                owner: "DevOps",
+                action: "Reduce origin response time",
+                evidence: "TTFB > 800ms",
+              },
+            ],
             evidence: [
               {
                 title: "SERP #1",
@@ -96,7 +147,7 @@ describe("Commerce query analyzer", () => {
       expect(fetchWithBackendAuth).toHaveBeenCalledTimes(2);
     });
 
-    const secondCall = (fetchWithBackendAuth as jest.Mock).mock.calls[1];
+    const secondCall = fetchWithBackendAuthMock.mock.calls[1];
     const requestBody = JSON.parse(secondCall[1].body as string);
     expect(requestBody).toMatchObject({
       audit_id: 3,
@@ -109,6 +160,11 @@ describe("Commerce query analyzer", () => {
     ).toBeInTheDocument();
     expect(
       screen.getByText(/deploy product \+ faq schema on top pdps/i),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/root domain snapshot/i)).toBeInTheDocument();
+    expect(screen.getByText(/root authority is weak/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/expose price and stock details on pdps/i),
     ).toBeInTheDocument();
   });
 });
