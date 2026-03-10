@@ -218,7 +218,9 @@ export default function AuditedCompetitorBenchmark({
             {chartRows.map((row) => (
               <div key={`${row.label}-${row.score}`} className="space-y-2">
                 <div className="flex items-center justify-between text-sm">
-                  <span className="font-medium text-foreground">{row.label}</span>
+                  <span className="font-medium text-foreground">
+                    {row.label}
+                  </span>
                   <span className="text-muted-foreground">
                     {formatScore(row.score)}
                   </span>
@@ -226,7 +228,9 @@ export default function AuditedCompetitorBenchmark({
                 <div className="h-2 rounded-full bg-muted">
                   <div
                     className={`h-full rounded-full ${row.tone}`}
-                    style={{ width: `${Math.max(4, Math.min(100, row.score))}%` }}
+                    style={{
+                      width: `${Math.max(4, Math.min(100, row.score))}%`,
+                    }}
                   />
                 </div>
               </div>
@@ -285,7 +289,9 @@ export default function AuditedCompetitorBenchmark({
                   <td className="rounded-l-2xl px-4 py-3 font-medium">
                     {competitor.domain}
                   </td>
-                  <td className="px-4 py-3">{formatScore(competitor.geo_score)}</td>
+                  <td className="px-4 py-3">
+                    {formatScore(competitor.geo_score)}
+                  </td>
                   <td className="px-4 py-3">
                     {competitor.schema_present ? "Present" : "Missing"}
                   </td>

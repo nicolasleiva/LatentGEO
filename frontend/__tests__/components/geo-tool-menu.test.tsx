@@ -84,6 +84,3 @@ describe("GEO tool menu", () => {
     );
   });
 });
-
-
-

@@ -37,6 +37,17 @@ def _parse_string_list(value: Any) -> list[str]:
     return [normalized] if normalized else []
 
 
+def _is_development_like_environment(value: Optional[str]) -> bool:
+    """Treat local and test environments as development-like defaults."""
+    return (value or "development").strip().lower() in {
+        "development",
+        "dev",
+        "local",
+        "test",
+        "testing",
+    }
+
+
 class Settings(BaseSettings):
     """Configuración de la aplicación"""
 
@@ -259,17 +270,7 @@ class Settings(BaseSettings):
     OPENAPI_DOCS_ENABLED: bool = (
         os.getenv("OPENAPI_DOCS_ENABLED", "False").lower() == "true"
     )
-    PDF_ALLOW_DETERMINISTIC_FALLBACK: bool = (
-        os.getenv(
-            "PDF_ALLOW_DETERMINISTIC_FALLBACK",
-            (
-                "False"
-                if os.getenv("ENVIRONMENT", "development").lower() != "development"
-                else "True"
-            ),
-        ).lower()
-        == "true"
-    )
+    PDF_ALLOW_DETERMINISTIC_FALLBACK: Optional[bool] = None
 
     # ===== PRODUCTION SECURITY SETTINGS =====
     TRUSTED_HOSTS: list[str] = []
@@ -369,6 +370,11 @@ class Settings(BaseSettings):
         if not self.GOOGLE_API_KEY and self.GOOGLE_PAGESPEED_API_KEY:
             self.GOOGLE_API_KEY = self.GOOGLE_PAGESPEED_API_KEY
 
+        if self.PDF_ALLOW_DETERMINISTIC_FALLBACK is None:
+            self.PDF_ALLOW_DETERMINISTIC_FALLBACK = _is_development_like_environment(
+                self.ENVIRONMENT
+            )
+
         # Defaults for local/dev only
         if self.ENVIRONMENT != "production":
             if not self.CORS_ORIGINS:
@@ -406,12 +412,7 @@ def validate_environment():
     errors = []
 
     is_production = settings.ENVIRONMENT.lower() == "production"
-    is_non_dev = settings.ENVIRONMENT.lower() not in {
-        "development",
-        "dev",
-        "local",
-        "test",
-    }
+    is_non_dev = not _is_development_like_environment(settings.ENVIRONMENT)
     strict = (
         settings.STRICT_CONFIG
         or is_production

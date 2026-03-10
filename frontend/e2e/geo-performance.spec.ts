@@ -146,7 +146,9 @@ const discoverAuditId = async (page: Page) => {
 test("GEO cards p95 stays below threshold", async ({ page }) => {
   test.setTimeout(Math.max(120_000, samples * scenarios.length * 20_000));
 
-  const seedPath = auditId ? `/${locale}/audits/${auditId}` : `/${locale}/audits`;
+  const seedPath = auditId
+    ? `/${locale}/audits/${auditId}`
+    : `/${locale}/audits`;
   await ensureAuthenticated(seedPath, page);
   const effectiveAuditId = await discoverAuditId(page);
   if (!effectiveAuditId) {

@@ -193,6 +193,3 @@ describe("GEO dashboard page", () => {
     });
   });
 });
-
-
-

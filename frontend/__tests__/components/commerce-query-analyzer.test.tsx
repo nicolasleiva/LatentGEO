@@ -161,6 +161,8 @@ describe("Commerce query analyzer", () => {
     ).toBeInTheDocument();
     expect(screen.getByText(/root domain snapshot/i)).toBeInTheDocument();
     expect(screen.getByText(/root authority is weak/i)).toBeInTheDocument();
-    expect(screen.getByText(/expose price and stock details on pdps/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/expose price and stock details on pdps/i),
+    ).toBeInTheDocument();
   });
 });

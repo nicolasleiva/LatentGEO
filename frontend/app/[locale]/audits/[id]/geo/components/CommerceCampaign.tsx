@@ -201,9 +201,15 @@ const normalizeAnalysis = (payload: any): CommerceQueryAnalysis | null => {
         ? {
             path: toNonEmptyString(payload.site_root_summary.path, "/"),
             url: toNonEmptyString(payload.site_root_summary.url),
-            overall_score: toNumberOrNull(payload.site_root_summary.overall_score),
-            schema_score: toNumberOrNull(payload.site_root_summary.schema_score),
-            content_score: toNumberOrNull(payload.site_root_summary.content_score),
+            overall_score: toNumberOrNull(
+              payload.site_root_summary.overall_score,
+            ),
+            schema_score: toNumberOrNull(
+              payload.site_root_summary.schema_score,
+            ),
+            content_score: toNumberOrNull(
+              payload.site_root_summary.content_score,
+            ),
             h1_score: toNumberOrNull(payload.site_root_summary.h1_score),
             critical_issues: toNumberOrNull(
               payload.site_root_summary.critical_issues,
@@ -230,12 +236,11 @@ const normalizeAnalysis = (payload: any): CommerceQueryAnalysis | null => {
             action: toNonEmptyString(item?.action),
             evidence: toNonEmptyString(item?.evidence),
           }))
-          .filter(
-            (item: CommerceTechnicalWatchout) => item.action.length > 0,
-          )
+          .filter((item: CommerceTechnicalWatchout) => item.action.length > 0)
       : [],
     product_intelligence:
-      payload.product_intelligence && typeof payload.product_intelligence === "object"
+      payload.product_intelligence &&
+      typeof payload.product_intelligence === "object"
         ? {
             is_ecommerce: Boolean(payload.product_intelligence.is_ecommerce),
             confidence_score: toNumberOrNull(
@@ -605,8 +610,8 @@ export default function CommerceCampaign({
                     </p>
                     <p className="text-sm text-foreground mt-1">
                       Schema: {result.site_root_summary.schema_score ?? "n/a"} ·
-                      Content: {result.site_root_summary.content_score ?? "n/a"} ·
-                      H1: {result.site_root_summary.h1_score ?? "n/a"}
+                      Content: {result.site_root_summary.content_score ?? "n/a"}{" "}
+                      · H1: {result.site_root_summary.h1_score ?? "n/a"}
                     </p>
                     <p className="text-xs text-muted-foreground mt-2">
                       Critical issues:{" "}
