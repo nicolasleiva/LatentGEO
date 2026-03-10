@@ -1,7 +1,7 @@
 process.env.NEXT_PUBLIC_API_URL = "http://localhost:8000";
 process.env.API_URL = "http://localhost:8000";
 
-import { api } from "@/lib/api";
+import { api } from "@/lib/api-client";
 import { fetchWithBackendAuth } from "@/lib/backend-auth";
 
 vi.mock("@/lib/backend-auth", () => ({
