@@ -36,6 +36,12 @@ except ImportError as e:
     logger.warning(f"github module not available: {e}")
 
 try:
+    from . import odoo
+except ImportError as e:
+    odoo = None
+    logger.warning(f"odoo module not available: {e}")
+
+try:
     from . import webhooks
 except ImportError as e:
     webhooks = None
@@ -91,6 +97,7 @@ __all__ = [
     "geo",
     "hubspot",
     "github",
+    "odoo",
     "webhooks",
     "backlinks",
     "keywords",

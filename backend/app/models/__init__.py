@@ -80,6 +80,9 @@ class Audit(Base):
     market = Column(String(50), nullable=True)  # "us", "latam", "emea", etc.
     _intake_profile_raw = Column("intake_profile", Text, nullable=True)
     _runtime_diagnostics_raw = Column("runtime_diagnostics", Text, nullable=True)
+    odoo_connection_id = Column(
+        String(36), ForeignKey("odoo_connections.id"), nullable=True, index=True
+    )
 
     # Timestamps
     created_at = Column(
@@ -115,6 +118,16 @@ class Audit(Base):
     )
     geo_article_batches = relationship(
         "GeoArticleBatch", back_populates="audit", cascade="all, delete-orphan"
+    )
+    odoo_connection = relationship("OdooConnection", back_populates="audits")
+    odoo_sync_runs = relationship(
+        "OdooSyncRun", back_populates="audit", cascade="all, delete-orphan"
+    )
+    odoo_record_snapshots = relationship(
+        "OdooRecordSnapshot", back_populates="audit", cascade="all, delete-orphan"
+    )
+    odoo_draft_actions = relationship(
+        "OdooDraftAction", back_populates="audit", cascade="all, delete-orphan"
     )
 
     # Task ID de Celery
@@ -516,3 +529,9 @@ from .github import GitHubWebhookEvent as GitHubWebhookEvent
 from .hubspot import HubSpotChange as HubSpotChange  # noqa: E402
 from .hubspot import HubSpotConnection as HubSpotConnection
 from .hubspot import HubSpotPage as HubSpotPage
+
+# Importar modelos de Odoo
+from .odoo import OdooConnection as OdooConnection  # noqa: E402
+from .odoo import OdooDraftAction as OdooDraftAction
+from .odoo import OdooRecordSnapshot as OdooRecordSnapshot
+from .odoo import OdooSyncRun as OdooSyncRun
