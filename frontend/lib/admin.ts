@@ -45,7 +45,9 @@ export function isAdminSessionUser(
     return true;
   }
 
-  const configuredRoles = normalizeList(process.env.AUTH0_ADMIN_ROLE_NAMES || "");
+  const configuredRoles = normalizeList(
+    process.env.AUTH0_ADMIN_ROLE_NAMES || "",
+  );
   const adminRoles = new Set(
     configuredRoles.length > 0 ? configuredRoles : DEFAULT_ADMIN_ROLES,
   );

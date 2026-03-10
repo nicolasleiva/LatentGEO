@@ -14,7 +14,9 @@ export async function GET(request: NextRequest) {
     {
       authenticated: Boolean(user),
       is_admin: isAdminSessionUser(
-        user && typeof user === "object" ? (user as Record<string, unknown>) : null,
+        user && typeof user === "object"
+          ? (user as Record<string, unknown>)
+          : null,
       ),
       user: user
         ? {

@@ -66,7 +66,9 @@ export default function GitHubOAuthCallback({
 
         const data = await response.json().catch(() => ({}));
         if (!response.ok) {
-          throw new Error(data?.detail || "Error exchanging authorization code");
+          throw new Error(
+            data?.detail || "Error exchanging authorization code",
+          );
         }
 
         const nextHref =
@@ -113,8 +115,12 @@ export default function GitHubOAuthCallback({
           <p className="mb-4 text-muted-foreground">{message}</p>
           {status === "error" && (
             <div className="break-all rounded bg-red-50 p-2 text-xs text-red-800">
-              <p>If the error persists, copy this code and send it to support:</p>
-              <code className="mt-2 block font-mono font-bold">{debugCode}</code>
+              <p>
+                If the error persists, copy this code and send it to support:
+              </p>
+              <code className="mt-2 block font-mono font-bold">
+                {debugCode}
+              </code>
             </div>
           )}
         </CardContent>
