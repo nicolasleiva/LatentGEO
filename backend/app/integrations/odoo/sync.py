@@ -241,13 +241,13 @@ class OdooSyncService:
                         if snapshot.record_path:
                             mapped_paths.add(snapshot.record_path)
 
-            audit_paths = {
-                self._normalize_path(
+            audit_paths: set[str] = set()
+            for page in list(audit.pages or []):
+                normalized_path = self._normalize_path(
                     getattr(page, "path", None) or getattr(page, "url", None)
                 )
-                for page in list(audit.pages or [])
-            }
-            audit_paths = {path for path in audit_paths if path}
+                if normalized_path:
+                    audit_paths.add(normalized_path)
             unmapped_paths = sorted(audit_paths - mapped_paths)
             mapped_audit_paths = sorted(audit_paths & mapped_paths)
 
