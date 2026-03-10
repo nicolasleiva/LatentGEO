@@ -22,7 +22,7 @@ import {
   ExternalLink,
   Zap,
 } from "lucide-react";
-import { API_URL } from "@/lib/api";
+import { API_URL } from "@/lib/api-client";
 import { fetchWithBackendAuth } from "@/lib/backend-auth";
 
 interface HubSpotRecommendation {
@@ -46,16 +46,20 @@ interface ApplyResult {
 
 export default function HubSpotApplyRecommendations({
   auditId,
+  initialRecommendations = [],
+  initialRecommendationsLoaded = false,
 }: {
   auditId: string;
+  initialRecommendations?: HubSpotRecommendation[];
+  initialRecommendationsLoaded?: boolean;
 }) {
   const [recommendations, setRecommendations] = useState<
     HubSpotRecommendation[]
-  >([]);
+  >(initialRecommendations);
   const [selectedRecs, setSelectedRecs] = useState<Set<string>>(new Set());
   const [applying, setApplying] = useState(false);
   const [results, setResults] = useState<ApplyResult[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!initialRecommendationsLoaded);
 
   const fetchRecommendations = useCallback(async () => {
     try {
@@ -63,11 +67,13 @@ export default function HubSpotApplyRecommendations({
         `${API_URL}/api/v1/hubspot/recommendations/${auditId}`,
       );
       const data = await response.json();
-      setRecommendations(data.recommendations);
+      const nextRecommendations = Array.isArray(data.recommendations)
+        ? data.recommendations
+        : [];
+      setRecommendations(nextRecommendations);
 
-      // Auto-select all auto-fixable recommendations
       const autoFixable = new Set<string>(
-        data.recommendations
+        nextRecommendations
           .filter((r: HubSpotRecommendation) => r.auto_fixable)
           .map((r: HubSpotRecommendation) => r.id),
       );
@@ -80,8 +86,24 @@ export default function HubSpotApplyRecommendations({
   }, [auditId]);
 
   useEffect(() => {
-    fetchRecommendations();
-  }, [fetchRecommendations]);
+    if (initialRecommendationsLoaded) {
+      setRecommendations(initialRecommendations);
+      const autoFixable = new Set<string>(
+        initialRecommendations
+          .filter((recommendation) => recommendation.auto_fixable)
+          .map((recommendation) => recommendation.id),
+      );
+      setSelectedRecs(autoFixable);
+      setLoading(false);
+      return;
+    }
+
+    void fetchRecommendations();
+  }, [
+    fetchRecommendations,
+    initialRecommendations,
+    initialRecommendationsLoaded,
+  ]);
 
   const toggleRecommendation = (id: string) => {
     const newSelected = new Set(selectedRecs);
@@ -127,10 +149,16 @@ export default function HubSpotApplyRecommendations({
       );
 
       const data = await response.json();
-      setResults(data.details.applied.concat(data.details.failed));
+      const applied = Array.isArray(data?.details?.applied)
+        ? data.details.applied
+        : [];
+      const failed = Array.isArray(data?.details?.failed)
+        ? data.details.failed
+        : [];
+      setResults(applied.concat(failed));
 
       // Show success message
-      alert(`✅ Applied ${data.applied} changes successfully!`);
+      alert(`✅ Applied ${data?.applied ?? 0} changes successfully!`);
 
       // Reload recommendations to show updated state
       await fetchRecommendations();

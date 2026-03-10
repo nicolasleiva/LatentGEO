@@ -1,324 +1,59 @@
-"use client";
+import RankTrackingPageClient from "./RankTrackingPageClient";
+import { requireServerViewer, serverJson } from "@/lib/server-api";
+import type { RankTracking } from "@/lib/types";
 
-import { useState, useEffect, useCallback } from "react";
-import { useParams } from "next/navigation";
-import { api } from "@/lib/api";
-import { RankTracking } from "@/lib/types";
-import { Header } from "@/components/header";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-  CardDescription,
-} from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
-import { Loader2, TrendingUp, MapPin, Monitor } from "lucide-react";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-
-export default function RankTrackingPage() {
-  const params = useParams();
-  const auditId = params.id as string;
-
-  const [form, setForm] = useState({ domain: "", keywords: "" });
-  const [status, setStatus] = useState({ loading: false, error: "" });
-  const [rankings, setRankings] = useState<RankTracking[]>([]);
-  const [expandedRows, setExpandedRows] = useState<Set<number>>(new Set());
-
-  const toggleExpand = (rankId: number) => {
-    const newExpanded = new Set(expandedRows);
-    if (newExpanded.has(rankId)) {
-      newExpanded.delete(rankId);
-    } else {
-      newExpanded.add(rankId);
-    }
-    setExpandedRows(newExpanded);
-  };
-
-  const loadData = useCallback(async () => {
-    try {
-      const data = await api.getRankings(auditId);
-      setRankings(data);
-      try {
-        const audit = await api.getAudit(auditId);
-        if (audit.url) {
-          const url = new URL(audit.url);
-          const detectedDomain = url.hostname;
-
-          // Extract core keywords from audit analysis
-          const suggestedKeywords: string[] = [];
-
-          // 1. Brand name
-          const brandName = url.hostname.replace("www.", "").split(".")[0];
-          suggestedKeywords.push(brandName);
-
-          // 2. Category (e.g., "AI Coding Assistant")
-          if ((audit as any).category) {
-            suggestedKeywords.push((audit as any).category.toLowerCase());
-          }
-
-          // 3. Extract from target_audit content if available
-          if ((audit as any).target_audit?.content?.h1) {
-            suggestedKeywords.push(
-              (audit as any).target_audit.content.h1.toLowerCase(),
-            );
-          }
-
-          // Remove duplicates and take top 5
-          const uniqueKeywords = [...new Set(suggestedKeywords)].slice(0, 5);
-          setForm({
-            domain: detectedDomain,
-            keywords: uniqueKeywords.join(", "),
-          });
-        }
-      } catch {}
-    } catch (e) {
-      console.error(e);
-    }
-  }, [auditId]);
-
-  useEffect(() => {
-    loadData();
-  }, [loadData]);
-
-  async function handleTrack() {
-    if (!form.domain || !form.keywords) return;
-
-    setStatus({ loading: true, error: "" });
-
-    try {
-      const keywordList = form.keywords
-        .split(",")
-        .map((k) => k.trim())
-        .filter((k) => k);
-      const newRankings = await api.trackRankings(
-        auditId,
-        form.domain,
-        keywordList,
-      );
-      setRankings((prev) => [...newRankings, ...prev]);
-    } catch (e) {
-      setStatus({
-        loading: false,
-        error: "Failed to track rankings. Ensure Google API keys are set.",
-      });
-      return;
-    } finally {
-      setStatus((prev) => ({ ...prev, loading: false }));
-    }
+const getInitialRankConfig = (audit: Record<string, any>) => {
+  const auditUrl = typeof audit.url === "string" ? audit.url : "";
+  let hostname = "";
+  try {
+    hostname = auditUrl ? new URL(auditUrl).hostname : "";
+  } catch {
+    hostname = "";
   }
 
+  const suggestedKeywords: string[] = [];
+  if (hostname) {
+    suggestedKeywords.push(hostname.replace(/^www\./, "").split(".")[0]);
+  }
+  if (typeof audit.category === "string" && audit.category.trim()) {
+    suggestedKeywords.push(audit.category.toLowerCase());
+  }
+  const h1 = audit?.target_audit?.content?.h1;
+  if (typeof h1 === "string" && h1.trim()) {
+    suggestedKeywords.push(h1.toLowerCase());
+  }
+
+  return {
+    domain: hostname,
+    keywords: Array.from(new Set(suggestedKeywords)).slice(0, 5).join(", "),
+  };
+};
+
+export default async function RankTrackingPage({
+  params,
+}: {
+  params: Promise<{ locale: string; id: string }>;
+}) {
+  const { locale, id: auditId } = await params;
+  await requireServerViewer(`/${locale}/audits/${auditId}/rank-tracking`);
+
+  const [rankings, audit] = await Promise.all([
+    serverJson<RankTracking[]>(`/api/v1/rank-tracking/${auditId}`).catch(
+      () => [],
+    ),
+    serverJson<Record<string, any>>(`/api/v1/audits/${auditId}`).catch(
+      () => ({}),
+    ),
+  ]);
+
+  const initialConfig = getInitialRankConfig(audit);
+
   return (
-    <div className="min-h-screen bg-background text-foreground">
-      <Header />
-      <main className="max-w-6xl mx-auto px-6 py-12 space-y-8">
-        <div className="flex justify-between items-center animate-fade-up">
-          <div>
-            <h1 className="text-3xl md:text-4xl font-semibold tracking-tight">
-              Rank Tracking
-            </h1>
-            <p className="text-muted-foreground mt-2">
-              Check real-time positions on Google Search.
-            </p>
-          </div>
-        </div>
-
-        <Card className="glass-card">
-          <CardHeader>
-            <CardTitle>Check Positions</CardTitle>
-            <CardDescription>
-              Live check using Google Custom Search API with auto-detected core
-              keywords.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <label
-                  htmlFor="rank-tracking-domain"
-                  className="text-sm font-medium"
-                >
-                  Domain
-                </label>
-                <Input
-                  id="rank-tracking-domain"
-                  className="glass-input"
-                  placeholder="example.com"
-                  value={form.domain}
-                  onChange={(e) =>
-                    setForm((prev) => ({ ...prev, domain: e.target.value }))
-                  }
-                />
-              </div>
-              <div className="space-y-2">
-                <label
-                  htmlFor="rank-tracking-keywords"
-                  className="text-sm font-medium"
-                >
-                  Core Keywords (from site analysis)
-                </label>
-                <Input
-                  id="rank-tracking-keywords"
-                  className="glass-input"
-                  placeholder="e.g. brand name, main product"
-                  value={form.keywords}
-                  onChange={(e) =>
-                    setForm((prev) => ({ ...prev, keywords: e.target.value }))
-                  }
-                />
-                <p className="text-xs text-muted-foreground">
-                  Auto-detected from your site content. Edit as needed.
-                </p>
-              </div>
-            </div>
-            <Button
-              onClick={handleTrack}
-              disabled={status.loading}
-              className="w-full md:w-auto glass-button-primary"
-            >
-              {status.loading ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Tracking...
-                </>
-              ) : (
-                <>
-                  <TrendingUp className="mr-2 h-4 w-4" /> Check Rankings
-                </>
-              )}
-            </Button>
-            {status.error && (
-              <p className="text-red-500 text-sm">{status.error}</p>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card className="glass-card">
-          <CardHeader>
-            <CardTitle>Ranking History ({rankings.length})</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Keyword</TableHead>
-                  <TableHead>Your Position</TableHead>
-                  <TableHead>Your URL</TableHead>
-                  <TableHead>Device</TableHead>
-                  <TableHead>Location</TableHead>
-                  <TableHead>Top 10 Competitors</TableHead>
-                  <TableHead>Tracked At</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {rankings.map((rank) => (
-                  <TableRow key={rank.id}>
-                    <TableCell className="font-medium">
-                      {rank.keyword}
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-2">
-                        <span
-                          className={`text-lg font-bold ${rank.position > 0 && rank.position <= 3 ? "text-foreground" : rank.position > 0 && rank.position <= 10 ? "text-muted-foreground" : "text-muted-foreground/50"}`}
-                        >
-                          {rank.position > 0
-                            ? `#${rank.position}`
-                            : "Not in Top 10"}
-                        </span>
-                      </div>
-                    </TableCell>
-                    <TableCell className="text-sm text-muted-foreground break-all">
-                      {rank.url}
-                    </TableCell>
-                    <TableCell>
-                      <Badge
-                        variant="outline"
-                        className="text-xs flex items-center gap-1"
-                      >
-                        <Monitor className="h-3 w-3" />
-                        {rank.device || "unknown"}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      <Badge
-                        variant="outline"
-                        className="text-xs flex items-center gap-1"
-                      >
-                        <MapPin className="h-3 w-3" />
-                        {rank.location || "global"}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      {(rank as any).top_results &&
-                      (rank as any).top_results.length > 0 ? (
-                        <div className="space-y-1">
-                          {(expandedRows.has(rank.id)
-                            ? (rank as any).top_results
-                            : (rank as any).top_results.slice(0, 3)
-                          ).map((result: any) => (
-                            <div
-                              key={
-                                result.url ||
-                                result.domain ||
-                                result.title ||
-                                JSON.stringify(result)
-                              }
-                              className="text-xs flex items-center gap-1"
-                            >
-                              <Badge variant="outline" className="text-xs">
-                                #{result.position}
-                              </Badge>
-                              <span className="text-muted-foreground truncate max-w-[200px]">
-                                {result.domain}
-                              </span>
-                            </div>
-                          ))}
-                          {(rank as any).top_results.length > 3 && (
-                            <Badge
-                              variant="secondary"
-                              className="text-xs cursor-pointer hover:bg-secondary/80"
-                              onClick={() => toggleExpand(rank.id)}
-                            >
-                              {expandedRows.has(rank.id)
-                                ? "Show less"
-                                : `+${(rank as any).top_results.length - 3} more`}
-                            </Badge>
-                          )}
-                        </div>
-                      ) : (
-                        <span className="text-xs text-muted-foreground">
-                          No data
-                        </span>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-sm text-muted-foreground">
-                      {new Date(rank.tracked_at).toLocaleString()}
-                    </TableCell>
-                  </TableRow>
-                ))}
-                {rankings.length === 0 && !status.loading && (
-                  <TableRow>
-                    <TableCell
-                      colSpan={7}
-                      className="text-center py-8 text-muted-foreground"
-                    >
-                      No rankings tracked yet.
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
-      </main>
-    </div>
+    <RankTrackingPageClient
+      auditId={auditId}
+      initialDomain={initialConfig.domain}
+      initialKeywords={initialConfig.keywords}
+      initialRankings={rankings}
+    />
   );
 }

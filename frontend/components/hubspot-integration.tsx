@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { CheckCircle2, XCircle, Clock, LogOut, Sparkles } from "lucide-react";
+import { API_URL } from "@/lib/api-client";
 import { fetchWithBackendAuth } from "@/lib/backend-auth";
 
 interface HubSpotIntegrationProps {
@@ -305,8 +306,7 @@ export function HubSpotIntegration({
   });
   const [status, setStatus] = useState({ loading: false, applying: false });
 
-  const backendUrl =
-    process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
+  const backendUrl = API_URL;
 
   useEffect(() => {
     fetchConnections();

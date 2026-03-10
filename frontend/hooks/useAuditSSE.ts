@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import logger from "@/lib/logger";
 import { fetchWithBackendAuth } from "@/lib/backend-auth";
+import { resolveApiBaseUrl } from "@/lib/env";
 
 interface AuditProgress {
   audit_id: number;
@@ -18,8 +19,7 @@ interface UseAuditSSEOptions {
   enabled?: boolean;
 }
 
-const BACKEND_URL =
-  process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
+const BACKEND_URL = resolveApiBaseUrl();
 
 /**
  * Hook para recibir actualizaciones en tiempo real de auditorías usando Server-Sent Events (SSE).
