@@ -53,6 +53,7 @@ from .api.routes import (  # noqa: E402
     hubspot,
     keywords,
     llm_visibility,
+    odoo,
     pagespeed,
     rank_tracking,
     realtime,
@@ -188,6 +189,7 @@ def create_app() -> FastAPI:
         geo,
         hubspot,
         github,
+        odoo,
         webhooks,
         sse,
     ]
