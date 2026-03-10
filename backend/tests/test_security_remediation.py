@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 
 import pytest
 from app.core.access_control import ensure_connection_access
@@ -167,6 +168,17 @@ def test_oauth_state_validation_happy_path():
     assert payload["provider"] == "github"
 
 
+def test_oauth_state_validation_preserves_safe_return_to():
+    user = AuthUser(user_id="test-user", email="test@example.com")
+    state = build_oauth_state(
+        "github",
+        user,
+        return_to="/en/audits/29/github-auto-fix",
+    )
+    payload = validate_oauth_state(state, "github", user)
+    assert payload["return_to"] == "/en/audits/29/github-auto-fix"
+
+
 def test_oauth_state_validation_rejects_invalid_state():
     user = AuthUser(user_id="test-user", email="test@example.com")
     with pytest.raises(HTTPException) as exc_info:
@@ -189,6 +201,63 @@ def test_github_callback_rejects_missing_state(client):
     response = client.post("/api/v1/github/callback", json={"code": "dummy"})
     assert response.status_code == 400
     assert "state" in response.json().get("detail", "").lower()
+
+
+def test_github_auth_url_rejects_unsafe_return_to(client):
+    response = client.get(
+        "/api/v1/github/auth-url",
+        params={"return_to": "https://evil.example.com"},
+    )
+    assert response.status_code == 400
+    assert "return_to" in response.json().get("detail", "").lower()
+
+
+def test_github_callback_returns_signed_return_to(client, monkeypatch):
+    async def fake_exchange_code(code: str):
+        assert code == "oauth-code"
+        return {"access_token": "gh-token"}
+
+    async def fake_get_user_info(access_token: str):
+        assert access_token == "gh-token"
+        return {"id": 123, "login": "octocat"}
+
+    async def fake_create_or_update_connection(self, **kwargs):
+        return SimpleNamespace(id="gh-conn-1", github_username="octocat")
+
+    async def fake_sync_repositories(self, connection_id: str):
+        assert connection_id == "gh-conn-1"
+        return []
+
+    monkeypatch.setattr(
+        "app.api.routes.github.GitHubOAuth.exchange_code",
+        fake_exchange_code,
+    )
+    monkeypatch.setattr(
+        "app.api.routes.github.GitHubOAuth.get_user_info",
+        fake_get_user_info,
+    )
+    monkeypatch.setattr(
+        "app.api.routes.github.GitHubService.create_or_update_connection",
+        fake_create_or_update_connection,
+    )
+    monkeypatch.setattr(
+        "app.api.routes.github.GitHubService.sync_repositories",
+        fake_sync_repositories,
+    )
+
+    state = build_oauth_state(
+        "github",
+        AuthUser(user_id="test-user", email="test@example.com"),
+        return_to="/en/audits/29/github-auto-fix",
+    )
+
+    response = client.post(
+        "/api/v1/github/callback",
+        json={"code": "oauth-code", "state": state},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["return_to"] == "/en/audits/29/github-auto-fix"
 
 
 def test_hubspot_callback_rejects_missing_state(client):

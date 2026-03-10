@@ -42,6 +42,7 @@ _ALLOW_INTERNAL_TEST_JWT_ENV = "ALLOW_INTERNAL_TEST_JWT"
 _jwks_lock = threading.Lock()
 _jwks_cache: dict[str, Any] = {"keys_by_kid": {}, "expires_at": 0.0}
 _auth_failure_counts: Counter[str] = Counter()
+_DEFAULT_ADMIN_ROLE_NAMES = frozenset({"admin", "ops-admin"})
 
 
 @dataclass(frozen=True)
@@ -50,6 +51,12 @@ class AuthUser:
 
     user_id: str
     email: Optional[str] = None
+    roles: tuple[str, ...] = ()
+    permissions: tuple[str, ...] = ()
+
+    @property
+    def is_admin(self) -> bool:
+        return user_is_admin(self)
 
 
 def get_secret_key() -> str:
@@ -92,6 +99,31 @@ def _normalize_issuer(value: Optional[str]) -> str:
     if not normalized.startswith(("http://", "https://")):
         normalized = f"https://{normalized}"
     return normalized.rstrip("/") + "/"
+
+
+def _normalize_claim_items(value: Any) -> tuple[str, ...]:
+    if isinstance(value, str):
+        items = [part.strip().lower() for part in value.split(",")]
+        return tuple(item for item in items if item)
+    if isinstance(value, (list, tuple, set)):
+        normalized: list[str] = []
+        for item in value:
+            if isinstance(item, str):
+                candidate = item.strip().lower()
+                if candidate:
+                    normalized.append(candidate)
+        return tuple(normalized)
+    return ()
+
+
+def _collect_claim_items(
+    payload: Dict[str, Any], canonical_key: str
+) -> tuple[str, ...]:
+    collected: list[str] = []
+    for key, value in payload.items():
+        if key == canonical_key or key.endswith(f"/{canonical_key}"):
+            collected.extend(_normalize_claim_items(value))
+    return tuple(dict.fromkeys(collected))
 
 
 def _expected_issuer() -> str:
@@ -442,7 +474,47 @@ def get_user_from_bearer_token(token: str) -> AuthUser:
     else:
         email = None
 
-    return AuthUser(user_id=str(user_id), email=email)
+    roles = _collect_claim_items(payload, "roles")
+    permissions = _collect_claim_items(payload, "permissions")
+
+    return AuthUser(
+        user_id=str(user_id),
+        email=email,
+        roles=roles,
+        permissions=permissions,
+    )
+
+
+def user_is_admin(user: AuthUser) -> bool:
+    email = (user.email or "").strip().lower()
+    admin_emails = {
+        item.strip().lower()
+        for item in settings.AUTH0_ADMIN_EMAILS
+        if isinstance(item, str) and item.strip()
+    }
+    if email and email in admin_emails:
+        return True
+
+    configured_roles = {
+        item.strip().lower()
+        for item in settings.AUTH0_ADMIN_ROLE_NAMES
+        if isinstance(item, str) and item.strip()
+    }
+    admin_roles = configured_roles or _DEFAULT_ADMIN_ROLE_NAMES
+    if any(role in admin_roles for role in user.roles):
+        return True
+
+    admin_permissions = {
+        item.strip().lower()
+        for item in settings.AUTH0_ADMIN_PERMISSIONS
+        if isinstance(item, str) and item.strip()
+    }
+    if admin_permissions and any(
+        permission in admin_permissions for permission in user.permissions
+    ):
+        return True
+
+    return False
 
 
 async def get_current_user(

@@ -45,8 +45,12 @@ export default function GitHubAdminPage() {
 
   const authorize = async () => {
     try {
+      const returnTo =
+        typeof window !== "undefined"
+          ? `${window.location.pathname}${window.location.search}`
+          : "/en/integrations/github";
       const res = await fetchWithBackendAuth(
-        `${API_URL}/api/v1/github/auth-url`,
+        `${API_URL}/api/v1/github/auth-url?return_to=${encodeURIComponent(returnTo)}`,
       );
       const data = await res.json();
       if (!res.ok || !data?.url) {

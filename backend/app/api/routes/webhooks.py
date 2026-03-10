@@ -2,17 +2,21 @@
 Webhook Routes for receiving and configuring webhooks.
 """
 
+import base64
+import hashlib
 import hmac
 import ipaddress
 import json
+import time
 from datetime import datetime, timezone
 from typing import List, Optional
-from urllib.parse import urlparse
+from urllib.parse import unquote, urlparse
 
 from app.core.auth import AuthUser, get_current_user
 from app.core.config import settings
 from app.core.database import get_db
 from app.core.logger import get_logger
+from app.core.security import is_safe_outbound_url
 from app.services.webhook_service import WebhookEventType, WebhookService
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl
@@ -54,12 +58,60 @@ def _validate_outbound_webhook_url(raw_url: str) -> None:
         )
     if not host:
         raise HTTPException(status_code=400, detail="Webhook URL host is required")
-    if host == "localhost":
+    if not is_safe_outbound_url(raw_url, allow_http=settings.DEBUG):
         raise HTTPException(status_code=400, detail="Webhook URL host is not allowed")
-    if host.endswith((".local", ".localhost", ".internal")):
-        raise HTTPException(status_code=400, detail="Webhook URL host is not allowed")
-    if _is_private_or_local_ip(host):
-        raise HTTPException(status_code=400, detail="Webhook URL host is not allowed")
+
+
+def _validate_hubspot_signature(
+    request: Request,
+    body: bytes,
+    signature_v3: Optional[str],
+    request_timestamp: Optional[str],
+) -> None:
+    webhook_secret = (settings.HUBSPOT_CLIENT_SECRET or "").strip()
+    if not webhook_secret:
+        if settings.DEBUG:
+            logger.warning(
+                "HUBSPOT_CLIENT_SECRET not configured; allowing HubSpot webhook in debug mode"
+            )
+            return
+        raise HTTPException(
+            status_code=503,
+            detail="HubSpot webhook secret is not configured on server",
+        )
+
+    if not signature_v3 or not request_timestamp:
+        raise HTTPException(
+            status_code=401,
+            detail="Missing HubSpot webhook signature headers",
+        )
+
+    try:
+        timestamp_ms = int(request_timestamp)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=401, detail="Invalid HubSpot timestamp"
+        ) from exc
+
+    now_ms = int(time.time() * 1000)
+    if abs(now_ms - timestamp_ms) > 300_000:
+        raise HTTPException(status_code=401, detail="Expired HubSpot webhook timestamp")
+
+    request_uri = unquote(str(request.url))
+    source = (
+        request.method.upper() + request_uri + body.decode("utf-8") + request_timestamp
+    )
+    expected_signature = base64.b64encode(
+        hmac.new(
+            webhook_secret.encode("utf-8"),
+            source.encode("utf-8"),
+            hashlib.sha256,
+        ).digest()
+    ).decode("utf-8")
+
+    if not hmac.compare_digest(signature_v3, expected_signature):
+        logger.warning("Invalid HubSpot webhook signature")
+        raise HTTPException(status_code=401, detail="Invalid signature")
 
 
 # ==================== Pydantic Models ====================
@@ -344,7 +396,12 @@ async def _handle_github_pr(payload: dict, db: Session) -> dict:
 
 
 @router.post("/hubspot/incoming")
-async def handle_hubspot_webhook(request: Request, db: Session = Depends(get_db)):
+async def handle_hubspot_webhook(
+    request: Request,
+    x_hubspot_signature_v3: Optional[str] = Header(None),
+    x_hubspot_request_timestamp: Optional[str] = Header(None),
+    db: Session = Depends(get_db),
+):
     """
     Handle incoming HubSpot webhooks.
 
@@ -354,6 +411,12 @@ async def handle_hubspot_webhook(request: Request, db: Session = Depends(get_db)
     - deal.creation
     """
     body = await request.body()
+    _validate_hubspot_signature(
+        request,
+        body,
+        x_hubspot_signature_v3,
+        x_hubspot_request_timestamp,
+    )
 
     try:
         payload = json.loads(body.decode("utf-8"))

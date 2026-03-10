@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
+import { isAdminSessionUser } from "@/lib/admin";
 import { auth0 } from "@/lib/auth0";
 
 export const runtime = "nodejs";
@@ -12,6 +13,11 @@ export async function GET(request: NextRequest) {
   return NextResponse.json(
     {
       authenticated: Boolean(user),
+      is_admin: isAdminSessionUser(
+        user && typeof user === "object"
+          ? (user as Record<string, unknown>)
+          : null,
+      ),
       user: user
         ? {
             sub: typeof user.sub === "string" ? user.sub : undefined,

@@ -1,14 +1,7 @@
 import { Auth0Client } from "@auth0/nextjs-auth0/server";
 import type { NextRequest } from "next/server";
 
-// Auth0 v4 client - reads configuration from environment variables automatically:
-// - AUTH0_DOMAIN
-// - AUTH0_CLIENT_ID
-// - AUTH0_CLIENT_SECRET
-// - AUTH0_SECRET
-// - APP_BASE_URL
 const REQUIRED_AUTH0_ENV_VARS: string[] = [
-  "AUTH0_DOMAIN",
   "AUTH0_CLIENT_ID",
   "AUTH0_CLIENT_SECRET",
   "AUTH0_SECRET",
@@ -33,8 +26,40 @@ type ServerGetAccessTokenOptions = {
   };
 };
 
-const getMissingAuth0EnvVars = () =>
-  REQUIRED_AUTH0_ENV_VARS.filter((name) => !process.env[name]?.trim());
+const getMissingAuth0EnvVars = () => {
+  const missing = REQUIRED_AUTH0_ENV_VARS.filter(
+    (name) => !process.env[name]?.trim(),
+  );
+  if (
+    !process.env.AUTH0_DOMAIN?.trim() &&
+    !process.env.AUTH0_ISSUER_BASE_URL?.trim()
+  ) {
+    missing.push("AUTH0_DOMAIN or AUTH0_ISSUER_BASE_URL");
+  }
+  return missing;
+};
+
+const normalizeAuth0Domain = (): string => {
+  const issuerBaseUrl = process.env.AUTH0_ISSUER_BASE_URL?.trim();
+  if (issuerBaseUrl) {
+    try {
+      return new URL(issuerBaseUrl).host;
+    } catch {
+      throw new Error("AUTH0_ISSUER_BASE_URL must be a valid absolute URL.");
+    }
+  }
+
+  const domain = process.env.AUTH0_DOMAIN?.trim() || "";
+  return domain.replace(/^https?:\/\//, "").replace(/\/+$/, "");
+};
+
+const getRequiredEnv = (name: string): string => {
+  const value = process.env[name]?.trim();
+  if (!value) {
+    throw new Error(`Missing Auth0 environment variables: ${name}`);
+  }
+  return value;
+};
 
 const getAuth0Client = () => {
   if (auth0Client) {
@@ -69,6 +94,11 @@ const getAuth0Client = () => {
   }
 
   auth0Client = new Auth0Client({
+    domain: normalizeAuth0Domain(),
+    clientId: getRequiredEnv("AUTH0_CLIENT_ID"),
+    clientSecret: getRequiredEnv("AUTH0_CLIENT_SECRET"),
+    secret: getRequiredEnv("AUTH0_SECRET"),
+    appBaseUrl: getRequiredEnv("APP_BASE_URL"),
     authorizationParameters: {
       audience,
       scope: authorizationScope,

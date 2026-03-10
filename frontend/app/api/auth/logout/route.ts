@@ -1,16 +1,15 @@
 import type { NextRequest } from "next/server";
-import { NextResponse } from "next/server";
+import { relativeRedirect } from "@/lib/relative-redirect";
 
 export const runtime = "nodejs";
 
 export async function GET(request: NextRequest) {
-  const url = request.nextUrl.clone();
-  url.pathname = "/auth/logout";
+  const searchParams = new URLSearchParams();
   const returnTo = request.nextUrl.searchParams.get("returnTo");
   if (returnTo && returnTo.startsWith("/") && !returnTo.startsWith("//")) {
-    url.searchParams.set("returnTo", returnTo);
+    searchParams.set("returnTo", returnTo);
   } else {
-    url.searchParams.set("returnTo", "/auth/login");
+    searchParams.set("returnTo", "/auth/login");
   }
-  return NextResponse.redirect(url, 302);
+  return relativeRedirect("/auth/logout", searchParams, 302);
 }

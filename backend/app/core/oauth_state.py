@@ -24,6 +24,26 @@ def _normalize_email(value: str | None) -> str | None:
     return normalized or None
 
 
+def normalize_oauth_return_to(value: str | None) -> str | None:
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid OAuth return_to path",
+        )
+
+    normalized = value.strip()
+    if not normalized:
+        return None
+    if not normalized.startswith("/") or normalized.startswith("//"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid OAuth return_to path",
+        )
+    return normalized
+
+
 def _get_oauth_state_secret() -> str:
     secret = settings.OAUTH_STATE_SECRET or settings.secret_key
     if not secret:
@@ -47,7 +67,11 @@ def _get_oauth_state_secret() -> str:
     return secret
 
 
-def build_oauth_state(provider: str, user: AuthUser) -> str:
+def build_oauth_state(
+    provider: str,
+    user: AuthUser,
+    return_to: str | None = None,
+) -> str:
     """Create signed OAuth state bound to provider + authenticated user."""
     now = datetime.now(timezone.utc)
     ttl_seconds = max(60, int(settings.OAUTH_STATE_TTL_SECONDS or 600))
@@ -59,6 +83,9 @@ def build_oauth_state(provider: str, user: AuthUser) -> str:
         "iat": int(now.timestamp()),
         "exp": int((now + timedelta(seconds=ttl_seconds)).timestamp()),
     }
+    normalized_return_to = normalize_oauth_return_to(return_to)
+    if normalized_return_to:
+        payload["return_to"] = normalized_return_to
     return jwt.encode(payload, _get_oauth_state_secret(), algorithm="HS256")
 
 
@@ -111,5 +138,7 @@ def validate_oauth_state(state: str, provider: str, user: AuthUser) -> Dict[str,
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="OAuth state email mismatch",
         )
+
+    payload["return_to"] = normalize_oauth_return_to(payload.get("return_to"))
 
     return payload

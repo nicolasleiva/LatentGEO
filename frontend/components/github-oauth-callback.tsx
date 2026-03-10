@@ -8,7 +8,15 @@ import { API_URL } from "@/lib/api";
 import { fetchWithBackendAuth } from "@/lib/backend-auth";
 import { withLocale } from "@/lib/locale-routing";
 
-export default function GitHubCallback() {
+type GitHubOAuthCallbackProps = {
+  fallbackHref?: string;
+  onRedirect?: (href: string) => void;
+};
+
+export default function GitHubOAuthCallback({
+  fallbackHref = "/audits",
+  onRedirect,
+}: GitHubOAuthCallbackProps) {
   const pathname = usePathname();
   const [status, setStatus] = useState<"loading" | "success" | "error">(
     "loading",
@@ -18,6 +26,7 @@ export default function GitHubCallback() {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
+
     const params = new URLSearchParams(window.location.search);
     const code = params.get("code");
     const state = params.get("state");
@@ -55,17 +64,28 @@ export default function GitHubCallback() {
           },
         );
 
+        const data = await response.json().catch(() => ({}));
         if (!response.ok) {
-          throw new Error("Error exchanging authorization code");
+          throw new Error(
+            data?.detail || "Error exchanging authorization code",
+          );
         }
 
-        const data = await response.json();
+        const nextHref =
+          typeof data?.return_to === "string" && data.return_to
+            ? withLocale(pathname, data.return_to)
+            : withLocale(pathname, fallbackHref);
+
         setStatus("success");
         setMessage("Connection successful! Redirecting...");
 
         setTimeout(() => {
-          window.location.assign(withLocale(pathname, "/audits"));
-        }, 2000);
+          if (onRedirect) {
+            onRedirect(nextHref);
+            return;
+          }
+          window.location.href = nextHref;
+        }, 1200);
       } catch (err) {
         console.error(err);
         setStatus("error");
@@ -73,8 +93,8 @@ export default function GitHubCallback() {
       }
     };
 
-    exchangeCode();
-  }, [pathname]);
+    void exchangeCode();
+  }, [fallbackHref, onRedirect, pathname]);
 
   return (
     <div className="flex h-screen w-full items-center justify-center bg-gray-50">
@@ -92,13 +112,13 @@ export default function GitHubCallback() {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <p className="text-muted-foreground mb-4">{message}</p>
+          <p className="mb-4 text-muted-foreground">{message}</p>
           {status === "error" && (
-            <div className="bg-red-50 p-2 rounded text-xs text-red-800 break-all">
+            <div className="break-all rounded bg-red-50 p-2 text-xs text-red-800">
               <p>
                 If the error persists, copy this code and send it to support:
               </p>
-              <code className="font-mono font-bold mt-2 block">
+              <code className="mt-2 block font-mono font-bold">
                 {debugCode}
               </code>
             </div>
