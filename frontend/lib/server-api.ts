@@ -61,7 +61,9 @@ export const getServerViewer = cache(async (): Promise<ServerViewer | null> => {
 
 const getServerAccessToken = cache(async (): Promise<string> => {
   if (!AUTH0_API_AUDIENCE) {
-    throw new Error("Missing AUTH0_API_AUDIENCE for server-side API requests.");
+    throw new Error(
+      "Authentication configuration error. Please contact support.",
+    );
   }
 
   const tokenResponse = await auth0.getAccessToken({
@@ -75,7 +77,7 @@ const getServerAccessToken = cache(async (): Promise<string> => {
   });
 
   if (!tokenResponse?.token) {
-    throw new Error("Missing Auth0 access token for server-side API requests.");
+    throw new Error("Authentication failed. Please contact support.");
   }
 
   return tokenResponse.token;
