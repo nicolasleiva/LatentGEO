@@ -6,6 +6,7 @@ import { Header } from "@/components/header";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { deleteAudit as deleteAuditApi } from "@/lib/api-client";
+import { formatStableDate } from "@/lib/dates";
 import { withLocale } from "@/lib/locale-routing";
 import {
   RefreshCw,
@@ -284,7 +285,7 @@ export default function AuditsListPageClient({
                       <p className="text-sm text-muted-foreground">Created</p>
                       <p className="text-sm text-foreground flex items-center gap-1">
                         <Clock className="w-3 h-3" />
-                        {new Date(audit.created_at).toLocaleDateString()}
+                        {formatStableDate(audit.created_at)}
                       </p>
                       <p className="text-xs text-muted-foreground">
                         {audit.total_pages ?? 0} pages analyzed

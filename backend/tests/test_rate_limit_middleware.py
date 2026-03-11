@@ -1,8 +1,24 @@
+from app.core.auth import AuthUser
 from app.core.config import settings
 from app.core.middleware import RateLimitMiddleware as CoreRateLimitMiddleware
 from app.middleware.rate_limit import RateLimitMiddleware as RedisRateLimitMiddleware
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.testclient import TestClient
+from starlette.middleware.base import BaseHTTPMiddleware
+
+
+class _InjectAuthMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        request.state.auth_user = None
+        request.state.auth_error = None
+
+        authorization = request.headers.get("Authorization", "").strip()
+        if authorization.lower().startswith("bearer "):
+            subject = authorization[7:].strip()
+            if subject:
+                request.state.auth_user = AuthUser(user_id=subject)
+
+        return await call_next(request)
 
 
 def _core_app(default_limit: int = 2) -> FastAPI:
@@ -22,12 +38,34 @@ def _core_app(default_limit: int = 2) -> FastAPI:
     return app
 
 
-def _redis_app() -> FastAPI:
+def _redis_app(*, with_auth: bool = False) -> FastAPI:
     app = FastAPI()
     app.add_middleware(RedisRateLimitMiddleware)
+    if with_auth:
+        app.add_middleware(_InjectAuthMiddleware)
 
     @app.get("/test")
     async def test_endpoint():
+        return {"ok": True}
+
+    @app.get("/api/v1/audits/32/overview")
+    async def audit_overview():
+        return {"ok": True}
+
+    @app.post("/api/v1/audits/32/generate-pdf")
+    async def generate_pdf():
+        return {"ok": True}
+
+    @app.get("/api/v1/audits/32/pdf-status")
+    async def pdf_status():
+        return {"ok": True}
+
+    @app.get("/api/v1/audits/32/pagespeed-status")
+    async def pagespeed_status():
+        return {"ok": True}
+
+    @app.get("/api/v1/audits/32/artifacts-status")
+    async def artifacts_status():
         return {"ok": True}
 
     return app
@@ -100,6 +138,7 @@ def test_redis_rate_limit_sets_mode_header_redis(monkeypatch):
 
     assert response.status_code == 200
     assert response.headers.get("X-RateLimit-Mode") == "redis"
+    assert response.headers.get("X-RateLimit-Bucket") == "default"
 
 
 def test_redis_rate_limit_falls_back_to_memory_when_redis_missing(monkeypatch):
@@ -133,3 +172,104 @@ def test_redis_rate_limit_runtime_failure_uses_memory_and_blocks(monkeypatch):
     assert response_2.status_code == 200
     assert response_3.status_code == 429
     assert response_3.headers.get("X-RateLimit-Mode") == "memory-fallback"
+
+
+def test_redis_rate_limit_scopes_pdf_bucket_away_from_normal_traffic(monkeypatch):
+    fake_redis = _FakeRedis()
+    monkeypatch.setattr(settings, "REDIS_URL", "redis://fake:6379/0", raising=False)
+    monkeypatch.setattr(settings, "RATE_LIMIT_DEFAULT", 2, raising=False)
+    monkeypatch.setattr(settings, "RATE_LIMIT_HEAVY", 1, raising=False)
+    monkeypatch.setattr(
+        "app.middleware.rate_limit.redis.from_url",
+        lambda *args, **kwargs: fake_redis,
+    )
+
+    with TestClient(_redis_app()) as client:
+        overview_1 = client.get("/api/v1/audits/32/overview")
+        overview_2 = client.get("/api/v1/audits/32/overview")
+        generate_1 = client.post("/api/v1/audits/32/generate-pdf")
+        generate_2 = client.post("/api/v1/audits/32/generate-pdf")
+        status_1 = client.get("/api/v1/audits/32/pdf-status")
+        pagespeed_status_1 = client.get("/api/v1/audits/32/pagespeed-status")
+        artifacts_status_1 = client.get("/api/v1/audits/32/artifacts-status")
+
+    assert overview_1.status_code == 200
+    assert overview_2.status_code == 200
+    assert generate_1.status_code == 200
+    assert generate_1.headers.get("X-RateLimit-Bucket") == "pdf_generate"
+    assert generate_2.status_code == 429
+    assert generate_2.headers.get("X-RateLimit-Bucket") == "pdf_generate"
+    assert status_1.status_code == 200
+    assert status_1.headers.get("X-RateLimit-Bucket") == "pdf_status"
+    assert pagespeed_status_1.status_code == 200
+    assert pagespeed_status_1.headers.get("X-RateLimit-Bucket") == "pagespeed_status"
+    assert artifacts_status_1.status_code == 200
+    assert artifacts_status_1.headers.get("X-RateLimit-Bucket") == "artifacts_status"
+    audit_read_keys = [
+        key
+        for key in fake_redis.store
+        if key.startswith("rate_limit:audit_read:ip:") and not key.endswith(":ttl")
+    ]
+    pdf_generate_keys = [
+        key
+        for key in fake_redis.store
+        if key.startswith("rate_limit:pdf_generate:ip:") and not key.endswith(":ttl")
+    ]
+    pdf_status_keys = [
+        key
+        for key in fake_redis.store
+        if key.startswith("rate_limit:pdf_status:ip:") and not key.endswith(":ttl")
+    ]
+    pagespeed_status_keys = [
+        key
+        for key in fake_redis.store
+        if key.startswith("rate_limit:pagespeed_status:ip:")
+        and not key.endswith(":ttl")
+    ]
+    artifacts_status_keys = [
+        key
+        for key in fake_redis.store
+        if key.startswith("rate_limit:artifacts_status:ip:")
+        and not key.endswith(":ttl")
+    ]
+    assert len(audit_read_keys) == 1
+    assert len(pdf_generate_keys) == 1
+    assert len(pdf_status_keys) == 1
+    assert len(pagespeed_status_keys) == 1
+    assert len(artifacts_status_keys) == 1
+    assert fake_redis.store[audit_read_keys[0]] == 2
+    assert fake_redis.store[pdf_generate_keys[0]] == 1
+    assert fake_redis.store[pdf_status_keys[0]] == 1
+    assert fake_redis.store[pagespeed_status_keys[0]] == 1
+    assert fake_redis.store[artifacts_status_keys[0]] == 1
+
+
+def test_redis_rate_limit_scopes_authenticated_users_independently(monkeypatch):
+    fake_redis = _FakeRedis()
+    monkeypatch.setattr(settings, "REDIS_URL", "redis://fake:6379/0", raising=False)
+    monkeypatch.setattr(settings, "RATE_LIMIT_DEFAULT", 10, raising=False)
+    monkeypatch.setattr(settings, "RATE_LIMIT_HEAVY", 1, raising=False)
+    monkeypatch.setattr(
+        "app.middleware.rate_limit.redis.from_url",
+        lambda *args, **kwargs: fake_redis,
+    )
+
+    with TestClient(_redis_app(with_auth=True)) as client:
+        user_a_first = client.post(
+            "/api/v1/audits/32/generate-pdf",
+            headers={"Authorization": "Bearer user-a"},
+        )
+        user_b_first = client.post(
+            "/api/v1/audits/32/generate-pdf",
+            headers={"Authorization": "Bearer user-b"},
+        )
+        user_a_second = client.post(
+            "/api/v1/audits/32/generate-pdf",
+            headers={"Authorization": "Bearer user-a"},
+        )
+
+    assert user_a_first.status_code == 200
+    assert user_b_first.status_code == 200
+    assert user_a_second.status_code == 429
+    assert fake_redis.store["rate_limit:pdf_generate:user:user-a"] == 1
+    assert fake_redis.store["rate_limit:pdf_generate:user:user-b"] == 1

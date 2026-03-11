@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import { AlertTriangle } from "lucide-react";
+import { formatStableDateTime, formatStableNumber } from "@/lib/dates";
 
 type AuditPageSpeedDiagnosticsProps = {
   psData: any;
@@ -97,7 +98,7 @@ export default function AuditPageSpeedDiagnostics({
               <div className="rounded-xl border border-border bg-muted/50 p-3">
                 <div className="text-xs text-muted-foreground">Fetch Time</div>
                 <div className="text-sm text-foreground">
-                  {new Date(psData.metadata.fetch_time).toLocaleString()}
+                  {formatStableDateTime(psData.metadata.fetch_time)}
                 </div>
               </div>
             )}
@@ -157,7 +158,7 @@ export default function AuditPageSpeedDiagnostics({
                   } else if (key.includes("score")) {
                     displayValue = value.toFixed(1);
                   } else {
-                    displayValue = value.toLocaleString();
+                    displayValue = formatStableNumber(value);
                   }
                 } else {
                   displayValue = String(value);

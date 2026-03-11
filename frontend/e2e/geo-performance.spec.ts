@@ -126,6 +126,11 @@ const waitForGeoToolSuite = async (page: Page) => {
   await expect(page.getByTestId("geo-tool-card-article-engine")).toBeVisible();
 };
 
+const extractAuditIdFromHref = (href: string | null) => {
+  const match = href?.match(/\/audits\/(\d+)/i);
+  return match?.[1] || "";
+};
+
 const discoverAuditId = async (page: Page) => {
   if (auditId) {
     const auditPathUrl = new URL(
@@ -147,13 +152,23 @@ const discoverAuditId = async (page: Page) => {
   await page.goto(new URL(`/${locale}/audits`, baseUrl).toString(), {
     waitUntil: "domcontentloaded",
   });
+  const href = await page
+    .locator(`a[href*="/${locale}/audits/"], a[href*="/audits/"]`)
+    .first()
+    .getAttribute("href", { timeout: 2_000 })
+    .catch(() => null);
+  const linkAuditId = extractAuditIdFromHref(href);
+  if (linkAuditId) {
+    return linkAuditId;
+  }
+
   const text = await page
     .locator("text=/Audit #\\d+/")
     .first()
     .textContent({ timeout: 1_000 })
     .catch(() => null);
-  const match = text?.match(/Audit #(\d+)/i);
-  return match?.[1] || "";
+  const textMatch = text?.match(/Audit #(\d+)/i);
+  return textMatch?.[1] || "";
 };
 
 test("GEO cards p95 stays below threshold", async ({ page }) => {

@@ -7,7 +7,11 @@ from collections import defaultdict
 from typing import Dict, Tuple
 
 import redis
-from app.core.request_identity import get_client_ip
+from app.core.rate_limit_policy import (
+    is_rate_limit_exempt,
+    resolve_rate_limit_identity,
+    resolve_rate_limit_policy,
+)
 from fastapi import Request, status
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -50,30 +54,11 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                 "Rate Limiter: REDIS_URL not configured. Falling back to in-memory strategy."
             )
 
-    def _get_rate_limit(self, path: str) -> Tuple[int, int]:
-        if path.startswith("/api/v1/auth"):
-            return (settings.RATE_LIMIT_AUTH, 60)
-        if "/pagespeed" in path or "/generate-pdf" in path:
-            return (settings.RATE_LIMIT_HEAVY, 60)
-        if path.startswith("/api/v1/webhooks"):
-            return (1000, 60)
-        if path.startswith("/api/v1/github/webhook"):
-            return (100, 60)
-        return (settings.RATE_LIMIT_DEFAULT, 60)
-
-    def _get_client_key(self, request: Request) -> str:
-        user_id = request.headers.get("X-User-ID")
-        if user_id:
-            return f"user:{user_id}"
-
-        ip = get_client_ip(request)
-        return f"ip:{ip}"
-
     def _check_redis_limit(
-        self, key: str, max_requests: int, window: int
+        self, bucket: str, identity: str, max_requests: int, window: int
     ) -> Tuple[bool, int, int]:
         """Check rate limit using Redis INCR and EXPIRE"""
-        redis_key = f"rate_limit:{key}"
+        redis_key = f"rate_limit:{bucket}:{identity}"
         current_count = self.redis_client.get(redis_key)
 
         if current_count and int(current_count) >= max_requests:
@@ -121,24 +106,24 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
     async def dispatch(self, request: Request, call_next):
         # Skip rate limit for health, docs, and metrics
-        if request.url.path in [
-            "/health",
-            "/health/live",
-            "/health/ready",
-            "/docs",
-            "/openapi.json",
-        ]:
+        if is_rate_limit_exempt(request.url.path):
             return await call_next(request)
 
+        policy = resolve_rate_limit_policy(request, settings)
         request_path = request.url.path
-        max_requests, window = self._get_rate_limit(request_path)
-        client_key = self._get_client_key(request)
+        max_requests = policy.limit
+        window = policy.window
+        identity = resolve_rate_limit_identity(request)
+        redis_key = f"{policy.bucket}:{identity}"
         rate_limit_mode = "memory-fallback"
 
         if self.use_redis:
             try:
                 allowed, count, reset_after = self._check_redis_limit(
-                    client_key, max_requests, window
+                    policy.bucket,
+                    identity,
+                    max_requests,
+                    window,
                 )
                 rate_limit_mode = "redis"
             except Exception as e:
@@ -147,17 +132,17 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                 )
                 self.use_redis = False
                 allowed, count, reset_after = self._check_memory_limit(
-                    client_key, max_requests, window
+                    redis_key, max_requests, window
                 )
                 rate_limit_mode = "memory-fallback"
         else:
             allowed, count, reset_after = self._check_memory_limit(
-                client_key, max_requests, window
+                redis_key, max_requests, window
             )
             rate_limit_mode = "memory-fallback"
 
         if not allowed:
-            logger.warning(f"Rate limit exceeded: {client_key} on {request_path}")
+            logger.warning(f"Rate limit exceeded: {identity} on {request_path}")
             return JSONResponse(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
                 content={
@@ -168,6 +153,10 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                 headers={
                     "Retry-After": str(max(0, reset_after)),
                     "X-RateLimit-Mode": rate_limit_mode,
+                    "X-RateLimit-Limit": str(max_requests),
+                    "X-RateLimit-Remaining": "0",
+                    "X-RateLimit-Reset": str(int(time.time() + max(0, reset_after))),
+                    "X-RateLimit-Bucket": policy.bucket,
                 },
             )
 
@@ -180,5 +169,6 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             int(time.time() + max(0, reset_after))
         )
         response.headers["X-RateLimit-Mode"] = rate_limit_mode
+        response.headers["X-RateLimit-Bucket"] = policy.bucket
 
         return response

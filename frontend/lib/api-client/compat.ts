@@ -42,6 +42,30 @@ function analysisPillar(score: number, feedback: string) {
 }
 
 export const api = {
+  async getAuditReports(auditId: number): Promise<{
+    audit_id: number;
+    total_reports: number;
+    reports: Array<{
+      id: number;
+      audit_id: number;
+      report_type?: string;
+      file_path?: string;
+      created_at?: string;
+    }>;
+  }> {
+    return requestJson(`${API_URL}/api/v1/reports/audit/${auditId}`);
+  },
+
+  async downloadReport(reportId: number): Promise<Blob> {
+    const res = await fetchWithBackendAuth(
+      `${API_URL}/api/v1/reports/download/${reportId}`,
+    );
+    if (!res.ok) {
+      throw await buildApiError(res);
+    }
+    return res.blob();
+  },
+
   async compareKeywords(yourUrl: string, competitorUrl: string): Promise<any> {
     const params = new URLSearchParams({
       your_url: yourUrl,
@@ -141,6 +165,10 @@ export const api = {
     return requestJson(`${API_URL}/api/v1/audits/${auditId}`);
   },
 
+  async getAuditStatus(auditId: string): Promise<any> {
+    return requestJson(`${API_URL}/api/v1/audits/${auditId}/status`);
+  },
+
   async researchKeywords(
     auditId: string,
     domain: string,
@@ -173,6 +201,10 @@ export const api = {
     );
   },
 
+  async getRankings(auditId: string): Promise<any[]> {
+    return requestJson(`${API_URL}/api/v1/rank-tracking/${auditId}`);
+  },
+
   async checkLLMVisibility(
     auditId: string,
     brandName: string,
@@ -187,5 +219,9 @@ export const api = {
         body: JSON.stringify(queries),
       },
     );
+  },
+
+  async getLLMVisibility(auditId: string): Promise<any[]> {
+    return requestJson(`${API_URL}/api/v1/llm-visibility/${auditId}`);
   },
 };

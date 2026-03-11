@@ -2,23 +2,25 @@
 Celery Tasks for background processing.
 """
 
-import asyncio
 import json
 from contextlib import contextmanager
 from datetime import datetime, timezone
 
 from app.core.config import settings
-from app.core.database import SessionLocal
+from app.core.database import SessionLocal, ensure_database_revision
 
 # Importar la fábrica de LLM desde el endpoint de auditorías
 # Esto puede ser refactorizado a un módulo de utilidades común en el futuro
 from app.core.llm_kimi import get_llm_function
 from app.core.logger import get_logger
-from app.models import AuditStatus, GeoArticleBatch
+from app.models import Audit, AuditStatus, GeoArticleBatch
 from app.services.audit_local_service import AuditLocalService
 from app.services.audit_service import AuditService, ReportService
+from app.services.pagespeed_job_service import PageSpeedJobService
+from app.services.pdf_job_service import PDFJobService
 from app.services.pdf_service import PDFService
 from app.services.pipeline_service import PipelineService
+from app.workers.async_runtime import run_worker_coroutine
 from app.workers.celery_app import celery_app
 from sqlalchemy.orm import Session
 
@@ -28,11 +30,51 @@ logger = get_logger(__name__)
 @contextmanager
 def get_db_session():
     """Provide a transactional scope around a series of operations."""
+    ensure_database_revision()
     db = SessionLocal()
     try:
         yield db
     finally:
         db.close()
+
+
+@celery_app.task(name="run_pdf_generation_job_task")
+def run_pdf_generation_job_task(job_id: int):
+    """
+    Canonical PDF generation task.
+    """
+    logger.info("Starting canonical PDF generation job job_id=%s", job_id)
+    with get_db_session() as db:
+        job = run_worker_coroutine(PDFJobService.execute_job(db, job_id))
+        logger.info(
+            "Finished canonical PDF generation job job_id=%s status=%s",
+            job_id,
+            getattr(job, "status", "unknown"),
+        )
+        return {
+            "job_id": job_id,
+            "status": getattr(job, "status", "unknown"),
+            "report_id": getattr(job, "report_id", None),
+        }
+
+
+@celery_app.task(name="run_pagespeed_generation_job_task")
+def run_pagespeed_generation_job_task(job_id: int):
+    """
+    Canonical PageSpeed generation task.
+    """
+    logger.info("Starting canonical PageSpeed generation job job_id=%s", job_id)
+    with get_db_session() as db:
+        job = run_worker_coroutine(PageSpeedJobService.execute_job(db, job_id))
+        logger.info(
+            "Finished canonical PageSpeed generation job job_id=%s status=%s",
+            job_id,
+            getattr(job, "status", "unknown"),
+        )
+        return {
+            "job_id": job_id,
+            "status": getattr(job, "status", "unknown"),
+        }
 
 
 @celery_app.task(
@@ -126,7 +168,7 @@ def run_audit_task(self, audit_id: int):
         # CRITICAL FIX: Run local audit on target URL FIRST to get actual site data
         # Without this, the LLM cannot detect the correct category and search queries
         logger.info(f"Running local audit on target URL: {audit_url}")
-        target_audit_result = asyncio.run(audit_local_service_func(audit_url))
+        target_audit_result = run_worker_coroutine(audit_local_service_func(audit_url))
 
         if not target_audit_result or target_audit_result.get("status") == 500:
             logger.error(f"Failed to run local audit on target URL: {audit_url}")
@@ -174,7 +216,7 @@ def run_audit_task(self, audit_id: int):
         # Este nuevo flujo es exclusivamente para errores (fix plan) y competidores.
         from app.services.pipeline_service import run_initial_audit
 
-        result = asyncio.run(
+        result = run_worker_coroutine(
             run_initial_audit(
                 url=audit_url,
                 target_audit=target_audit_result,
@@ -238,7 +280,7 @@ def run_audit_task(self, audit_id: int):
                 # Generar y guardar análisis ejecutivo de PageSpeed
                 try:
                     # Como estamos en un contexto síncrono, usamos asyncio.run
-                    ps_analysis = asyncio.run(
+                    ps_analysis = run_worker_coroutine(
                         PipelineService.generate_pagespeed_analysis(
                             pagespeed_data, llm_function
                         )
@@ -249,7 +291,7 @@ def run_audit_task(self, audit_id: int):
                     logger.error(f"Error generating PageSpeed analysis: {e}")
 
             # Guardar resultados y marcar como COMPLETED
-            asyncio.run(
+            run_worker_coroutine(
                 AuditService.set_audit_results(
                     db=db,
                     audit_id=audit_id,
@@ -270,6 +312,54 @@ def run_audit_task(self, audit_id: int):
             logger.info(
                 "Dashboard ready! PDF can be generated manually from the dashboard."
             )
+
+            if settings.ENABLE_PAGESPEED and settings.GOOGLE_PAGESPEED_API_KEY:
+                try:
+                    db.expire_all()
+                    persistent_audit = (
+                        db.query(Audit).filter(Audit.id == audit_id).first()
+                    )
+                    if persistent_audit is None:
+                        raise ValueError(
+                            f"Audit {audit_id} not found after completion for automatic PageSpeed queue"
+                        )
+                    queued_pagespeed_job = PageSpeedJobService.queue_if_needed(
+                        db,
+                        audit=persistent_audit,
+                        requested_by_user_id=getattr(
+                            persistent_audit, "user_id", None
+                        ),
+                        strategy="both",
+                        force_refresh=False,
+                    )
+                    if queued_pagespeed_job is not None:
+                        logger.info(
+                            "Queued automatic PageSpeed job for audit %s (job_id=%s)",
+                            audit_id,
+                            queued_pagespeed_job.id,
+                        )
+                except Exception as pagespeed_queue_error:
+                    logger.warning(
+                        "Automatic PageSpeed queue failed for audit %s: %s",
+                        audit_id,
+                        pagespeed_queue_error,
+                    )
+                    try:
+                        AuditService.append_runtime_diagnostic(
+                            db,
+                            audit_id,
+                            source="pagespeed",
+                            stage="auto-queue",
+                            severity="warning",
+                            code="pagespeed_auto_queue_failed",
+                            message="Automatic PageSpeed queue failed after audit completion.",
+                            technical_detail=type(pagespeed_queue_error).__name__,
+                        )
+                    except Exception:
+                        logger.warning(
+                            "Could not persist automatic PageSpeed queue diagnostic for audit %s",
+                            audit_id,
+                        )
 
     except Exception as e:
         logger.error(f"Error running pipeline for audit {audit_id}: {e}", exc_info=True)
@@ -362,7 +452,7 @@ def run_geo_analysis_task(self, audit_id: int):
                 return rankings, backlinks, visibility
 
             # 3. Execute Tools
-            rankings, backlinks, visibility = asyncio.run(run_geo_tools())
+            rankings, backlinks, visibility = run_worker_coroutine(run_geo_tools())
 
             # 4. Append/Update Report
             current_report = audit.report_markdown or ""
@@ -614,47 +704,34 @@ def _save_individual_pages(db: Session, audit_id: int, pipeline_result: dict):
 @celery_app.task(name="generate_pdf_task")
 def generate_pdf_task(audit_id: int, report_markdown: str):
     """
-    Celery task to generate a PDF report from markdown content.
+    Deprecated legacy wrapper kept for compatibility.
+    Delegates to the canonical PDF job flow.
     """
-    logger.info(f"Starting PDF generation for audit_id: {audit_id}")
+    logger.warning(
+        "generate_pdf_task is deprecated; delegating to canonical PDF job flow for audit_id=%s",
+        audit_id,
+    )
 
     with get_db_session() as db:
         audit = AuditService.get_audit(db, audit_id)
         if not audit:
             logger.error(f"Audit {audit_id} not found for PDF generation.")
             raise ValueError(f"Audit {audit_id} not found for PDF generation")
+        if report_markdown and not audit.report_markdown:
+            audit.report_markdown = report_markdown
+            db.add(audit)
+            db.commit()
 
-        try:
-            pdf_file_path = PDFService.create_from_audit(
-                audit=audit, markdown_content=report_markdown
-            )
-            pdf_file_size = getattr(audit, "_generated_pdf_size_bytes", None)
-            ReportService.create_report(
-                db=db,
-                audit_id=audit_id,
-                report_type="PDF",
-                file_path=pdf_file_path,
-                file_size=pdf_file_size,
-            )
-            logger.info(f"PDF report for audit {audit_id} registered in the database.")
-        except Exception as e:
-            logger.error(
-                f"Failed to generate PDF for audit {audit_id}: {e}", exc_info=True
-            )
-            try:
-                AuditService.update_audit_progress(
-                    db=db,
-                    audit_id=audit_id,
-                    progress=100,
-                    status=AuditStatus.COMPLETED,
-                    error_message=f"PDF generation failed: {str(e)}",
-                )
-            except Exception as update_error:
-                logger.error(
-                    f"Failed to update audit status after PDF error: {update_error}",
-                    exc_info=True,
-                )
-            raise
+        job = PDFJobService.queue_job(
+            db,
+            audit_id=audit_id,
+            requested_by_user_id=getattr(audit, "user_id", None),
+            force_pagespeed_refresh=False,
+            force_report_refresh=not bool(report_markdown),
+            force_external_intel_refresh=False,
+        )
+
+    return run_pdf_generation_job_task.run(job.id)
 
 
 @celery_app.task(
@@ -666,49 +743,27 @@ def generate_pdf_task(audit_id: int, report_markdown: str):
     time_limit=360,
 )
 def run_pagespeed_task(self, audit_id: int):
-    """Tarea manual para PageSpeed"""
-    logger.info(f"Starting PageSpeed task for audit {audit_id}")
-    try:
-        with get_db_session() as db:
-            audit = AuditService.get_audit(db, audit_id)
-            if not audit:
-                raise ValueError(f"Audit {audit_id} not found")
+    """Deprecated legacy wrapper kept for compatibility."""
+    logger.warning(
+        "run_pagespeed_task is deprecated; delegating to canonical PageSpeed job flow for audit_id=%s",
+        audit_id,
+    )
+    with get_db_session() as db:
+        audit = AuditService.get_audit(db, audit_id)
+        if not audit:
+            raise ValueError(f"Audit {audit_id} not found")
 
-            from app.core.llm_kimi import get_llm_function
-            from app.services.pagespeed_service import PageSpeedService
-            from app.services.pipeline_service import PipelineService
+        job = PageSpeedJobService.queue_if_needed(
+            db,
+            audit=audit,
+            requested_by_user_id=getattr(audit, "user_id", None),
+            strategy="both",
+            force_refresh=True,
+        )
+        if job is None:
+            return {"audit_id": audit_id, "status": "skipped"}
 
-            # Run PageSpeed
-            pagespeed_data = asyncio.run(
-                PageSpeedService.analyze_both_strategies(
-                    url=str(audit.url), api_key=settings.GOOGLE_PAGESPEED_API_KEY
-                )
-            )
-
-            if isinstance(pagespeed_data, Exception):
-                raise pagespeed_data
-
-            # Save Data
-            _save_pagespeed_data(audit_id, pagespeed_data)
-
-            # Generate Analysis
-            llm_function = get_llm_function()
-            ps_analysis = asyncio.run(
-                PipelineService.generate_pagespeed_analysis(
-                    pagespeed_data, llm_function
-                )
-            )
-            if ps_analysis:
-                _save_pagespeed_analysis(audit_id, ps_analysis)
-
-            # Update Audit in DB
-            audit.pagespeed_data = pagespeed_data
-            db.commit()
-            logger.info(f"PageSpeed completed for audit {audit_id}")
-
-    except Exception as e:
-        logger.error(f"Error in PageSpeed task: {e}")
-        raise
+    return run_pagespeed_generation_job_task.run(job.id)
 
 
 def _set_article_batch_task_state(
@@ -765,7 +820,7 @@ def generate_article_batch_task(self, batch_id: int):
             )
 
         with get_db_session() as db:
-            asyncio.run(GeoArticleEngineService.process_batch(db, batch_id))
+            run_worker_coroutine(GeoArticleEngineService.process_batch(db, batch_id))
 
         with get_db_session() as db:
             _set_article_batch_task_state(
@@ -806,268 +861,25 @@ def generate_article_batch_task(self, batch_id: int):
 @celery_app.task(name="generate_full_report_task")
 def generate_full_report_task(audit_id: int):
     """
-    Orchestrator task for generating complete PDF report:
-    1. Runs PageSpeed if missing
-    2. Runs GEO Tools if missing (Keywords, Rankings, Backlinks, Visibility)
-    3. REGENERATES the report markdown with LLM using ALL available data
-    4. Generates the final PDF
+    Deprecated legacy wrapper kept for compatibility.
+    Delegates to the canonical PDF job flow with fresh report/context regeneration.
     """
-    logger.info(f"Starting Full Report Generation for audit {audit_id}")
+    logger.warning(
+        "generate_full_report_task is deprecated; delegating to canonical PDF job flow for audit_id=%s",
+        audit_id,
+    )
+    with get_db_session() as db:
+        audit = AuditService.get_audit(db, audit_id)
+        if not audit:
+            raise ValueError(f"Audit {audit_id} not found")
 
-    try:
-        from urllib.parse import urlparse
+        job = PDFJobService.queue_job(
+            db,
+            audit_id=audit_id,
+            requested_by_user_id=getattr(audit, "user_id", None),
+            force_pagespeed_refresh=True,
+            force_report_refresh=True,
+            force_external_intel_refresh=True,
+        )
 
-        from app.core.llm_kimi import get_llm_function
-        from app.services.backlink_service import BacklinkService
-        from app.services.keyword_service import KeywordService
-        from app.services.llm_visibility_service import LLMVisibilityService
-        from app.services.pagespeed_service import PageSpeedService
-        from app.services.pipeline_service import PipelineService
-        from app.services.rank_tracker_service import RankTrackerService
-
-        llm_function = get_llm_function()
-
-        # Step 1: Run PageSpeed if missing
-        with get_db_session() as db:
-            audit = AuditService.get_audit(db, audit_id)
-            if not audit:
-                raise ValueError(f"Audit {audit_id} not found")
-
-            audit_url = str(audit.url)
-            domain = urlparse(audit_url).netloc.replace("www.", "")
-            brand_name = domain.split(".")[0]
-
-            if not audit.pagespeed_data:
-                logger.info("PageSpeed data missing, running analysis...")
-                pagespeed_data = asyncio.run(
-                    PageSpeedService.analyze_both_strategies(
-                        url=audit_url, api_key=settings.GOOGLE_PAGESPEED_API_KEY
-                    )
-                )
-
-                if pagespeed_data and not isinstance(pagespeed_data, Exception):
-                    _save_pagespeed_data(audit_id, pagespeed_data)
-                    ps_analysis = asyncio.run(
-                        PipelineService.generate_pagespeed_analysis(
-                            pagespeed_data, llm_function
-                        )
-                    )
-                    if ps_analysis:
-                        _save_pagespeed_analysis(audit_id, ps_analysis)
-
-                    audit.pagespeed_data = pagespeed_data
-                    db.commit()
-                    logger.info("PageSpeed data collected.")
-
-        # Step 2: Run GEO Tools if missing
-        with get_db_session() as db:
-            audit = AuditService.get_audit(db, audit_id)
-            audit_url = str(audit.url)
-            domain = urlparse(audit_url).netloc.replace("www.", "")
-            brand_name = domain.split(".")[0]
-
-            category = None
-            if audit.external_intelligence and isinstance(
-                audit.external_intelligence, dict
-            ):
-                category = audit.external_intelligence.get("category")
-
-            keywords = [brand_name]
-            if category:
-                keywords.append(category)
-
-            # Check if we have GEO data
-            has_keywords = (
-                len(audit.keywords) > 0 if hasattr(audit, "keywords") else False
-            )
-            has_rankings = (
-                len(audit.rank_trackings) > 0
-                if hasattr(audit, "rank_trackings")
-                else False
-            )
-            has_backlinks = (
-                len(audit.backlinks) > 0 if hasattr(audit, "backlinks") else False
-            )
-            has_visibility = (
-                len(audit.llm_visibilities) > 0
-                if hasattr(audit, "llm_visibilities")
-                else False
-            )
-
-            if not (has_keywords and has_rankings and has_backlinks and has_visibility):
-                logger.info("GEO data missing, running analysis...")
-
-                async def run_geo_tools():
-                    kw_service = KeywordService(db)
-                    rank_service = RankTrackerService(db)
-                    backlink_service = BacklinkService(db)
-                    visibility_service = LLMVisibilityService(db)
-
-                    if not has_keywords:
-                        await kw_service.research_keywords(
-                            audit_id, domain, [brand_name]
-                        )
-                    if not has_rankings:
-                        await rank_service.track_rankings(audit_id, domain, keywords)
-                    if not has_backlinks:
-                        await backlink_service.analyze_backlinks(audit_id, domain)
-                    if not has_visibility:
-                        await visibility_service.check_visibility(
-                            audit_id, brand_name, keywords
-                        )
-
-                asyncio.run(run_geo_tools())
-                logger.info("GEO data collected.")
-
-        # Step 3: REGENERATE report with LLM using ALL available context
-        with get_db_session() as db:
-            # FORCE refresh of all objects to ensure we see the GEO data from previous step
-            db.expire_all()
-
-            audit = AuditService.get_audit(db, audit_id)
-
-            # Load complete context with ALL data
-            complete_context = AuditService.get_complete_audit_context(db, audit_id)
-
-            # Prepare data for report generation
-            target_audit = audit.target_audit or {}
-            external_intelligence = audit.external_intelligence or {}
-            if not external_intelligence:
-                try:
-                    external_intelligence, _ = asyncio.run(
-                        PipelineService.analyze_external_intelligence(
-                            target_audit,
-                            llm_function=llm_function,
-                            mode="full",
-                            retry_policy={
-                                "max_retries": 1,
-                                "timeout_seconds": settings.AGENT1_LLM_TIMEOUT_SECONDS,
-                            },
-                        )
-                    )
-                    audit.external_intelligence = external_intelligence or {}
-                    category_value = (external_intelligence or {}).get("category")
-                    if isinstance(category_value, dict):
-                        try:
-                            category_value = json.dumps(
-                                category_value, ensure_ascii=False
-                            )
-                        except Exception:
-                            category_value = str(category_value)
-                    if category_value:
-                        audit.category = category_value
-                    db.commit()
-                except Exception as e:
-                    external_intelligence = (
-                        PipelineService._build_unavailable_external_intelligence(
-                            target_audit if isinstance(target_audit, dict) else {},
-                            error_code="AGENT1_UNAVAILABLE",
-                            error_message=str(e),
-                            analysis_mode="full",
-                        )
-                    )
-                    audit.external_intelligence = external_intelligence
-                    db.commit()
-                    logger.warning(
-                        "External intelligence unavailable during PDF generation; "
-                        f"strict unavailable state persisted for audit_id={audit_id}"
-                    )
-            search_results = audit.search_results or {}
-            competitor_audits = audit.competitor_audits or []
-            pagespeed_data = audit.pagespeed_data or {}
-            current_fix_plan = audit.fix_plan or []
-
-            # Get GEO data from context (now already normalized with 'items' key)
-            keywords_data = complete_context.get("keywords", {})
-            backlinks_data = complete_context.get("backlinks", {})
-            rank_tracking_data = complete_context.get("rank_tracking", {})
-            llm_visibility_data = complete_context.get("llm_visibility", {})
-            ai_content_data = complete_context.get("ai_content_suggestions", {})
-
-            logger.info("Regenerating report with full context:")
-            logger.info(f"  - Target Audit: {'OK' if target_audit else 'MISSING'}")
-            logger.info(f"  - PageSpeed: {'OK' if pagespeed_data else 'MISSING'}")
-            logger.info(f"  - Keywords: {len(keywords_data.get('items', []))} items")
-            logger.info(f"  - Backlinks: {len(backlinks_data.get('items', []))} items")
-            logger.info(
-                f"  - Rank Tracking: {len(rank_tracking_data.get('items', []))} items"
-            )
-            logger.info(
-                f"  - LLM Visibility: {len(llm_visibility_data.get('items', []))} items"
-            )
-
-            # Persist all data to disk for consistency and debugging before LLM call
-            # This updates JSON files in the report folder and final_llm_context.json
-            asyncio.run(
-                AuditService._save_audit_files(
-                    audit_id=audit_id,
-                    target_audit=target_audit,
-                    external_intelligence=external_intelligence,
-                    search_results=search_results,
-                    competitor_audits=competitor_audits,
-                    fix_plan=current_fix_plan,
-                    pagespeed_data=pagespeed_data,
-                    keywords=keywords_data.get("items", []),
-                    backlinks=backlinks_data.get("items", []),
-                    rankings=rank_tracking_data.get("items", []),
-                    llm_visibility=llm_visibility_data.get("items", []),
-                )
-            )
-            if settings.AUDIT_LOCAL_ARTIFACTS_ENABLED:
-                logger.info("Audit files persisted to local disk successfully.")
-            else:
-                logger.info(
-                    "Audit local artifact persistence disabled (Supabase-only mode)."
-                )
-
-            # Regenerate report markdown with LLM
-            new_report_markdown, new_fix_plan = asyncio.run(
-                PipelineService.generate_report(
-                    target_audit=target_audit,
-                    external_intelligence=external_intelligence,
-                    search_results=search_results,
-                    competitor_audits=competitor_audits,
-                    pagespeed_data=pagespeed_data,
-                    keywords_data=keywords_data,
-                    backlinks_data=backlinks_data,
-                    rank_tracking_data=rank_tracking_data,
-                    llm_visibility_data=llm_visibility_data,
-                    ai_content_suggestions=ai_content_data,
-                    llm_function=llm_function,
-                )
-            )
-
-            # Update audit with new report
-            if new_report_markdown and len(new_report_markdown) > 200:
-                audit.report_markdown = new_report_markdown
-                # Always update fix_plan if we got a response (even if empty)
-                audit.fix_plan = new_fix_plan if new_fix_plan is not None else []
-                db.commit()
-                logger.info(
-                    f"Report regenerated with full context. Fix plan items: {len(audit.fix_plan)}"
-                )
-            else:
-                logger.warning(
-                    "Report regeneration returned short content, keeping original."
-                )
-
-        # Step 4: Generate PDF
-        with get_db_session() as db:
-            audit = AuditService.get_audit(db, audit_id)
-            logger.info(f"Generating Final PDF for audit {audit_id}")
-            pdf_file_path = PDFService.create_from_audit(
-                audit=audit, markdown_content=audit.report_markdown
-            )
-            pdf_file_size = getattr(audit, "_generated_pdf_size_bytes", None)
-            ReportService.create_report(
-                db=db,
-                audit_id=audit_id,
-                report_type="PDF",
-                file_path=pdf_file_path,
-                file_size=pdf_file_size,
-            )
-            logger.info(f"Final PDF generated: {pdf_file_path}")
-
-    except Exception as e:
-        logger.error(f"Error generating full report: {e}", exc_info=True)
-        raise
+    return run_pdf_generation_job_task.run(job.id)

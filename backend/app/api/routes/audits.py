@@ -1,19 +1,19 @@
-import asyncio
-import uuid
-from datetime import datetime
 from typing import List
 from urllib.parse import urlparse
 
-from app.core.access_control import ensure_audit_access
+from app.core.access_control import ensure_artifact_snapshot_access, ensure_audit_access
 from app.core.auth import AuthUser, get_current_user
 from app.core.config import settings
 from app.core.database import get_db
 from app.core.logger import get_logger
-from app.models import Audit, AuditStatus, Competitor
+from app.models import Audit, AuditPageSpeedJob, AuditStatus, Competitor
 from app.schemas import (
     AuditConfigRequest,
+    AuditArtifactsStatusResponse,
     AuditCreate,
     AuditOverview,
+    AuditPageSpeedStatusResponse,
+    AuditPDFStatusResponse,
     AuditResponse,
     AuditSummary,
     ChatMessage,
@@ -21,11 +21,23 @@ from app.schemas import (
 )
 from app.services.audit_local_service import AuditLocalService
 from app.services.audit_service import AuditService
-from app.services.cache_service import cache
+from app.services.pagespeed_job_service import (
+    DEFAULT_PAGESPEED_RETRY_AFTER_SECONDS,
+    PageSpeedJobService,
+)
 from app.services.competitor_filters import (
     infer_vertical_hint,
     is_valid_competitor_domain,
     normalize_domain,
+)
+from app.services.pdf_job_service import (
+    DEFAULT_PDF_RETRY_AFTER_SECONDS,
+    PDFJobService,
+    _pdf_generation_in_progress,
+    _pdf_generation_tokens,
+    acquire_pdf_generation_lock as _acquire_pdf_generation_lock,
+    pdf_lock_key as _pdf_lock_key,
+    release_pdf_generation_lock as _release_pdf_generation_lock,
 )
 from app.services.pipeline_service import PipelineService
 
@@ -44,95 +56,38 @@ router = APIRouter(
     responses={404: {"description": "No encontrado"}},
 )
 
-_pdf_generation_in_progress: set[int] = set()
-_pdf_generation_tokens: dict[int, str] = {}
-
-
-def _pdf_lock_key(audit_id: int) -> str:
-    return f"pdf_generation_lock:{audit_id}"
-
-
-def _acquire_pdf_generation_lock(audit_id: int) -> tuple[bool, str | None, str | None]:
-    """
-    Acquire PDF lock using Redis (distributed).
-    In production this is fail-closed when Redis is unavailable.
-    Returns (acquired, token, mode["redis"|"local"|"unavailable"]).
-    """
-    token = str(uuid.uuid4())
-    ttl_seconds = max(30, int(settings.PDF_LOCK_TTL_SECONDS or 900))
-
-    if cache.enabled and cache.redis_client:
-        try:
-            acquired = bool(
-                cache.redis_client.set(
-                    _pdf_lock_key(audit_id),
-                    token,
-                    nx=True,
-                    ex=ttl_seconds,
-                )
-            )
-            if acquired:
-                return True, token, "redis"
-            return False, None, "redis"
-        except Exception as exc:
-            if not settings.DEBUG:
-                logger.error(
-                    f"Redis PDF lock unavailable for audit {audit_id}; refusing generation in production: {exc}"
-                )
-                return False, None, "unavailable"
-            logger.warning(
-                f"Redis PDF lock unavailable for audit {audit_id}; falling back to local lock in debug: {exc}"
-            )
-    else:
-        if not settings.DEBUG:
-            logger.error(
-                f"Redis PDF lock disabled for audit {audit_id}; refusing generation in production"
-            )
-            return False, None, "unavailable"
-        logger.warning(
-            f"Redis PDF lock disabled for audit {audit_id}; using local in-memory lock in debug"
-        )
-
-    if audit_id in _pdf_generation_in_progress:
-        return False, None, "local"
-
-    _pdf_generation_in_progress.add(audit_id)
-    _pdf_generation_tokens[audit_id] = token
-    return True, token, "local"
-
-
-def _release_pdf_generation_lock(
-    audit_id: int, token: str | None, mode: str | None
-) -> None:
-    """Release Redis/local PDF lock safely."""
-    if not token or not mode:
-        return
-
-    if mode == "redis":
-        if cache.enabled and cache.redis_client:
-            try:
-                lock_key = _pdf_lock_key(audit_id)
-                current_token = cache.redis_client.get(lock_key)
-                if current_token == token:
-                    cache.redis_client.delete(lock_key)
-            except Exception as exc:
-                logger.warning(
-                    f"Failed to release Redis PDF lock for audit {audit_id}: {exc}"
-                )
-        return
-
-    current_token = _pdf_generation_tokens.get(audit_id)
-    if current_token and current_token != token:
-        logger.warning(
-            f"PDF local lock token mismatch for audit {audit_id}; forcing release"
-        )
-    _pdf_generation_tokens.pop(audit_id, None)
-    _pdf_generation_in_progress.discard(audit_id)
-
 
 def _get_owned_audit(db: Session, audit_id: int, current_user: AuthUser) -> Audit:
     audit = AuditService.get_audit(db, audit_id)
     return ensure_audit_access(audit, current_user)
+
+
+def _artifact_status_retry_after(source: str, active_retry_after_seconds: int) -> int:
+    if source == "redis":
+        return active_retry_after_seconds
+    degraded_retry = max(
+        active_retry_after_seconds,
+        int(getattr(settings, "ARTIFACT_STATUS_DEGRADED_RETRY_AFTER_SECONDS", 10)),
+    )
+    return degraded_retry if active_retry_after_seconds > 0 else 0
+
+
+def _get_owned_artifact_payload(
+    db: Session,
+    audit_id: int,
+    current_user: AuthUser,
+) -> tuple[dict, str]:
+    cached_payload = AuditService.get_cached_artifact_payload(audit_id)
+    if cached_payload is not None:
+        ensure_artifact_snapshot_access(cached_payload, current_user)
+        return cached_payload, "redis"
+
+    rebuilt_payload = AuditService.rebuild_artifact_payload(db, audit_id)
+    if rebuilt_payload is None:
+        raise HTTPException(status_code=404, detail="Auditoría no encontrada")
+
+    ensure_artifact_snapshot_access(rebuilt_payload, current_user)
+    return rebuilt_payload, "db"
 
 
 def _db_unavailable_http_exception(action: str) -> HTTPException:
@@ -157,57 +112,55 @@ def _persist_runtime_diagnostic_safely(
     message: str,
     technical_detail: str | None = None,
 ) -> None:
-    try:
-        AuditService.append_runtime_diagnostic(
-            db,
-            audit_id,
-            source=source,
-            stage=stage,
-            severity=severity,
-            code=code,
-            message=message,
-            technical_detail=technical_detail,
-        )
-    except Exception as diag_err:
-        logger.warning(
-            f"runtime_diagnostic_persist_failed audit_id={audit_id} code={code} error={diag_err}"
-        )
+    PDFJobService.persist_runtime_diagnostic_safely(
+        db,
+        audit_id,
+        source=source,
+        stage=stage,
+        severity=severity,
+        code=code,
+        message=message,
+        technical_detail=technical_detail,
+    )
 
 
 def _persist_generation_warnings(
     db: Session, audit_id: int, warnings: list[str]
 ) -> None:
-    for index, warning in enumerate(warnings or [], start=1):
-        message = " ".join(str(warning or "").split()).strip()
-        if not message:
-            continue
-        _persist_runtime_diagnostic_safely(
-            db,
-            audit_id,
-            source="pdf",
-            stage="generate-pdf",
-            severity="warning",
-            code=f"pdf_generation_warning_{index}",
-            message=message,
-        )
+    PDFJobService.persist_generation_warnings(db, audit_id, warnings)
 
 
 def _runtime_technical_detail(exc: Exception) -> str | None:
-    if isinstance(exc, HTTPException):
-        if isinstance(exc.detail, dict):
-            error_code = exc.detail.get("error_code")
-            if error_code:
-                return f"HTTPException:{error_code}"
-        return f"HTTPException:{exc.status_code}"
-    return type(exc).__name__
+    return PDFJobService.runtime_technical_detail(exc)
 
 
-def _resolve_signed_pdf_download_url(
+def _pdf_requires_pagespeed_refresh(
+    audit: Audit,
+    *,
+    force_pagespeed_refresh: bool,
+    pagespeed_job: AuditPageSpeedJob | None,
+) -> bool:
+    if not settings.ENABLE_PAGESPEED or not settings.GOOGLE_PAGESPEED_API_KEY:
+        return False
+    if force_pagespeed_refresh:
+        return True
+    if pagespeed_job is not None and PageSpeedJobService.has_active_job(pagespeed_job):
+        return True
+    if pagespeed_job is not None and pagespeed_job.status in {"completed", "failed"}:
+        return False
+    return not PageSpeedJobService.has_usable_pagespeed_data(
+        audit,
+        require_complete=True,
+    )
+
+
+async def _resolve_signed_pdf_download_url(
     audit_id: int,
     db: Session,
     current_user: AuthUser,
 ) -> tuple[str, str]:
     from app.models import Report
+    from app.services.pdf_service import PDFService
     from app.services.supabase_service import SupabaseService
 
     try:
@@ -232,15 +185,14 @@ def _resolve_signed_pdf_download_url(
                 detail="El archivo PDF no existe. Por favor, genera el PDF primero usando POST /api/v1/audits/{audit_id}/generate-pdf",
             )
 
-        pdf_path = str(pdf_report.file_path)
-        if not pdf_path.startswith("supabase://"):
-            raise HTTPException(
-                status_code=409,
-                detail=(
-                    "Legacy local PDF paths are disabled in Supabase-only mode. "
-                    "Regenera el PDF para almacenarlo en Supabase."
-                ),
+        if not str(pdf_report.file_path).startswith("supabase://"):
+            pdf_report = await PDFService.ensure_supabase_pdf_report(
+                db=db,
+                audit=audit,
+                report=pdf_report,
             )
+
+        pdf_path = str(pdf_report.file_path)
     except HTTPException:
         raise
     except (OperationalError, DBAPIError) as db_err:
@@ -488,6 +440,8 @@ def get_audit_overview(
     Get a production-friendly overview payload for the audit detail shell.
     Excludes heavy JSON blobs such as target_audit, report_markdown, and fix_plan.
     """
+    from app.services.audit_service import CompetitorService
+
     audit = _get_owned_audit(db, audit_id, current_user)
 
     fix_plan = audit.fix_plan if isinstance(audit.fix_plan, list) else []
@@ -496,11 +450,20 @@ def get_audit_overview(
         if isinstance(audit.external_intelligence, dict)
         else None
     )
+    pagespeed_job = PageSpeedJobService.get_job(db, audit_id)
+    pdf_job = PDFJobService.get_job(db, audit_id)
+    latest_pdf_report = PDFJobService.get_latest_pdf_report(db, audit_id)
     competitor_count = (
         db.query(Competitor).filter(Competitor.audit_id == audit_id).count()
     )
     if competitor_count <= 0:
-        competitor_count = len(audit.competitor_audits or [])
+        competitor_count = len(
+            [
+                comp
+                for comp in (audit.competitor_audits or [])
+                if CompetitorService.is_benchmark_available_competitor(comp)
+            ]
+        )
     return AuditOverview(
         id=audit.id,
         url=audit.url,
@@ -531,7 +494,13 @@ def get_audit_overview(
         fix_plan_count=len(fix_plan),
         report_ready=bool(audit.report_markdown),
         pagespeed_available=bool(audit.pagespeed_data),
-        pdf_available=bool(getattr(audit, "report_pdf_path", None)),
+        pagespeed_status=(pagespeed_job.status if pagespeed_job else None),
+        pagespeed_warnings=PageSpeedJobService.normalize_warnings(
+            getattr(pagespeed_job, "warnings", [])
+        ),
+        pdf_available=bool(latest_pdf_report and latest_pdf_report.file_path),
+        pdf_status=(pdf_job.status if pdf_job else None),
+        pdf_warnings=PDFJobService.normalize_warnings(getattr(pdf_job, "warnings", [])),
         external_intelligence=external_intelligence,
     )
 
@@ -566,28 +535,6 @@ def get_audit(
     Frontend should display "Generate PDF" for full analysis.
     """
     audit = _get_owned_audit(db, audit_id, current_user)
-
-    # Recalcular GEO score si hay datos suficientes (evita valores falsos)
-    if isinstance(audit.target_audit, dict):
-        try:
-            from app.services.audit_service import CompetitorService
-
-            recalculated = CompetitorService._calculate_geo_score(audit.target_audit)
-            if recalculated is not None:
-                if (
-                    audit.geo_score is None or audit.geo_score <= 0
-                ) and recalculated >= 0:
-                    audit.geo_score = recalculated
-                    db.commit()
-                elif recalculated > 0 and audit.geo_score != recalculated:
-                    # Actualiza si la nueva métrica es más precisa
-                    audit.geo_score = recalculated
-                    db.commit()
-        except Exception as e:
-            logger.warning(
-                f"No se pudo recalcular GEO score para audit {audit_id}: {e}"
-            )
-
     return audit
 
 
@@ -815,15 +762,22 @@ def get_competitors(
             if not _is_valid_domain(comp.url or comp.domain or ""):
                 continue
             audit_data = comp.audit_data or {}
-            geo_score = (
-                CompetitorService._calculate_geo_score(audit_data)
-                if audit_data
-                else (comp.geo_score or 0)
+            if not CompetitorService.is_benchmark_available_competitor(audit_data):
+                continue
+            normalized_comp = CompetitorService.normalize_competitor_audit_payload(
+                audit_data
             )
-            if geo_score == 0 and comp.geo_score:
-                geo_score = comp.geo_score
+            geo_score = normalized_comp.get("geo_score", comp.geo_score or 0)
             formatted = CompetitorService._format_competitor_data(
-                audit_data, geo_score, comp.url
+                normalized_comp,
+                geo_score,
+                comp.url,
+                score_meta=(
+                    normalized_comp.get("benchmark")
+                    if isinstance(normalized_comp.get("benchmark"), dict)
+                    else None
+                ),
+                benchmark_available=True,
             )
             result.append(formatted)
             if len(result) >= safe_limit:
@@ -838,10 +792,20 @@ def get_competitors(
         if isinstance(comp, dict):
             if not _is_valid_domain(comp.get("url") or comp.get("domain") or ""):
                 continue
-            geo_score = CompetitorService._calculate_geo_score(comp)
-            if geo_score == 0:
-                geo_score = comp.get("geo_score", 0) or 0
-            formatted = CompetitorService._format_competitor_data(comp, geo_score)
+            if not CompetitorService.is_benchmark_available_competitor(comp):
+                continue
+            normalized_comp = CompetitorService.normalize_competitor_audit_payload(comp)
+            geo_score = normalized_comp.get("geo_score", 0) or 0
+            formatted = CompetitorService._format_competitor_data(
+                normalized_comp,
+                geo_score,
+                score_meta=(
+                    normalized_comp.get("benchmark")
+                    if isinstance(normalized_comp.get("benchmark"), dict)
+                    else None
+                ),
+                benchmark_available=True,
+            )
             result.append(formatted)
             if len(result) >= safe_limit:
                 break
@@ -900,86 +864,86 @@ def get_competitors(
 async def run_pagespeed_analysis(
     audit_id: int,
     strategy: str = "both",
+    force_refresh: bool = False,
     db: Session = Depends(get_db),
     current_user: AuthUser = Depends(get_current_user),
 ):
     """
-    Manually trigger PageSpeed analysis and return COMPLETE data.
-
-    This endpoint is called when user clicks "Run PageSpeed" button.
-    Returns the full PageSpeed Insights output with all metrics, opportunities,
-    diagnostics, accessibility, SEO, and best practices audits.
-
-    Args:
-        audit_id: Audit ID
-        strategy: "mobile", "desktop", or "both" (default)
-
-    Returns:
-        Complete PageSpeed data structure with all fields
+    Queue or reuse the canonical PageSpeed job for an audit.
     """
-    from app.services.pagespeed_service import PageSpeedService
-
     audit = _get_owned_audit(db, audit_id, current_user)
+    if audit.status != AuditStatus.COMPLETED:
+        raise HTTPException(
+            status_code=400,
+            detail=f"La auditoría debe estar completada. Estado actual: {audit.status.value}",
+        )
 
     try:
-        logger.info(
-            f"Manual PageSpeed analysis triggered for audit {audit_id}, strategy: {strategy}"
+        existing_job = PageSpeedJobService.get_job(db, audit.id)
+        if PageSpeedJobService.has_active_job(existing_job):
+            response = PageSpeedJobService.build_status_response(
+                audit=audit,
+                job=existing_job,
+                retry_after_seconds=DEFAULT_PAGESPEED_RETRY_AFTER_SECONDS,
+                message="PageSpeed analysis is already in progress for this audit.",
+            )
+            return JSONResponse(status_code=202, content=response.model_dump(mode="json"))
+
+        if (
+            not force_refresh
+            and PageSpeedJobService.has_usable_pagespeed_data(
+                audit,
+                require_complete=(strategy == "both"),
+            )
+        ):
+            response = PageSpeedJobService.build_status_response(
+                audit=audit,
+                job=existing_job if existing_job and existing_job.status == "completed" else None,
+                message="Existing PageSpeed data is already available.",
+            )
+            return JSONResponse(status_code=200, content=response.model_dump(mode="json"))
+
+        job = PageSpeedJobService.queue_job(
+            db,
+            audit=audit,
+            requested_by_user_id=current_user.user_id,
+            strategy=strategy,
+            force_refresh=force_refresh,
         )
-        logger.info(f"Audit URL: {audit.url}")
-        logger.info(f"API Key present: {bool(settings.GOOGLE_PAGESPEED_API_KEY)}")
-
-        if strategy == "both":
-            # Run both strategies
-            logger.info("Running mobile analysis...")
-            mobile = await PageSpeedService.analyze_url(
-                url=str(audit.url),
-                api_key=settings.GOOGLE_PAGESPEED_API_KEY,
-                strategy="mobile",
+        try:
+            job = PageSpeedJobService.enqueue_job_task(db, audit, job)
+        except Exception as exc:
+            logger.error(
+                "pagespeed_queue_failed audit_id=%s job_id=%s error=%s",
+                audit.id,
+                job.id,
+                exc,
             )
-            logger.info(
-                f"Mobile analysis completed. Keys: {list(mobile.keys()) if mobile else 'None'}"
+            error_code, error_message = PageSpeedJobService.classify_error(exc)
+            PageSpeedJobService.mark_job_failed(
+                db,
+                audit,
+                job,
+                error_code="worker_unavailable",
+                error_message=error_message or error_code,
             )
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail={
+                    "error_code": "worker_unavailable",
+                    "message": "Background worker unavailable. Try again shortly.",
+                },
+            ) from exc
 
-            # Reduced sleep if API key is present
-            sleep_time = 0.5 if settings.GOOGLE_PAGESPEED_API_KEY else 3
-            await asyncio.sleep(sleep_time)
-
-            logger.info("Running desktop analysis...")
-            desktop = await PageSpeedService.analyze_url(
-                url=str(audit.url),
-                api_key=settings.GOOGLE_PAGESPEED_API_KEY,
-                strategy="desktop",
-            )
-            logger.info(
-                f"Desktop analysis completed. Keys: {list(desktop.keys()) if desktop else 'None'}"
-            )
-            pagespeed_data = {"mobile": mobile, "desktop": desktop}
-        else:
-            # Run single strategy
-            logger.info(f"Running {strategy} analysis...")
-            result = await PageSpeedService.analyze_url(
-                url=str(audit.url),
-                api_key=settings.GOOGLE_PAGESPEED_API_KEY,
-                strategy=strategy,
-            )
-            logger.info(
-                f"{strategy.capitalize()} analysis completed. Keys: {list(result.keys()) if result else 'None'}"
-            )
-            pagespeed_data = {strategy: result}
-
-        # Store complete data in database
-        logger.info("Storing PageSpeed data in database...")
-        AuditService.set_pagespeed_data(db, audit_id, pagespeed_data)
-
-        logger.info(f"PageSpeed analysis completed for audit {audit_id}")
-
-        # Return COMPLETE data to frontend
-        return {
-            "success": True,
-            "data": pagespeed_data,  # Full structure with all fields
-            "message": "PageSpeed analysis completed",
-            "strategies_analyzed": list(pagespeed_data.keys()),
-        }
+        response = PageSpeedJobService.build_status_response(
+            audit=audit,
+            job=job,
+            retry_after_seconds=DEFAULT_PAGESPEED_RETRY_AFTER_SECONDS,
+            message="PageSpeed analysis queued successfully.",
+        )
+        return JSONResponse(status_code=202, content=response.model_dump(mode="json"))
+    except HTTPException:
+        raise
     except Exception as exc:
         logger.error(f"PageSpeed analysis failed for audit {audit_id}", exc_info=True)
         _persist_runtime_diagnostic_safely(
@@ -997,13 +961,90 @@ async def run_pagespeed_analysis(
         raise HTTPException(status_code=500, detail="Internal server error")
 
 
-@router.post("/{audit_id}/generate-pdf")
+@router.get("/{audit_id}/pdf-status", response_model=AuditPDFStatusResponse)
+async def get_audit_pdf_status(
+    audit_id: int,
+    db: Session = Depends(get_db),
+    current_user: AuthUser = Depends(get_current_user),
+):
+    try:
+        artifact_payload, source = _get_owned_artifact_payload(
+            db, audit_id, current_user
+        )
+    except (OperationalError, DBAPIError) as db_err:
+        logger.error(
+            "pdf_status_db_failed audit_id=%s error_code=db_unavailable error=%s",
+            audit_id,
+            db_err,
+        )
+        raise _db_unavailable_http_exception("pdf_status_lookup") from db_err
+
+    payload = dict(artifact_payload)
+    payload["pdf_retry_after_seconds"] = _artifact_status_retry_after(
+        source,
+        int(payload.get("pdf_retry_after_seconds") or 0),
+    )
+    message = (
+        None
+        if source == "redis"
+        else "Artifact status served from database fallback while Redis snapshot is unavailable."
+    )
+    return PDFJobService.build_status_response_from_artifact_payload(
+        payload,
+        message=message,
+    )
+
+
+@router.get("/{audit_id}/artifacts-status", response_model=AuditArtifactsStatusResponse)
+async def get_audit_artifacts_status(
+    audit_id: int,
+    db: Session = Depends(get_db),
+    current_user: AuthUser = Depends(get_current_user),
+):
+    try:
+        artifact_payload, source = _get_owned_artifact_payload(
+            db, audit_id, current_user
+        )
+    except (OperationalError, DBAPIError) as db_err:
+        logger.error(
+            "artifacts_status_db_failed audit_id=%s error_code=db_unavailable error=%s",
+            audit_id,
+            db_err,
+        )
+        raise _db_unavailable_http_exception("artifacts_status_lookup") from db_err
+
+    payload = AuditService.public_artifact_payload(artifact_payload) or {
+        "audit_id": audit_id
+    }
+    degraded_message = (
+        "Artifact status served from database fallback while Redis snapshot is unavailable."
+        if source != "redis"
+        else None
+    )
+    payload["pdf_retry_after_seconds"] = _artifact_status_retry_after(
+        source,
+        int(payload.get("pdf_retry_after_seconds") or 0),
+    )
+    payload["pagespeed_retry_after_seconds"] = _artifact_status_retry_after(
+        source,
+        int(payload.get("pagespeed_retry_after_seconds") or 0),
+    )
+    payload["pdf_message"] = payload.get("pdf_message") or degraded_message
+    payload["pagespeed_message"] = (
+        payload.get("pagespeed_message") or degraded_message
+    )
+    return AuditArtifactsStatusResponse.model_validate(payload)
+
+
+@router.post(
+    "/{audit_id}/generate-pdf",
+    response_model=AuditPDFStatusResponse,
+)
 async def generate_audit_pdf(
     audit_id: int,
     force_pagespeed_refresh: bool = False,
     force_report_refresh: bool = False,
     force_external_intel_refresh: bool = False,
-    background_tasks: BackgroundTasks = None,
     db: Session = Depends(get_db),
     current_user: AuthUser = Depends(get_current_user),
 ):
@@ -1025,9 +1066,6 @@ async def generate_audit_pdf(
     - LLM visibility
     - AI content suggestions
     """
-    from app.models import Report
-    from app.services.pdf_service import PDFService
-
     try:
         audit = _get_owned_audit(db, audit_id, current_user)
         if audit.status != AuditStatus.COMPLETED:
@@ -1043,158 +1081,191 @@ async def generate_audit_pdf(
         )
         raise _db_unavailable_http_exception("generate_pdf_precheck") from db_err
 
-    lock_token: str | None = None
-    lock_mode: str | None = None
-
-    acquired_lock, lock_token, lock_mode = _acquire_pdf_generation_lock(audit_id)
-    if not acquired_lock:
-        if lock_mode == "unavailable":
-            return JSONResponse(
-                status_code=503,
-                content={
-                    "success": False,
-                    "generation_in_progress": False,
-                    "message": (
-                        "Distributed PDF lock backend is unavailable. "
-                        "Redis is required to generate PDFs in production."
-                    ),
-                },
-            )
-        return JSONResponse(
-            status_code=409,
-            content={
-                "success": False,
-                "generation_in_progress": True,
-                "retry_after_seconds": 10,
-                "message": "PDF generation is already in progress for this audit.",
-            },
-        )
-
     try:
-        logger.info(
-            f"=== Starting PDF generation with auto-PageSpeed for audit {audit_id} ==="
+        existing_report = PDFJobService.get_latest_pdf_report(db, audit.id)
+        existing_job = PDFJobService.get_job(db, audit.id)
+        existing_pagespeed_job = PageSpeedJobService.get_job(db, audit.id)
+        needs_pagespeed = _pdf_requires_pagespeed_refresh(
+            audit,
+            force_pagespeed_refresh=force_pagespeed_refresh,
+            pagespeed_job=existing_pagespeed_job,
         )
 
-        # Generate PDF with complete context (includes auto-PageSpeed trigger)
-        generation_result = await PDFService.generate_pdf_with_complete_context(
-            db=db,
-            audit_id=audit_id,
+        if (
+            existing_report
+            and existing_report.file_path
+            and not force_pagespeed_refresh
+            and not force_report_refresh
+            and not force_external_intel_refresh
+            and not PDFJobService.has_active_job(existing_job)
+            and not needs_pagespeed
+        ):
+            response = PDFJobService.build_status_response(
+                audit_id=audit.id,
+                job=None,
+                report=existing_report,
+                message="Existing PDF is already available.",
+            )
+            return JSONResponse(status_code=200, content=response.model_dump(mode="json"))
+
+        if PDFJobService.has_active_job(existing_job):
+            response = PDFJobService.build_status_response(
+                audit_id=audit.id,
+                job=existing_job,
+                report=None,
+                retry_after_seconds=DEFAULT_PDF_RETRY_AFTER_SECONDS,
+                message="PDF generation is already in progress for this audit.",
+            )
+            return JSONResponse(status_code=202, content=response.model_dump(mode="json"))
+
+        if needs_pagespeed:
+            queued_pagespeed_job = PageSpeedJobService.queue_if_needed(
+                db,
+                audit=audit,
+                requested_by_user_id=current_user.user_id,
+                strategy="both",
+                force_refresh=force_pagespeed_refresh,
+            )
+            current_pagespeed_job = PageSpeedJobService.get_job(db, audit.id)
+            if (
+                current_pagespeed_job
+                and PageSpeedJobService.has_active_job(current_pagespeed_job)
+            ):
+                job = PDFJobService.queue_job(
+                    db,
+                    audit_id=audit.id,
+                    requested_by_user_id=current_user.user_id,
+                    force_pagespeed_refresh=force_pagespeed_refresh,
+                    force_report_refresh=force_report_refresh,
+                    force_external_intel_refresh=force_external_intel_refresh,
+                )
+                job = PDFJobService.mark_job_waiting(
+                    db,
+                    job,
+                    waiting_on="pagespeed",
+                    dependency_job_id=current_pagespeed_job.id,
+                )
+                PDFJobService.publish_status_event(db, audit, job=job)
+                response = PDFJobService.build_status_response(
+                    audit_id=audit.id,
+                    job=job,
+                    report=None,
+                    retry_after_seconds=DEFAULT_PDF_RETRY_AFTER_SECONDS,
+                    message=(
+                        "PDF generation is waiting for the active PageSpeed refresh to finish."
+                    ),
+                )
+                return JSONResponse(
+                    status_code=202,
+                    content=response.model_dump(mode="json"),
+                )
+
+            if queued_pagespeed_job is None and existing_pagespeed_job is not None:
+                db.refresh(audit)
+
+        job = PDFJobService.queue_job(
+            db,
+            audit_id=audit.id,
+            requested_by_user_id=current_user.user_id,
             force_pagespeed_refresh=force_pagespeed_refresh,
             force_report_refresh=force_report_refresh,
             force_external_intel_refresh=force_external_intel_refresh,
-            return_details=True,
         )
-        pdf_path = generation_result.get("pdf_path")
-        if not pdf_path:
-            raise Exception("PDF generation failed - missing path")
-        is_supabase_path = str(pdf_path).startswith("supabase://")
-        if not is_supabase_path:
-            raise Exception(
-                "PDF generation failed - expected Supabase storage path (supabase://...)."
-            )
 
-        file_size_raw = generation_result.get("file_size")
         try:
-            file_size = int(file_size_raw) if file_size_raw is not None else None
-        except (TypeError, ValueError):
-            file_size = None
-
-        # Save PDF path to Report table
-        existing_report = (
-            db.query(Report)
-            .filter(Report.audit_id == audit_id, Report.report_type == "PDF")
-            .first()
-        )
-
-        if existing_report:
-            # Update existing report
-            existing_report.file_path = pdf_path
-            existing_report.file_size = file_size
-            existing_report.created_at = datetime.now()
-            logger.info("Updated existing PDF report entry")
-        else:
-            # Create new report entry
-            pdf_report = Report(
-                audit_id=audit_id,
-                report_type="PDF",
-                file_path=pdf_path,
-                file_size=file_size,
+            job = PDFJobService.enqueue_job_task(db, audit, job)
+        except Exception as exc:
+            logger.error(
+                "generate_pdf_queue_failed audit_id=%s job_id=%s error=%s",
+                audit.id,
+                job.id,
+                exc,
             )
-            db.add(pdf_report)
-            logger.info("Created new PDF report entry")
-
-        db.commit()
-
-        # Refresh audit to get updated pagespeed_data
-        db.refresh(audit)
-        _persist_generation_warnings(
-            db,
-            audit_id,
-            generation_result.get("generation_warnings", []),
-        )
-
-        logger.info("=== PDF generation completed successfully ===")
-        logger.info(f"PDF saved at: {pdf_path}")
-        logger.info(f"PDF size: {file_size} bytes")
-
-        return {
-            "success": True,
-            "pdf_path": pdf_path,
-            "message": "PDF generated successfully with PageSpeed data",
-            "pagespeed_included": bool(audit.pagespeed_data),
-            "file_size": file_size,
-            "report_cache_hit": bool(generation_result.get("report_cache_hit")),
-            "report_regenerated": bool(generation_result.get("report_regenerated")),
-            "report_persisted": bool(generation_result.get("report_persisted")),
-            "generation_mode": generation_result.get("generation_mode", "unknown"),
-            "external_intel_refreshed": bool(
-                generation_result.get("external_intel_refreshed")
-            ),
-            "external_intel_refresh_reason": generation_result.get(
-                "external_intel_refresh_reason", "not_needed"
-            ),
-            "missing_context": generation_result.get("missing_context", []),
-            "generation_warnings": generation_result.get("generation_warnings", []),
-        }
-
-    except HTTPException as exc:
-        if exc.status_code >= 500:
-            _persist_runtime_diagnostic_safely(
+            error_code, error_message = PDFJobService.classify_error(exc)
+            PDFJobService.mark_job_failed(
                 db,
-                audit_id,
-                source="pdf",
-                stage="generate-pdf",
-                severity="error",
-                code="pdf_generation_http_error",
-                message="PDF generation failed before the report could be delivered.",
-                technical_detail=_runtime_technical_detail(exc),
+                job,
+                error_code="worker_unavailable",
+                error_message=error_message,
             )
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail={
+                    "error_code": "worker_unavailable",
+                    "message": "Background worker unavailable. Try again shortly.",
+                },
+            ) from exc
+
+        response = PDFJobService.build_status_response(
+            audit_id=audit.id,
+            job=job,
+            report=None,
+            retry_after_seconds=DEFAULT_PDF_RETRY_AFTER_SECONDS,
+            message="PDF generation queued successfully.",
+        )
+        return JSONResponse(status_code=202, content=response.model_dump(mode="json"))
+    except HTTPException:
         raise
     except (OperationalError, DBAPIError) as db_err:
         logger.error(
-            f"generate_pdf_db_failed audit_id={audit_id} error_code=db_unavailable error={db_err}"
+            "generate_pdf_db_failed audit_id=%s error_code=db_unavailable error=%s",
+            audit_id,
+            db_err,
         )
         raise _db_unavailable_http_exception("generate_pdf_persist") from db_err
     except Exception as exc:
-        logger.error(f"=== Error generating PDF for audit {audit_id} ===")
-        logger.exception("Error generating PDF")
+        logger.exception("Error queueing PDF generation for audit %s", audit_id)
         _persist_runtime_diagnostic_safely(
             db,
             audit_id,
             source="pdf",
             stage="generate-pdf",
             severity="error",
-            code="pdf_generation_failed",
-            message="PDF generation failed before the report could be delivered.",
+            code="pdf_queue_failed",
+            message="PDF generation could not be queued.",
             technical_detail=_runtime_technical_detail(exc),
         )
+        if isinstance(exc, HTTPException):
+            raise exc
         raise HTTPException(status_code=500, detail="Internal server error")
-    finally:
-        _release_pdf_generation_lock(audit_id, lock_token, lock_mode)
+
+
+@router.get("/{audit_id}/pagespeed-status", response_model=AuditPageSpeedStatusResponse)
+async def get_audit_pagespeed_status(
+    audit_id: int,
+    db: Session = Depends(get_db),
+    current_user: AuthUser = Depends(get_current_user),
+):
+    try:
+        artifact_payload, source = _get_owned_artifact_payload(
+            db, audit_id, current_user
+        )
+    except (OperationalError, DBAPIError) as db_err:
+        logger.error(
+            "pagespeed_status_db_failed audit_id=%s error_code=db_unavailable error=%s",
+            audit_id,
+            db_err,
+        )
+        raise _db_unavailable_http_exception("pagespeed_status_lookup") from db_err
+
+    payload = dict(artifact_payload)
+    payload["pagespeed_retry_after_seconds"] = _artifact_status_retry_after(
+        source,
+        int(payload.get("pagespeed_retry_after_seconds") or 0),
+    )
+    message = (
+        None
+        if source == "redis"
+        else "Artifact status served from database fallback while Redis snapshot is unavailable."
+    )
+    return PageSpeedJobService.build_status_response_from_artifact_payload(
+        payload,
+        message=message,
+    )
 
 
 @router.get("/{audit_id}/download-pdf")
-def download_audit_pdf(
+async def download_audit_pdf(
     audit_id: int,
     db: Session = Depends(get_db),
     current_user: AuthUser = Depends(get_current_user),
@@ -1203,7 +1274,7 @@ def download_audit_pdf(
     Descarga el PDF de una auditoría completada.
     Si el PDF no existe, sugiere generarlo primero.
     """
-    signed_url, storage_path = _resolve_signed_pdf_download_url(
+    signed_url, storage_path = await _resolve_signed_pdf_download_url(
         audit_id=audit_id,
         db=db,
         current_user=current_user,
@@ -1215,12 +1286,12 @@ def download_audit_pdf(
 
 
 @router.get("/{audit_id}/download-pdf-url", response_model=PDFDownloadUrlResponse)
-def get_audit_pdf_download_url(
+async def get_audit_pdf_download_url(
     audit_id: int,
     db: Session = Depends(get_db),
     current_user: AuthUser = Depends(get_current_user),
 ):
-    signed_url, storage_path = _resolve_signed_pdf_download_url(
+    signed_url, storage_path = await _resolve_signed_pdf_download_url(
         audit_id=audit_id,
         db=db,
         current_user=current_user,

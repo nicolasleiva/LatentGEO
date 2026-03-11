@@ -1,10 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Loader2, MapPin, Monitor, TrendingUp } from "lucide-react";
 
 import { Header } from "@/components/header";
 import { api } from "@/lib/api-client";
+import { formatStableDateTime } from "@/lib/dates";
 import type { RankTracking } from "@/lib/types";
 import {
   Card,
@@ -27,24 +28,129 @@ import {
 
 type RankTrackingPageClientProps = {
   auditId: string;
-  initialDomain: string;
-  initialKeywords: string;
-  initialRankings: RankTracking[];
+  initialDomain?: string;
+  initialKeywords?: string;
+  initialRankings?: RankTracking[];
+};
+
+type RankTopResult = {
+  position?: number;
+  domain?: string;
+  title?: string;
+  url?: string;
+};
+
+type RankTrackingWithTopResults = RankTracking & {
+  top_results?: RankTopResult[];
+};
+
+const compareIsoDesc = (left?: string, right?: string) => {
+  const leftTime = left ? Date.parse(left) : Number.NaN;
+  const rightTime = right ? Date.parse(right) : Number.NaN;
+  const normalizedLeft = Number.isFinite(leftTime) ? leftTime : Number.MIN_SAFE_INTEGER;
+  const normalizedRight = Number.isFinite(rightTime)
+    ? rightTime
+    : Number.MIN_SAFE_INTEGER;
+  return normalizedRight - normalizedLeft;
+};
+
+const sortTopResults = (results?: RankTopResult[]): RankTopResult[] => {
+  if (!Array.isArray(results)) return [];
+  return [...results].sort((left, right) => {
+    const leftPosition =
+      typeof left.position === "number" ? left.position : Number.MAX_SAFE_INTEGER;
+    const rightPosition =
+      typeof right.position === "number"
+        ? right.position
+        : Number.MAX_SAFE_INTEGER;
+    return leftPosition - rightPosition;
+  });
+};
+
+const normalizeRanking = (
+  ranking: RankTracking,
+): RankTrackingWithTopResults => {
+  const candidate = ranking as RankTrackingWithTopResults;
+  return {
+    ...candidate,
+    top_results: sortTopResults(candidate.top_results),
+  };
+};
+
+const sortRankings = (
+  items: RankTracking[],
+): RankTrackingWithTopResults[] => {
+  return items.map(normalizeRanking).sort((left, right) => {
+    const trackedAtOrder = compareIsoDesc(left.tracked_at, right.tracked_at);
+    if (trackedAtOrder !== 0) return trackedAtOrder;
+    if (left.id !== right.id) return right.id - left.id;
+    return left.keyword.localeCompare(right.keyword);
+  });
 };
 
 export default function RankTrackingPageClient({
   auditId,
-  initialDomain,
-  initialKeywords,
-  initialRankings,
+  initialDomain = "",
+  initialKeywords = "",
+  initialRankings = [],
 }: RankTrackingPageClientProps) {
   const [form, setForm] = useState({
     domain: initialDomain,
     keywords: initialKeywords,
   });
   const [status, setStatus] = useState({ loading: false, error: "" });
-  const [rankings, setRankings] = useState<RankTracking[]>(initialRankings);
+  const [rankings, setRankings] = useState<RankTrackingWithTopResults[]>(() =>
+    sortRankings(initialRankings),
+  );
   const [expandedRows, setExpandedRows] = useState<Set<number>>(new Set());
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadInitialState = async () => {
+      try {
+        const [nextRankings, audit] = await Promise.all([
+          api.getRankings(auditId),
+          api.getAudit(auditId),
+        ]);
+        if (cancelled) return;
+
+        const auditUrl = typeof audit?.url === "string" ? audit.url : "";
+        let hostname = "";
+        try {
+          hostname = auditUrl ? new URL(auditUrl).hostname : "";
+        } catch {
+          hostname = "";
+        }
+
+        const suggestedKeywords: string[] = [];
+        if (hostname) {
+          suggestedKeywords.push(hostname.replace(/^www\./, "").split(".")[0]);
+        }
+        if (typeof audit?.category === "string" && audit.category.trim()) {
+          suggestedKeywords.push(audit.category.toLowerCase());
+        }
+        const h1 = audit?.target_audit?.content?.h1;
+        if (typeof h1 === "string" && h1.trim()) {
+          suggestedKeywords.push(h1.toLowerCase());
+        }
+
+        setForm({
+          domain: hostname,
+          keywords: Array.from(new Set(suggestedKeywords)).slice(0, 5).join(", "),
+        });
+        setRankings(sortRankings(nextRankings));
+      } catch {
+        if (cancelled) return;
+      }
+    };
+
+    void loadInitialState();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [auditId]);
 
   const toggleExpand = (rankId: number) => {
     setExpandedRows((current) => {
@@ -80,7 +186,7 @@ export default function RankTrackingPageClient({
         normalizedDomain,
         keywordList,
       );
-      setRankings((previous) => [...newRankings, ...previous]);
+      setRankings((previous) => sortRankings([...newRankings, ...previous]));
     } catch {
       setStatus({
         loading: false,
@@ -247,13 +353,12 @@ export default function RankTrackingPageClient({
                       </Badge>
                     </TableCell>
                     <TableCell>
-                      {(rank as any).top_results &&
-                      (rank as any).top_results.length > 0 ? (
+                      {rank.top_results && rank.top_results.length > 0 ? (
                         <div className="space-y-1">
                           {(expandedRows.has(rank.id)
-                            ? (rank as any).top_results
-                            : (rank as any).top_results.slice(0, 3)
-                          ).map((result: any) => (
+                            ? rank.top_results
+                            : rank.top_results.slice(0, 3)
+                          ).map((result) => (
                             <div
                               key={
                                 result.url ||
@@ -271,7 +376,7 @@ export default function RankTrackingPageClient({
                               </span>
                             </div>
                           ))}
-                          {(rank as any).top_results.length > 3 ? (
+                          {rank.top_results.length > 3 ? (
                             <Badge
                               variant="secondary"
                               className="cursor-pointer text-xs hover:bg-secondary/80"
@@ -279,7 +384,7 @@ export default function RankTrackingPageClient({
                             >
                               {expandedRows.has(rank.id)
                                 ? "Show less"
-                                : `+${(rank as any).top_results.length - 3} more`}
+                                : `+${rank.top_results.length - 3} more`}
                             </Badge>
                           ) : null}
                         </div>
@@ -290,7 +395,7 @@ export default function RankTrackingPageClient({
                       )}
                     </TableCell>
                     <TableCell className="text-sm text-muted-foreground">
-                      {new Date(rank.tracked_at).toLocaleString()}
+                      {formatStableDateTime(rank.tracked_at)}
                     </TableCell>
                   </TableRow>
                 ))}

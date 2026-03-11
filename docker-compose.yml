@@ -39,6 +39,28 @@ services:
     networks:
       - auditor_network
 
+  migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: auditor_migrate
+    command: python -m app.scripts.run_migrations
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      DB_POOL_SIZE: ${DB_POOL_SIZE:-5}
+      DB_MAX_OVERFLOW: ${DB_MAX_OVERFLOW:-5}
+      DB_POOL_TIMEOUT: ${DB_POOL_TIMEOUT:-15}
+      DB_POOL_RECYCLE: ${DB_POOL_RECYCLE:-900}
+      DB_CONNECT_TIMEOUT_SECONDS: ${DB_CONNECT_TIMEOUT_SECONDS:-5}
+      DB_POOL_PRE_PING: ${DB_POOL_PRE_PING:-true}
+      ENVIRONMENT: ${DOCKER_ENVIRONMENT:-docker-local}
+      PYTHONUNBUFFERED: "1"
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - auditor_network
+
   # Backend FastAPI
   backend:
     build:
@@ -53,7 +75,7 @@ services:
       DB_POOL_RECYCLE: ${DB_POOL_RECYCLE:-900}
       DB_CONNECT_TIMEOUT_SECONDS: ${DB_CONNECT_TIMEOUT_SECONDS:-5}
       DB_POOL_PRE_PING: ${DB_POOL_PRE_PING:-true}
-      WEB_CONCURRENCY: ${WEB_CONCURRENCY:-2}
+      WEB_CONCURRENCY: ${WEB_CONCURRENCY:-1}
       REDIS_URL: ${REDIS_URL}
       CELERY_BROKER_URL: ${CELERY_BROKER_URL}
       CELERY_RESULT_BACKEND: ${CELERY_RESULT_BACKEND}
@@ -62,7 +84,7 @@ services:
       SSE_HEARTBEAT_SECONDS: ${SSE_HEARTBEAT_SECONDS:-30}
       SSE_RETRY_MS: ${SSE_RETRY_MS:-5000}
       DEBUG: ${DEBUG:-False}
-      ENVIRONMENT: ${ENVIRONMENT:-development}
+      ENVIRONMENT: ${DOCKER_ENVIRONMENT:-docker-local}
       OPENAPI_DOCS_ENABLED: ${OPENAPI_DOCS_ENABLED:-false}
       PDF_ALLOW_DETERMINISTIC_FALLBACK: ${PDF_ALLOW_DETERMINISTIC_FALLBACK:-false}
       PYTHONUNBUFFERED: "1"
@@ -112,7 +134,7 @@ services:
       DEFAULT_WEBHOOK_URL: ${DEFAULT_WEBHOOK_URL:-}
       CORS_ORIGINS: ${CORS_ORIGINS:-}
       TRUSTED_HOSTS: ${TRUSTED_HOSTS:-}
-      FORWARDED_ALLOW_IPS: ${FORWARDED_ALLOW_IPS:-[]}
+      FORWARDED_ALLOW_IPS: ${DOCKER_FORWARDED_ALLOW_IPS:-[]}
       AUTH0_DOMAIN: ${AUTH0_DOMAIN:-}
       AUTH0_ISSUER_BASE_URL: ${AUTH0_ISSUER_BASE_URL:-}
       AUTH0_API_AUDIENCE: ${AUTH0_API_AUDIENCE:-}
@@ -120,6 +142,7 @@ services:
       AUTH0_EXPECTED_CLIENT_ID: ${AUTH0_EXPECTED_CLIENT_ID:-}
       AUTH0_JWKS_CACHE_TTL_SECONDS: ${AUTH0_JWKS_CACHE_TTL_SECONDS:-21600}
       AUTH0_JWKS_FETCH_TIMEOUT_MS: ${AUTH0_JWKS_FETCH_TIMEOUT_MS:-2000}
+      ALLOW_INTERNAL_TEST_JWT: ${DOCKER_ALLOW_INTERNAL_TEST_JWT:-false}
       LOG_DIR: ${LOG_DIR:-logs}
       PIPELINE_JSON_PARSE_MAX_CHARS: ${PIPELINE_JSON_PARSE_MAX_CHARS:-200000}
       # GitHub Integration
@@ -142,6 +165,8 @@ services:
     ports:
       - "8000:8000"
     depends_on:
+      migrate:
+        condition: service_completed_successfully
       redis:
         condition: service_healthy
     volumes:
@@ -183,7 +208,8 @@ services:
       NEXT_PUBLIC_AUTH0_API_AUDIENCE: ${NEXT_PUBLIC_AUTH0_API_AUDIENCE:-}
       NEXT_PUBLIC_AUTH0_API_SCOPES: ${NEXT_PUBLIC_AUTH0_API_SCOPES:-read:app}
     depends_on:
-      - backend
+      backend:
+        condition: service_started
     networks:
       - auditor_network
     restart: unless-stopped
@@ -213,7 +239,7 @@ services:
       SSE_FALLBACK_DB_INTERVAL_SECONDS: ${SSE_FALLBACK_DB_INTERVAL_SECONDS:-10}
       SSE_HEARTBEAT_SECONDS: ${SSE_HEARTBEAT_SECONDS:-30}
       SSE_RETRY_MS: ${SSE_RETRY_MS:-5000}
-      ENVIRONMENT: ${ENVIRONMENT:-development}
+      ENVIRONMENT: ${DOCKER_ENVIRONMENT:-docker-local}
       GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
       CSE_ID: ${CSE_ID:-}
       SERPER_API_KEY: ${SERPER_API_KEY:-}
@@ -258,7 +284,7 @@ services:
       FRONTEND_URL: ${FRONTEND_URL:-}
       WEBHOOK_SECRET: ${WEBHOOK_SECRET:-}
       DEFAULT_WEBHOOK_URL: ${DEFAULT_WEBHOOK_URL:-}
-      FORWARDED_ALLOW_IPS: ${FORWARDED_ALLOW_IPS:-[]}
+      FORWARDED_ALLOW_IPS: ${DOCKER_FORWARDED_ALLOW_IPS:-[]}
       LOG_DIR: ${LOG_DIR:-logs}
       PIPELINE_JSON_PARSE_MAX_CHARS: ${PIPELINE_JSON_PARSE_MAX_CHARS:-200000}
       # GitHub Integration
@@ -286,7 +312,10 @@ services:
         reservations:
           memory: 512M
     depends_on:
-      - backend
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
     volumes:
       - ./logs:/app/logs
     networks:

@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { RefreshCw, Play, ExternalLink } from "lucide-react";
 import { API_URL } from "@/lib/api";
 import { fetchWithBackendAuth } from "@/lib/backend-auth";
+import { formatStableDate } from "@/lib/dates";
 import { withLocale } from "@/lib/locale-routing";
 
 interface HubSpotPage {
@@ -207,7 +208,7 @@ export default function HubSpotPages() {
               </div>
               <div className="text-sm text-muted-foreground">
                 Last synced:{" "}
-                {new Date(page.last_synced_at).toLocaleDateString()}
+                {formatStableDate(page.last_synced_at)}
               </div>
             </CardContent>
           </Card>

@@ -314,6 +314,42 @@ class APIService {
     return res.json();
   }
 
+  async getPDFStatus(auditId: number): Promise<any> {
+    const res = await fetchWithBackendAuth(
+      `${this.baseUrl}/api/v1/audits/${auditId}/pdf-status`,
+    );
+    if (!res.ok) throw new Error(`API error: ${res.status}`);
+    return res.json();
+  }
+
+  async generatePageSpeed(auditId: number): Promise<any> {
+    const res = await fetchWithBackendAuth(
+      `${this.baseUrl}/api/v1/audits/${auditId}/pagespeed`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      },
+    );
+    if (!res.ok) throw await this.buildApiError(res);
+    return res.json();
+  }
+
+  async getPageSpeedStatus(auditId: number): Promise<any> {
+    const res = await fetchWithBackendAuth(
+      `${this.baseUrl}/api/v1/audits/${auditId}/pagespeed-status`,
+    );
+    if (!res.ok) throw await this.buildApiError(res);
+    return res.json();
+  }
+
+  async getArtifactStatus(auditId: number): Promise<any> {
+    const res = await fetchWithBackendAuth(
+      `${this.baseUrl}/api/v1/audits/${auditId}/artifacts-status`,
+    );
+    if (!res.ok) throw await this.buildApiError(res);
+    return res.json();
+  }
+
   async downloadReport(reportId: number): Promise<Blob> {
     const res = await fetchWithBackendAuth(
       `${this.baseUrl}/api/v1/reports/download/${reportId}`,

@@ -23,7 +23,7 @@ import httpx
 import jwt
 from app.core.config import settings
 from app.core.logger import get_logger
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPBearer
 
 # HTTPAuthorizationCredentials is the correct name in newer FastAPI versions
@@ -518,9 +518,18 @@ def user_is_admin(user: AuthUser) -> bool:
 
 
 async def get_current_user(
+    request: Request,
     credentials: HTTPAuthorizationCredentials = Depends(security),
 ) -> AuthUser:
     """Dependency that returns the current authenticated user context."""
+    auth_error = getattr(request.state, "auth_error", None)
+    if auth_error is not None:
+        raise auth_error
+
+    auth_user = getattr(request.state, "auth_user", None)
+    if auth_user is not None:
+        return auth_user
+
     if credentials is None:
         raise _auth_exception(
             "missing_token",

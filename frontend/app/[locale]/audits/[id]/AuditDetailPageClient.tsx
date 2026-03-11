@@ -47,13 +47,13 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { useAuditSSE } from "@/hooks/useAuditSSE";
+import { usePdfGeneration } from "@/hooks/usePdfGeneration";
+import { usePageSpeedGeneration } from "@/hooks/usePageSpeedGeneration";
 import { API_URL } from "@/lib/api-client";
 import { fetchWithBackendAuth } from "@/lib/backend-auth";
+import { formatStableDate } from "@/lib/dates";
 import { getExternalIntelligenceBanner } from "@/lib/external-intelligence-status";
-import {
-  getPdfDownloadUrlFromPayload,
-  triggerFileDownload,
-} from "@/lib/pdf-download";
+import { downloadAuditPdf } from "@/lib/pdf-download";
 
 // Dynamic imports for heavy components
 const CoreWebVitalsChart = dynamic(
@@ -130,12 +130,6 @@ const safeHostname = (value?: string): string => {
     const cleaned = value.replace(/^https?:\/\//, "").replace(/^www\./, "");
     return cleaned.split("/")[0] || cleaned;
   }
-};
-
-const formatDate = (value?: string) => {
-  if (!value) return "—";
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? "—" : date.toLocaleDateString();
 };
 
 const normalizeCategory = (value?: string) => {
@@ -252,11 +246,24 @@ export default function AuditDetailPageClient({
     initialAudit?.pagespeed_data ?? null,
   );
   const [keywordGapData, setKeywordGapData] = useState<any>(null);
-  const [pageSpeedLoading, setPageSpeedLoading] = useState(false);
-  const [pdfGenerating, setPdfGenerating] = useState(false);
   const [hasChatCompleted, setHasChatCompleted] = useState(false);
 
   const backendUrl = API_URL;
+  const {
+    state: pdfState,
+    generate: generatePdfJob,
+    isBusy: pdfGenerating,
+  } = usePdfGeneration({
+    auditId,
+    autoDownload: true,
+  });
+  const {
+    state: pageSpeedState,
+    generate: generatePageSpeedJob,
+    isBusy: pageSpeedGenerating,
+  } = usePageSpeedGeneration({
+    auditId,
+  });
   const [activeTab, setActiveTab] = useState<
     "overview" | "report" | "fix-plan"
   >("overview");
@@ -291,6 +298,46 @@ export default function AuditDetailPageClient({
     () => audit?.runtime_diagnostics || audit?.diagnostics_summary || [],
     [audit?.diagnostics_summary, audit?.runtime_diagnostics],
   );
+  const pdfStatusNotice = useMemo(() => {
+    if (pdfState.status === "queued") {
+      return "PDF generation queued. You can keep working while it finishes.";
+    }
+    if (pdfState.status === "waiting" && pdfState.waiting_on === "pagespeed") {
+      return "PDF queued and waiting for the active PageSpeed pipeline to finish.";
+    }
+    if (pdfState.status === "running") {
+      return "PDF generation in progress.";
+    }
+    if (pdfState.status === "completed" && pdfState.download_ready) {
+      return "PDF ready to download.";
+    }
+    if (pdfState.status === "failed") {
+      return pdfState.error?.message || "PDF generation failed.";
+    }
+    return null;
+  }, [pdfState]);
+  const pageSpeedStatusNotice = useMemo(() => {
+    if (pageSpeedState.status === "queued") {
+      return "PageSpeed queued. It continues in the background while you navigate the audit.";
+    }
+    if (pageSpeedState.status === "running") {
+      return "PageSpeed analysis in progress.";
+    }
+    if (
+      pageSpeedState.status === "completed" &&
+      (pageSpeedState.pagespeed_available || pageSpeedData || audit?.pagespeed_data)
+    ) {
+      return "PageSpeed ready.";
+    }
+    if (pageSpeedState.status === "failed") {
+      return (
+        pageSpeedState.error?.message ||
+        pageSpeedState.warnings[0] ||
+        "PageSpeed analysis failed."
+      );
+    }
+    return null;
+  }, [audit?.pagespeed_data, pageSpeedData, pageSpeedState]);
   const externalIntelBanner = useMemo(
     () => getExternalIntelligenceBanner(audit?.external_intelligence),
     [audit?.external_intelligence],
@@ -632,6 +679,15 @@ export default function AuditDetailPageClient({
     }
   }, [audit?.status]);
 
+  useEffect(() => {
+    if (
+      pageSpeedState.status === "completed" ||
+      pageSpeedState.status === "failed"
+    ) {
+      void fetchData();
+    }
+  }, [fetchData, pageSpeedState.status]);
+
   // SSE for real-time status updates (replaces polling)
   const shouldSubscribeSSE =
     Boolean(audit) && audit.status !== "completed" && audit.status !== "failed";
@@ -734,91 +790,28 @@ export default function AuditDetailPageClient({
   }
 
   const analyzePageSpeed = async () => {
-    setPageSpeedLoading(true);
     try {
-      logger.log("Analyzing PageSpeed...");
-      const res = await fetchWithBackendAuth(
-        `${backendUrl}/api/v1/audits/${auditId}/pagespeed`,
-        {
-          method: "POST",
-        },
-      );
-      logger.log("PageSpeed response:", res.status);
-      if (res.ok) {
-        const data = await res.json();
-        logger.log("PageSpeed data:", data);
-        // Use data.data if it exists (new backend response structure)
-        setPageSpeedData(data.data || data);
-        alert("✅ PageSpeed analysis completed!");
-      } else {
-        const error = await res
-          .json()
-          .catch(() => ({ detail: "Unknown error" }));
-        console.error("PageSpeed error:", error);
-        alert(`❌ Error: ${error.detail || "Failed to analyze PageSpeed"}`);
-      }
+      await generatePageSpeedJob();
     } catch (err) {
       console.error("PageSpeed exception:", err);
       alert(
         `❌ Error: ${err instanceof Error ? err.message : "Failed to analyze PageSpeed"}`,
       );
-    } finally {
-      setPageSpeedLoading(false);
     }
   };
 
   const generatePDF = async () => {
-    if (pdfGenerating) return;
-    setPdfGenerating(true);
     try {
-      const generateRes = await fetchWithBackendAuth(
-        `${backendUrl}/api/v1/audits/${auditId}/generate-pdf`,
-        {
-          method: "POST",
-        },
-      );
-
-      if (generateRes.status === 409) {
-        const payload = await generateRes.json().catch(() => ({}));
-        const retryAfter = Number(payload?.retry_after_seconds || 10);
-        alert(`PDF generation already in progress. Retry in ~${retryAfter}s.`);
+      if (pdfState.status === "completed" && pdfState.download_ready) {
+        await downloadAuditPdf(auditId);
         return;
       }
-
-      if (!generateRes.ok) {
-        const error = await generateRes.json().catch(() => ({}));
-        throw new Error(error?.detail || "Unknown error");
-      }
-
-      await new Promise((resolve) => setTimeout(resolve, 500));
-      const downloadRes = await fetchWithBackendAuth(
-        `${backendUrl}/api/v1/audits/${auditId}/download-pdf-url`,
-      );
-      if (!downloadRes.ok) {
-        const errorPayload = await downloadRes
-          .json()
-          .catch(() => ({ detail: "Download failed" }));
-        const detail =
-          typeof errorPayload?.detail === "string"
-            ? errorPayload.detail
-            : "Download failed";
-        if (downloadRes.status === 500) {
-          throw new Error(
-            "No se pudo obtener el enlace de descarga. Intenta nuevamente.",
-          );
-        }
-        throw new Error(detail);
-      }
-      const downloadPayload = await downloadRes.json().catch(() => null);
-      const downloadUrl = getPdfDownloadUrlFromPayload(downloadPayload);
-      triggerFileDownload(downloadUrl, `audit_${auditId}_report.pdf`);
+      await generatePdfJob();
     } catch (err) {
       console.error(err);
       alert(
-        `Error generating PDF: ${err instanceof Error ? err.message : "Unknown error"}`,
+        `Error with PDF: ${err instanceof Error ? err.message : "Unknown error"}`,
       );
-    } finally {
-      setPdfGenerating(false);
     }
   };
 
@@ -896,16 +889,16 @@ export default function AuditDetailPageClient({
                   Progress {progressValue}%
                 </span>
                 <span className="px-3 py-1 rounded-full border border-border bg-muted/40">
-                  Created {formatDate(audit?.created_at)}
+                  Created {formatStableDate(audit?.created_at)}
                 </span>
                 {audit?.started_at && (
                   <span className="px-3 py-1 rounded-full border border-border bg-muted/40">
-                    Started {formatDate(audit?.started_at)}
+                    Started {formatStableDate(audit?.started_at)}
                   </span>
                 )}
                 {audit?.completed_at && (
                   <span className="px-3 py-1 rounded-full border border-border bg-muted/40">
-                    Completed {formatDate(audit?.completed_at)}
+                    Completed {formatStableDate(audit?.completed_at)}
                   </span>
                 )}
               </div>
@@ -963,57 +956,106 @@ export default function AuditDetailPageClient({
             </div>
 
             {audit?.status === "completed" && (
-              <div className="flex flex-wrap gap-3">
-                {audit.source === "hubspot" && (
+              <div className="space-y-2">
+                <div className="flex flex-wrap gap-3">
+                  {audit.source === "hubspot" && (
+                    <Button
+                      onClick={() =>
+                        router.push(
+                          `${localePrefix}/audits/${auditId}/hubspot-apply`,
+                        )
+                      }
+                      className="bg-[#ff7a59] hover:bg-[#ff7a59]/90 text-white px-6"
+                    >
+                      <Sparkles className="h-4 w-4 mr-2" />
+                      Apply to HubSpot
+                    </Button>
+                  )}
                   <Button
-                    onClick={() =>
-                      router.push(
-                        `${localePrefix}/audits/${auditId}/hubspot-apply`,
-                      )
-                    }
-                    className="bg-[#ff7a59] hover:bg-[#ff7a59]/90 text-white px-6"
+                    onClick={analyzePageSpeed}
+                    disabled={pageSpeedGenerating}
+                    className="glass-button px-6"
                   >
-                    <Sparkles className="h-4 w-4 mr-2" />
-                    Apply to HubSpot
+                    {pageSpeedGenerating ? (
+                      <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                    ) : (
+                      <Clock className="h-4 w-4 mr-2" />
+                    )}
+                    {pageSpeedState.status === "queued"
+                      ? "Queued PageSpeed"
+                      : pageSpeedGenerating || pageSpeedState.status === "running"
+                        ? "Running PageSpeed"
+                        : pageSpeedState.pagespeed_available ||
+                            Boolean(pageSpeedData || audit?.pagespeed_data)
+                          ? "Refresh PageSpeed"
+                          : "Run PageSpeed"}
                   </Button>
-                )}
-                <Button
-                  onClick={analyzePageSpeed}
-                  disabled={pageSpeedLoading}
-                  className="glass-button px-6"
-                >
-                  {pageSpeedLoading ? (
-                    <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
-                  ) : (
-                    <Clock className="h-4 w-4 mr-2" />
-                  )}
-                  Run PageSpeed
-                </Button>
-                <Button
-                  onClick={generatePDF}
-                  disabled={pdfGenerating}
-                  className="glass-button px-6"
-                >
-                  {pdfGenerating ? (
-                    <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
-                  ) : (
-                    <Download className="h-4 w-4 mr-2" />
-                  )}
-                  {pdfGenerating ? "Building PDF..." : "Export PDF"}
-                </Button>
-                <Button
-                  data-testid="open-geo-dashboard-button"
-                  onMouseEnter={() => warmGeoNavigation(geoRoutes.geoDashboard)}
-                  onFocus={() => warmGeoNavigation(geoRoutes.geoDashboard)}
-                  onClick={() => {
-                    warmGeoNavigation(geoRoutes.geoDashboard);
-                    router.push(geoRoutes.geoDashboard);
-                  }}
-                  className="glass-button-primary px-6"
-                >
-                  <ExternalLink className="h-4 w-4 mr-2" />
-                  Open GEO Command Center
-                </Button>
+                  <Button
+                    onClick={generatePDF}
+                    disabled={pdfGenerating}
+                    className="glass-button px-6"
+                  >
+                    {pdfGenerating ? (
+                      <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                    ) : (
+                      <Download className="h-4 w-4 mr-2" />
+                    )}
+                    {pdfState.status === "queued"
+                      ? "Queued for PDF"
+                      : pdfState.status === "waiting"
+                        ? "Waiting on PageSpeed"
+                      : pdfGenerating || pdfState.status === "running"
+                        ? "Building PDF..."
+                        : pdfState.status === "completed"
+                          ? "Download PDF"
+                          : pdfState.status === "failed"
+                            ? "Retry PDF"
+                            : "Export PDF"}
+                  </Button>
+                  <Button
+                    data-testid="open-geo-dashboard-button"
+                    onMouseEnter={() => warmGeoNavigation(geoRoutes.geoDashboard)}
+                    onFocus={() => warmGeoNavigation(geoRoutes.geoDashboard)}
+                    onClick={() => {
+                      warmGeoNavigation(geoRoutes.geoDashboard);
+                      router.push(geoRoutes.geoDashboard);
+                    }}
+                    className="glass-button-primary px-6"
+                  >
+                    <ExternalLink className="h-4 w-4 mr-2" />
+                    Open GEO Command Center
+                  </Button>
+                </div>
+
+                {pdfStatusNotice ? (
+                  <p
+                    className={`text-sm ${
+                      pdfState.status === "failed"
+                        ? "text-destructive"
+                        : "text-muted-foreground"
+                    }`}
+                  >
+                    {pdfStatusNotice}
+                  </p>
+                ) : null}
+
+                {pdfState.warnings[0] ? (
+                  <p className="text-sm text-amber-600">{pdfState.warnings[0]}</p>
+                ) : null}
+
+                {pageSpeedStatusNotice ? (
+                  <p
+                    className={`text-sm ${
+                      pageSpeedState.status === "failed"
+                        ? "text-destructive"
+                        : pageSpeedState.warnings[0]
+                          ? "text-amber-600"
+                          : "text-muted-foreground"
+                    }`}
+                  >
+                    {pageSpeedState.warnings[0] || pageSpeedStatusNotice}
+                  </p>
+                ) : null}
               </div>
             )}
           </div>

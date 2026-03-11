@@ -4,7 +4,7 @@ import re
 
 import pytest
 from app.core.config import settings
-from app.models import Audit, AuditStatus
+from app.models import Audit, AuditStatus, Competitor
 from app.services.audit_service import AuditService
 
 
@@ -102,3 +102,75 @@ async def test_save_audit_files_skips_disk_when_local_artifacts_disabled(
     )
 
     assert not (tmp_path / "audit_88").exists()
+
+
+@pytest.mark.asyncio
+async def test_set_audit_results_skips_failed_competitors_from_benchmark_and_persists_warning(
+    db_session, monkeypatch, tmp_path
+):
+    monkeypatch.setattr(settings, "REPORTS_DIR", str(tmp_path), raising=False)
+    monkeypatch.setattr(settings, "AUDIT_LOCAL_ARTIFACTS_ENABLED", True, raising=False)
+
+    audit = Audit(
+        url="https://example.com",
+        domain="example.com",
+        status=AuditStatus.PENDING,
+        user_id="test-user",
+        user_email="test@example.com",
+    )
+    db_session.add(audit)
+    db_session.commit()
+    db_session.refresh(audit)
+
+    await AuditService.set_audit_results(
+        db=db_session,
+        audit_id=audit.id,
+        target_audit={
+            "url": "https://example.com",
+            "site_metrics": {"structure_score_percent": 40},
+        },
+        external_intelligence={},
+        search_results={},
+        competitor_audits=[
+            {
+                "url": "https://good.example.com",
+                "domain": "good.example.com",
+                "status": 200,
+                "structure": {"semantic_html": {"score_percent": 60}},
+            },
+            {
+                "url": "https://blocked.example.com",
+                "domain": "blocked.example.com",
+                "status": 403,
+                "error": "No se pudo acceder al sitio (HTTP 403)",
+                "benchmark_available": False,
+            },
+        ],
+        report_markdown="# Report",
+        fix_plan=[],
+        pagespeed_data={},
+    )
+
+    db_session.refresh(audit)
+
+    persisted_competitors = (
+        db_session.query(Competitor).filter(Competitor.audit_id == audit.id).all()
+    )
+    assert len(persisted_competitors) == 1
+    assert persisted_competitors[0].domain == "good.example.com"
+
+    assert len(audit.competitor_audits) == 2
+    failed_competitor = next(
+        comp for comp in audit.competitor_audits if comp["domain"] == "blocked.example.com"
+    )
+    assert failed_competitor["benchmark_available"] is False
+    assert "benchmark" not in failed_competitor
+
+    diagnostics = audit.runtime_diagnostics
+    assert diagnostics
+    assert diagnostics[-1]["source"] == "competitor"
+    assert "blocked.example.com" in diagnostics[-1]["message"]
+
+    competitor_files = list((tmp_path / f"audit_{audit.id}" / "competitors").glob("*.json"))
+    assert len(competitor_files) == 1
+    assert "good.example.com" in competitor_files[0].name

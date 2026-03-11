@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Header } from "@/components/header";
 import { api } from "@/lib/api-client";
+import { formatStableDate } from "@/lib/dates";
 import type { AIContentSuggestion } from "@/lib/types";
 import {
   Card,
@@ -173,9 +174,7 @@ export default function AIContentPageClient({
                       {suggestion.suggestion_type}
                     </Badge>
                     <Badge variant="outline">#{suggestion.id}</Badge>
-                    <span>
-                      {new Date(suggestion.created_at).toLocaleDateString()}
-                    </span>
+                    <span>{formatStableDate(suggestion.created_at)}</span>
                   </div>
                 </div>
                 <CardTitle className="mt-2 text-xl">

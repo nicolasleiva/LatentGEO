@@ -34,6 +34,25 @@ class AuditStatus(str, enum.Enum):
     FAILED = "failed"
 
 
+class AuditPdfJobStatus(str, enum.Enum):
+    """Estados persistidos para la generación asíncrona de PDF."""
+
+    QUEUED = "queued"
+    WAITING = "waiting"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+
+class AuditPageSpeedJobStatus(str, enum.Enum):
+    """Estados persistidos para la generación asíncrona de PageSpeed."""
+
+    QUEUED = "queued"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+
 class Audit(Base):
     """Modelo para auditorías de sitios web"""
 
@@ -78,6 +97,7 @@ class Audit(Base):
     language = Column(String(10), default="en")
     competitors = Column(JSON, nullable=True)  # Lista de URLs de competidores
     market = Column(String(50), nullable=True)  # "us", "latam", "emea", etc.
+    webhook_url = Column(String(500), nullable=True)
     _intake_profile_raw = Column("intake_profile", Text, nullable=True)
     _runtime_diagnostics_raw = Column("runtime_diagnostics", Text, nullable=True)
     odoo_connection_id = Column(
@@ -94,6 +114,18 @@ class Audit(Base):
     # Relación con reportes
     reports = relationship(
         "Report", back_populates="audit", cascade="all, delete-orphan"
+    )
+    pdf_job = relationship(
+        "AuditPdfJob",
+        back_populates="audit",
+        cascade="all, delete-orphan",
+        uselist=False,
+    )
+    pagespeed_job = relationship(
+        "AuditPageSpeedJob",
+        back_populates="audit",
+        cascade="all, delete-orphan",
+        uselist=False,
     )
     pages = relationship(
         "AuditedPage", back_populates="audit", cascade="all, delete-orphan"
@@ -213,6 +245,90 @@ class Report(Base):
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     audit = relationship("Audit", back_populates="reports")
+    pdf_jobs = relationship("AuditPdfJob", back_populates="report")
+
+
+class AuditPdfJob(Base):
+    """Persistent PDF generation job per audit."""
+
+    __tablename__ = "audit_pdf_jobs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    audit_id = Column(
+        Integer,
+        ForeignKey("audits.id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
+    )
+    requested_by_user_id = Column(String(255), nullable=True, index=True)
+    status = Column(String(20), nullable=False, default=AuditPdfJobStatus.QUEUED.value)
+    celery_task_id = Column(String(255), nullable=True, index=True)
+    force_pagespeed_refresh = Column(Boolean, default=False, nullable=False)
+    force_report_refresh = Column(Boolean, default=False, nullable=False)
+    force_external_intel_refresh = Column(Boolean, default=False, nullable=False)
+    warnings = Column(JSON, nullable=True)
+    error_code = Column(String(80), nullable=True)
+    error_message = Column(Text, nullable=True)
+    waiting_on = Column(String(40), nullable=True)
+    dependency_job_id = Column(
+        Integer,
+        ForeignKey("audit_pagespeed_jobs.id"),
+        nullable=True,
+        index=True,
+    )
+    report_id = Column(Integer, ForeignKey("reports.id"), nullable=True, index=True)
+    started_at = Column(DateTime, nullable=True)
+    completed_at = Column(DateTime, nullable=True)
+    created_at = Column(
+        DateTime, default=lambda: datetime.now(timezone.utc), index=True
+    )
+    updated_at = Column(
+        DateTime,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
+
+    audit = relationship("Audit", back_populates="pdf_job")
+    report = relationship("Report", back_populates="pdf_jobs")
+    dependency_job = relationship("AuditPageSpeedJob", foreign_keys=[dependency_job_id])
+
+
+class AuditPageSpeedJob(Base):
+    """Persistent PageSpeed generation job per audit."""
+
+    __tablename__ = "audit_pagespeed_jobs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    audit_id = Column(
+        Integer,
+        ForeignKey("audits.id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
+    )
+    requested_by_user_id = Column(String(255), nullable=True, index=True)
+    status = Column(
+        String(20), nullable=False, default=AuditPageSpeedJobStatus.QUEUED.value
+    )
+    strategy = Column(String(20), nullable=False, default="both")
+    celery_task_id = Column(String(255), nullable=True, index=True)
+    force_refresh = Column(Boolean, default=False, nullable=False)
+    warnings = Column(JSON, nullable=True)
+    error_code = Column(String(80), nullable=True)
+    error_message = Column(Text, nullable=True)
+    started_at = Column(DateTime, nullable=True)
+    completed_at = Column(DateTime, nullable=True)
+    created_at = Column(
+        DateTime, default=lambda: datetime.now(timezone.utc), index=True
+    )
+    updated_at = Column(
+        DateTime,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
+
+    audit = relationship("Audit", back_populates="pagespeed_job")
 
 
 class AuditedPage(Base):

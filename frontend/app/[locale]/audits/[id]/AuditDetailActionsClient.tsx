@@ -1,153 +1,172 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo } from "react";
 import { Download, RefreshCw } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { API_URL } from "@/lib/api-client";
-import { fetchWithBackendAuth } from "@/lib/backend-auth";
-import {
-  getPdfDownloadUrlFromPayload,
-  triggerFileDownload,
-} from "@/lib/pdf-download";
+import { usePdfGeneration } from "@/hooks/usePdfGeneration";
+import { usePageSpeedGeneration } from "@/hooks/usePageSpeedGeneration";
+import { downloadAuditPdf } from "@/lib/pdf-download";
 
 type AuditDetailActionsClientProps = {
   auditId: string;
   hasPageSpeed: boolean;
 };
 
+const getPdfButtonLabel = (status: string, isBusy: boolean): string => {
+  if (status === "queued") return "Queued for PDF";
+  if (status === "waiting") return "Waiting on PageSpeed";
+  if (status === "running" || isBusy) return "Building PDF...";
+  if (status === "completed") return "Download PDF";
+  if (status === "failed") return "Retry PDF";
+  return "Export PDF";
+};
+
 export default function AuditDetailActionsClient({
   auditId,
   hasPageSpeed,
 }: AuditDetailActionsClientProps) {
-  const [pageSpeedLoading, setPageSpeedLoading] = useState(false);
-  const [pdfGenerating, setPdfGenerating] = useState(false);
-
-  const fetchPdfDownloadUrl = async () => {
-    let lastError: Error | null = null;
-
-    for (let attempt = 0; attempt < 5; attempt += 1) {
-      const downloadResponse = await fetchWithBackendAuth(
-        `${API_URL}/api/v1/audits/${auditId}/download-pdf-url`,
-      );
-
-      if (downloadResponse.ok) {
-        const downloadPayload = await downloadResponse.json().catch(() => null);
-        return getPdfDownloadUrlFromPayload(downloadPayload);
-      }
-
-      const payload = await downloadResponse.json().catch(() => ({}));
-      lastError = new Error(
-        payload?.detail || "Failed to obtain PDF download URL.",
-      );
-
-      if (downloadResponse.status !== 404 && downloadResponse.status !== 503) {
-        break;
-      }
-
-      if (attempt < 4) {
-        await new Promise((resolve) =>
-          setTimeout(resolve, Math.min(1000 * (attempt + 1), 3000)),
-        );
-      }
+  const { state, generate, isBusy } = usePdfGeneration({
+    auditId,
+    autoDownload: true,
+  });
+  const {
+    state: pageSpeedState,
+    generate: generatePageSpeed,
+    isBusy: pageSpeedBusy,
+  } = usePageSpeedGeneration({
+    auditId,
+  });
+  const [latestWarning] = state.warnings;
+  const pdfNotice = useMemo(() => {
+    if (state.status === "queued") {
+      return "PDF generation queued. Status updates continue in the background until the file is ready.";
     }
+    if (state.status === "waiting" && state.waiting_on === "pagespeed") {
+      return "PDF queued and waiting for the active PageSpeed pipeline to finish.";
+    }
+    if (state.status === "running") {
+      return "PDF generation in progress.";
+    }
+    if (state.status === "completed" && state.download_ready) {
+      return "PDF ready to download.";
+    }
+    if (state.status === "failed") {
+      return state.error?.message || "PDF generation failed.";
+    }
+    return null;
+  }, [state]);
 
-    throw lastError ?? new Error("Failed to obtain PDF download URL.");
+  const handleGeneratePdf = async () => {
+    try {
+      if (state.status === "completed" && state.download_ready) {
+        await downloadAuditPdf(auditId);
+        return;
+      }
+      await generate();
+    } catch (error) {
+      window.alert(
+        `Error with PDF: ${
+          error instanceof Error ? error.message : "Unknown error"
+        }`,
+      );
+    }
   };
 
-  const analyzePageSpeed = async () => {
-    setPageSpeedLoading(true);
+  const handleGeneratePageSpeed = async () => {
     try {
-      const response = await fetchWithBackendAuth(
-        `${API_URL}/api/v1/audits/${auditId}/pagespeed`,
-        {
-          method: "POST",
-        },
-      );
-      if (!response.ok) {
-        const payload = await response.json().catch(() => ({}));
-        throw new Error(payload?.detail || "Failed to analyze PageSpeed.");
-      }
-      window.alert(
-        hasPageSpeed
-          ? "PageSpeed refreshed successfully."
-          : "PageSpeed analysis completed successfully.",
-      );
+      await generatePageSpeed();
     } catch (error) {
       window.alert(
         `Error running PageSpeed: ${
           error instanceof Error ? error.message : "Unknown error"
         }`,
       );
-    } finally {
-      setPageSpeedLoading(false);
     }
   };
 
-  const generatePdf = async () => {
-    if (pdfGenerating) return;
-    setPdfGenerating(true);
-    try {
-      const generateResponse = await fetchWithBackendAuth(
-        `${API_URL}/api/v1/audits/${auditId}/generate-pdf`,
-        {
-          method: "POST",
-        },
-      );
-
-      if (generateResponse.status === 409) {
-        const payload = await generateResponse.json().catch(() => ({}));
-        const retryAfter = Number(payload?.retry_after_seconds || 10);
-        window.alert(
-          `PDF generation already in progress. Retry in ~${retryAfter}s.`,
-        );
-        return;
-      }
-
-      if (!generateResponse.ok) {
-        const payload = await generateResponse.json().catch(() => ({}));
-        throw new Error(payload?.detail || "Failed to generate PDF.");
-      }
-
-      const downloadUrl = await fetchPdfDownloadUrl();
-      triggerFileDownload(downloadUrl, `audit_${auditId}_report.pdf`);
-    } catch (error) {
-      window.alert(
-        `Error generating PDF: ${
-          error instanceof Error ? error.message : "Unknown error"
-        }`,
-      );
-    } finally {
-      setPdfGenerating(false);
+  const pageSpeedNotice = useMemo(() => {
+    if (pageSpeedState.status === "queued") {
+      return "PageSpeed queued. It will keep running in the background while you move through the audit.";
     }
-  };
+    if (pageSpeedState.status === "running") {
+      return "PageSpeed analysis in progress.";
+    }
+    if (pageSpeedState.status === "completed" && pageSpeedState.pagespeed_available) {
+      return hasPageSpeed
+        ? "PageSpeed refreshed."
+        : "PageSpeed data ready.";
+    }
+    if (pageSpeedState.status === "failed") {
+      return (
+        pageSpeedState.error?.message ||
+        pageSpeedState.warnings[0] ||
+        "PageSpeed analysis failed."
+      );
+    }
+    return null;
+  }, [hasPageSpeed, pageSpeedState]);
 
   return (
-    <div className="flex flex-wrap gap-3">
-      <Button
-        onClick={analyzePageSpeed}
-        disabled={pageSpeedLoading}
-        className="glass-button px-6"
-      >
-        {pageSpeedLoading ? (
-          <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
-        ) : (
-          <RefreshCw className="mr-2 h-4 w-4" />
-        )}
-        {hasPageSpeed ? "Refresh PageSpeed" : "Run PageSpeed"}
-      </Button>
-      <Button
-        onClick={generatePdf}
-        disabled={pdfGenerating}
-        className="glass-button-primary px-6"
-      >
-        {pdfGenerating ? (
-          <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
-        ) : (
-          <Download className="mr-2 h-4 w-4" />
-        )}
-        {pdfGenerating ? "Building PDF..." : "Export PDF"}
-      </Button>
+    <div className="space-y-3">
+      <div className="flex flex-wrap gap-3">
+        <Button
+          onClick={handleGeneratePageSpeed}
+          disabled={pageSpeedBusy}
+          className="glass-button px-6"
+        >
+          <RefreshCw
+            className={`mr-2 h-4 w-4 ${pageSpeedBusy ? "animate-spin" : ""}`}
+          />
+          {pageSpeedState.status === "queued"
+            ? "Queued PageSpeed"
+            : pageSpeedBusy || pageSpeedState.status === "running"
+              ? "Running PageSpeed"
+              : hasPageSpeed || pageSpeedState.pagespeed_available
+                ? "Refresh PageSpeed"
+                : "Run PageSpeed"}
+        </Button>
+        <Button
+          onClick={handleGeneratePdf}
+          disabled={isBusy}
+          className="glass-button-primary px-6"
+        >
+          {isBusy ? (
+            <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
+          ) : (
+            <Download className="mr-2 h-4 w-4" />
+          )}
+          {getPdfButtonLabel(state.status, isBusy)}
+        </Button>
+      </div>
+
+      {pdfNotice ? (
+        <p
+          className={`text-sm ${
+            state.status === "failed" ? "text-destructive" : "text-muted-foreground"
+          }`}
+        >
+          {pdfNotice}
+        </p>
+      ) : null}
+
+      {latestWarning ? (
+        <p className="text-sm text-amber-600">{latestWarning}</p>
+      ) : null}
+
+      {pageSpeedNotice ? (
+        <p
+          className={`text-sm ${
+            pageSpeedState.status === "failed"
+              ? "text-destructive"
+              : pageSpeedState.warnings[0]
+                ? "text-amber-600"
+                : "text-muted-foreground"
+          }`}
+        >
+          {pageSpeedState.warnings[0] || pageSpeedNotice}
+        </p>
+      ) : null}
     </div>
   );
 }

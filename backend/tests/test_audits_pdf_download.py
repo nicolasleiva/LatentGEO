@@ -103,10 +103,109 @@ def test_download_pdf_url_normalizes_relative_signed_url(
     )
 
 
-def test_download_pdf_url_returns_409_for_legacy_local_path(client, db_session):
-    audit = _create_completed_audit(db_session, file_path="/tmp/report.pdf")
+def test_download_pdf_url_repairs_legacy_local_path(
+    client, db_session, monkeypatch
+):
+    audit = Audit(
+        url="https://www.robot.com/",
+        domain="www.robot.com",
+        status=AuditStatus.COMPLETED,
+        progress=100.0,
+        user_id="test-user",
+        user_email="test@example.com",
+        report_markdown="# Ready report",
+    )
+    db_session.add(audit)
+    db_session.commit()
+    db_session.refresh(audit)
+
+    report = Report(
+        audit_id=audit.id,
+        report_type="PDF",
+        file_path="/tmp/legacy-report.pdf",
+    )
+    db_session.add(report)
+    db_session.commit()
+    db_session.refresh(report)
+
+    async def _fake_generate_comprehensive_pdf(**kwargs):
+        setattr(kwargs["audit"], "_generated_pdf_size_bytes", 512)
+        return f"supabase://audits/{audit.id}/report.pdf"
+
+    monkeypatch.setattr(
+        "app.services.pdf_service.PDFService.generate_comprehensive_pdf",
+        _fake_generate_comprehensive_pdf,
+    )
+    monkeypatch.setattr(
+        "app.services.supabase_service.SupabaseService.get_signed_url",
+        lambda bucket, path, expiry_seconds=3600: (
+            f"https://project.supabase.co/storage/v1/object/sign/{bucket}/{path}?token=test"
+        ),
+    )
 
     response = client.get(f"/api/v1/audits/{audit.id}/download-pdf-url")
 
-    assert response.status_code == 409
-    assert "Legacy local PDF paths are disabled" in response.json()["detail"]
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["download_url"].startswith(
+        "https://project.supabase.co/storage/v1/object/sign/"
+    )
+
+    repaired_report = db_session.query(Report).filter(Report.id == report.id).first()
+    assert repaired_report is not None
+    assert repaired_report.file_path == f"supabase://audits/{audit.id}/report.pdf"
+    assert repaired_report.file_size == 512
+
+
+def test_download_report_repairs_legacy_local_path(client, db_session, monkeypatch):
+    audit = Audit(
+        url="https://www.robot.com/",
+        domain="www.robot.com",
+        status=AuditStatus.COMPLETED,
+        progress=100.0,
+        user_id="test-user",
+        user_email="test@example.com",
+        report_markdown="# Ready report",
+    )
+    db_session.add(audit)
+    db_session.commit()
+    db_session.refresh(audit)
+
+    report = Report(
+        audit_id=audit.id,
+        report_type="PDF",
+        file_path="/tmp/legacy-report.pdf",
+    )
+    db_session.add(report)
+    db_session.commit()
+    db_session.refresh(report)
+
+    async def _fake_generate_comprehensive_pdf(**kwargs):
+        setattr(kwargs["audit"], "_generated_pdf_size_bytes", 256)
+        return f"supabase://audits/{audit.id}/report.pdf"
+
+    monkeypatch.setattr(
+        "app.services.pdf_service.PDFService.generate_comprehensive_pdf",
+        _fake_generate_comprehensive_pdf,
+    )
+    monkeypatch.setattr(
+        "app.services.supabase_service.SupabaseService.get_signed_url",
+        lambda bucket, path, expiry_seconds=3600: (
+            f"https://project.supabase.co/storage/v1/object/sign/{bucket}/{path}?token=test"
+        ),
+    )
+
+    response = client.get(
+        f"/api/v1/reports/download/{report.id}",
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 302
+    assert response.headers["location"].startswith(
+        "https://project.supabase.co/storage/v1/object/sign/"
+    )
+
+    repaired_report = db_session.query(Report).filter(Report.id == report.id).first()
+    assert repaired_report is not None
+    assert repaired_report.file_path == f"supabase://audits/{audit.id}/report.pdf"
+    assert repaired_report.file_size == 256

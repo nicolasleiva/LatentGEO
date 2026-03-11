@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, type ComponentType } from "react";
+import { useCallback, useEffect, useMemo, useState, type ComponentType } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -60,8 +60,14 @@ export function Header() {
   const pathname = usePathname();
   const auth = useAppAuthState();
   const profile = useCombinedProfile(auth);
-  const user = auth.ready ? profile : null;
-  const isLoading = auth.loading;
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  const user = mounted && auth.ready ? profile : null;
+  const isLoading = mounted && auth.loading;
 
   const pathWithoutLocale = useMemo(() => {
     if (!pathname) return "/";
@@ -212,103 +218,114 @@ export function Header() {
             </div>
           )}
 
-          <Sheet>
-            <SheetTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                className="md:hidden rounded-xl"
-                aria-label="Open navigation"
-              >
-                <Menu className="h-5 w-5" />
-              </Button>
-            </SheetTrigger>
-            <SheetContent side="right" className="w-[88vw] sm:w-[420px]">
-              <SheetHeader>
-                <SheetTitle>Navigation</SheetTitle>
-                <SheetDescription>
-                  {user
-                    ? "Signed in workspace navigation."
-                    : "Explore product and start your first audit."}
-                </SheetDescription>
-              </SheetHeader>
+          {mounted ? (
+            <Sheet>
+              <SheetTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  className="md:hidden rounded-xl"
+                  aria-label="Open navigation"
+                >
+                  <Menu className="h-5 w-5" />
+                </Button>
+              </SheetTrigger>
+              <SheetContent side="right" className="w-[88vw] sm:w-[420px]">
+                <SheetHeader>
+                  <SheetTitle>Navigation</SheetTitle>
+                  <SheetDescription>
+                    {user
+                      ? "Signed in workspace navigation."
+                      : "Explore product and start your first audit."}
+                  </SheetDescription>
+                </SheetHeader>
 
-              <div className="px-4 pb-6 space-y-6">
-                <div className="space-y-2">
-                  {navItems.map((item) => {
-                    const Icon = item.icon;
-                    const active = isActiveLink(item.href);
-                    return (
-                      <SheetClose asChild key={item.href}>
+                <div className="px-4 pb-6 space-y-6">
+                  <div className="space-y-2">
+                    {navItems.map((item) => {
+                      const Icon = item.icon;
+                      const active = isActiveLink(item.href);
+                      return (
+                        <SheetClose asChild key={item.href}>
+                          <Link
+                            href={withCurrentLocale(item.href)}
+                            className={cn(
+                              "flex items-center gap-3 rounded-xl border px-4 py-3 text-sm font-medium",
+                              active
+                                ? "bg-foreground/10 border-foreground/20 text-foreground"
+                                : "bg-background/70 border-border text-foreground/80",
+                            )}
+                          >
+                            <Icon className="h-4 w-4" />
+                            {item.label}
+                          </Link>
+                        </SheetClose>
+                      );
+                    })}
+                  </div>
+
+                  {isLoading ? (
+                    <div className="flex items-center gap-2 text-foreground/60 text-sm">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Loading session...
+                    </div>
+                  ) : user ? (
+                    <div className="space-y-2">
+                      <SheetClose asChild>
                         <Link
-                          href={withCurrentLocale(item.href)}
-                          className={cn(
-                            "flex items-center gap-3 rounded-xl border px-4 py-3 text-sm font-medium",
-                            active
-                              ? "bg-foreground/10 border-foreground/20 text-foreground"
-                              : "bg-background/70 border-border text-foreground/80",
-                          )}
+                          href={withCurrentLocale("/")}
+                          className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground shadow-sm hover:bg-primary/90"
                         >
-                          <Icon className="h-4 w-4" />
-                          {item.label}
+                          <Rocket className="h-4 w-4" />
+                          Run audit
                         </Link>
                       </SheetClose>
-                    );
-                  })}
+                      <SheetClose asChild>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            void logoutAllSessions();
+                          }}
+                          className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg border border-red-500/20 bg-transparent px-4 text-sm font-medium text-red-600 hover:bg-red-500/10"
+                        >
+                          <LogOut className="h-4 w-4" />
+                          Logout
+                        </button>
+                      </SheetClose>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <SheetClose asChild>
+                        <Link
+                          href="/auth/login"
+                          className="inline-flex h-10 w-full items-center justify-center rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground shadow-sm hover:bg-primary/90"
+                        >
+                          Start audit
+                        </Link>
+                      </SheetClose>
+                      <SheetClose asChild>
+                        <Link
+                          href="/auth/login"
+                          className="inline-flex h-10 w-full items-center justify-center rounded-lg border border-border bg-transparent px-4 text-sm font-medium hover:bg-accent/70"
+                        >
+                          Sign in
+                        </Link>
+                      </SheetClose>
+                    </div>
+                  )}
                 </div>
-
-                {isLoading ? (
-                  <div className="flex items-center gap-2 text-foreground/60 text-sm">
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    Loading session...
-                  </div>
-                ) : user ? (
-                  <div className="space-y-2">
-                    <SheetClose asChild>
-                      <Link
-                        href={withCurrentLocale("/")}
-                        className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground shadow-sm hover:bg-primary/90"
-                      >
-                        <Rocket className="h-4 w-4" />
-                        Run audit
-                      </Link>
-                    </SheetClose>
-                    <SheetClose asChild>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          void logoutAllSessions();
-                        }}
-                        className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg border border-red-500/20 bg-transparent px-4 text-sm font-medium text-red-600 hover:bg-red-500/10"
-                      >
-                        <LogOut className="h-4 w-4" />
-                        Logout
-                      </button>
-                    </SheetClose>
-                  </div>
-                ) : (
-                  <div className="space-y-2">
-                    <SheetClose asChild>
-                      <Link
-                        href="/auth/login"
-                        className="inline-flex h-10 w-full items-center justify-center rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground shadow-sm hover:bg-primary/90"
-                      >
-                        Start audit
-                      </Link>
-                    </SheetClose>
-                    <SheetClose asChild>
-                      <Link
-                        href="/auth/login"
-                        className="inline-flex h-10 w-full items-center justify-center rounded-lg border border-border bg-transparent px-4 text-sm font-medium hover:bg-accent/70"
-                      >
-                        Sign in
-                      </Link>
-                    </SheetClose>
-                  </div>
-                )}
-              </div>
-            </SheetContent>
-          </Sheet>
+              </SheetContent>
+            </Sheet>
+          ) : (
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              className="md:hidden rounded-xl"
+              aria-label="Open navigation"
+            >
+              <Menu className="h-5 w-5" />
+            </Button>
+          )}
         </div>
       </div>
     </header>

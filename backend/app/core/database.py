@@ -3,7 +3,10 @@ Configuración de Base de Datos con SQLAlchemy
 """
 
 import asyncio
+import os
 import re
+import sys
+from pathlib import Path
 
 from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.orm import declarative_base, sessionmaker
@@ -14,37 +17,15 @@ from .logger import get_logger
 
 logger = get_logger(__name__)
 
-# Fail fast with clear message for local/manual runs.
-if not settings.DATABASE_URL:
-    raise RuntimeError(
-        "DATABASE_URL no configurada. Definila en .env o variables de entorno."
-    )
-
-# Configurar engine según el tipo de BD
-if settings.DATABASE_URL.startswith("sqlite"):
-    engine = create_engine(
-        settings.DATABASE_URL,
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
-        echo=settings.SQLALCHEMY_ECHO,
-    )
-else:
-    connect_timeout = max(1, int(settings.DB_CONNECT_TIMEOUT_SECONDS))
-    engine = create_engine(
-        settings.DATABASE_URL,
-        echo=settings.SQLALCHEMY_ECHO,
-        pool_pre_ping=bool(settings.DB_POOL_PRE_PING),
-        # Pool configurable por entorno (Supabase pooler-friendly)
-        pool_size=max(1, int(settings.DB_POOL_SIZE)),
-        max_overflow=max(0, int(settings.DB_MAX_OVERFLOW)),
-        pool_timeout=max(1, int(settings.DB_POOL_TIMEOUT)),
-        pool_recycle=max(1, int(settings.DB_POOL_RECYCLE)),
-        connect_args={"connect_timeout": connect_timeout},
-    )
-
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-
 Base = declarative_base()
+
+_engine_instance = None
+_session_factory = None
+_schema_revision_verified = False
+
+_DATABASE_PATH = Path(__file__).resolve()
+_BACKEND_DIR = _DATABASE_PATH.parents[2]
+_ALEMBIC_INI_PATH = _BACKEND_DIR / "alembic.ini"
 
 _SQL_IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 _ALLOWED_COLUMN_SQL = {
@@ -57,9 +38,114 @@ _ALLOWED_COLUMN_SQL = {
 }
 
 
+def _is_test_context() -> bool:
+    environment = (settings.ENVIRONMENT or "").strip().lower()
+    return "pytest" in sys.modules or environment in {"test", "testing"}
+
+
+if not _is_test_context():
+    raw_database_url = os.getenv("DATABASE_URL")
+    if raw_database_url is not None and not raw_database_url.strip():
+        raise RuntimeError(
+            "DATABASE_URL no configurada. Definila en .env o variables de entorno."
+        )
+    if not (settings.DATABASE_URL or "").strip():
+        raise RuntimeError(
+            "DATABASE_URL no configurada. Definila en .env o variables de entorno."
+        )
+
+
+def _resolve_database_url(*, allow_test_placeholder: bool = False) -> str:
+    database_url = (settings.DATABASE_URL or "").strip()
+    if database_url:
+        return database_url
+    if allow_test_placeholder:
+        placeholder = os.getenv("TEST_DATABASE_URL", "sqlite:///:memory:")
+        logger.warning(
+            "DATABASE_URL no configurada. Usando %s solo para import/test bootstrap.",
+            placeholder,
+        )
+        return placeholder
+    raise RuntimeError(
+        "DATABASE_URL no configurada. Definila en .env o variables de entorno."
+    )
+
+
+def _build_engine(database_url: str):
+    if database_url.startswith("sqlite"):
+        return create_engine(
+            database_url,
+            connect_args={"check_same_thread": False},
+            poolclass=StaticPool,
+            echo=settings.SQLALCHEMY_ECHO,
+        )
+
+    connect_timeout = max(1, int(settings.DB_CONNECT_TIMEOUT_SECONDS))
+    return create_engine(
+        database_url,
+        echo=settings.SQLALCHEMY_ECHO,
+        pool_pre_ping=bool(settings.DB_POOL_PRE_PING),
+        # Pool configurable por entorno (Supabase pooler-friendly)
+        pool_size=max(1, int(settings.DB_POOL_SIZE)),
+        max_overflow=max(0, int(settings.DB_MAX_OVERFLOW)),
+        pool_timeout=max(1, int(settings.DB_POOL_TIMEOUT)),
+        pool_recycle=max(1, int(settings.DB_POOL_RECYCLE)),
+        connect_args={"connect_timeout": connect_timeout},
+    )
+
+
+def get_engine():
+    global _engine_instance
+    if _engine_instance is None:
+        _engine_instance = _build_engine(
+            _resolve_database_url(allow_test_placeholder=_is_test_context())
+        )
+    return _engine_instance
+
+
+def get_session_factory():
+    global _session_factory
+    if _session_factory is None:
+        _session_factory = sessionmaker(
+            autocommit=False,
+            autoflush=False,
+            bind=get_engine(),
+        )
+    return _session_factory
+
+
+class _EngineFacade:
+    def __getattr__(self, name):
+        return getattr(get_engine(), name)
+
+    def connect(self, *args, **kwargs):
+        return get_engine().connect(*args, **kwargs)
+
+    def begin(self, *args, **kwargs):
+        return get_engine().begin(*args, **kwargs)
+
+    def dispose(self, *args, **kwargs):
+        return get_engine().dispose(*args, **kwargs)
+
+    def _run_ddl_visitor(self, *args, **kwargs):
+        return get_engine()._run_ddl_visitor(*args, **kwargs)
+
+
+class _SessionLocalFacade:
+    def __call__(self, *args, **kwargs):
+        return get_session_factory()(*args, **kwargs)
+
+    def __getattr__(self, name):
+        return getattr(get_session_factory(), name)
+
+
+engine = _EngineFacade()
+SessionLocal = _SessionLocalFacade()
+
+
 def get_db():
     """Dependency para obtener la sesión de base de datos"""
-    db = SessionLocal()
+    db = get_session_factory()()
     try:
         yield db
     finally:
@@ -68,7 +154,119 @@ def get_db():
 
 def create_all_tables():
     """Crear todas las tablas"""
-    Base.metadata.create_all(bind=engine)
+    Base.metadata.create_all(bind=get_engine())
+
+
+def _build_alembic_config(database_url: str | None = None):
+    from alembic.config import Config
+
+    alembic_config = Config(str(_ALEMBIC_INI_PATH))
+    def _escape_alembic_percent(value: str) -> str:
+        return value.replace("%", "%%")
+
+    if database_url:
+        alembic_config.set_main_option(
+            "sqlalchemy.url", _escape_alembic_percent(database_url)
+        )
+    else:
+        alembic_config.set_main_option(
+            "sqlalchemy.url",
+            _escape_alembic_percent(
+                _resolve_database_url(allow_test_placeholder=_is_test_context())
+            ),
+        )
+    return alembic_config
+
+
+def get_required_database_revision() -> str:
+    from alembic.script import ScriptDirectory
+
+    alembic_config = _build_alembic_config()
+    script = ScriptDirectory.from_config(alembic_config)
+    heads = list(script.get_heads())
+    if len(heads) != 1:
+        raise RuntimeError(
+            "Alembic must have exactly one head revision configured. "
+            f"Current heads: {heads}"
+        )
+    return heads[0]
+
+
+def get_known_database_revisions() -> set[str]:
+    from alembic.script import ScriptDirectory
+
+    alembic_config = _build_alembic_config()
+    script = ScriptDirectory.from_config(alembic_config)
+    return {revision.revision for revision in script.walk_revisions()}
+
+
+def get_current_database_revision(connection=None) -> str | None:
+    from alembic.runtime.migration import MigrationContext
+
+    if connection is not None:
+        return MigrationContext.configure(connection).get_current_revision()
+
+    with get_engine().connect() as conn:
+        return MigrationContext.configure(conn).get_current_revision()
+
+
+def run_migrations_to_head(database_url: str | None = None) -> str:
+    from alembic import command
+
+    alembic_config = _build_alembic_config(database_url)
+    engine_ref = _build_engine(
+        database_url or _resolve_database_url(allow_test_placeholder=_is_test_context())
+    )
+    known_revisions = get_known_database_revisions()
+
+    try:
+        with engine_ref.begin() as connection:
+            current_revision = get_current_database_revision(connection)
+            inspector = inspect(connection)
+            if (
+                current_revision
+                and current_revision not in known_revisions
+                and "alembic_version" in inspector.get_table_names()
+            ):
+                logger.warning(
+                    "Legacy Alembic revision %s is not part of the official runtime chain. "
+                    "Resetting alembic_version so the reconciliation migration can run.",
+                    current_revision,
+                )
+                connection.execute(text("DELETE FROM alembic_version"))
+
+        command.upgrade(alembic_config, "head")
+    finally:
+        engine_ref.dispose()
+
+    return get_required_database_revision()
+
+
+def ensure_database_revision(engine_ref=None, *, force: bool = False) -> str:
+    global _schema_revision_verified
+
+    if _is_test_context():
+        return "test-schema"
+    if _schema_revision_verified and not force:
+        return get_required_database_revision()
+
+    engine_to_use = engine_ref or get_engine()
+    required_revision = get_required_database_revision()
+
+    with engine_to_use.connect() as connection:
+        current_revision = get_current_database_revision(connection)
+
+    if current_revision != required_revision:
+        current_display = current_revision or "unversioned"
+        raise RuntimeError(
+            "Database schema revision mismatch. "
+            f"Current revision: {current_display}. "
+            f"Required revision: {required_revision}. "
+            "Run `alembic upgrade head` before starting backend or worker."
+        )
+
+    _schema_revision_verified = True
+    return required_revision
 
 
 def _ensure_column_exists(connection, table: str, column: str, column_sql: str) -> None:
@@ -129,7 +327,7 @@ def ensure_connection_owner_columns(connection) -> None:
 
 def ensure_performance_indexes(engine_ref=None) -> None:
     """Crea índices críticos si no existen (seguro para re-ejecutar)."""
-    engine_to_use = engine_ref or engine
+    engine_to_use = engine_ref or get_engine()
     inspector = inspect(engine_to_use)
     table_names = set(inspector.get_table_names())
     if not table_names:
@@ -207,57 +405,24 @@ async def init_db():
     last_exc = None
     for attempt in range(1, settings.DB_RETRIES + 1):
         try:
+            engine_ref = get_engine()
             logger.info(
                 f"[DB] Intentando conectar a la base de datos (intento {attempt}/{settings.DB_RETRIES})..."
             )
-            # Intentar conectar y crear tablas
-            with engine.connect() as connection:
+            # Validar conectividad y revision de esquema
+            with engine_ref.connect() as connection:
                 logger.info("[DB] Conexión a la base de datos exitosa.")
-                Base.metadata.create_all(bind=engine)
-                logger.info(
-                    "[DB] Tablas de base de datos creadas/verificadas correctamente."
-                )
+                connection.execute(text("SELECT 1"))
 
-                # --- MIGRATION CHECK ---
-                # Verificar si la columna 'source' existe en la tabla 'audits'
-                inspector = inspect(engine)
-                if "audits" in inspector.get_table_names():
-                    columns = [c["name"] for c in inspector.get_columns("audits")]
-                    if "source" not in columns:
-                        logger.info(
-                            "[DB] Migrando: Agregando columna 'source' a tabla 'audits'..."
-                        )
-                        try:
-                            # SQLite vs Postgres syntax might differ slightly for ADD COLUMN, but usually standard
-                            # For SQLite, it's ADD COLUMN. For Postgres too.
-                            connection.execute(
-                                text(
-                                    "ALTER TABLE audits ADD COLUMN source VARCHAR(50) DEFAULT 'web'"
-                                )
-                            )
-                            connection.commit()
-                            logger.info("[DB] Columna 'source' agregada exitosamente.")
-                        except Exception as e:
-                            logger.error(f"[DB] Error agregando columna 'source': {e}")
+            if _is_test_context():
+                Base.metadata.create_all(bind=engine_ref)
+                ensure_performance_indexes(engine_ref)
+                logger.info("[DB] Esquema de test inicializado con SQLAlchemy metadata.")
+            else:
+                revision = ensure_database_revision(engine_ref, force=True)
+                logger.info("[DB] Esquema verificado en revision %s.", revision)
 
-                # Ensure ownership columns in integration tables.
-                try:
-                    ensure_connection_owner_columns(connection)
-                except Exception as e:
-                    logger.warning(
-                        f"[DB] No se pudieron asegurar columnas owner_* en conexiones: {e}"
-                    )
-
-                # Crear índices de performance si faltan
-                try:
-                    ensure_performance_indexes(engine)
-                    logger.info("[DB] Índices de performance verificados/creados.")
-                except Exception as e:
-                    logger.warning(
-                        f"[DB] No se pudieron crear índices de performance: {e}"
-                    )
-
-                return
+            return
         except Exception as e:
             last_exc = e
             logger.warning(f"[DB] Intento {attempt}/{settings.DB_RETRIES} falló: {e}")

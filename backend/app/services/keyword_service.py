@@ -78,8 +78,9 @@ class KeywordService:
             if "```" in content:
                 content = content.replace("```json", "").replace("```", "")
 
-            logger.info(f"Kimi generó {len(content)} keywords para {domain}")
-            return self._process_ai_response(audit_id, content)
+            results = self._process_ai_response(audit_id, content)
+            logger.info(f"Kimi generó {len(results)} keywords para {domain}")
+            return results
 
         except Exception as e:
             logger.error(f"Kimi API error: {e}")

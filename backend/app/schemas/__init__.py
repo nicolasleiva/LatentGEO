@@ -3,7 +3,7 @@ from enum import Enum
 from typing import Any, Dict, List, Optional
 
 from app.core.security import normalize_url
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from .validators import validate_market, validate_url
 
@@ -112,6 +112,8 @@ class AuditSummary(BaseModel):
     created_at: datetime
     geo_score: Optional[float] = 0
     total_pages: Optional[int] = 0
+    pagespeed_status: Optional[str] = None
+    pdf_status: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -142,7 +144,11 @@ class AuditOverview(BaseModel):
     fix_plan_count: int = 0
     report_ready: bool = False
     pagespeed_available: bool = False
+    pagespeed_status: Optional[str] = None
+    pagespeed_warnings: List[str] = Field(default_factory=list)
     pdf_available: bool = False
+    pdf_status: Optional[str] = None
+    pdf_warnings: List[str] = Field(default_factory=list)
     external_intelligence: Optional[Dict[str, Any]] = None
 
     model_config = ConfigDict(from_attributes=True)
@@ -186,6 +192,66 @@ class PDFDownloadUrlResponse(BaseModel):
     download_url: str
     expires_in_seconds: int = 3600
     storage_provider: str = "supabase"
+
+
+class PDFStatusError(BaseModel):
+    code: Optional[str] = None
+    message: Optional[str] = None
+
+
+class AuditPDFStatusResponse(BaseModel):
+    audit_id: int
+    job_id: Optional[int] = None
+    status: str
+    download_ready: bool = False
+    report_id: Optional[int] = None
+    warnings: List[str] = Field(default_factory=list)
+    error: Optional[PDFStatusError] = None
+    started_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
+    retry_after_seconds: int = 0
+    waiting_on: Optional[str] = None
+    dependency_job_id: Optional[int] = None
+    message: Optional[str] = None
+
+
+class AuditPageSpeedStatusResponse(BaseModel):
+    audit_id: int
+    job_id: Optional[int] = None
+    status: str
+    pagespeed_available: bool = False
+    warnings: List[str] = Field(default_factory=list)
+    error: Optional[PDFStatusError] = None
+    started_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
+    retry_after_seconds: int = 0
+    message: Optional[str] = None
+
+
+class AuditArtifactsStatusResponse(BaseModel):
+    audit_id: int
+    pagespeed_status: str
+    pagespeed_job_id: Optional[int] = None
+    pagespeed_available: bool = False
+    pagespeed_warnings: List[str] = Field(default_factory=list)
+    pagespeed_error: Optional[PDFStatusError] = None
+    pagespeed_started_at: Optional[datetime] = None
+    pagespeed_completed_at: Optional[datetime] = None
+    pagespeed_retry_after_seconds: int = 0
+    pagespeed_message: Optional[str] = None
+    pdf_status: str
+    pdf_job_id: Optional[int] = None
+    pdf_available: bool = False
+    pdf_report_id: Optional[int] = None
+    pdf_waiting_on: Optional[str] = None
+    pdf_dependency_job_id: Optional[int] = None
+    pdf_warnings: List[str] = Field(default_factory=list)
+    pdf_error: Optional[PDFStatusError] = None
+    pdf_started_at: Optional[datetime] = None
+    pdf_completed_at: Optional[datetime] = None
+    pdf_retry_after_seconds: int = 0
+    pdf_message: Optional[str] = None
+    updated_at: Optional[datetime] = None
 
 
 class AuditAnalytics(BaseModel):

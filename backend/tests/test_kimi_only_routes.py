@@ -1,3 +1,6 @@
+from types import SimpleNamespace
+
+import pytest
 from app.core.llm_kimi import KimiGenerationError
 from app.models import Audit, AuditStatus
 from app.services.keyword_service import KeywordService
@@ -84,6 +87,44 @@ def test_keyword_service_accepts_nv_api_key_analysis_only(db_session, monkeypatc
     service = KeywordService(db_session)
     assert service.nvidia_api_key == "analysis-key"
     assert service.client is not None
+
+
+@pytest.mark.asyncio
+async def test_keyword_service_logs_real_keyword_count_not_response_length(
+    db_session, monkeypatch, caplog
+):
+    _enable_analysis_key_only(monkeypatch)
+    service = KeywordService(db_session)
+
+    fake_response = SimpleNamespace(
+        choices=[
+            SimpleNamespace(
+                message=SimpleNamespace(
+                    content='[{"term":"one"},{"term":"two"},{"term":"three"}]'
+                )
+            )
+        ]
+    )
+
+    async def fake_external_call(*args, **kwargs):
+        return fake_response
+
+    monkeypatch.setattr("app.services.keyword_service.run_external_call", fake_external_call)
+    monkeypatch.setattr(
+        service,
+        "_process_ai_response",
+        lambda audit_id, content: [
+            SimpleNamespace(term="one"),
+            SimpleNamespace(term="two"),
+            SimpleNamespace(term="three"),
+        ],
+    )
+
+    with caplog.at_level("INFO"):
+        results = await service._research_kimi(1, "example.com", ["seo"])
+
+    assert len(results) == 3
+    assert "Kimi generó 3 keywords para example.com" in caplog.text
 
 
 def test_ai_content_returns_502_on_invalid_kimi_json(client, db_session, monkeypatch):

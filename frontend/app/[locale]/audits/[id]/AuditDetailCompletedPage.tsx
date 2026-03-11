@@ -22,6 +22,7 @@ import AuditPipelineDiagnostics, {
 } from "@/components/audit-pipeline-diagnostics";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { formatStableDate } from "@/lib/dates";
 
 import AuditDetailActionsClient from "./AuditDetailActionsClient";
 
@@ -65,12 +66,6 @@ type AuditDetailCompletedPageProps = {
   locale: string;
   auditId: string;
   overview: AuditOverview;
-};
-
-const formatDate = (value?: string | null) => {
-  if (!value) return "—";
-  const parsed = new Date(value);
-  return Number.isNaN(parsed.getTime()) ? "—" : parsed.toLocaleDateString();
 };
 
 const resolveCategory = (overview: AuditOverview) =>
@@ -131,11 +126,11 @@ export default function AuditDetailCompletedPage({
                   Progress {Math.round(overview.progress || 100)}%
                 </span>
                 <span className="rounded-full border border-border bg-muted/40 px-3 py-1">
-                  Created {formatDate(overview.created_at)}
+                  Created {formatStableDate(overview.created_at)}
                 </span>
                 {overview.completed_at ? (
                   <span className="rounded-full border border-border bg-muted/40 px-3 py-1">
-                    Completed {formatDate(overview.completed_at)}
+                    Completed {formatStableDate(overview.completed_at)}
                   </span>
                 ) : null}
               </div>

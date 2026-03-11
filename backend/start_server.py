@@ -5,6 +5,8 @@ from __future__ import annotations
 import ipaddress
 import os
 import re
+import sys
+from pathlib import Path
 
 _DEFAULT_HOST = "0.0.0.0"
 _VALID_LOG_LEVELS = {"critical", "error", "warning", "info", "debug", "trace"}
@@ -46,15 +48,26 @@ def _read_log_level(default: str = "info") -> str:
     return raw if raw in _VALID_LOG_LEVELS else default
 
 
-def main() -> None:
+def _ensure_backend_on_pythonpath() -> None:
+    backend_dir = str(Path(__file__).resolve().parent)
+    current = os.getenv("PYTHONPATH", "")
+    entries = [entry for entry in current.split(os.pathsep) if entry]
+
+    if backend_dir in entries:
+        return
+
+    os.environ["PYTHONPATH"] = os.pathsep.join([backend_dir, *entries])
+
+
+def _build_command() -> list[str]:
     host = _read_host()
     port = str(_read_int("PORT", 8000))
-    cpu_count = os.cpu_count() or 1
-    default_workers = max(1, min(4, cpu_count))
-    workers = _read_int("WEB_CONCURRENCY", default_workers)
+    workers = _read_int("WEB_CONCURRENCY", 1)
     log_level = _read_log_level()
 
     command = [
+        sys.executable,
+        "-m",
         "uvicorn",
         "app.main:app",
         "--host",
@@ -67,6 +80,12 @@ def main() -> None:
     if workers > 1:
         command.extend(["--workers", str(workers)])
 
+    return command
+
+
+def main() -> None:
+    _ensure_backend_on_pythonpath()
+    command = _build_command()
     os.execvp(command[0], command)
 
 

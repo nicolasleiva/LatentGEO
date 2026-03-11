@@ -8,6 +8,9 @@ import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { API_URL } from "@/lib/api-client";
 import { fetchWithBackendAuth } from "@/lib/backend-auth";
+import { formatStableDateTime } from "@/lib/dates";
+import { usePdfGeneration } from "@/hooks/usePdfGeneration";
+import { downloadAuditPdf } from "@/lib/pdf-download";
 import {
   Loader2,
   FileText,
@@ -34,41 +37,172 @@ type ReportsExportsPageClientProps = {
   initialAudits: ExportAudit[];
 };
 
+const getStatusIcon = (status: string) => {
+  switch (status) {
+    case "completed":
+      return <CheckCircle className="h-4 w-4 text-green-400" />;
+    case "processing":
+    case "running":
+      return <Clock className="h-4 w-4 text-yellow-400 animate-pulse" />;
+    default:
+      return <AlertCircle className="h-4 w-4 text-red-400" />;
+  }
+};
+
+function ExportAuditRow({
+  audit,
+  locale,
+  onViewMarkdown,
+  onDownloadJson,
+}: {
+  audit: ExportAudit;
+  locale: string;
+  onViewMarkdown: (auditId: number) => void;
+  onDownloadJson: (auditId: number) => void;
+}) {
+  const { state, generate, isBusy } = usePdfGeneration({
+    auditId: audit.id,
+    autoDownload: true,
+  });
+
+  const handleGeneratePdf = async () => {
+    try {
+      if (state.status === "completed" && state.download_ready) {
+        await downloadAuditPdf(audit.id);
+        return;
+      }
+      await generate();
+    } catch (error) {
+      console.error("Error handling PDF action:", error);
+      alert(
+        error instanceof Error
+          ? error.message
+          : "Error handling PDF. Please try again.",
+      );
+    }
+  };
+
+  const pdfStatusMessage =
+    state.warnings[0] ||
+    (state.status === "queued"
+      ? "PDF queued."
+      : state.status === "waiting"
+        ? "PDF waiting for the active PageSpeed refresh."
+      : state.status === "running"
+        ? "PDF building..."
+        : state.status === "completed" && state.download_ready
+          ? "PDF ready to download."
+          : state.status === "failed"
+            ? state.error?.message || "PDF generation failed."
+            : null);
+
+  return (
+    <Card className="glass-card p-6 hover:bg-muted/50 transition-all">
+      <div className="flex items-start justify-between">
+        <div className="flex-1">
+          <div className="flex items-center gap-3 mb-2">
+            {getStatusIcon(audit.status)}
+            <h2 className="text-lg font-semibold text-foreground">
+              {audit.domain}
+            </h2>
+            <Badge
+              variant="outline"
+              className="text-xs border-border/70 bg-muted/40 text-muted-foreground"
+            >
+              #{audit.id}
+            </Badge>
+          </div>
+          <p className="text-sm text-muted-foreground mb-1">{audit.url}</p>
+          <p className="text-xs text-muted-foreground/80">
+            Completed:{" "}
+            {audit.completed_at
+              ? formatStableDateTime(audit.completed_at, {
+                  fallback: "N/A",
+                })
+              : "N/A"}
+          </p>
+          {pdfStatusMessage ? (
+            <p
+              className={`mt-2 text-xs ${
+                state.status === "failed"
+                  ? "text-destructive"
+                  : state.warnings[0]
+                    ? "text-amber-600"
+                    : "text-muted-foreground"
+              }`}
+            >
+              {pdfStatusMessage}
+            </p>
+          ) : null}
+        </div>
+
+        <div className="flex gap-2">
+          <Button
+            onClick={handleGeneratePdf}
+            disabled={isBusy}
+            className="glass-button-primary"
+            size="sm"
+          >
+            {isBusy ? (
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+            ) : (
+              <FileText className="h-4 w-4 mr-2" />
+            )}
+            {state.status === "queued"
+              ? "Queued PDF"
+              : state.status === "waiting"
+                ? "Waiting on PageSpeed"
+              : isBusy || state.status === "running"
+                ? "Building PDF"
+                : state.status === "completed"
+                  ? "Download PDF"
+                  : state.status === "failed"
+                    ? "Retry PDF"
+                    : "Build PDF"}
+          </Button>
+
+          <Button
+            onClick={() => onViewMarkdown(audit.id)}
+            variant="outline"
+            className="border-border/70 bg-muted/40 hover:bg-muted/60 text-foreground"
+            size="sm"
+          >
+            <Eye className="h-4 w-4 mr-2" />
+            Open Markdown
+          </Button>
+
+          <Button
+            onClick={() => onDownloadJson(audit.id)}
+            variant="outline"
+            className="border-border/70 bg-muted/40 hover:bg-muted/60 text-foreground"
+            size="sm"
+          >
+            <FileJson className="h-4 w-4 mr-2" />
+            Export JSON
+          </Button>
+
+          <Button
+            asChild
+            variant="ghost"
+            className="text-muted-foreground hover:text-foreground hover:bg-muted/50"
+            size="sm"
+          >
+            <Link href={`/${locale}/audits/${audit.id}`}>Open Audit →</Link>
+          </Button>
+        </div>
+      </div>
+    </Card>
+  );
+}
+
 export default function ReportsExportsPageClient({
   locale,
   initialAudits,
 }: ReportsExportsPageClientProps) {
   const [selectedAudit, setSelectedAudit] = useState<number | null>(null);
-  const [generatingPDF, setGeneratingPDF] = useState(false);
-  const [viewingMarkdown, setViewingMarkdown] = useState(false);
   const [markdownContent, setMarkdownContent] = useState("");
 
-  const handleGeneratePDF = async (auditId: number) => {
-    setGeneratingPDF(true);
-    try {
-      const response = await fetchWithBackendAuth(
-        `${API_URL}/api/v1/audits/${auditId}/generate-pdf`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-        },
-      );
-      const result = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        throw new Error(result?.detail || `API error: ${response.status}`);
-      }
-      const message = result?.message || "PDF generated successfully.";
-      alert(message);
-    } catch (error) {
-      console.error("Error generating PDF:", error);
-      alert("Error generating PDF. Please try again.");
-    } finally {
-      setGeneratingPDF(false);
-    }
-  };
-
   const handleViewMarkdown = async (auditId: number) => {
-    setViewingMarkdown(true);
     try {
       const response = await fetchWithBackendAuth(
         `${API_URL}/api/v1/reports/markdown/${auditId}`,
@@ -82,8 +216,6 @@ export default function ReportsExportsPageClient({
     } catch (error) {
       console.error("Error loading markdown:", error);
       alert("Error loading markdown report");
-    } finally {
-      setViewingMarkdown(false);
     }
   };
 
@@ -108,18 +240,6 @@ export default function ReportsExportsPageClient({
     } catch (error) {
       console.error("Error downloading JSON:", error);
       alert("Error downloading JSON report");
-    }
-  };
-
-  const getStatusIcon = (status: string) => {
-    switch (status) {
-      case "completed":
-        return <CheckCircle className="h-4 w-4 text-green-400" />;
-      case "processing":
-      case "running":
-        return <Clock className="h-4 w-4 text-yellow-400 animate-pulse" />;
-      default:
-        return <AlertCircle className="h-4 w-4 text-red-400" />;
     }
   };
 
@@ -198,84 +318,13 @@ export default function ReportsExportsPageClient({
           ) : (
             <div className="grid gap-6">
               {initialAudits.map((audit) => (
-                <Card
+                <ExportAuditRow
                   key={audit.id}
-                  className="glass-card p-6 hover:bg-muted/50 transition-all"
-                >
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-3 mb-2">
-                        {getStatusIcon(audit.status)}
-                        <h2 className="text-lg font-semibold text-foreground">
-                          {audit.domain}
-                        </h2>
-                        <Badge
-                          variant="outline"
-                          className="text-xs border-border/70 bg-muted/40 text-muted-foreground"
-                        >
-                          #{audit.id}
-                        </Badge>
-                      </div>
-                      <p className="text-sm text-muted-foreground mb-1">
-                        {audit.url}
-                      </p>
-                      <p className="text-xs text-muted-foreground/80">
-                        Completed:{" "}
-                        {audit.completed_at
-                          ? new Date(audit.completed_at).toLocaleString()
-                          : "N/A"}
-                      </p>
-                    </div>
-
-                    <div className="flex gap-2">
-                      <Button
-                        onClick={() => handleGeneratePDF(audit.id)}
-                        disabled={generatingPDF}
-                        className="glass-button-primary"
-                        size="sm"
-                      >
-                        {generatingPDF ? (
-                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                        ) : (
-                          <FileText className="h-4 w-4 mr-2" />
-                        )}
-                        Build PDF
-                      </Button>
-
-                      <Button
-                        onClick={() => handleViewMarkdown(audit.id)}
-                        disabled={viewingMarkdown}
-                        variant="outline"
-                        className="border-border/70 bg-muted/40 hover:bg-muted/60 text-foreground"
-                        size="sm"
-                      >
-                        <Eye className="h-4 w-4 mr-2" />
-                        Open Markdown
-                      </Button>
-
-                      <Button
-                        onClick={() => handleDownloadJSON(audit.id)}
-                        variant="outline"
-                        className="border-border/70 bg-muted/40 hover:bg-muted/60 text-foreground"
-                        size="sm"
-                      >
-                        <FileJson className="h-4 w-4 mr-2" />
-                        Export JSON
-                      </Button>
-
-                      <Button
-                        asChild
-                        variant="ghost"
-                        className="text-muted-foreground hover:text-foreground hover:bg-muted/50"
-                        size="sm"
-                      >
-                        <Link href={`/${locale}/audits/${audit.id}`}>
-                          Open Audit →
-                        </Link>
-                      </Button>
-                    </div>
-                  </div>
-                </Card>
+                  audit={audit}
+                  locale={locale}
+                  onViewMarkdown={handleViewMarkdown}
+                  onDownloadJson={handleDownloadJSON}
+                />
               ))}
             </div>
           )}

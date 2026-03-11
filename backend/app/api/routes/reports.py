@@ -13,6 +13,7 @@ from ...core.logger import get_logger
 from ...models import AuditStatus
 from ...schemas import PDFRequest, ReportResponse
 from ...services.audit_service import AuditService, ReportService
+from ...services.pdf_service import PDFService
 
 logger = get_logger(__name__)
 
@@ -101,20 +102,18 @@ async def download_report(
     """Descargar archivo de reporte"""
     try:
         report = ReportService.get_report(db, report_id)
-        if not report or not report.file_path:
+        if not report:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND, detail="Reporte no encontrado"
             )
 
-        _get_owned_audit(db, report.audit_id, current_user)
+        audit = _get_owned_audit(db, report.audit_id, current_user)
 
-        if not report.file_path.startswith("supabase://"):
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail=(
-                    "Legacy local report paths are disabled in Supabase-only mode. "
-                    "Regenera el reporte para moverlo a Supabase."
-                ),
+        if not report.file_path or not str(report.file_path).startswith("supabase://"):
+            report = await PDFService.ensure_supabase_pdf_report(
+                db=db,
+                audit=audit,
+                report=report,
             )
 
         from ...core.config import settings
