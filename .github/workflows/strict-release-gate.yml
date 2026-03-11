@@ -62,7 +62,7 @@ jobs:
 
       - name: Run deterministic backend suite
         env:
-          DATABASE_URL: postgresql://test:test@localhost:5432/test_db
+          DATABASE_URL: sqlite:///./strict-release-gate.db
           REDIS_URL: redis://localhost:6379/0
           ENVIRONMENT: testing
         run: |
