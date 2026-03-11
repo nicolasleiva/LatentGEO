@@ -142,6 +142,8 @@ function classifyFailure(message, finalUrl = "") {
     text.includes("net::err_name_not_resolved") ||
     text.includes("dns servers could not resolve") ||
     text.includes("could not resolve host") ||
+    text.includes("chrome_interstitial_error") ||
+    text.includes("chrome-error://chromewebdata") ||
     text.includes("timed out") ||
     text.includes("502") ||
     text.includes("503")
@@ -462,6 +464,7 @@ async function auditRouteBatch({
       row.status === "threshold_fail" &&
       row.failedChecks.every((check) => check.startsWith("performance<")) &&
       typeof row.performance === "number" &&
+      threshold != null &&
       typeof threshold?.performance === "number" &&
       row.performance >= threshold.performance - 5;
 
@@ -639,6 +642,13 @@ function buildResultRow({
     seo,
   });
   const finalUrl = lhr?.finalDisplayedUrl || null;
+  const runtimeFailureSnippet = [
+    lhr?.runtimeError?.code,
+    lhr?.runtimeError?.message,
+    ...(Array.isArray(lhr?.runWarnings) ? lhr.runWarnings : []),
+  ]
+    .filter(Boolean)
+    .join(" | ");
 
   if (isAdminPermissionRedirect(finalUrl)) {
     return {
@@ -658,6 +668,37 @@ function buildResultRow({
       performanceThreshold: threshold?.performance ?? null,
       errorSnippet:
         "Skipped: route redirected due to missing admin permission.",
+      htmlReport,
+      jsonReport,
+    };
+  }
+
+  if (
+    runtimeFailureSnippet ||
+    finalUrl === "chrome-error://chromewebdata/" ||
+    finalUrl === "about:blank" ||
+    typeof performance !== "number" ||
+    typeof accessibility !== "number" ||
+    typeof bestPractices !== "number"
+  ) {
+    const errorSnippet =
+      runtimeFailureSnippet || "Lighthouse returned incomplete metrics.";
+    return {
+      route,
+      group,
+      requestedUrl,
+      finalUrl,
+      status: "error",
+      classification: classifyFailure(errorSnippet, finalUrl || requestedUrl),
+      performance,
+      accessibility,
+      bestPractices,
+      seo,
+      thresholdPassed: false,
+      failedChecks: [],
+      critical: Boolean(routeItem?.critical),
+      performanceThreshold: threshold?.performance ?? null,
+      errorSnippet,
       htmlReport,
       jsonReport,
     };
