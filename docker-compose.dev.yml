@@ -176,7 +176,6 @@ services:
       - "3000:3000"
     environment:
       NEXT_PUBLIC_API_URL: http://localhost:8000
-      NEXT_PUBLIC_BACKEND_URL: http://localhost:8000
       API_URL: http://backend:8000
       BACKEND_INTERNAL_JWT_SECRET: ${BACKEND_INTERNAL_JWT_SECRET:-}
       SECRET_KEY: ${SECRET_KEY:-}

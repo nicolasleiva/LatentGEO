@@ -3,32 +3,68 @@
     { "path": "/en/docs", "group": "public" },
     { "path": "/en/pricing", "group": "public" },
 
-    { "path": "/en", "group": "internal-auth" },
+    {
+      "path": "/en",
+      "group": "internal-auth",
+      "critical": true,
+      "thresholds": { "performance": 75 }
+    },
     { "path": "/en/analytics", "group": "internal-auth" },
     { "path": "/en/analytics/{auditId}", "group": "internal-auth" },
-    { "path": "/en/audits", "group": "internal-auth" },
-    { "path": "/en/audits/{auditId}", "group": "internal-auth" },
-    { "path": "/en/audits/{auditId}/ai-content", "group": "internal-auth" },
+    {
+      "path": "/en/audits",
+      "group": "internal-auth",
+      "critical": true,
+      "thresholds": { "performance": 75 }
+    },
+    {
+      "path": "/en/audits/{auditId}",
+      "group": "internal-auth",
+      "critical": true,
+      "thresholds": { "performance": 75 }
+    },
+    {
+      "path": "/en/audits/{auditId}/ai-content",
+      "group": "internal-auth",
+      "thresholds": { "performance": 70 }
+    },
     { "path": "/en/audits/{auditId}/backlinks", "group": "internal-auth" },
-    { "path": "/en/audits/{auditId}/geo", "group": "internal-auth" },
+    {
+      "path": "/en/audits/{auditId}/geo",
+      "group": "internal-auth",
+      "critical": true,
+      "thresholds": { "performance": 75 }
+    },
     {
       "path": "/en/audits/{auditId}/github-auto-fix",
-      "group": "internal-auth"
+      "group": "internal-auth",
+      "thresholds": { "performance": 70 }
     },
     { "path": "/en/audits/{auditId}/hubspot-apply", "group": "internal-auth" },
     { "path": "/en/audits/{auditId}/keywords", "group": "internal-auth" },
     {
       "path": "/en/audits/{auditId}/llm-visibility",
-      "group": "internal-auth"
+      "group": "internal-auth",
+      "thresholds": { "performance": 70 }
     },
     {
       "path": "/en/audits/{auditId}/rank-tracking",
-      "group": "internal-auth"
+      "group": "internal-auth",
+      "thresholds": { "performance": 75 }
     },
     { "path": "/en/content-analysis", "group": "internal-auth" },
-    { "path": "/en/exports", "group": "internal-auth" },
-    { "path": "/en/integrations/github", "group": "internal-auth" },
-    { "path": "/en/integrations/github/callback", "group": "internal-auth" },
+    {
+      "path": "/en/exports",
+      "group": "internal-auth",
+      "thresholds": { "performance": 70 }
+    },
+    {
+      "path": "/en/integrations/github",
+      "group": "internal-auth",
+      "critical": true,
+      "thresholds": { "performance": 75 }
+    },
+    { "path": "/integrations/github/callback", "group": "internal-auth" },
     {
       "path": "/en/integrations/hubspot/callback",
       "group": "internal-auth"
@@ -42,8 +78,18 @@
       "path": "/en/integrations/hubspot/rollback",
       "group": "internal-auth"
     },
-    { "path": "/en/ops/health", "group": "internal-auth" },
-    { "path": "/en/ops/realtime", "group": "internal-auth" },
+    {
+      "path": "/en/ops/health",
+      "group": "internal-auth",
+      "critical": true,
+      "thresholds": { "performance": 75 }
+    },
+    {
+      "path": "/en/ops/realtime",
+      "group": "internal-auth",
+      "critical": true,
+      "thresholds": { "performance": 75 }
+    },
     { "path": "/en/ops/webhooks", "group": "internal-auth" },
     { "path": "/en/pagespeed", "group": "internal-auth" },
     { "path": "/en/reports", "group": "internal-auth" },

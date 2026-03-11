@@ -6,13 +6,58 @@ const isProd =
   process.env.NODE_ENV === "production" ||
   process.env.ENVIRONMENT === "production";
 const strictBuild = process.env.STRICT_BUILD === "1";
+const ciValidationBuild =
+  process.env.CI === "true" || process.env.GITHUB_ACTIONS === "true";
+const allowLocalhostApiOrigin =
+  process.env.ALLOW_LOCALHOST_API_ORIGIN === "1" || ciValidationBuild;
 const configDir = path.dirname(fileURLToPath(import.meta.url));
+const httpsEnforced = isProd && process.env.FORCE_HTTPS === "true";
+const devFallbackApiUrl = "http://localhost:8000";
+const localHostnames = new Set(["localhost", "127.0.0.1", "0.0.0.0"]);
+const buildValidationFallbackApiUrl = ciValidationBuild
+  ? devFallbackApiUrl
+  : "";
 
-const rawApiUrl =
-  process.env.NEXT_PUBLIC_API_URL ||
-  process.env.API_URL ||
-  process.env.NEXT_PUBLIC_BACKEND_URL ||
-  "http://localhost:8000";
+function selectApiUrl(...candidates) {
+  for (const candidate of candidates) {
+    const trimmed = candidate?.trim();
+    if (trimmed) {
+      return trimmed;
+    }
+  }
+  if (isProd) {
+    return buildValidationFallbackApiUrl;
+  }
+  return devFallbackApiUrl;
+}
+
+function normalizeAbsoluteUrl(value, label) {
+  if (!value) {
+    return "";
+  }
+
+  let parsed;
+  try {
+    parsed = new URL(value);
+  } catch {
+    throw new Error(`${label} must be an absolute URL`);
+  }
+
+  if (
+    isProd &&
+    !allowLocalhostApiOrigin &&
+    localHostnames.has(parsed.hostname)
+  ) {
+    throw new Error(`${label} cannot target localhost in production`);
+  }
+
+  return parsed.toString().replace(/\/+$/, "");
+}
+
+const rawApiUrl = normalizeAbsoluteUrl(
+  selectApiUrl(process.env.NEXT_PUBLIC_API_URL, process.env.API_URL),
+  "NEXT_PUBLIC_API_URL/API_URL",
+);
 const apiOrigin = (() => {
   try {
     return rawApiUrl ? new URL(rawApiUrl).origin : "";
@@ -26,10 +71,14 @@ const auth0Origin = process.env.AUTH0_DOMAIN
   ? `https://${process.env.AUTH0_DOMAIN}`
   : "";
 
-if (isProd && strictBuild && !apiOrigin) {
+if (isProd && !apiOrigin) {
   throw new Error(
     "NEXT_PUBLIC_API_URL or API_URL is required to build for production",
   );
+}
+
+if (strictBuild && !apiOrigin) {
+  throw new Error("Missing API origin for strict build.");
 }
 
 const connectSrc = [
@@ -74,72 +123,74 @@ const nextConfig = {
   },
 
   images: {
-    unoptimized: true,
+    formats: ["image/avif", "image/webp"],
   },
 
   // ===== PRODUCTION SECURITY HEADERS =====
   async headers() {
+    const defaultHeaders = [
+      {
+        key: "X-Content-Type-Options",
+        value: "nosniff",
+      },
+      {
+        key: "X-Frame-Options",
+        value: "DENY",
+      },
+      {
+        key: "X-XSS-Protection",
+        value: "1; mode=block",
+      },
+      {
+        key: "Referrer-Policy",
+        value: "strict-origin-when-cross-origin",
+      },
+      {
+        key: "Permissions-Policy",
+        value: "geolocation=(), microphone=(), camera=(), payment=()",
+      },
+      {
+        key: "Content-Security-Policy",
+        value: [
+          "default-src 'self'",
+          "script-src 'self' 'unsafe-inline' https://apis.google.com https://www.googletagmanager.com",
+          "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+          "font-src 'self' https://fonts.gstatic.com data:",
+          "img-src 'self' data: https: blob:",
+          `connect-src ${connectSrc.join(" ")}`,
+          "frame-ancestors 'none'",
+          "form-action 'self'",
+          "base-uri 'self'",
+          "object-src 'none'",
+          httpsEnforced ? "upgrade-insecure-requests" : "",
+        ]
+          .filter(Boolean)
+          .join("; "),
+      },
+    ];
+
+    if (httpsEnforced) {
+      defaultHeaders.push({
+        key: "Strict-Transport-Security",
+        value: "max-age=31536000; includeSubDomains; preload",
+      });
+    }
+
     return [
       {
-        // Apply these headers to all routes
         source: "/:path*",
+        headers: defaultHeaders,
+      },
+      {
+        source: "/_next/static/:path*",
         headers: [
-          // Prevent MIME type sniffing
-          {
-            key: "X-Content-Type-Options",
-            value: "nosniff",
-          },
-          // Prevent clickjacking
-          {
-            key: "X-Frame-Options",
-            value: "DENY",
-          },
-          // XSS protection (legacy but still useful)
-          {
-            key: "X-XSS-Protection",
-            value: "1; mode=block",
-          },
-          // HSTS - Force HTTPS (enable in production)
-          {
-            key: "Strict-Transport-Security",
-            value: "max-age=31536000; includeSubDomains; preload",
-          },
-          // Referrer policy
-          {
-            key: "Referrer-Policy",
-            value: "strict-origin-when-cross-origin",
-          },
-          // Permissions policy - disable unnecessary features
-          {
-            key: "Permissions-Policy",
-            value: "geolocation=(), microphone=(), camera=(), payment=()",
-          },
-          // Content Security Policy
-          {
-            key: "Content-Security-Policy",
-            value: [
-              "default-src 'self'",
-              "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://apis.google.com https://www.googletagmanager.com",
-              "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
-              "font-src 'self' https://fonts.gstatic.com data:",
-              "img-src 'self' data: https: blob:",
-              `connect-src ${connectSrc.join(" ")}`,
-              "frame-ancestors 'none'",
-              "form-action 'self'",
-              "base-uri 'self'",
-              "object-src 'none'",
-              "upgrade-insecure-requests",
-            ].join("; "),
-          },
-          // Prevent caching of sensitive pages
           {
             key: "Cache-Control",
-            value: "no-store, max-age=0",
+            value: "public, max-age=31536000, immutable",
           },
         ],
       },
       {
-        // Allow caching for static assets
         source: "/static/:path*",
         headers: [
           {
@@ -149,7 +200,6 @@ const nextConfig = {
         ],
       },
       {
-        // API routes - prevent caching
         source: "/api/:path*",
         headers: [
           {

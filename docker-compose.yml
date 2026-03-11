@@ -52,7 +52,8 @@ services:
       DB_POOL_TIMEOUT: ${DB_POOL_TIMEOUT:-15}
       DB_POOL_RECYCLE: ${DB_POOL_RECYCLE:-900}
       DB_CONNECT_TIMEOUT_SECONDS: ${DB_CONNECT_TIMEOUT_SECONDS:-5}
-      DB_POOL_PRE_PING: ${DB_POOL_PRE_PING:-false}
+      DB_POOL_PRE_PING: ${DB_POOL_PRE_PING:-true}
+      WEB_CONCURRENCY: ${WEB_CONCURRENCY:-2}
       REDIS_URL: ${REDIS_URL}
       CELERY_BROKER_URL: ${CELERY_BROKER_URL}
       CELERY_RESULT_BACKEND: ${CELERY_RESULT_BACKEND}
@@ -62,6 +63,8 @@ services:
       SSE_RETRY_MS: ${SSE_RETRY_MS:-5000}
       DEBUG: ${DEBUG:-False}
       ENVIRONMENT: ${ENVIRONMENT:-development}
+      OPENAPI_DOCS_ENABLED: ${OPENAPI_DOCS_ENABLED:-false}
+      PDF_ALLOW_DETERMINISTIC_FALLBACK: ${PDF_ALLOW_DETERMINISTIC_FALLBACK:-false}
       PYTHONUNBUFFERED: "1"
       GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
       CSE_ID: ${CSE_ID:-}
@@ -145,6 +148,9 @@ services:
       - ./logs:/app/logs
     networks:
       - auditor_network
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8
     restart: unless-stopped
 
   # Frontend (MODO PRODUCCIÓN - usa la imagen construida sin volúmenes de código)
@@ -154,16 +160,16 @@ services:
       dockerfile: Dockerfile.frontend
       args:
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
-        NEXT_PUBLIC_BACKEND_URL: ${NEXT_PUBLIC_BACKEND_URL:-http://localhost:8000}
         NEXT_PUBLIC_AUTH0_API_AUDIENCE: ${NEXT_PUBLIC_AUTH0_API_AUDIENCE:-}
         NEXT_PUBLIC_AUTH0_API_SCOPES: ${NEXT_PUBLIC_AUTH0_API_SCOPES:-read:app}
+        ALLOW_LOCALHOST_API_ORIGIN: ${ALLOW_LOCALHOST_API_ORIGIN:-1}
     container_name: auditor_frontend
     ports:
       - "3000:3000"
     environment:
       NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
-      NEXT_PUBLIC_BACKEND_URL: ${NEXT_PUBLIC_BACKEND_URL:-http://localhost:8000}
       API_URL: http://backend:8000
+      ALLOW_LOCALHOST_API_ORIGIN: ${ALLOW_LOCALHOST_API_ORIGIN:-1}
       NODE_ENV: production
       # Auth0 Configuration
       AUTH0_SECRET: ${AUTH0_SECRET:-}
@@ -198,10 +204,11 @@ services:
       DB_POOL_TIMEOUT: ${DB_POOL_TIMEOUT:-15}
       DB_POOL_RECYCLE: ${DB_POOL_RECYCLE:-900}
       DB_CONNECT_TIMEOUT_SECONDS: ${DB_CONNECT_TIMEOUT_SECONDS:-5}
-      DB_POOL_PRE_PING: ${DB_POOL_PRE_PING:-false}
+      DB_POOL_PRE_PING: ${DB_POOL_PRE_PING:-true}
       REDIS_URL: ${REDIS_URL}
       CELERY_BROKER_URL: ${CELERY_BROKER_URL}
       CELERY_RESULT_BACKEND: ${CELERY_RESULT_BACKEND}
+      PDF_ALLOW_DETERMINISTIC_FALLBACK: ${PDF_ALLOW_DETERMINISTIC_FALLBACK:-false}
       SSE_SOURCE: ${SSE_SOURCE:-redis}
       SSE_FALLBACK_DB_INTERVAL_SECONDS: ${SSE_FALLBACK_DB_INTERVAL_SECONDS:-10}
       SSE_HEARTBEAT_SECONDS: ${SSE_HEARTBEAT_SECONDS:-30}
@@ -284,6 +291,9 @@ services:
       - ./logs:/app/logs
     networks:
       - auditor_network
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8
     restart: unless-stopped
     healthcheck:
       disable: true

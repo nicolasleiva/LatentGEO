@@ -17,15 +17,25 @@
 
 ### Smoke externa mínima (bloqueante)
 - [ ] Definir `SMOKE_BASE_URL` (entorno objetivo)
-- [ ] Opcional: definir `SMOKE_BEARER_TOKEN`
+- [ ] Definir `SMOKE_BEARER_TOKEN`
 - [ ] Ejecutar `pytest -q backend/tests/test_release_smoke_external.py`
 - [ ] Verificar:
   - [ ] `GET /health` = 200
-  - [ ] `GET /docs` = 200
-  - [ ] `GET /api/webhooks/health` = 200
-  - [ ] `GET /api/geo/content-templates`:
-    - [ ] con token = 200
-    - [ ] sin token = 401/403 (no 404/5xx)
+  - [ ] `GET /docs` = 404
+  - [ ] `GET /api/v1/webhooks/health` = 200
+  - [ ] `GET /api/v1/geo/content-templates` con token = 200
+  - [ ] `GET /api/v1/geo/content-templates` sin token = 401/403 (no 404/5xx)
+
+### Gate estricto de release
+- [ ] `OPENAPI_DOCS_ENABLED=false`
+- [ ] `PDF_ALLOW_DETERMINISTIC_FALLBACK=false`
+- [ ] `WEB_CONCURRENCY` definido explícitamente
+- [ ] `PERF_AUTH_EMAIL` definido
+- [ ] `PERF_AUTH_PASSWORD` definido
+- [ ] Ejecutar `pnpm --dir frontend quality:web:full`
+- [ ] Ejecutar `pnpm --dir frontend perf:e2e`
+- [ ] Ejecutar `pnpm --dir frontend release:smoke:e2e`
+- [ ] Ejecutar `RUN_INTEGRATION_TESTS=1 RUN_LIVE_E2E=1 pytest -q backend/tests/test_live_plataforma5_agent1_pdf.py -s`
 
 ---
 
@@ -467,7 +477,7 @@
 - [ ] `SMOKE_BASE_URL` (obligatoria, debe iniciar con `http://` o `https://`)
 
 ### Secrets opcionales
-- [ ] `SMOKE_BEARER_TOKEN` (si no existe, el smoke valida `401/403` en endpoint protegido)
+- [ ] `SMOKE_BEARER_TOKEN` (obligatoria en gate estricto; se usa para validar endpoints protegidos)
 
 ### Resultado esperado
 - [ ] Backend local determinista verde (`pytest -q backend/tests -m "not integration and not live"`)

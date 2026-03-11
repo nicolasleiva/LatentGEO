@@ -66,15 +66,37 @@ Artifacts updated:
 - `frontend/lib/api-client/openapi.json`
 - `frontend/lib/api-client/schema.ts`
 
-## 5) External Smoke (Optional but Recommended Pre-Release)
+## 5) External Smoke (Required For Strict Staging/Production Gate)
 
 ```bash
 SMOKE_BASE_URL=https://your-staging-or-prod-url \
-SMOKE_BEARER_TOKEN=optional-token \
+SMOKE_BEARER_TOKEN=machine-or-staging-bearer-token \
 pytest -q backend/tests/test_release_smoke_external.py
 ```
 
-## 6) Docker/Compose Validation (Additional)
+Expected result in strict mode:
+- `GET /health` = `200`
+- `GET /docs` = `404` unless `SMOKE_ALLOW_OPENAPI_DOCS=1`
+- `GET /api/v1/webhooks/health` = `200`
+- protected endpoint checks use `SMOKE_BEARER_TOKEN`
+
+## 6) Strict Release Certification
+
+PowerShell wrapper:
+
+```powershell
+./scripts/release-certify.ps1 -Stage local
+./scripts/release-certify.ps1 -Stage staging
+```
+
+Additional staging-only requirements:
+- `OPENAPI_DOCS_ENABLED=false`
+- `PDF_ALLOW_DETERMINISTIC_FALLBACK=false`
+- `WEB_CONCURRENCY` set explicitly
+- `PERF_AUTH_EMAIL` and `PERF_AUTH_PASSWORD`
+- `LIVE_BEARER_TOKEN` or Auth0 machine credentials for live audit/PDF certification
+
+## 7) Docker/Compose Validation (Additional)
 
 ```bash
 # Bash/zsh: must fail fast if DB_PASSWORD is unset or empty
@@ -99,7 +121,7 @@ docker build -f Dockerfile.backend.dev -t latentgeo-backend-dev .
 docker run --rm latentgeo-backend-dev id
 ```
 
-## 7) Notes
+## 8) Notes
 
 - Frontend unit tests use Vitest (`pnpm --dir frontend test:ci`), not Jest.
 - The canonical backend requirements file is `backend/requirements.txt`.

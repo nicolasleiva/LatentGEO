@@ -34,7 +34,6 @@ SSE_RETRY_MS=5000
 ### Frontend URLs
 ```bash
 NEXT_PUBLIC_API_URL=http://localhost:8000
-NEXT_PUBLIC_BACKEND_URL=http://localhost:8000
 API_URL=http://backend:8000
 ```
 

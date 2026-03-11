@@ -630,8 +630,10 @@ $secretPayload = [ordered]@{
     FRONTEND_URL = 'https://staging.invalid'
     APP_BASE_URL = 'https://staging.invalid'
     NEXT_PUBLIC_API_URL = 'https://staging.invalid'
-    NEXT_PUBLIC_BACKEND_URL = 'https://staging.invalid'
     API_URL = 'https://staging.invalid'
+    WEB_CONCURRENCY = Get-FromMaps -Primary $dotenv -Secondary $config -Key 'WEB_CONCURRENCY' -DefaultValue '2'
+    OPENAPI_DOCS_ENABLED = Get-FromMaps -Primary $dotenv -Secondary $config -Key 'OPENAPI_DOCS_ENABLED' -DefaultValue 'false'
+    PDF_ALLOW_DETERMINISTIC_FALLBACK = Get-FromMaps -Primary $dotenv -Secondary $config -Key 'PDF_ALLOW_DETERMINISTIC_FALLBACK' -DefaultValue 'false'
     NVIDIA_API_KEY = Get-FromMaps -Primary $dotenv -Secondary $config -Key 'NVIDIA_API_KEY' -DefaultValue ''
     NV_API_KEY = Get-FromMaps -Primary $dotenv -Secondary $config -Key 'NV_API_KEY' -DefaultValue ''
     GOOGLE_PAGESPEED_API_KEY = Get-FromMaps -Primary $dotenv -Secondary $config -Key 'GOOGLE_PAGESPEED_API_KEY' -DefaultValue ''
@@ -689,7 +691,6 @@ if (-not $SkipBuild) {
         'build',
         '-f', 'Dockerfile.frontend',
         '--build-arg', 'NEXT_PUBLIC_API_URL=https://staging.invalid',
-        '--build-arg', 'NEXT_PUBLIC_BACKEND_URL=https://staging.invalid',
         '-t', $frontendImage,
         '.'
     )
@@ -740,7 +741,6 @@ $trustedHost = "$cloudFrontDomain"
 $secretPayload['APP_BASE_URL'] = $publicBaseUrl
 $secretPayload['FRONTEND_URL'] = $publicBaseUrl
 $secretPayload['NEXT_PUBLIC_API_URL'] = $apiBaseUrl
-$secretPayload['NEXT_PUBLIC_BACKEND_URL'] = $apiBaseUrl
 $secretPayload['API_URL'] = $apiBaseUrl
 $secretPayload['CORS_ORIGINS'] = $publicBaseUrl
 $secretPayload['TRUSTED_HOSTS'] = $trustedHost
