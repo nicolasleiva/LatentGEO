@@ -61,6 +61,10 @@ jobs:
           python -m pip_audit -r backend/requirements.txt
 
       - name: Run deterministic backend suite
+        env:
+          DATABASE_URL: postgresql://test:test@localhost:5432/test_db
+          REDIS_URL: redis://localhost:6379/0
+          ENVIRONMENT: testing
         run: |
           mkdir -p artifacts
           pytest -W error -W ignore::pytest.PytestUnraisableExceptionWarning -W ignore::pluggy.PluggyTeardownRaisedWarning -q backend/tests -m "not integration and not live" --junitxml=artifacts/backend-local-junit.xml
