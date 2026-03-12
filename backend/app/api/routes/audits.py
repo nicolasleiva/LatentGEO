@@ -30,6 +30,7 @@ from app.services.competitor_filters import (
     is_valid_competitor_domain,
     normalize_domain,
 )
+from app.services import pdf_job_service as pdf_job_service_module
 from app.services.pdf_job_service import (
     DEFAULT_PDF_RETRY_AFTER_SECONDS,
     PDFJobService,
@@ -44,6 +45,13 @@ from sqlalchemy.exc import DBAPIError, OperationalError
 from sqlalchemy.orm import Session
 
 logger = get_logger(__name__)
+
+# Backward-compatible aliases used by legacy lock tests and tooling.
+_pdf_generation_in_progress = pdf_job_service_module._pdf_generation_in_progress
+_pdf_generation_tokens = pdf_job_service_module._pdf_generation_tokens
+_acquire_pdf_generation_lock = pdf_job_service_module.acquire_pdf_generation_lock
+_pdf_lock_key = pdf_job_service_module.pdf_lock_key
+_release_pdf_generation_lock = pdf_job_service_module.release_pdf_generation_lock
 
 router = APIRouter(
     prefix="/audits",
@@ -882,21 +890,26 @@ async def run_pagespeed_analysis(
                 retry_after_seconds=DEFAULT_PAGESPEED_RETRY_AFTER_SECONDS,
                 message="PageSpeed analysis is already in progress for this audit.",
             )
-            return JSONResponse(status_code=202, content=response.model_dump(mode="json"))
-
-        if (
-            not force_refresh
-            and PageSpeedJobService.has_usable_pagespeed_data(
-                audit,
-                require_complete=(strategy == "both"),
+            return JSONResponse(
+                status_code=202, content=response.model_dump(mode="json")
             )
+
+        if not force_refresh and PageSpeedJobService.has_usable_pagespeed_data(
+            audit,
+            require_complete=(strategy == "both"),
         ):
             response = PageSpeedJobService.build_status_response(
                 audit=audit,
-                job=existing_job if existing_job and existing_job.status == "completed" else None,
+                job=(
+                    existing_job
+                    if existing_job and existing_job.status == "completed"
+                    else None
+                ),
                 message="Existing PageSpeed data is already available.",
             )
-            return JSONResponse(status_code=200, content=response.model_dump(mode="json"))
+            return JSONResponse(
+                status_code=200, content=response.model_dump(mode="json")
+            )
 
         job = PageSpeedJobService.queue_job(
             db,
@@ -1025,9 +1038,7 @@ async def get_audit_artifacts_status(
         int(payload.get("pagespeed_retry_after_seconds") or 0),
     )
     payload["pdf_message"] = payload.get("pdf_message") or degraded_message
-    payload["pagespeed_message"] = (
-        payload.get("pagespeed_message") or degraded_message
-    )
+    payload["pagespeed_message"] = payload.get("pagespeed_message") or degraded_message
     return AuditArtifactsStatusResponse.model_validate(payload)
 
 
@@ -1101,7 +1112,9 @@ async def generate_audit_pdf(
                 report=existing_report,
                 message="Existing PDF is already available.",
             )
-            return JSONResponse(status_code=200, content=response.model_dump(mode="json"))
+            return JSONResponse(
+                status_code=200, content=response.model_dump(mode="json")
+            )
 
         if PDFJobService.has_active_job(existing_job):
             response = PDFJobService.build_status_response(
@@ -1111,7 +1124,9 @@ async def generate_audit_pdf(
                 retry_after_seconds=DEFAULT_PDF_RETRY_AFTER_SECONDS,
                 message="PDF generation is already in progress for this audit.",
             )
-            return JSONResponse(status_code=202, content=response.model_dump(mode="json"))
+            return JSONResponse(
+                status_code=202, content=response.model_dump(mode="json")
+            )
 
         if needs_pagespeed:
             queued_pagespeed_job = PageSpeedJobService.queue_if_needed(
@@ -1122,9 +1137,8 @@ async def generate_audit_pdf(
                 force_refresh=force_pagespeed_refresh,
             )
             current_pagespeed_job = PageSpeedJobService.get_job(db, audit.id)
-            if (
+            if current_pagespeed_job and PageSpeedJobService.has_active_job(
                 current_pagespeed_job
-                and PageSpeedJobService.has_active_job(current_pagespeed_job)
             ):
                 job = PDFJobService.queue_job(
                     db,

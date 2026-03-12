@@ -109,7 +109,9 @@ async def test_keyword_service_logs_real_keyword_count_not_response_length(
     async def fake_external_call(*args, **kwargs):
         return fake_response
 
-    monkeypatch.setattr("app.services.keyword_service.run_external_call", fake_external_call)
+    monkeypatch.setattr(
+        "app.services.keyword_service.run_external_call", fake_external_call
+    )
     monkeypatch.setattr(
         service,
         "_process_ai_response",

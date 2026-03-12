@@ -161,7 +161,9 @@ async def test_set_audit_results_skips_failed_competitors_from_benchmark_and_per
 
     assert len(audit.competitor_audits) == 2
     failed_competitor = next(
-        comp for comp in audit.competitor_audits if comp["domain"] == "blocked.example.com"
+        comp
+        for comp in audit.competitor_audits
+        if comp["domain"] == "blocked.example.com"
     )
     assert failed_competitor["benchmark_available"] is False
     assert "benchmark" not in failed_competitor
@@ -171,6 +173,8 @@ async def test_set_audit_results_skips_failed_competitors_from_benchmark_and_per
     assert diagnostics[-1]["source"] == "competitor"
     assert "blocked.example.com" in diagnostics[-1]["message"]
 
-    competitor_files = list((tmp_path / f"audit_{audit.id}" / "competitors").glob("*.json"))
+    competitor_files = list(
+        (tmp_path / f"audit_{audit.id}" / "competitors").glob("*.json")
+    )
     assert len(competitor_files) == 1
     assert "good.example.com" in competitor_files[0].name

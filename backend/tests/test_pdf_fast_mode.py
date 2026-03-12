@@ -822,5 +822,7 @@ async def test_pdf_generation_caps_keyword_context_to_30_items():
 
     assert result["pdf_path"] == "dummy.pdf"
     kwargs = mock_pdf_generator.await_args.kwargs
-    assert len(kwargs["keywords_data"]["items"]) == PDFService.PDF_KEYWORDS_CONTEXT_LIMIT
+    assert (
+        len(kwargs["keywords_data"]["items"]) == PDFService.PDF_KEYWORDS_CONTEXT_LIMIT
+    )
     assert kwargs["keywords_data"]["total"] == 100

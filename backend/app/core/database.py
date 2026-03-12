@@ -161,6 +161,7 @@ def _build_alembic_config(database_url: str | None = None):
     from alembic.config import Config
 
     alembic_config = Config(str(_ALEMBIC_INI_PATH))
+
     def _escape_alembic_percent(value: str) -> str:
         return value.replace("%", "%%")
 
@@ -417,7 +418,9 @@ async def init_db():
             if _is_test_context():
                 Base.metadata.create_all(bind=engine_ref)
                 ensure_performance_indexes(engine_ref)
-                logger.info("[DB] Esquema de test inicializado con SQLAlchemy metadata.")
+                logger.info(
+                    "[DB] Esquema de test inicializado con SQLAlchemy metadata."
+                )
             else:
                 revision = ensure_database_revision(engine_ref, force=True)
                 logger.info("[DB] Esquema verificado en revision %s.", revision)

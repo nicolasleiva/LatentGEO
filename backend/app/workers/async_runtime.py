@@ -25,11 +25,7 @@ class _WorkerAsyncRuntime:
     def _ensure_loop(self) -> asyncio.AbstractEventLoop:
         current_pid = os.getpid()
         with self._lock:
-            if (
-                self._loop is None
-                or self._loop.is_closed()
-                or self._pid != current_pid
-            ):
+            if self._loop is None or self._loop.is_closed() or self._pid != current_pid:
                 if self._loop is not None and not self._loop.is_closed():
                     self._close_loop_locked()
                 self._loop = asyncio.new_event_loop()

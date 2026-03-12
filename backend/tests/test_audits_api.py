@@ -506,7 +506,9 @@ def test_artifact_status_authorizes_from_cached_snapshot(
     monkeypatch.setattr(cache, "get", lambda key: snapshot, raising=False)
 
     def _fail_query(*args, **kwargs):
-        raise AssertionError("db.query should not run when cached snapshot denies access")
+        raise AssertionError(
+            "db.query should not run when cached snapshot denies access"
+        )
 
     monkeypatch.setattr(db_session, "query", _fail_query)
 
@@ -692,9 +694,7 @@ def test_pdf_job_execution_persists_runtime_warnings_in_overview_and_diagnostics
     assert diagnostics[0]["code"] == "pdf_generation_warning_1"
 
 
-def test_run_pagespeed_returns_202_and_exposes_status(
-    client: TestClient, db_session
-):
+def test_run_pagespeed_returns_202_and_exposes_status(client: TestClient, db_session):
     audit = Audit(
         url="https://example-pagespeed-status.com",
         domain="example-pagespeed-status.com",
@@ -706,7 +706,9 @@ def test_run_pagespeed_returns_202_and_exposes_status(
     db_session.commit()
     db_session.refresh(audit)
 
-    with patch("app.workers.tasks.run_pagespeed_generation_job_task.delay") as mock_delay:
+    with patch(
+        "app.workers.tasks.run_pagespeed_generation_job_task.delay"
+    ) as mock_delay:
         mock_delay.return_value = SimpleNamespace(id="pagespeed-job-task-id")
 
         response = client.post(

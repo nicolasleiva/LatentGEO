@@ -14,6 +14,7 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
+
 def _load_live_env() -> None:
     explicit_env = os.getenv("LIVE_ENV_FILE") or os.getenv("TEST_ENV_FILE")
     candidate_paths = []

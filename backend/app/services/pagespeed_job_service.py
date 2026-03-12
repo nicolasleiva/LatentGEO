@@ -195,7 +195,9 @@ class PageSpeedJobService:
                     or "HTTP error during PageSpeed generation."
                 ).strip()
                 return error_code or f"http_{exc.status_code}", message
-            detail = str(exc.detail).strip() or "HTTP error during PageSpeed generation."
+            detail = (
+                str(exc.detail).strip() or "HTTP error during PageSpeed generation."
+            )
             return f"http_{exc.status_code}", detail
 
         if isinstance(exc, (OperationalError, DBAPIError)):
@@ -210,7 +212,9 @@ class PageSpeedJobService:
         *,
         require_complete: bool = True,
     ) -> bool:
-        pagespeed_data = audit.pagespeed_data if isinstance(audit.pagespeed_data, dict) else {}
+        pagespeed_data = (
+            audit.pagespeed_data if isinstance(audit.pagespeed_data, dict) else {}
+        )
         if not pagespeed_data:
             return False
 
@@ -267,7 +271,9 @@ class PageSpeedJobService:
         audit_id: int,
         warnings: list[str],
     ) -> None:
-        for index, message in enumerate(PageSpeedJobService.normalize_warnings(warnings), start=1):
+        for index, message in enumerate(
+            PageSpeedJobService.normalize_warnings(warnings), start=1
+        ):
             AuditService.append_runtime_diagnostic(
                 db,
                 audit_id,
@@ -287,7 +293,9 @@ class PageSpeedJobService:
         message: str | None = None,
     ) -> AuditPageSpeedStatusResponse:
         if job is None:
-            if PageSpeedJobService.has_usable_pagespeed_data(audit, require_complete=False):
+            if PageSpeedJobService.has_usable_pagespeed_data(
+                audit, require_complete=False
+            ):
                 return AuditPageSpeedStatusResponse(
                     audit_id=audit.id,
                     job_id=None,
@@ -378,7 +386,9 @@ class PageSpeedJobService:
 
         job.requested_by_user_id = requested_by_user_id
         job.status = AuditPageSpeedJobStatus.QUEUED.value
-        job.strategy = "both" if strategy not in {"mobile", "desktop", "both"} else strategy
+        job.strategy = (
+            "both" if strategy not in {"mobile", "desktop", "both"} else strategy
+        )
         job.celery_task_id = None
         job.force_refresh = bool(force_refresh)
         job.warnings = []
@@ -394,7 +404,9 @@ class PageSpeedJobService:
         return job
 
     @staticmethod
-    def mark_job_running(db: Session, audit: Audit, job: AuditPageSpeedJob) -> AuditPageSpeedJob:
+    def mark_job_running(
+        db: Session, audit: Audit, job: AuditPageSpeedJob
+    ) -> AuditPageSpeedJob:
         now = datetime.now(UTC)
         job.status = AuditPageSpeedJobStatus.RUNNING.value
         job.started_at = now
@@ -451,7 +463,9 @@ class PageSpeedJobService:
         return job
 
     @staticmethod
-    def enqueue_job_task(db: Session, audit: Audit, job: AuditPageSpeedJob) -> AuditPageSpeedJob:
+    def enqueue_job_task(
+        db: Session, audit: Audit, job: AuditPageSpeedJob
+    ) -> AuditPageSpeedJob:
         from app.workers.tasks import run_pagespeed_generation_job_task
 
         task = run_pagespeed_generation_job_task.delay(job.id)
@@ -480,11 +494,8 @@ class PageSpeedJobService:
             return existing_job
 
         require_complete = strategy == "both"
-        if (
-            not force_refresh
-            and PageSpeedJobService.has_usable_pagespeed_data(
-                audit, require_complete=require_complete
-            )
+        if not force_refresh and PageSpeedJobService.has_usable_pagespeed_data(
+            audit, require_complete=require_complete
         ):
             return existing_job
 
@@ -534,9 +545,13 @@ class PageSpeedJobService:
 
         audit = db.query(Audit).filter(Audit.id == job.audit_id).first()
         if audit is None:
-            raise ValueError(f"Audit {job.audit_id} not found for PageSpeed job {job_id}")
+            raise ValueError(
+                f"Audit {job.audit_id} not found for PageSpeed job {job_id}"
+            )
 
-        acquired_lock, lock_token, lock_mode = acquire_pagespeed_generation_lock(audit.id)
+        acquired_lock, lock_token, lock_mode = acquire_pagespeed_generation_lock(
+            audit.id
+        )
         if not acquired_lock:
             if lock_mode == "unavailable":
                 return PageSpeedJobService.mark_job_failed(
@@ -555,7 +570,11 @@ class PageSpeedJobService:
 
         try:
             job = PageSpeedJobService.mark_job_running(db, audit, job)
-            strategy = job.strategy if job.strategy in {"mobile", "desktop", "both"} else "both"
+            strategy = (
+                job.strategy
+                if job.strategy in {"mobile", "desktop", "both"}
+                else "both"
+            )
 
             if strategy == "both":
                 pagespeed_data = await PageSpeedService.analyze_both_strategies(
@@ -573,9 +592,11 @@ class PageSpeedJobService:
             if not isinstance(pagespeed_data, dict) or not pagespeed_data:
                 raise RuntimeError("PageSpeed analysis returned no data.")
 
-            warnings, successful_results = PageSpeedJobService.extract_provider_warnings(
-                pagespeed_data,
-                strategy=strategy,
+            warnings, successful_results = (
+                PageSpeedJobService.extract_provider_warnings(
+                    pagespeed_data,
+                    strategy=strategy,
+                )
             )
 
             merged_pagespeed = dict(audit.pagespeed_data or {})

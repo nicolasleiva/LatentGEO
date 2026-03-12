@@ -454,7 +454,10 @@ class AuditService:
             DEFAULT_PAGESPEED_RETRY_AFTER_SECONDS,
             PageSpeedJobService,
         )
-        from .pdf_job_service import ACTIVE_PDF_JOB_STATUSES, DEFAULT_PDF_RETRY_AFTER_SECONDS
+        from .pdf_job_service import (
+            ACTIVE_PDF_JOB_STATUSES,
+            DEFAULT_PDF_RETRY_AFTER_SECONDS,
+        )
 
         pagespeed_available = PageSpeedJobService.has_usable_pagespeed_data(
             audit, require_complete=False
@@ -479,7 +482,8 @@ class AuditService:
 
         pdf_error = None
         if pdf_job and (
-            getattr(pdf_job, "error_code", None) or getattr(pdf_job, "error_message", None)
+            getattr(pdf_job, "error_code", None)
+            or getattr(pdf_job, "error_message", None)
         ):
             pdf_error = {
                 "code": getattr(pdf_job, "error_code", None),
@@ -558,7 +562,9 @@ class AuditService:
         }
 
     @staticmethod
-    def public_artifact_payload(payload: Dict[str, Any] | None) -> Dict[str, Any] | None:
+    def public_artifact_payload(
+        payload: Dict[str, Any] | None,
+    ) -> Dict[str, Any] | None:
         if not isinstance(payload, dict):
             return None
         public_payload = {
@@ -876,12 +882,14 @@ class AuditService:
             normalized_target_audit
         )
         normalized_target_audit["geo_score"] = target_geo["score"]
-        normalized_target_audit["benchmark"] = CompetitorService._format_competitor_data(
-            normalized_target_audit,
-            target_geo["score"],
-            normalized_target_audit.get("url"),
-            score_meta=target_geo,
-            benchmark_available=True,
+        normalized_target_audit["benchmark"] = (
+            CompetitorService._format_competitor_data(
+                normalized_target_audit,
+                target_geo["score"],
+                normalized_target_audit.get("url"),
+                score_meta=target_geo,
+                benchmark_available=True,
+            )
         )
 
         normalized_competitor_audits: List[Dict[str, Any]] = []
@@ -893,9 +901,7 @@ class AuditService:
                 comp_data
             )
             normalized_competitor_audits.append(normalized_comp)
-            if not CompetitorService.is_benchmark_available_competitor(
-                normalized_comp
-            ):
+            if not CompetitorService.is_benchmark_available_competitor(normalized_comp):
                 competitor_warning_entries.append(normalized_comp)
 
         audit.target_audit = normalized_target_audit
@@ -1128,11 +1134,10 @@ class AuditService:
                         continue
                     domain = comp.get("domain") or f"competitor_{i}"
                     safe_domain = re.sub(r"[^\w\-_.]", "_", domain)
-                    if (
-                        not isinstance(comp.get("benchmark"), dict)
-                        or CompetitorService.needs_geo_score_refresh(
-                            comp, comp.get("geo_score")
-                        )
+                    if not isinstance(
+                        comp.get("benchmark"), dict
+                    ) or CompetitorService.needs_geo_score_refresh(
+                        comp, comp.get("geo_score")
                     ):
                         comp = CompetitorService.normalize_competitor_audit_payload(
                             comp
@@ -2541,10 +2546,11 @@ class CompetitorService:
         if score_status == "valid_zero" and (benchmark_score or 0.0) <= 0:
             return False
 
-        if (
-            score_version == cls.GEO_SCORE_VERSION
-            and score_status in {"valid", "valid_zero", "insufficient_signals"}
-        ):
+        if score_version == cls.GEO_SCORE_VERSION and score_status in {
+            "valid",
+            "valid_zero",
+            "insufficient_signals",
+        }:
             return False
 
         if score_status == "legacy_unknown":
@@ -2725,7 +2731,9 @@ class CompetitorService:
         *,
         commit: bool = True,
     ) -> float | None:
-        target_audit = audit.target_audit if isinstance(audit.target_audit, dict) else {}
+        target_audit = (
+            audit.target_audit if isinstance(audit.target_audit, dict) else {}
+        )
         if not target_audit:
             return None
 
@@ -2773,8 +2781,9 @@ class CompetitorService:
     ) -> Dict[str, Any]:
         """Formatear datos de competitor para el frontend con todos los campos necesarios"""
         try:
-            score_meta = score_meta or CompetitorService._calculate_geo_score_with_provenance(
-                audit_data
+            score_meta = (
+                score_meta
+                or CompetitorService._calculate_geo_score_with_provenance(audit_data)
             )
             benchmark_available = (
                 CompetitorService.is_benchmark_available_competitor(audit_data)
@@ -2862,22 +2871,34 @@ class CompetitorService:
                 "geo_score": geo_score,
                 "score": geo_score,
                 "score_version": (
-                    score_meta.get("score_version") if isinstance(score_meta, dict) else None
+                    score_meta.get("score_version")
+                    if isinstance(score_meta, dict)
+                    else None
                 ),
                 "score_status": (
-                    score_meta.get("score_status") if isinstance(score_meta, dict) else None
+                    score_meta.get("score_status")
+                    if isinstance(score_meta, dict)
+                    else None
                 ),
                 "score_source": (
-                    score_meta.get("score_source") if isinstance(score_meta, dict) else None
+                    score_meta.get("score_source")
+                    if isinstance(score_meta, dict)
+                    else None
                 ),
                 "score_reason": (
-                    score_meta.get("score_reason") if isinstance(score_meta, dict) else None
+                    score_meta.get("score_reason")
+                    if isinstance(score_meta, dict)
+                    else None
                 ),
                 "signals_used": (
-                    score_meta.get("signals_used", []) if isinstance(score_meta, dict) else []
+                    score_meta.get("signals_used", [])
+                    if isinstance(score_meta, dict)
+                    else []
                 ),
                 "computed_at": (
-                    score_meta.get("computed_at") if isinstance(score_meta, dict) else None
+                    score_meta.get("computed_at")
+                    if isinstance(score_meta, dict)
+                    else None
                 ),
                 "benchmark_available": bool(benchmark_available),
                 "schema_present": False,

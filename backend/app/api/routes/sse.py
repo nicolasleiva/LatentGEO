@@ -39,7 +39,9 @@ def _load_owned_audit_payload(audit_id: int, current_user: AuthUser) -> dict[str
         db_session.close()
 
 
-def _load_owned_artifact_payload(audit_id: int, current_user: AuthUser) -> dict[str, Any]:
+def _load_owned_artifact_payload(
+    audit_id: int, current_user: AuthUser
+) -> dict[str, Any]:
     cached_payload = AuditService.get_cached_artifact_payload(audit_id)
     if cached_payload is not None:
         ensure_artifact_snapshot_access(cached_payload, current_user)

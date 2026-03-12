@@ -66,7 +66,9 @@ def _wait_for_pdf_completion(
         if status == "failed":
             pytest.fail(f"PDF generation for audit {audit_id} failed: {payload}")
         time.sleep(max(1, int(payload.get("retry_after_seconds") or 3)))
-    pytest.fail(f"PDF generation for audit {audit_id} did not complete within {timeout_seconds}s")
+    pytest.fail(
+        f"PDF generation for audit {audit_id} did not complete within {timeout_seconds}s"
+    )
 
 
 def _get_pagespeed_status(audit_id: int, headers: Dict[str, str]) -> Dict[str, Any]:
@@ -87,7 +89,9 @@ def _wait_for_pagespeed_started_or_completed(
         if status in {"queued", "running", "completed", "failed"}:
             return payload
         time.sleep(max(1, int(payload.get("retry_after_seconds") or 3)))
-    pytest.fail(f"PageSpeed did not start within {timeout_seconds}s for audit {audit_id}")
+    pytest.fail(
+        f"PageSpeed did not start within {timeout_seconds}s for audit {audit_id}"
+    )
 
 
 def _wait_for_pagespeed_terminal(
@@ -131,7 +135,9 @@ def first_pdf_generation(
     completed_live_audit: Dict[str, Any], auth_headers: Dict[str, str]
 ) -> Dict[str, Any]:
     audit_id = int(completed_live_audit["id"])
-    pagespeed_before_pdf = _wait_for_pagespeed_started_or_completed(audit_id, auth_headers)
+    pagespeed_before_pdf = _wait_for_pagespeed_started_or_completed(
+        audit_id, auth_headers
+    )
     started = time.monotonic()
     response = requests.post(
         f"{API_BASE}/audits/{audit_id}/generate-pdf",

@@ -103,9 +103,7 @@ def test_download_pdf_url_normalizes_relative_signed_url(
     )
 
 
-def test_download_pdf_url_repairs_legacy_local_path(
-    client, db_session, monkeypatch
-):
+def test_download_pdf_url_repairs_legacy_local_path(client, db_session, monkeypatch):
     audit = Audit(
         url="https://www.robot.com/",
         domain="www.robot.com",

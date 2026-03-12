@@ -318,16 +318,16 @@ class PDFJobService:
             audit_id=audit_id,
             job_id=job.id,
             status=job.status,
-            download_ready=bool(is_completed and effective_report and effective_report.file_path),
+            download_ready=bool(
+                is_completed and effective_report and effective_report.file_path
+            ),
             report_id=effective_report.id if effective_report else None,
             warnings=PDFJobService.normalize_warnings(job.warnings),
             error=error,
             started_at=job.started_at,
             completed_at=job.completed_at,
             retry_after_seconds=(
-                retry_after_seconds
-                if job.status in ACTIVE_PDF_JOB_STATUSES
-                else 0
+                retry_after_seconds if job.status in ACTIVE_PDF_JOB_STATUSES else 0
             ),
             waiting_on=job.waiting_on,
             dependency_job_id=job.dependency_job_id,

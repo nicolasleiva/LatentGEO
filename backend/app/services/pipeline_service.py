@@ -6523,8 +6523,10 @@ class PipelineService:
                         summary.setdefault("domain", domain)
                         if CompetitorService is not None:
                             summary["benchmark_available"] = True
-                            summary = CompetitorService.normalize_competitor_audit_payload(
-                                summary
+                            summary = (
+                                CompetitorService.normalize_competitor_audit_payload(
+                                    summary
+                                )
                             )
                         logger.info(
                             f"PIPELINE: Auditoría de competidor {comp_url} exitosa."

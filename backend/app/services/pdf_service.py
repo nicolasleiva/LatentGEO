@@ -193,7 +193,9 @@ class PDFService:
         audit: Audit,
         report: Optional[Report],
     ) -> Report:
-        existing_path = str(report.file_path).strip() if report and report.file_path else ""
+        existing_path = (
+            str(report.file_path).strip() if report and report.file_path else ""
+        )
         if report and existing_path.startswith("supabase://"):
             return report
 
@@ -2660,13 +2662,10 @@ class PDFService:
 
         # 2. Check if PageSpeed data exists and is recent
         pagespeed_data = audit.pagespeed_data
-        needs_refresh = (
-            allow_pagespeed_refresh
-            and (
-                force_pagespeed_refresh
-                or not pagespeed_data
-                or PDFService._is_pagespeed_stale(pagespeed_data)
-            )
+        needs_refresh = allow_pagespeed_refresh and (
+            force_pagespeed_refresh
+            or not pagespeed_data
+            or PDFService._is_pagespeed_stale(pagespeed_data)
         )
 
         # 3. Run PageSpeed if needed
@@ -2944,7 +2943,9 @@ class PDFService:
                 limit=20,
             )
 
-            async def _refresh_keywords_dataset() -> tuple[List[Dict[str, Any]], Dict[str, Any]]:
+            async def _refresh_keywords_dataset() -> (
+                tuple[List[Dict[str, Any]], Dict[str, Any]]
+            ):
                 service_db = SessionLocal()
                 try:
                     keyword_svc = KeywordService(service_db)
@@ -3453,7 +3454,9 @@ class PDFService:
         generation_warnings: List[str] = []
         report_markdown_for_pdf = fallback_markdown_report
         report_persisted = False
-        generation_warnings.extend(PDFService._collect_competitor_failure_warnings(audit))
+        generation_warnings.extend(
+            PDFService._collect_competitor_failure_warnings(audit)
+        )
         if cached_markdown_is_deterministic:
             generation_warnings.append(
                 "Ignoring cached deterministic fallback report and attempting regeneration."

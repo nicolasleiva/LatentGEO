@@ -325,9 +325,7 @@ def run_audit_task(self, audit_id: int):
                     queued_pagespeed_job = PageSpeedJobService.queue_if_needed(
                         db,
                         audit=persistent_audit,
-                        requested_by_user_id=getattr(
-                            persistent_audit, "user_id", None
-                        ),
+                        requested_by_user_id=getattr(persistent_audit, "user_id", None),
                         strategy="both",
                         force_refresh=False,
                     )
