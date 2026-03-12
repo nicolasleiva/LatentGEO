@@ -172,7 +172,7 @@ async def test_set_audit_results_skips_failed_competitors_from_benchmark_and_per
     diagnostics = audit.runtime_diagnostics
     assert diagnostics
     assert diagnostics[-1]["source"] == "competitor"
-    assert "blocked.example.com" in diagnostics[-1]["message"]
+    assert "HTTP 403" in diagnostics[-1]["message"]
 
     competitor_files = list(
         (tmp_path / f"audit_{audit.id}" / "competitors").glob("*.json")
