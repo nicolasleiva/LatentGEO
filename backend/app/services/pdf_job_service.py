@@ -651,6 +651,11 @@ class PDFJobService:
                     refreshed_pagespeed_job is None
                     or not PageSpeedJobService.has_active_job(refreshed_pagespeed_job)
                 ):
+                    release_pdf_generation_lock(
+                        audit_id_for_lock, lock_token, lock_mode
+                    )
+                    lock_token = None
+                    lock_mode = None
                     return (
                         PDFJobService.resume_waiting_job_after_pagespeed(
                             db,

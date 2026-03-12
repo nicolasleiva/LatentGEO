@@ -1,5 +1,6 @@
 from app.core.config import settings
 from app.models import Audit, AuditStatus, Report
+from sqlalchemy.exc import OperationalError
 
 
 def _create_completed_audit(
@@ -207,3 +208,22 @@ def test_download_report_repairs_legacy_local_path(client, db_session, monkeypat
     assert repaired_report is not None
     assert repaired_report.file_path == f"supabase://audits/{audit.id}/report.pdf"
     assert repaired_report.file_size == 256
+
+
+def test_download_pdf_url_propagates_db_unavailable_during_legacy_repair(
+    client, db_session, monkeypatch
+):
+    audit = _create_completed_audit(db_session, file_path="/tmp/legacy-report.pdf")
+
+    async def _raise_db_error(**_kwargs):
+        raise OperationalError("SELECT 1", {}, RuntimeError("db offline"))
+
+    monkeypatch.setattr(
+        "app.services.pdf_service.PDFService.ensure_supabase_pdf_report",
+        _raise_db_error,
+    )
+
+    response = client.get(f"/api/v1/audits/{audit.id}/download-pdf-url")
+
+    assert response.status_code == 503
+    assert response.json()["detail"]["error_code"] == "db_unavailable"

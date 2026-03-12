@@ -24,7 +24,10 @@ class AuthContextMiddleware(BaseHTTPMiddleware):
                     request.state.auth_user = get_user_from_bearer_token(token)
                 except HTTPException as exc:
                     request.state.auth_error = exc
-        elif settings.DEBUG or _is_development_like_environment(settings.ENVIRONMENT):
+        elif settings.DEBUG or (
+            bool(settings.ENVIRONMENT)
+            and _is_development_like_environment(settings.ENVIRONMENT)
+        ):
             legacy_user_id = request.headers.get("X-User-ID", "").strip()
             if legacy_user_id:
                 # Test/internal fallback only. Production rate-limit identity must

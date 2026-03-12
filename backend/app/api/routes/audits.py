@@ -213,6 +213,10 @@ async def _resolve_signed_pdf_download_url(
                     report=pdf_report,
                     allow_full_regeneration=False,
                 )
+            except HTTPException:
+                raise
+            except (OperationalError, DBAPIError):
+                raise
             except Exception as exc:
                 logger.error(
                     "storage_provider=supabase audit_id=%s action=repair_legacy_pdf_failed error=%s",

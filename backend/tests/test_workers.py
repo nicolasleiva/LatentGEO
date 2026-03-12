@@ -8,7 +8,8 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 from app.core.config import settings
-from app.models import Audit, AuditStatus
+from app.models import Audit, AuditPdfJob, AuditStatus
+from app.services.pdf_job_service import PDFJobService
 from app.workers.async_runtime import _worker_async_runtime, run_worker_coroutine
 from app.workers.tasks import generate_pdf_task, run_audit_task, run_pagespeed_task
 from sqlalchemy import inspect as sa_inspect
@@ -187,3 +188,75 @@ def test_worker_async_runtime_reuses_same_loop_for_multiple_coroutines():
     assert first_loop_id == second_loop_id
 
     _worker_async_runtime.close()
+
+
+@pytest.mark.asyncio
+async def test_pdf_execute_job_releases_lock_before_resuming_waiting_job(
+    db_session: Session, monkeypatch
+):
+    audit = Audit(
+        url="https://resume-after-pagespeed.com",
+        status=AuditStatus.COMPLETED,
+        domain="resume-after-pagespeed.com",
+    )
+    db_session.add(audit)
+    db_session.commit()
+    db_session.refresh(audit)
+
+    job = AuditPdfJob(
+        audit_id=audit.id,
+        status="queued",
+    )
+    db_session.add(job)
+    db_session.commit()
+    db_session.refresh(job)
+
+    order: list[str] = []
+    active_pagespeed_job = SimpleNamespace(id=41, status="running")
+
+    monkeypatch.setattr(
+        "app.services.pdf_job_service.acquire_pdf_generation_lock",
+        lambda _audit_id: (True, "token-123", "redis"),
+    )
+
+    def _release(*_args, **_kwargs):
+        order.append("release")
+
+    monkeypatch.setattr(
+        "app.services.pdf_job_service.release_pdf_generation_lock",
+        _release,
+    )
+
+    pagespeed_job_sequence = iter([active_pagespeed_job, None])
+
+    def _get_pagespeed_job(_db, _audit_id):
+        return next(pagespeed_job_sequence, None)
+
+    monkeypatch.setattr(
+        "app.services.pagespeed_job_service.PageSpeedJobService.get_job",
+        _get_pagespeed_job,
+    )
+    monkeypatch.setattr(
+        "app.services.pagespeed_job_service.PageSpeedJobService.has_active_job",
+        lambda job: job is not None and getattr(job, "status", None) == "running",
+    )
+    monkeypatch.setattr(
+        "app.services.pdf_job_service.PDFJobService.publish_status_event",
+        lambda *_args, **_kwargs: None,
+    )
+
+    def _resume(_db, audit, pagespeed_job):
+        order.append("resume")
+        assert audit.id == audit.id
+        assert pagespeed_job is None
+        return _db.query(AuditPdfJob).filter(AuditPdfJob.id == job.id).first()
+
+    monkeypatch.setattr(
+        PDFJobService,
+        "resume_waiting_job_after_pagespeed",
+        _resume,
+    )
+
+    await PDFJobService.execute_job(db_session, job.id)
+
+    assert order[:2] == ["release", "resume"]
