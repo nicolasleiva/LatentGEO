@@ -11,13 +11,7 @@ from typing import Any, Iterable, Optional
 
 from app.core.config import settings
 from app.core.logger import get_logger
-from app.models import (
-    Audit,
-    AuditPageSpeedJob,
-    AuditPdfJob,
-    AuditPdfJobStatus,
-    Report,
-)
+from app.models import Audit, AuditPageSpeedJob, AuditPdfJob, AuditPdfJobStatus, Report
 from app.schemas import AuditPDFStatusResponse, PDFStatusError
 from app.services.audit_service import AuditService
 from app.services.cache_service import cache

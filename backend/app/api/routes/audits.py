@@ -31,10 +31,7 @@ from app.services.pagespeed_job_service import (
     DEFAULT_PAGESPEED_RETRY_AFTER_SECONDS,
     PageSpeedJobService,
 )
-from app.services.pdf_job_service import (
-    DEFAULT_PDF_RETRY_AFTER_SECONDS,
-    PDFJobService,
-)
+from app.services.pdf_job_service import DEFAULT_PDF_RETRY_AFTER_SECONDS, PDFJobService
 from app.services.pipeline_service import PipelineService
 
 # Importar la tarea de Celery
