@@ -165,7 +165,7 @@ async def test_set_audit_results_skips_failed_competitors_from_benchmark_and_per
     ]
     assert len(failed_competitors) == 1
     failed_competitor = failed_competitors[0]
-    assert failed_competitor["domain"] == "blocked.example.com"
+    assert failed_competitor["error"] == "No se pudo acceder al sitio (HTTP 403)"
     assert failed_competitor["benchmark_available"] is False
     assert "benchmark" not in failed_competitor
 
