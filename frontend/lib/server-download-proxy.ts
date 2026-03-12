@@ -15,6 +15,21 @@ const AUTH0_API_SCOPE =
 
 const PDF_ACCEPT_HEADER =
   "application/pdf, application/octet-stream;q=0.9, application/json;q=0.8, */*;q=0.7";
+const DOWNLOAD_TIMEOUT_MS = 30_000;
+
+async function fetchWithTimeout(
+  input: RequestInfo | URL,
+  init: RequestInit,
+  timeoutMs = DOWNLOAD_TIMEOUT_MS,
+): Promise<Response> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(input, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
 
 async function getBackendAccessToken(request: NextRequest): Promise<string> {
   const session = await auth0.getSession(request);
@@ -144,15 +159,26 @@ export async function proxyProtectedPdfDownload(
   }
 
   const backendUrl = new URL(backendPath, API_BASE_URL);
-  const backendResponse = await fetch(backendUrl, {
-    method: "GET",
-    cache: "no-store",
-    redirect: "manual",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      Accept: PDF_ACCEPT_HEADER,
-    },
-  });
+  let backendResponse: Response;
+  try {
+    backendResponse = await fetchWithTimeout(backendUrl, {
+      method: "GET",
+      cache: "no-store",
+      redirect: "manual",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: PDF_ACCEPT_HEADER,
+      },
+    });
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") {
+      return NextResponse.json(
+        { error: "Backend PDF download request timed out." },
+        { status: 504 },
+      );
+    }
+    throw error;
+  }
 
   if (backendResponse.status >= 300 && backendResponse.status < 400) {
     const signedUrl = backendResponse.headers.get("location");
@@ -163,10 +189,21 @@ export async function proxyProtectedPdfDownload(
       );
     }
 
-    const upstreamResponse = await fetch(signedUrl, {
-      cache: "no-store",
-      redirect: "follow",
-    });
+    let upstreamResponse: Response;
+    try {
+      upstreamResponse = await fetchWithTimeout(signedUrl, {
+        cache: "no-store",
+        redirect: "follow",
+      });
+    } catch (error) {
+      if (error instanceof Error && error.name === "AbortError") {
+        return NextResponse.json(
+          { error: "Signed PDF download timed out." },
+          { status: 504 },
+        );
+      }
+      throw error;
+    }
     if (!upstreamResponse.ok) {
       return NextResponse.json(
         {

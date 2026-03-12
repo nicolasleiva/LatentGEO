@@ -101,6 +101,26 @@ def _db_unavailable_http_exception(action: str) -> HTTPException:
     )
 
 
+def _default_artifact_status_payload(
+    audit_id: int,
+    payload: dict | None = None,
+) -> dict[str, object]:
+    base_payload: dict[str, object] = {
+        "audit_id": audit_id,
+        "pagespeed_status": "idle",
+        "pagespeed_available": False,
+        "pagespeed_warnings": [],
+        "pagespeed_retry_after_seconds": 0,
+        "pdf_status": "idle",
+        "pdf_available": False,
+        "pdf_warnings": [],
+        "pdf_retry_after_seconds": 0,
+    }
+    if isinstance(payload, dict):
+        base_payload.update(payload)
+    return base_payload
+
+
 def _persist_runtime_diagnostic_safely(
     db: Session,
     audit_id: int,
@@ -146,7 +166,7 @@ def _pdf_requires_pagespeed_refresh(
         return True
     if pagespeed_job is not None and PageSpeedJobService.has_active_job(pagespeed_job):
         return True
-    if pagespeed_job is not None and pagespeed_job.status in {"completed", "failed"}:
+    if pagespeed_job is not None and pagespeed_job.status == "completed":
         return False
     return not PageSpeedJobService.has_usable_pagespeed_data(
         audit,
@@ -186,11 +206,23 @@ async def _resolve_signed_pdf_download_url(
             )
 
         if not str(pdf_report.file_path).startswith("supabase://"):
-            pdf_report = await PDFService.ensure_supabase_pdf_report(
-                db=db,
-                audit=audit,
-                report=pdf_report,
-            )
+            try:
+                pdf_report = await PDFService.ensure_supabase_pdf_report(
+                    db=db,
+                    audit=audit,
+                    report=pdf_report,
+                    allow_full_regeneration=False,
+                )
+            except Exception as exc:
+                logger.error(
+                    "storage_provider=supabase audit_id=%s action=repair_legacy_pdf_failed error=%s",
+                    audit_id,
+                    exc,
+                )
+                raise HTTPException(
+                    status_code=502,
+                    detail="No se pudo reparar el PDF almacenado para su descarga. Generá el PDF nuevamente.",
+                ) from exc
 
         pdf_path = str(pdf_report.file_path)
     except HTTPException:
@@ -1018,9 +1050,10 @@ async def get_audit_artifacts_status(
         )
         raise _db_unavailable_http_exception("artifacts_status_lookup") from db_err
 
-    payload = AuditService.public_artifact_payload(artifact_payload) or {
-        "audit_id": audit_id
-    }
+    payload = _default_artifact_status_payload(
+        audit_id,
+        AuditService.public_artifact_payload(artifact_payload),
+    )
     degraded_message = (
         "Artifact status served from database fallback while Redis snapshot is unavailable."
         if source != "redis"
@@ -1152,6 +1185,18 @@ async def generate_audit_pdf(
                     dependency_job_id=current_pagespeed_job.id,
                 )
                 PDFJobService.publish_status_event(db, audit, job=job)
+                refreshed_pagespeed_job = PageSpeedJobService.get_job(db, audit.id)
+                if (
+                    refreshed_pagespeed_job is None
+                    or not PageSpeedJobService.has_active_job(refreshed_pagespeed_job)
+                ):
+                    resumed_job = PDFJobService.resume_waiting_job_after_pagespeed(
+                        db,
+                        audit=audit,
+                        pagespeed_job=refreshed_pagespeed_job,
+                    )
+                    if resumed_job is not None:
+                        job = resumed_job
                 response = PDFJobService.build_status_response(
                     audit_id=audit.id,
                     job=job,

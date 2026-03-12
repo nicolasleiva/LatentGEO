@@ -212,16 +212,16 @@ export const getBackendAccessToken = async (
     console.error("Error getting Auth0 access token:", error);
   }
 
+  if (!AUTH0_API_AUDIENCE && !audienceMissingLogged) {
+    console.warn(
+      "Missing NEXT_PUBLIC_AUTH0_API_AUDIENCE. Falling back to backend token bridge.",
+    );
+    audienceMissingLogged = true;
+  }
+
   const bridgedToken = await getBridgedBackendAccessToken();
   if (bridgedToken) {
     return bridgedToken;
-  }
-
-  if (!AUTH0_API_AUDIENCE && !audienceMissingLogged) {
-    console.error(
-      "Missing NEXT_PUBLIC_AUTH0_API_AUDIENCE. Cannot request API access token.",
-    );
-    audienceMissingLogged = true;
   }
 
   auth0AccessTokenCache = null;

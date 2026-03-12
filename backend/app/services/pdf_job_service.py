@@ -30,6 +30,12 @@ DEFAULT_PDF_RETRY_AFTER_SECONDS = 3
 
 _pdf_generation_in_progress: set[int] = set()
 _pdf_generation_tokens: dict[int, str] = {}
+_REDIS_COMPARE_AND_DELETE_SCRIPT = """
+if redis.call("get", KEYS[1]) == ARGV[1] then
+    return redis.call("del", KEYS[1])
+end
+return 0
+"""
 
 
 def pdf_lock_key(audit_id: int) -> str:
@@ -41,7 +47,7 @@ def acquire_pdf_generation_lock(audit_id: int) -> tuple[bool, str | None, str | 
     Acquire PDF generation lock using Redis in production and memory in debug fallback.
     """
     token = str(uuid.uuid4())
-    ttl_seconds = max(30, int(settings.PDF_LOCK_TTL_SECONDS or 900))
+    ttl_seconds = max(1800, int(settings.PDF_LOCK_TTL_SECONDS or 1800))
 
     if cache.enabled and cache.redis_client:
         try:
@@ -99,9 +105,17 @@ def release_pdf_generation_lock(
         if cache.enabled and cache.redis_client:
             try:
                 lock_key = pdf_lock_key(audit_id)
-                current_token = cache.redis_client.get(lock_key)
-                if current_token == token:
-                    cache.redis_client.delete(lock_key)
+                if hasattr(cache.redis_client, "eval"):
+                    cache.redis_client.eval(
+                        _REDIS_COMPARE_AND_DELETE_SCRIPT,
+                        1,
+                        lock_key,
+                        token,
+                    )
+                else:
+                    current_token = cache.redis_client.get(lock_key)
+                    if current_token == token:
+                        cache.redis_client.delete(lock_key)
             except Exception as exc:
                 logger.warning(
                     "Failed to release Redis PDF lock for audit %s: %s",
@@ -515,7 +529,7 @@ class PDFJobService:
         db: Session,
         *,
         audit: Audit,
-        pagespeed_job: AuditPageSpeedJob,
+        pagespeed_job: AuditPageSpeedJob | None,
     ) -> AuditPdfJob | None:
         job = PDFJobService.get_job(db, audit.id)
         if job is None:
@@ -526,9 +540,12 @@ class PDFJobService:
             return job
         if (
             job.dependency_job_id is not None
+            and pagespeed_job is not None
             and pagespeed_job.id is not None
             and job.dependency_job_id != pagespeed_job.id
         ):
+            return job
+        if job.dependency_job_id is not None and pagespeed_job is None:
             return job
 
         job.status = AuditPdfJobStatus.QUEUED.value
@@ -629,6 +646,19 @@ class PDFJobService:
                     pagespeed_job.id,
                     audit.id,
                 )
+                refreshed_pagespeed_job = PageSpeedJobService.get_job(db, audit.id)
+                if (
+                    refreshed_pagespeed_job is None
+                    or not PageSpeedJobService.has_active_job(refreshed_pagespeed_job)
+                ):
+                    return (
+                        PDFJobService.resume_waiting_job_after_pagespeed(
+                            db,
+                            audit=audit,
+                            pagespeed_job=refreshed_pagespeed_job,
+                        )
+                        or job
+                    )
                 return job
 
             job = PDFJobService.mark_job_running(db, job)

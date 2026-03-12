@@ -225,7 +225,10 @@ class Settings(BaseSettings):
     ALLOW_INSECURE_SSL_FALLBACK: bool = (
         os.getenv("ALLOW_INSECURE_SSL_FALLBACK", "False").lower() == "true"
     )
-    PDF_LOCK_TTL_SECONDS: int = int(os.getenv("PDF_LOCK_TTL_SECONDS", "900"))
+    PDF_LOCK_TTL_SECONDS: int = int(os.getenv("PDF_LOCK_TTL_SECONDS", "1800"))
+    PAGESPEED_LOCK_TTL_SECONDS: int = int(
+        os.getenv("PAGESPEED_LOCK_TTL_SECONDS", "300")
+    )
     MAX_CRAWL_DEFAULT: int = 50
     RESPECT_ROBOTS: bool = os.getenv("RESPECT_ROBOTS", "False").lower() == "true"
     MAX_AUDIT_DEFAULT: int = 5

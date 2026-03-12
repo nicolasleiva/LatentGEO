@@ -14,6 +14,8 @@ _AUDIT_READ_PATH_RE = re.compile(
     r"^/api/v1/audits/\d+"
     r"(?:/(?:overview|pages|competitors|report|fix_plan|status|progress|diagnostics))?$"
 )
+_SSE_PROGRESS_PATH_RE = re.compile(r"^/api/v1/sse/audits/\d+/progress$")
+_SSE_ARTIFACTS_PATH_RE = re.compile(r"^/api/v1/sse/audits/\d+/artifacts$")
 
 
 @dataclass(frozen=True)
@@ -67,6 +69,13 @@ def resolve_rate_limit_policy(request: Request, settings) -> RateLimitPolicy:
     if method == "GET" and path.endswith("/artifacts-status"):
         return RateLimitPolicy("artifacts_status", rate_limit_default, 60)
 
+    sse_limit = max(rate_limit_heavy, min(rate_limit_default, 30))
+    if method == "GET" and _SSE_PROGRESS_PATH_RE.fullmatch(path):
+        return RateLimitPolicy("sse_progress", sse_limit, 60)
+
+    if method == "GET" and _SSE_ARTIFACTS_PATH_RE.fullmatch(path):
+        return RateLimitPolicy("sse_artifacts", sse_limit, 60)
+
     if path.startswith("/api/v1/webhooks"):
         return RateLimitPolicy("webhooks", 1000, 60)
 
@@ -85,7 +94,7 @@ def resolve_rate_limit_identity(request: Request) -> str:
     if isinstance(user_id, str) and user_id.strip():
         return f"user:{user_id.strip()}"
 
-    legacy_user_id = request.headers.get("X-User-ID")
+    legacy_user_id = getattr(request.state, "legacy_user_id", None)
     if isinstance(legacy_user_id, str) and legacy_user_id.strip():
         return f"user:{legacy_user_id.strip()}"
 

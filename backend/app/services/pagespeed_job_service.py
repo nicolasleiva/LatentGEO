@@ -28,6 +28,12 @@ DEFAULT_PAGESPEED_RETRY_AFTER_SECONDS = 3
 
 _pagespeed_generation_in_progress: set[int] = set()
 _pagespeed_generation_tokens: dict[int, str] = {}
+_REDIS_COMPARE_AND_DELETE_SCRIPT = """
+if redis.call("get", KEYS[1]) == ARGV[1] then
+    return redis.call("del", KEYS[1])
+end
+return 0
+"""
 
 
 def pagespeed_lock_key(audit_id: int) -> str:
@@ -38,7 +44,12 @@ def acquire_pagespeed_generation_lock(
     audit_id: int,
 ) -> tuple[bool, str | None, str | None]:
     token = str(uuid.uuid4())
-    ttl_seconds = max(30, int(settings.PDF_LOCK_TTL_SECONDS or 900))
+    ttl_seconds = max(
+        30,
+        int(
+            settings.PAGESPEED_LOCK_TTL_SECONDS or settings.PDF_LOCK_TTL_SECONDS or 300
+        ),
+    )
 
     if cache.enabled and cache.redis_client:
         try:
@@ -96,9 +107,17 @@ def release_pagespeed_generation_lock(
         if cache.enabled and cache.redis_client:
             try:
                 lock_key = pagespeed_lock_key(audit_id)
-                current_token = cache.redis_client.get(lock_key)
-                if current_token == token:
-                    cache.redis_client.delete(lock_key)
+                if hasattr(cache.redis_client, "eval"):
+                    cache.redis_client.eval(
+                        _REDIS_COMPARE_AND_DELETE_SCRIPT,
+                        1,
+                        lock_key,
+                        token,
+                    )
+                else:
+                    current_token = cache.redis_client.get(lock_key)
+                    if current_token == token:
+                        cache.redis_client.delete(lock_key)
             except Exception as exc:
                 logger.warning(
                     "Failed to release Redis PageSpeed lock for audit %s: %s",

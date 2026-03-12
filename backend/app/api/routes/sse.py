@@ -55,7 +55,17 @@ def _load_owned_artifact_payload(
     try:
         payload = AuditService.rebuild_artifact_payload(db_session, audit_id)
         ensure_artifact_snapshot_access(payload, current_user)
-        return AuditService.public_artifact_payload(payload) or {"audit_id": audit_id}
+        return AuditService.public_artifact_payload(payload) or {
+            "audit_id": audit_id,
+            "pagespeed_status": "idle",
+            "pagespeed_available": False,
+            "pagespeed_warnings": [],
+            "pagespeed_retry_after_seconds": 0,
+            "pdf_status": "idle",
+            "pdf_available": False,
+            "pdf_warnings": [],
+            "pdf_retry_after_seconds": 0,
+        }
     finally:
         db_session.close()
 
@@ -190,9 +200,8 @@ async def audit_progress_stream(
                     use_redis_source = False
 
             should_check_db = payload is None and (
-                sse_source == "db"
-                or not use_redis_source
-                or (now - last_db_check_ts) >= fallback_db_interval
+                (sse_source == "db" or not use_redis_source or sse_source != "redis")
+                and (now - last_db_check_ts) >= fallback_db_interval
             )
 
             if should_check_db:
@@ -345,9 +354,8 @@ async def audit_artifact_stream(
                     use_redis_source = False
 
             should_check_db = payload is None and (
-                sse_source == "db"
-                or not use_redis_source
-                or (now - last_db_check_ts) >= fallback_db_interval
+                (sse_source == "db" or not use_redis_source or sse_source != "redis")
+                and (now - last_db_check_ts) >= fallback_db_interval
             )
 
             if should_check_db:

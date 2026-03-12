@@ -110,11 +110,23 @@ async def download_report(
         audit = _get_owned_audit(db, report.audit_id, current_user)
 
         if not report.file_path or not str(report.file_path).startswith("supabase://"):
-            report = await PDFService.ensure_supabase_pdf_report(
-                db=db,
-                audit=audit,
-                report=report,
-            )
+            try:
+                report = await PDFService.ensure_supabase_pdf_report(
+                    db=db,
+                    audit=audit,
+                    report=report,
+                    allow_full_regeneration=False,
+                )
+            except Exception as exc:
+                logger.error(
+                    "storage_provider=supabase audit_id=%s action=repair_legacy_pdf_failed error=%s",
+                    audit.id,
+                    exc,
+                )
+                raise HTTPException(
+                    status_code=status.HTTP_502_BAD_GATEWAY,
+                    detail="No se pudo reparar el PDF almacenado para su descarga. Genera el PDF nuevamente.",
+                ) from exc
 
         from ...core.config import settings
         from ...services.supabase_service import SupabaseService

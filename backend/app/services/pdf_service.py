@@ -192,6 +192,8 @@ class PDFService:
         db,
         audit: Audit,
         report: Optional[Report],
+        *,
+        allow_full_regeneration: bool = True,
     ) -> Report:
         existing_path = (
             str(report.file_path).strip() if report and report.file_path else ""
@@ -221,7 +223,7 @@ class PDFService:
                 report_markdown_override=audit.report_markdown,
             )
             repaired_size = getattr(audit, "_generated_pdf_size_bytes", None)
-        else:
+        elif allow_full_regeneration:
             generation_result = await PDFService.generate_pdf_with_complete_context(
                 db=db,
                 audit_id=audit.id,
@@ -238,6 +240,11 @@ class PDFService:
                 )
             except (TypeError, ValueError):
                 repaired_size = None
+        else:
+            raise RuntimeError(
+                "PDF repair failed: no local file or markdown is available. "
+                "Use POST /generate-pdf to regenerate the report."
+            )
 
         if not repaired_path or not str(repaired_path).startswith("supabase://"):
             raise RuntimeError(

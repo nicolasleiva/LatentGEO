@@ -12,8 +12,8 @@ logger = get_logger(__name__)
 
 
 def main() -> int:
-    retries = max(1, int(getattr(settings, "DB_RETRIES", 5)))
-    retry_delay = max(1, int(getattr(settings, "DB_RETRY_DELAY", 3)))
+    retries = max(1, settings.DB_RETRIES)
+    retry_delay = max(1, settings.DB_RETRY_DELAY)
     last_error: Exception | None = None
 
     for attempt in range(1, retries + 1):
@@ -32,14 +32,13 @@ def main() -> int:
                 retries,
                 exc,
             )
-        except Exception as exc:
-            last_error = exc
-            logger.warning(
-                "Migration attempt %s/%s failed: %s",
+        except Exception:
+            logger.exception(
+                "Migration attempt %s/%s failed with a non-retryable error.",
                 attempt,
                 retries,
-                exc,
             )
+            return 1
 
         if attempt < retries:
             time.sleep(retry_delay)
