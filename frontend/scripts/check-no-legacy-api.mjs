@@ -63,13 +63,15 @@ for (const scopeDir of scopes) {
 
     lines.forEach((line, index) => {
       legacyApiPattern.lastIndex = 0;
-      if (
-        legacyApiPattern.test(line) &&
-        !allowedInternalApiPatterns.some((pattern) => {
+      const matches = Array.from(line.matchAll(legacyApiPattern));
+      const disallowedMatches = matches.filter((match) => {
+        const candidate = match[0];
+        return !allowedInternalApiPatterns.some((pattern) => {
           pattern.lastIndex = 0;
-          return pattern.test(line);
-        })
-      ) {
+          return pattern.test(candidate);
+        });
+      });
+      if (disallowedMatches.length > 0) {
         const relativePath = path
           .relative(frontendRoot, filePath)
           .replaceAll("\\", "/");

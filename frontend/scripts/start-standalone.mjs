@@ -35,6 +35,8 @@ const syncTree = (source, target) => {
 
 const parseEnvFile = (source) => {
   const entries = {};
+  const quotedValuePattern =
+    /^(["'])(?<value>(?:\\.|(?!\1).)*)\1(?:\s+#.*)?$/u;
 
   for (const line of source.split(/\r?\n/u)) {
     const trimmed = line.trim();
@@ -56,12 +58,9 @@ const parseEnvFile = (source) => {
     }
 
     let value = normalized.slice(separatorIndex + 1).trim();
-    const isQuoted =
-      (value.startsWith('"') && value.endsWith('"')) ||
-      (value.startsWith("'") && value.endsWith("'"));
-
-    if (isQuoted) {
-      value = value.slice(1, -1);
+    const quotedMatch = value.match(quotedValuePattern);
+    if (quotedMatch?.groups?.value !== undefined) {
+      value = quotedMatch.groups.value;
     } else {
       const inlineCommentIndex = value.indexOf(" #");
       if (inlineCommentIndex >= 0) {

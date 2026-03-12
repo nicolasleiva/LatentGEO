@@ -145,7 +145,9 @@ const cacheResolvedToken = (token: string, expiresAtMs?: number) => {
   auth0AccessTokenCache = {
     token,
     expiresAtMs:
-      typeof expiresAtMs === "number" && Number.isFinite(expiresAtMs)
+      typeof expiresAtMs === "number" &&
+      Number.isFinite(expiresAtMs) &&
+      expiresAtMs > Date.now()
         ? expiresAtMs
         : Date.now() + 50_000,
   };

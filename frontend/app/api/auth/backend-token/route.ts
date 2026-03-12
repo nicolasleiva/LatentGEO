@@ -1,14 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 
+import { isAdminSessionUser } from "@/lib/admin";
 import { auth0 } from "@/lib/auth0";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest) {
-  if (
-    process.env.AUTH0_TOKEN_BRIDGE_ENABLED?.trim().toLowerCase() === "false"
-  ) {
+  if (process.env.AUTH0_TOKEN_BRIDGE_ENABLED?.trim().toLowerCase() !== "true") {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
@@ -19,6 +18,15 @@ export async function GET(request: NextRequest) {
         { error: "Unauthorized: missing Auth0 session" },
         { status: 401 },
       );
+    }
+    if (
+      !isAdminSessionUser(
+        typeof session.user === "object"
+          ? (session.user as Record<string, unknown>)
+          : null,
+      )
+    ) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
     const audience =

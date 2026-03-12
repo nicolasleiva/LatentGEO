@@ -38,13 +38,27 @@ const compareIsoDesc = (left?: string, right?: string) => {
 
 const sortVisibilityResults = (items: LLMVisibility[]): LLMVisibility[] => {
   return [...items].sort((left, right) => {
-    const checkedAtOrder = compareIsoDesc(left.checked_at, right.checked_at);
-    if (checkedAtOrder !== 0) return checkedAtOrder;
+    const checkedAtDelta = compareIsoDesc(left.checked_at, right.checked_at);
+    if (checkedAtDelta !== 0) return checkedAtDelta;
     if (left.id !== right.id) return right.id - left.id;
     const llmOrder = left.llm_name.localeCompare(right.llm_name);
     if (llmOrder !== 0) return llmOrder;
     return left.query.localeCompare(right.query);
   });
+};
+
+const mergeVisibilityResults = (
+  current: LLMVisibility[],
+  incoming: LLMVisibility[],
+): LLMVisibility[] => {
+  const merged = new Map<number, LLMVisibility>();
+  for (const item of current) {
+    merged.set(item.id, item);
+  }
+  for (const item of incoming) {
+    merged.set(item.id, item);
+  }
+  return sortVisibilityResults(Array.from(merged.values()));
 };
 
 export default function LLMVisibilityPageClient({
@@ -79,8 +93,12 @@ export default function LLMVisibilityPageClient({
           nextBrandName = "";
         }
 
-        setBrandName(nextBrandName);
-        setResults(sortVisibilityResults(nextResults));
+        setBrandName((currentValue) =>
+          currentValue.trim() ? currentValue : nextBrandName,
+        );
+        setResults((currentResults) =>
+          mergeVisibilityResults(currentResults, nextResults),
+        );
       } catch {
         if (cancelled) return;
       }

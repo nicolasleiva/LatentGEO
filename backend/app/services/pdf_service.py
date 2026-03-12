@@ -815,12 +815,16 @@ class PDFService:
         keyword_items = [
             row for row in (items or []) if isinstance(row, dict) and row.get("keyword")
         ]
-        total_keywords = len(keyword_items) if total is None else max(int(total), 0)
+        available_total_keywords = (
+            len(keyword_items) if total is None else max(int(total), 0)
+        )
+        total_keywords = len(keyword_items)
         return {
             "items": keyword_items,
             "keywords": keyword_items,
             "total": total_keywords,
             "total_keywords": total_keywords,
+            "available_total_keywords": available_total_keywords,
             "top_opportunities": sorted(
                 keyword_items,
                 key=lambda row: PDFService._safe_float(

@@ -309,8 +309,9 @@ class AuditService:
 
         if audit:
             try:
-                CompetitorService.ensure_target_geo_score(db, audit, commit=True)
+                CompetitorService.ensure_target_geo_score(db, audit, commit=False)
             except Exception as geo_err:
+                db.rollback()
                 logger.warning(
                     "No se pudo normalizar GEO score para audit %s: %s",
                     audit_id,
@@ -1012,6 +1013,7 @@ class AuditService:
                         url=comp_data.get("url"),
                         geo_score=comp_data.get("geo_score", 0),
                         audit_data=comp_data,
+                        commit=False,
                     )
                 except Exception as e:
                     logger.error(
@@ -2915,6 +2917,8 @@ class CompetitorService:
         url: str,
         geo_score: float,
         audit_data: Dict[str, Any],
+        *,
+        commit: bool = True,
     ) -> Competitor:
         """AÃ±adir competidor analizado"""
         domain = url.replace("https://", "").replace("http://", "").split("/")[0]
@@ -2969,21 +2973,15 @@ class CompetitorService:
             audit_data=safe_audit_data,
         )
         db.add(competitor)
-        db.commit()
-        db.refresh(competitor)
+        if commit:
+            db.commit()
+            db.refresh(competitor)
         return competitor
 
     @staticmethod
     def get_competitors(db: Session, audit_id: int) -> List[Competitor]:
         """Obtener competidores de auditorÃ­a"""
-        competitors = db.query(Competitor).filter(Competitor.audit_id == audit_id).all()
-        return [
-            competitor
-            for competitor in competitors
-            if CompetitorService.is_benchmark_available_competitor(
-                competitor.audit_data or {}
-            )
-        ]
+        return db.query(Competitor).filter(Competitor.audit_id == audit_id).all()
 
     @staticmethod
     def get_top_competitors_by_score(db: Session, limit: int = 5) -> List[Competitor]:

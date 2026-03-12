@@ -113,6 +113,17 @@ class _BrokenRedis(_FakeRedis):
         raise ConnectionError("redis down")
 
 
+class _ReconnectableRedis(_FakeRedis):
+    def __init__(self):
+        super().__init__()
+        self.fail_runtime = True
+
+    def get(self, key: str):
+        if self.fail_runtime:
+            raise ConnectionError("redis down")
+        return super().get(key)
+
+
 def test_core_rate_limit_does_not_trust_x_forwarded_for():
     with TestClient(_core_app(default_limit=2)) as client:
         response_1 = client.get("/test", headers={"X-Forwarded-For": "1.1.1.1"})
@@ -172,6 +183,34 @@ def test_redis_rate_limit_runtime_failure_uses_memory_and_blocks(monkeypatch):
     assert response_2.status_code == 200
     assert response_3.status_code == 429
     assert response_3.headers.get("X-RateLimit-Mode") == "memory-fallback"
+
+
+def test_redis_rate_limit_recovers_after_transient_runtime_failure(monkeypatch):
+    fake_redis = _ReconnectableRedis()
+    monkeypatch.setattr(settings, "REDIS_URL", "redis://fake:6379/0", raising=False)
+    monkeypatch.setattr(settings, "RATE_LIMIT_DEFAULT", 10, raising=False)
+    monkeypatch.setattr(
+        settings,
+        "RATE_LIMIT_REDIS_RETRY_COOLDOWN_SECONDS",
+        1,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "app.middleware.rate_limit.redis.from_url",
+        lambda *args, **kwargs: fake_redis,
+    )
+
+    with TestClient(_redis_app()) as client:
+        response_1 = client.get("/test")
+        fake_redis.fail_runtime = False
+        monkeypatch.setattr("app.middleware.rate_limit.time.time", lambda: 2.0)
+        client.app.middleware_stack.app.next_redis_retry_at = 1.0
+        response_2 = client.get("/test")
+
+    assert response_1.status_code == 200
+    assert response_1.headers.get("X-RateLimit-Mode") == "memory-fallback"
+    assert response_2.status_code == 200
+    assert response_2.headers.get("X-RateLimit-Mode") == "redis"
 
 
 def test_redis_rate_limit_scopes_pdf_bucket_away_from_normal_traffic(monkeypatch):

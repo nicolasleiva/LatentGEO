@@ -714,7 +714,7 @@ def generate_pdf_task(audit_id: int, report_markdown: str):
         if not audit:
             logger.error(f"Audit {audit_id} not found for PDF generation.")
             raise ValueError(f"Audit {audit_id} not found for PDF generation")
-        if report_markdown and not audit.report_markdown:
+        if report_markdown and report_markdown != audit.report_markdown:
             audit.report_markdown = report_markdown
             db.add(audit)
             db.commit()

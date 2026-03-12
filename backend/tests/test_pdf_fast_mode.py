@@ -825,4 +825,5 @@ async def test_pdf_generation_caps_keyword_context_to_30_items():
     assert (
         len(kwargs["keywords_data"]["items"]) == PDFService.PDF_KEYWORDS_CONTEXT_LIMIT
     )
-    assert kwargs["keywords_data"]["total"] == 100
+    assert kwargs["keywords_data"]["total"] == PDFService.PDF_KEYWORDS_CONTEXT_LIMIT
+    assert kwargs["keywords_data"]["available_total_keywords"] == 100

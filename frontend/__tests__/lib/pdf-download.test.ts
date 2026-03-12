@@ -82,4 +82,15 @@ describe("pdf-download helpers", () => {
     expect(anchor.href).toBe("blob:https://app.test/report");
     expect(revokeObjectUrlSpy).not.toHaveBeenCalled();
   });
+
+  it("surfaces plain-text download failures even after JSON parsing fails", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response("Signed URL expired", {
+        status: 502,
+        headers: { "Content-Type": "text/plain" },
+      }),
+    );
+
+    await expect(downloadAuditPdf(42)).rejects.toThrow("Signed URL expired");
+  });
 });

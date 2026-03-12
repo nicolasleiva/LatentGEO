@@ -35,24 +35,41 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         self.memory_requests: Dict[str, list] = defaultdict(list)
         self.last_cleanup = time.time()
         self.cleanup_interval = 60
+        self.redis_retry_cooldown = max(
+            1, int(getattr(settings, "RATE_LIMIT_REDIS_RETRY_COOLDOWN_SECONDS", 30))
+        )
+        self.next_redis_retry_at = 0.0
 
         if settings.REDIS_URL:
-            try:
-                # Connect to Redis
-                self.redis_client = redis.from_url(
-                    settings.REDIS_URL, decode_responses=True
-                )
-                self.redis_client.ping()
-                self.use_redis = True
-                logger.info("Rate Limiter: Using Redis-based strategy")
-            except Exception as e:
-                logger.warning(
-                    f"Rate Limiter: Redis unavailable ({e}). Falling back to in-memory strategy."
-                )
+            self._connect_redis()
         else:
             logger.warning(
                 "Rate Limiter: REDIS_URL not configured. Falling back to in-memory strategy."
             )
+
+    def _connect_redis(self) -> None:
+        try:
+            self.redis_client = redis.from_url(
+                settings.REDIS_URL, decode_responses=True
+            )
+            self.redis_client.ping()
+            self.use_redis = True
+            self.next_redis_retry_at = 0.0
+            logger.info("Rate Limiter: Using Redis-based strategy")
+        except Exception as e:
+            self.use_redis = False
+            self.redis_client = None
+            self.next_redis_retry_at = time.time() + self.redis_retry_cooldown
+            logger.warning(
+                f"Rate Limiter: Redis unavailable ({e}). Falling back to in-memory strategy."
+            )
+
+    def _maybe_restore_redis(self) -> None:
+        if not settings.REDIS_URL or self.use_redis:
+            return
+        if time.time() < self.next_redis_retry_at:
+            return
+        self._connect_redis()
 
     def _check_redis_limit(
         self, bucket: str, identity: str, max_requests: int, window: int
@@ -117,6 +134,8 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         redis_key = f"{policy.bucket}:{identity}"
         rate_limit_mode = "memory-fallback"
 
+        self._maybe_restore_redis()
+
         if self.use_redis:
             try:
                 allowed, count, reset_after = self._check_redis_limit(
@@ -131,6 +150,8 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                     f"Rate limiter Redis runtime failure ({e}). Falling back to memory strategy."
                 )
                 self.use_redis = False
+                self.redis_client = None
+                self.next_redis_retry_at = time.time() + self.redis_retry_cooldown
                 allowed, count, reset_after = self._check_memory_limit(
                     redis_key, max_requests, window
                 )

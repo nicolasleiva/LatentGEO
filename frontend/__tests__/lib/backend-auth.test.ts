@@ -182,4 +182,37 @@ describe("backend-auth cross-tab coordination", () => {
       "Bearer bridge-token",
     );
   });
+
+  it("caches bridged tokens when expires_at is missing", async () => {
+    getAccessTokenMock.mockResolvedValue(null);
+
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = input instanceof Request ? input.url : input.toString();
+      if (url.includes("/api/auth/backend-token")) {
+        return new Response(
+          JSON.stringify({
+            token: "bridge-token",
+            expires_at: null,
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
+
+      return new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    const { getBackendAccessToken } = await import("@/lib/backend-auth");
+
+    await expect(getBackendAccessToken()).resolves.toBe("bridge-token");
+    await expect(getBackendAccessToken()).resolves.toBe("bridge-token");
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
 });

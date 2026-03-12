@@ -17,30 +17,30 @@ logger = get_logger(__name__)
 
 class _WorkerAsyncRuntime:
     def __init__(self) -> None:
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
         self._loop: asyncio.AbstractEventLoop | None = None
         self._pid: int | None = None
 
-    def _ensure_loop(self) -> asyncio.AbstractEventLoop:
+    def _ensure_loop_locked(self) -> asyncio.AbstractEventLoop:
         current_pid = os.getpid()
-        with self._lock:
-            if self._loop is None or self._loop.is_closed() or self._pid != current_pid:
-                if (
-                    self._loop is not None
-                    and not self._loop.is_closed()
-                    and self._pid == current_pid
-                ):
-                    self._close_loop_locked()
-                elif self._pid != current_pid:
-                    self._loop = None
-                self._loop = asyncio.new_event_loop()
-                self._pid = current_pid
-                asyncio.set_event_loop(self._loop)
-            return self._loop
+        if self._loop is None or self._loop.is_closed() or self._pid != current_pid:
+            if (
+                self._loop is not None
+                and not self._loop.is_closed()
+                and self._pid == current_pid
+            ):
+                self._close_loop_locked()
+            elif self._pid != current_pid:
+                self._loop = None
+            self._loop = asyncio.new_event_loop()
+            self._pid = current_pid
+            asyncio.set_event_loop(self._loop)
+        return self._loop
 
     def run(self, awaitable: Any) -> Any:
-        loop = self._ensure_loop()
-        return loop.run_until_complete(awaitable)
+        with self._lock:
+            loop = self._ensure_loop_locked()
+            return loop.run_until_complete(awaitable)
 
     def close(self) -> None:
         with self._lock:

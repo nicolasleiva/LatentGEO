@@ -4,6 +4,7 @@ import { auth0 } from "@/lib/auth0";
 import { resolveApiBaseUrl } from "@/lib/env";
 
 const API_BASE_URL = resolveApiBaseUrl();
+const API_BASE_ORIGIN = new URL(API_BASE_URL).origin;
 const AUTH0_API_AUDIENCE =
   process.env.AUTH0_API_AUDIENCE?.trim() ||
   process.env.NEXT_PUBLIC_AUTH0_API_AUDIENCE?.trim() ||
@@ -152,13 +153,25 @@ export async function proxyProtectedPdfDownload(
         { status: 500 },
       );
     }
+    if (code === "unauthorized") {
+      return NextResponse.json(
+        { error: "Unauthorized: missing Auth0 session" },
+        { status: 401 },
+      );
+    }
     return NextResponse.json(
-      { error: "Unauthorized: missing Auth0 session" },
-      { status: 401 },
+      { error: "Unable to acquire backend access token." },
+      { status: 502 },
     );
   }
 
   const backendUrl = new URL(backendPath, API_BASE_URL);
+  if (backendUrl.origin !== API_BASE_ORIGIN) {
+    return NextResponse.json(
+      { error: "Unsafe backend download target." },
+      { status: 500 },
+    );
+  }
   let backendResponse: Response;
   try {
     backendResponse = await fetchWithTimeout(backendUrl, {

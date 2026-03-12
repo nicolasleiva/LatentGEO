@@ -152,6 +152,32 @@ def test_generate_pdf_task(mock_queue_job, mock_run_job, db_session: Session):
     assert result == {"job_id": 321, "status": "completed"}
 
 
+@patch("app.workers.tasks.run_pdf_generation_job_task.run")
+@patch("app.workers.tasks.PDFJobService.queue_job")
+def test_generate_pdf_task_overwrites_supplied_markdown(
+    mock_queue_job, mock_run_job, db_session: Session
+):
+    audit = Audit(
+        url="https://pdf-test.com",
+        status=AuditStatus.COMPLETED,
+        domain="pdf-test.com",
+        report_markdown="# Old PDF Report",
+    )
+    db_session.add(audit)
+    db_session.commit()
+    db_session.refresh(audit)
+
+    mock_queue_job.return_value = type("Job", (), {"id": 999})()
+    mock_run_job.return_value = {"job_id": 999, "status": "completed"}
+
+    with patch("app.workers.tasks.get_db_session") as mock_get_db:
+        mock_get_db.return_value.__enter__.return_value = db_session
+        generate_pdf_task.run(audit.id, "# Fresh PDF Report")
+
+    db_session.refresh(audit)
+    assert audit.report_markdown == "# Fresh PDF Report"
+
+
 @patch("app.workers.tasks.run_pagespeed_generation_job_task.run")
 @patch("app.workers.tasks.PageSpeedJobService.queue_if_needed")
 def test_run_pagespeed_task_delegates_to_canonical_job(

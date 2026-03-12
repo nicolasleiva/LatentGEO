@@ -1280,8 +1280,6 @@ async def generate_audit_pdf(
             message="PDF generation could not be queued.",
             technical_detail=_runtime_technical_detail(exc),
         )
-        if isinstance(exc, HTTPException):
-            raise exc
         raise HTTPException(status_code=500, detail="Internal server error")
 
 

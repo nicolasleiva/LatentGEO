@@ -167,7 +167,7 @@ export default function AuditDetailActionsClient({
                 : "text-muted-foreground"
           }`}
         >
-          {pageSpeedState.warnings[0] || pageSpeedNotice}
+          {pageSpeedNotice || pageSpeedState.warnings[0]}
         </p>
       ) : null}
     </div>

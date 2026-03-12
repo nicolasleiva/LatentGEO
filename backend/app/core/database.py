@@ -61,9 +61,12 @@ def _resolve_database_url(*, allow_test_placeholder: bool = False) -> str:
         return database_url
     if allow_test_placeholder:
         placeholder = os.getenv("TEST_DATABASE_URL", "sqlite:///:memory:")
+        logged_placeholder = (
+            "sqlite:///:memory:" if placeholder != "sqlite:///:memory:" else placeholder
+        )
         logger.warning(
             "DATABASE_URL no configurada. Usando %s solo para import/test bootstrap.",
-            placeholder,
+            logged_placeholder,
         )
         return placeholder
     raise RuntimeError(
@@ -114,33 +117,8 @@ def get_session_factory():
     return _session_factory
 
 
-class _EngineFacade:
-    def __getattr__(self, name):
-        return getattr(get_engine(), name)
-
-    def connect(self, *args, **kwargs):
-        return get_engine().connect(*args, **kwargs)
-
-    def begin(self, *args, **kwargs):
-        return get_engine().begin(*args, **kwargs)
-
-    def dispose(self, *args, **kwargs):
-        return get_engine().dispose(*args, **kwargs)
-
-    def _run_ddl_visitor(self, *args, **kwargs):
-        return get_engine()._run_ddl_visitor(*args, **kwargs)
-
-
-class _SessionLocalFacade:
-    def __call__(self, *args, **kwargs):
-        return get_session_factory()(*args, **kwargs)
-
-    def __getattr__(self, name):
-        return getattr(get_session_factory(), name)
-
-
-engine = _EngineFacade()
-SessionLocal = _SessionLocalFacade()
+engine = get_engine()
+SessionLocal = get_session_factory()
 
 
 def get_db():

@@ -153,7 +153,11 @@ def first_pdf_generation(
         assert payload.get("waiting_on") in {None, "pagespeed"}
 
     pagespeed_after_pdf = _wait_for_pagespeed_terminal(audit_id, auth_headers)
-    if response.status_code == 202:
+    if response.status_code == 202 or str(payload.get("status", "")).lower() in {
+        "waiting",
+        "queued",
+        "running",
+    }:
         payload = _wait_for_pdf_completion(audit_id, auth_headers)
 
     download = requests.get(

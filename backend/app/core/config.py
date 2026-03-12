@@ -325,6 +325,9 @@ class Settings(BaseSettings):
     RATE_LIMIT_DEFAULT: int = 100  # requests per minute
     RATE_LIMIT_AUTH: int = 10  # auth endpoints per minute
     RATE_LIMIT_HEAVY: int = 5  # heavy operations per minute
+    RATE_LIMIT_REDIS_RETRY_COOLDOWN_SECONDS: int = int(
+        os.getenv("RATE_LIMIT_REDIS_RETRY_COOLDOWN_SECONDS", "30")
+    )
 
     # ===== SUPABASE INTEGRATION =====
     SUPABASE_URL: Optional[str] = os.getenv("SUPABASE_URL")

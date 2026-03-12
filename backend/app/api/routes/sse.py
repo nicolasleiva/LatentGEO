@@ -20,6 +20,7 @@ from starlette.concurrency import run_in_threadpool
 
 logger = get_logger(__name__)
 TERMINAL_STATUSES = {"completed", "failed"}
+ACTIVE_ARTIFACT_STATUSES = {"queued", "waiting", "running"}
 
 router = APIRouter(
     prefix="/sse",
@@ -98,6 +99,17 @@ def _serialize_sse_event(event: ServerSentEvent) -> bytes:
     )
 
 
+def _artifact_payload_has_active_job(payload: dict[str, Any]) -> bool:
+    return str(payload.get("pdf_status") or "").lower() in ACTIVE_ARTIFACT_STATUSES or (
+        str(payload.get("pagespeed_status") or "").lower()
+        in ACTIVE_ARTIFACT_STATUSES
+    )
+
+
+def _artifact_payload_is_terminal(payload: dict[str, Any]) -> bool:
+    return not _artifact_payload_has_active_job(payload)
+
+
 async def audit_progress_stream(
     audit_id: int,
     current_user: AuthUser,
@@ -125,6 +137,7 @@ async def audit_progress_stream(
     last_emit_ts = start_time
     last_db_check_ts = 0.0
     last_payload_signature = None
+    saw_active_artifact = False
 
     try:
         initial = initial_payload or await run_in_threadpool(
@@ -137,6 +150,7 @@ async def audit_progress_stream(
         last_payload_signature = json.dumps(initial, sort_keys=True, default=str)
         last_emit_ts = monotonic()
         last_db_check_ts = last_emit_ts
+        saw_active_artifact = _artifact_payload_has_active_job(initial)
 
         initial_status = str(initial.get("status") or "").lower()
         if initial_status in TERMINAL_STATUSES:
@@ -211,6 +225,9 @@ async def audit_progress_stream(
 
             if payload is not None:
                 payload_signature = json.dumps(payload, sort_keys=True, default=str)
+                saw_active_artifact = (
+                    saw_active_artifact or _artifact_payload_has_active_job(payload)
+                )
                 if payload_signature != last_payload_signature:
                     yield _serialize_sse_event(
                         ServerSentEvent(
@@ -373,6 +390,12 @@ async def audit_artifact_stream(
                     )
                     last_payload_signature = payload_signature
                     last_emit_ts = now
+                if saw_active_artifact and _artifact_payload_is_terminal(payload):
+                    logger.info(
+                        "Artifact SSE stream ended for audit %s: terminal payload reached",
+                        audit_id,
+                    )
+                    break
             elif now - last_emit_ts >= heartbeat_seconds:
                 yield _serialize_sse_event(
                     ServerSentEvent(comment="heartbeat", retry=retry_ms)

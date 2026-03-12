@@ -72,8 +72,9 @@ const readDownloadErrorMessage = async (
   response: Response,
   fallback: string,
 ): Promise<string> => {
+  const clonedResponse = response.clone();
   try {
-    const payload: unknown = await response.json();
+    const payload: unknown = await clonedResponse.json();
     if (payload && typeof payload === "object") {
       const error = (payload as { error?: unknown }).error;
       if (typeof error === "string" && error.trim()) {
