@@ -42,7 +42,10 @@ describe("server SSE proxy", () => {
       signal: abortController.signal,
     });
 
-    const response = await proxyProtectedSse(request, "/api/v1/sse/audits/42/progress");
+    const response = await proxyProtectedSse(
+      request,
+      "/api/v1/sse/audits/42/progress",
+    );
 
     expect(response.status).toBe(200);
     expect(upstreamSignals).toHaveLength(1);

@@ -63,7 +63,8 @@ for (const scopeDir of scopes) {
 
     lines.forEach((line, index) => {
       const sanitizedLine = allowedInternalApiPatterns.reduce(
-        (currentLine, pattern) => currentLine.replace(pattern, "/api/v1/__allowed__"),
+        (currentLine, pattern) =>
+          currentLine.replace(pattern, "/api/v1/__allowed__"),
         line,
       );
       legacyApiPattern.lastIndex = 0;

@@ -35,8 +35,7 @@ const syncTree = (source, target) => {
 
 const parseEnvFile = (source) => {
   const entries = {};
-  const quotedValuePattern =
-    /^(["'])(?<value>(?:\\.|(?!\1).)*)\1(?:\s+#.*)?$/u;
+  const quotedValuePattern = /^(["'])(?<value>(?:\\.|(?!\1).)*)\1(?:\s+#.*)?$/u;
 
   for (const line of source.split(/\r?\n/u)) {
     const trimmed = line.trim();
