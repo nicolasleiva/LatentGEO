@@ -44,8 +44,21 @@ async function getBackendAccessToken(request: NextRequest): Promise<string> {
 }
 
 async function readErrorMessage(response: Response): Promise<string> {
+  const fallback = `Download request failed: ${response.status}`;
+  let rawBody = "";
+
   try {
-    const payload: unknown = await response.json();
+    rawBody = await response.text();
+  } catch {
+    return fallback;
+  }
+
+  if (!rawBody.trim()) {
+    return fallback;
+  }
+
+  try {
+    const payload: unknown = JSON.parse(rawBody);
     if (payload && typeof payload === "object") {
       const detail = (payload as { detail?: unknown }).detail;
       if (typeof detail === "string" && detail.trim()) {
@@ -58,15 +71,10 @@ async function readErrorMessage(response: Response): Promise<string> {
       }
     }
   } catch {
-    try {
-      const text = await response.text();
-      if (text.trim()) return text.trim();
-    } catch {
-      // Ignore and keep fallback below.
-    }
+    return rawBody.trim();
   }
 
-  return `Download request failed: ${response.status}`;
+  return fallback;
 }
 
 function buildDownloadHeaders(

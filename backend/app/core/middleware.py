@@ -136,6 +136,8 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             canonical_limit_path = "/api/v1/audits"
         elif policy.bucket == "pdf_generate":
             canonical_limit_path = "/api/v1/audits/generate-pdf"
+        elif policy.bucket == "pdf_status":
+            canonical_limit_path = "/api/v1/audits/pdf-status"
         elif policy.bucket == "pagespeed_generate":
             canonical_limit_path = "/api/v1/audits/run-pagespeed"
         elif policy.bucket == "pagespeed_status":
@@ -327,6 +329,7 @@ def configure_security_middleware(app, settings, enable_rate_limiting: bool = Tr
         # Heavy operations - stricter limits
         "/api/v1/audits/generate-pdf": (10, 60),  # 10 per minute
         "/api/v1/audits/run-pagespeed": (10, 60),  # 10 per minute
+        "/api/v1/audits/pdf-status": (120, 60),  # polling-safe
         "/api/v1/audits/pagespeed-status": (120, 60),  # polling-safe
         "/api/v1/audits/artifacts-status": (120, 60),  # polling-safe
         # Search endpoints - moderate limits

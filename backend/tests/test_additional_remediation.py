@@ -19,6 +19,8 @@ def test_database_module_fails_fast_when_database_url_missing(tmp_path):
     backend_path = Path(__file__).resolve().parents[1]
     # Use current sys.path to ensure 'app' module is found in subprocess
     env["PYTHONPATH"] = os.pathsep.join([str(backend_path), *sys.path])
+    # Force non-test semantics so the import guard is exercised regardless of CI env.
+    env["ENVIRONMENT"] = "production"
     # Ensure DATABASE_URL is missing/empty
     env["DATABASE_URL"] = ""
 

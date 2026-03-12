@@ -12,6 +12,9 @@ const scopes = ["app", "components", "hooks", "lib", "__tests__", "e2e"].map(
 
 const excludedPathFragments = [path.join("lib", "api-client")];
 const legacyApiPattern = /\/api\/(?!v1\/|auth(?:\/|$)|sse(?:\/|$))/g;
+const allowedInternalApiPatterns = [
+  /\/api\/audits\/[^"'`\s)]+\/download-pdf\b/g,
+];
 
 function walk(dir) {
   const entries = readdirSync(dir, { withFileTypes: true });
@@ -60,7 +63,13 @@ for (const scopeDir of scopes) {
 
     lines.forEach((line, index) => {
       legacyApiPattern.lastIndex = 0;
-      if (legacyApiPattern.test(line)) {
+      if (
+        legacyApiPattern.test(line) &&
+        !allowedInternalApiPatterns.some((pattern) => {
+          pattern.lastIndex = 0;
+          return pattern.test(line);
+        })
+      ) {
         const relativePath = path
           .relative(frontendRoot, filePath)
           .replaceAll("\\", "/");

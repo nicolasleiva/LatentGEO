@@ -467,6 +467,8 @@ class AuditArtifactsStore {
   private ensureEventSource() {
     if (
       this.eventSource ||
+      !Number.isFinite(this.auditId) ||
+      this.auditId <= 0 ||
       typeof window === "undefined" ||
       typeof EventSource === "undefined" ||
       this.listeners.size === 0
@@ -526,7 +528,13 @@ class AuditArtifactsStore {
   }
 
   private schedulePolling() {
-    if (this.pollTimer !== null || this.listeners.size === 0 || !this.hasActiveArtifacts()) {
+    if (
+      this.pollTimer !== null ||
+      !Number.isFinite(this.auditId) ||
+      this.auditId <= 0 ||
+      this.listeners.size === 0 ||
+      !this.hasActiveArtifacts()
+    ) {
       return;
     }
 
@@ -594,6 +602,9 @@ class AuditArtifactsStore {
   }
 
   private async start() {
+    if (!Number.isFinite(this.auditId) || this.auditId <= 0) {
+      return;
+    }
     await this.refresh().catch(() => {
       if (this.hasActiveArtifacts()) {
         this.schedulePolling();

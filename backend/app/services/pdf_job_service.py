@@ -18,7 +18,6 @@ from app.core.logger import get_logger
 from app.models import (
     Audit,
     AuditPageSpeedJob,
-    AuditPageSpeedJobStatus,
     AuditPdfJob,
     AuditPdfJobStatus,
     Report,

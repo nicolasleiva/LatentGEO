@@ -33,11 +33,6 @@ from app.services.competitor_filters import (
 from app.services.pdf_job_service import (
     DEFAULT_PDF_RETRY_AFTER_SECONDS,
     PDFJobService,
-    _pdf_generation_in_progress,
-    _pdf_generation_tokens,
-    acquire_pdf_generation_lock as _acquire_pdf_generation_lock,
-    pdf_lock_key as _pdf_lock_key,
-    release_pdf_generation_lock as _release_pdf_generation_lock,
 )
 from app.services.pipeline_service import PipelineService
 

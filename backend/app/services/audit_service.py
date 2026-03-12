@@ -498,7 +498,9 @@ class AuditService:
         updated_at = (
             max(updated_candidates)
             if updated_candidates
-            else datetime.now(timezone.utc)
+            else AuditService._coerce_artifact_datetime(
+                getattr(audit, "updated_at", None) or getattr(audit, "created_at", None)
+            )
         )
 
         return {
