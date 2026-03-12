@@ -60,6 +60,10 @@ class _NeverDisconnectRequest:
         return False
 
 
+async def _next_sse_chunk(generator):
+    return await generator.__anext__()
+
+
 def _decode_sse_chunk(chunk: bytes) -> tuple[dict, int | None]:
     if isinstance(chunk, bytes):
         raw = chunk.decode("utf-8")
@@ -158,7 +162,7 @@ async def test_sse_event_includes_retry(monkeypatch):
         request=request,
         initial_payload=initial_payload,
     )
-    event_chunk = await anext(generator)
+    event_chunk = await _next_sse_chunk(generator)
     payload, retry_value = _decode_sse_chunk(event_chunk)
     await generator.aclose()
 
@@ -188,12 +192,12 @@ async def test_sse_closes_when_client_disconnects(monkeypatch):
         request=request,
         initial_payload=initial_payload,
     )
-    first_chunk = await anext(generator)
+    first_chunk = await _next_sse_chunk(generator)
     payload, _ = _decode_sse_chunk(first_chunk)
     assert payload["status"] == "running"
 
     with pytest.raises(StopAsyncIteration):
-        await anext(generator)
+        await _next_sse_chunk(generator)
 
 
 @pytest.mark.asyncio
@@ -239,8 +243,8 @@ async def test_sse_fallback_db_without_redis_events(monkeypatch):
         request=request,
         initial_payload=None,
     )
-    first_chunk = await anext(generator)
-    second_chunk = await anext(generator)
+    first_chunk = await _next_sse_chunk(generator)
+    second_chunk = await _next_sse_chunk(generator)
     first_payload, _ = _decode_sse_chunk(first_chunk)
     second_payload, _ = _decode_sse_chunk(second_chunk)
 
@@ -248,7 +252,7 @@ async def test_sse_fallback_db_without_redis_events(monkeypatch):
     assert second_payload["status"] == "completed"
 
     with pytest.raises(StopAsyncIteration):
-        await anext(generator)
+        await _next_sse_chunk(generator)
 
 
 @pytest.mark.asyncio
@@ -296,8 +300,8 @@ async def test_sse_redis_mode_still_rechecks_db_when_no_events_arrive(monkeypatc
         },
     )
 
-    first_chunk = await asyncio.wait_for(anext(generator), timeout=1.0)
-    second_chunk = await asyncio.wait_for(anext(generator), timeout=3.0)
+    first_chunk = await asyncio.wait_for(_next_sse_chunk(generator), timeout=1.0)
+    second_chunk = await asyncio.wait_for(_next_sse_chunk(generator), timeout=3.0)
     first_payload, _ = _decode_sse_chunk(first_chunk)
     second_payload, _ = _decode_sse_chunk(second_chunk)
 
@@ -352,8 +356,8 @@ async def test_artifact_sse_closes_after_active_job_reaches_terminal_state(monke
         },
     )
 
-    first_chunk = await asyncio.wait_for(anext(generator), timeout=1.0)
-    second_chunk = await asyncio.wait_for(anext(generator), timeout=3.0)
+    first_chunk = await asyncio.wait_for(_next_sse_chunk(generator), timeout=1.0)
+    second_chunk = await asyncio.wait_for(_next_sse_chunk(generator), timeout=3.0)
     first_payload, _ = _decode_sse_chunk(first_chunk)
     second_payload, _ = _decode_sse_chunk(second_chunk)
 
@@ -361,4 +365,4 @@ async def test_artifact_sse_closes_after_active_job_reaches_terminal_state(monke
     assert second_payload["pagespeed_status"] == "completed"
 
     with pytest.raises(StopAsyncIteration):
-        await anext(generator)
+        await _next_sse_chunk(generator)

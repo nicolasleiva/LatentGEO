@@ -101,8 +101,7 @@ def _serialize_sse_event(event: ServerSentEvent) -> bytes:
 
 def _artifact_payload_has_active_job(payload: dict[str, Any]) -> bool:
     return str(payload.get("pdf_status") or "").lower() in ACTIVE_ARTIFACT_STATUSES or (
-        str(payload.get("pagespeed_status") or "").lower()
-        in ACTIVE_ARTIFACT_STATUSES
+        str(payload.get("pagespeed_status") or "").lower() in ACTIVE_ARTIFACT_STATUSES
     )
 
 
