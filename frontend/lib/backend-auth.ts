@@ -3,6 +3,7 @@ import { getAccessToken } from "@auth0/nextjs-auth0/client";
 import { resolveApiBaseUrl } from "./env";
 
 const BACKEND_API_URL = resolveApiBaseUrl();
+const BACKEND_TOKEN_BRIDGE_PATH = "/api/auth/backend-token";
 const REAUTH_REDIRECT_STORAGE_KEY = "reauth_redirect_at";
 const REAUTH_REDIRECT_COOLDOWN_MS = 5_000;
 const TOKEN_REFRESH_LOCK_STORAGE_KEY = "backend-auth-token-refresh-lock";
@@ -140,6 +141,46 @@ const broadcastTokenRefresh = (token: string, expiresAtMs: number) => {
   channel.close();
 };
 
+const cacheResolvedToken = (token: string, expiresAtMs?: number) => {
+  auth0AccessTokenCache = {
+    token,
+    expiresAtMs:
+      typeof expiresAtMs === "number" &&
+      Number.isFinite(expiresAtMs) &&
+      expiresAtMs > Date.now()
+        ? expiresAtMs
+        : Date.now() + 50_000,
+  };
+  broadcastTokenRefresh(token, auth0AccessTokenCache.expiresAtMs);
+  return token;
+};
+
+const getBridgedBackendAccessToken = async (): Promise<string | null> => {
+  try {
+    const response = await fetch(BACKEND_TOKEN_BRIDGE_PATH, {
+      method: "GET",
+      credentials: "include",
+      cache: "no-store",
+    });
+
+    if (!response.ok) {
+      return null;
+    }
+
+    const payload = (await response.json().catch(() => null)) as {
+      token?: string;
+      expires_at?: number;
+    } | null;
+    if (!payload?.token) {
+      return null;
+    }
+
+    return cacheResolvedToken(payload.token, Number(payload.expires_at));
+  } catch {
+    return null;
+  }
+};
+
 export const getBackendAccessToken = async (
   forceRefresh = false,
 ): Promise<string | null> => {
@@ -159,43 +200,59 @@ export const getBackendAccessToken = async (
   }
 
   try {
-    if (!AUTH0_API_AUDIENCE) {
-      if (!audienceMissingLogged) {
-        console.error(
-          "Missing NEXT_PUBLIC_AUTH0_API_AUDIENCE. Cannot request API access token.",
-        );
-        audienceMissingLogged = true;
+    if (AUTH0_API_AUDIENCE) {
+      const token = await getAccessToken({
+        audience: AUTH0_API_AUDIENCE,
+        scope: AUTH0_API_SCOPES,
+      });
+
+      if (token) {
+        return cacheResolvedToken(token);
       }
-      return null;
     }
-
-    const token = await getAccessToken({
-      audience: AUTH0_API_AUDIENCE,
-      scope: AUTH0_API_SCOPES,
-    });
-
-    if (!token) {
-      auth0AccessTokenCache = null;
-      return null;
-    }
-
-    auth0AccessTokenCache = {
-      token,
-      // Access token helper does not expose expiry in browser; keep a short cache.
-      expiresAtMs: Date.now() + 50_000,
-    };
-    broadcastTokenRefresh(token, auth0AccessTokenCache.expiresAtMs);
-
-    return token;
   } catch (error) {
     console.error("Error getting Auth0 access token:", error);
-    auth0AccessTokenCache = null;
-    return null;
   }
+
+  if (!AUTH0_API_AUDIENCE && !audienceMissingLogged) {
+    console.warn(
+      "Missing NEXT_PUBLIC_AUTH0_API_AUDIENCE. Falling back to backend token bridge.",
+    );
+    audienceMissingLogged = true;
+  }
+
+  const bridgedToken = await getBridgedBackendAccessToken();
+  if (bridgedToken) {
+    return bridgedToken;
+  }
+
+  auth0AccessTokenCache = null;
+  return null;
 };
 
 const clearBackendTokenCache = () => {
   auth0AccessTokenCache = null;
+};
+
+const buildAuthorizedHeaders = (
+  input: RequestInfo | URL,
+  init: RequestInit | undefined,
+  token: string | null,
+) => {
+  const headers = new Headers(
+    input instanceof Request ? input.headers : undefined,
+  );
+  const initHeaders = new Headers(init?.headers);
+
+  initHeaders.forEach((value, key) => {
+    headers.set(key, value);
+  });
+
+  if (token) {
+    headers.set("Authorization", `Bearer ${token}`);
+  }
+
+  return headers;
 };
 
 export const fetchWithBackendAuth = async (
@@ -217,20 +274,14 @@ export const fetchWithBackendAuth = async (
 
   let token = await getBackendAccessToken();
 
-  const headers = new Headers(init?.headers);
-  if (token) {
-    headers.set("Authorization", `Bearer ${token}`);
-  }
+  const headers = buildAuthorizedHeaders(input, init, token);
 
   let response = await fetch(input, { ...init, headers });
 
   // Retry one time with forced token refresh on 401.
   if (response.status === 401) {
     token = await getBackendAccessToken(true);
-    const retryHeaders = new Headers(init?.headers);
-    if (token) {
-      retryHeaders.set("Authorization", `Bearer ${token}`);
-    }
+    const retryHeaders = buildAuthorizedHeaders(input, init, token);
 
     response = await fetch(input, { ...init, headers: retryHeaders });
 

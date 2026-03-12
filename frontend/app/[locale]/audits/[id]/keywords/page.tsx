@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useParams } from "next/navigation";
 import { api } from "@/lib/api-client";
+import { formatStableNumber } from "@/lib/dates";
 import { Keyword } from "@/lib/types";
 import { Header } from "@/components/header";
 import {
@@ -179,7 +180,7 @@ export default function KeywordsPage() {
                         {kw.intent}
                       </Badge>
                     </TableCell>
-                    <TableCell>{kw.volume.toLocaleString()}</TableCell>
+                    <TableCell>{formatStableNumber(kw.volume)}</TableCell>
                     <TableCell>
                       <div className="flex items-center gap-2">
                         <div className="w-16 h-2 bg-muted rounded-full overflow-hidden">

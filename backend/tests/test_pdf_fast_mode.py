@@ -717,3 +717,113 @@ async def test_pdf_generation_force_report_refresh_bypasses_cache():
     assert result["report_regenerated"] is True
     assert result["generation_mode"] == "report_regenerated"
     mock_generate_report.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_pdf_generation_caps_keyword_context_to_30_items():
+    mock_db = MagicMock()
+    mock_audit = MagicMock()
+    mock_audit.id = 88
+    mock_audit.url = "https://example.com"
+    mock_audit.domain = "example.com"
+    mock_audit.target_audit = {"market": "argentina", "geo_score": 70}
+    mock_audit.external_intelligence = {
+        "category": "Education",
+        "subcategory": "Bootcamp",
+        "market": "argentina",
+        "queries_to_run": ["coding bootcamp argentina"],
+    }
+    mock_audit.search_results = {}
+    mock_audit.competitor_audits = []
+    mock_audit.pagespeed_data = {
+        "mobile": {"metadata": {"fetch_time": "2099-01-01T00:00:00Z"}}
+    }
+    mock_audit.keywords = []
+    mock_audit.backlinks = []
+    mock_audit.rank_trackings = []
+    mock_audit.llm_visibilities = []
+    mock_audit.ai_content_suggestions = []
+    mock_audit.report_markdown = "Cached markdown content. " * 20
+    mock_audit.fix_plan = [{"issue": "cached"}]
+
+    cached_context = {
+        "keywords": [
+            {"keyword": f"keyword {index}", "search_volume": 1000 + index}
+            for index in range(100)
+        ],
+        "backlinks": {
+            "top_backlinks": [],
+            "total_backlinks": 0,
+            "referring_domains": 0,
+        },
+        "rank_tracking": [],
+        "llm_visibility": [],
+        "ai_content_suggestions": [],
+    }
+
+    with patch.dict(
+        os.environ,
+        {"PDF_FORCE_FRESH_GEO": "false", "PDF_ALWAYS_FULL_MODE": "false"},
+        clear=False,
+    ), patch(
+        "app.services.audit_service.AuditService.get_audit",
+        return_value=mock_audit,
+    ), patch(
+        "app.services.audit_service.AuditService.get_audited_pages",
+        return_value=[],
+    ), patch(
+        "app.services.audit_service.CompetitorService.get_competitors",
+        return_value=[],
+    ), patch(
+        "app.services.pdf_service.PDFService._load_complete_audit_context",
+        return_value=cached_context,
+    ), patch(
+        "app.services.pdf_service.PDFService._compute_report_context_signature",
+        return_value="sig-123",
+    ), patch(
+        "app.services.pdf_service.PDFService._load_saved_report_signature",
+        return_value="sig-123",
+    ), patch(
+        "app.services.keyword_service.KeywordService.research_keywords",
+        new_callable=AsyncMock,
+        return_value=[],
+    ), patch(
+        "app.services.backlink_service.BacklinkService.analyze_backlinks",
+        new_callable=AsyncMock,
+        return_value=[],
+    ), patch(
+        "app.services.rank_tracker_service.RankTrackerService.track_rankings",
+        new_callable=AsyncMock,
+        return_value=[],
+    ), patch(
+        "app.services.llm_visibility_service.LLMVisibilityService.check_visibility",
+        new_callable=AsyncMock,
+        return_value=[],
+    ), patch(
+        "app.services.ai_content_service.AIContentService.generate_suggestions",
+        new_callable=AsyncMock,
+        return_value=[],
+    ), patch(
+        "app.services.product_intelligence_service.ProductIntelligenceService.analyze",
+        new_callable=AsyncMock,
+        side_effect=Exception("skip product intelligence in test"),
+    ), patch(
+        "app.services.pipeline_service.PipelineService.generate_report",
+        new_callable=AsyncMock,
+        return_value=("Cached markdown content. " * 20, []),
+    ), patch(
+        "app.services.pdf_service.PDFService.generate_comprehensive_pdf",
+        new_callable=AsyncMock,
+        return_value="dummy.pdf",
+    ) as mock_pdf_generator:
+        result = await PDFService.generate_pdf_with_complete_context(
+            mock_db, 88, return_details=True
+        )
+
+    assert result["pdf_path"] == "dummy.pdf"
+    kwargs = mock_pdf_generator.await_args.kwargs
+    assert (
+        len(kwargs["keywords_data"]["items"]) == PDFService.PDF_KEYWORDS_CONTEXT_LIMIT
+    )
+    assert kwargs["keywords_data"]["total"] == PDFService.PDF_KEYWORDS_CONTEXT_LIMIT
+    assert kwargs["keywords_data"]["available_total_keywords"] == 100

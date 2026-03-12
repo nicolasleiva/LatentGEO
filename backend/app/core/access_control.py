@@ -2,7 +2,8 @@
 Ownership and tenant isolation helpers.
 """
 
-from typing import TypeVar
+from collections.abc import Mapping
+from typing import Any, TypeVar
 
 from app.core.auth import AuthUser
 from app.core.config import settings
@@ -43,6 +44,36 @@ def ensure_audit_access(audit: Audit | None, user: AuthUser) -> Audit:
     # Development fallback for legacy local data without ownership.
     if settings.DEBUG and not owner_user_id and not owner_email:
         return audit
+
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="No autorizado para esta auditoría",
+    )
+
+
+def ensure_artifact_snapshot_access(
+    snapshot: Mapping[str, Any] | None,
+    user: AuthUser,
+) -> Mapping[str, Any]:
+    """
+    Enforce audit ownership using a cached artifact snapshot instead of a DB row.
+    """
+    if snapshot is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Auditoría no encontrada"
+        )
+
+    owner_user_id = str(snapshot.get("owner_user_id") or "").strip()
+    owner_email = _normalize_email(snapshot.get("owner_email"))
+
+    if owner_user_id and owner_user_id == user.user_id:
+        return snapshot
+
+    if owner_email and user.email and owner_email == _normalize_email(user.email):
+        return snapshot
+
+    if settings.DEBUG and not owner_user_id and not owner_email:
+        return snapshot
 
     raise HTTPException(
         status_code=status.HTTP_403_FORBIDDEN,

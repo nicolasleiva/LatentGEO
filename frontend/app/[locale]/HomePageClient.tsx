@@ -18,6 +18,7 @@ import {
 import { Header } from "@/components/header";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { formatStableDate } from "@/lib/dates";
 import HomeAuditForm from "./HomeAuditForm";
 
 export interface HomeAudit {
@@ -352,7 +353,7 @@ export default function HomePageClient({
                   <div className="flex items-center justify-between border-t border-border pt-4 text-sm">
                     <span className="flex items-center gap-1 text-muted-foreground">
                       <Clock className="h-3 w-3" />
-                      {new Date(audit.created_at).toLocaleDateString()}
+                      {formatStableDate(audit.created_at)}
                     </span>
                     {audit.status === "completed" && audit.geo_score ? (
                       <span className="font-medium text-emerald-600">

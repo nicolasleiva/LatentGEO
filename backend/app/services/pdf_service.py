@@ -16,9 +16,10 @@ from typing import Any, Awaitable, Callable, Dict, List, Optional
 from urllib.parse import urlparse
 
 from ..core.config import settings
+from ..core.database import SessionLocal
 from ..core.llm_kimi import get_llm_function
 from ..core.logger import get_logger
-from ..models import Audit
+from ..models import Audit, Report
 
 logger = get_logger(__name__)
 
@@ -43,6 +44,7 @@ class PDFService:
 
     REPORT_CONTEXT_PROMPT_VERSION = "report_generation_v2"
     REPORT_SIGNATURE_REPORT_TYPE = "REPORT_CONTEXT_SIGNATURE"
+    PDF_KEYWORDS_CONTEXT_LIMIT = 30
     DETERMINISTIC_REPORT_MARKERS = (
         "full_deterministic_regenerated",
         "digital audit report (deterministic fallback)",
@@ -184,6 +186,95 @@ class PDFService:
             content_type="application/pdf",
         )
         return f"supabase://{storage_path}", file_size
+
+    @staticmethod
+    async def ensure_supabase_pdf_report(
+        db,
+        audit: Audit,
+        report: Optional[Report],
+        *,
+        allow_full_regeneration: bool = True,
+    ) -> Report:
+        existing_path = (
+            str(report.file_path).strip() if report and report.file_path else ""
+        )
+        if report and existing_path.startswith("supabase://"):
+            return report
+
+        logger.warning(
+            "storage_provider=supabase audit_id=%s action=repair_legacy_pdf_start file_path=%s",
+            audit.id,
+            existing_path or "<missing>",
+        )
+
+        repaired_path: Optional[str] = None
+        repaired_size: Optional[int] = None
+
+        if existing_path and os.path.exists(existing_path):
+            repaired_path, repaired_size = PDFService._upload_pdf_to_supabase(
+                audit_id=audit.id,
+                pdf_file_path=existing_path,
+            )
+        elif getattr(audit, "report_markdown", None):
+            repaired_path = await PDFService.generate_comprehensive_pdf(
+                audit=audit,
+                pages=list(getattr(audit, "pages", []) or []),
+                competitors=list(getattr(audit, "competitors", []) or []),
+                report_markdown_override=audit.report_markdown,
+            )
+            repaired_size = getattr(audit, "_generated_pdf_size_bytes", None)
+        elif allow_full_regeneration:
+            generation_result = await PDFService.generate_pdf_with_complete_context(
+                db=db,
+                audit_id=audit.id,
+                force_pagespeed_refresh=False,
+                force_report_refresh=False,
+                force_external_intel_refresh=False,
+                return_details=True,
+            )
+            repaired_path = generation_result.get("pdf_path")
+            file_size_raw = generation_result.get("file_size")
+            try:
+                repaired_size = (
+                    int(file_size_raw) if file_size_raw is not None else None
+                )
+            except (TypeError, ValueError):
+                repaired_size = None
+        else:
+            raise RuntimeError(
+                "PDF repair failed: no local file or markdown is available. "
+                "Use POST /generate-pdf to regenerate the report."
+            )
+
+        if not repaired_path or not str(repaired_path).startswith("supabase://"):
+            raise RuntimeError(
+                "PDF repair failed - expected Supabase storage path (supabase://...)."
+            )
+
+        if report is None:
+            report = Report(
+                audit_id=audit.id,
+                report_type="PDF",
+                file_path=str(repaired_path),
+                file_size=repaired_size,
+            )
+            db.add(report)
+        else:
+            report.file_path = str(repaired_path)
+            if repaired_size is not None:
+                report.file_size = repaired_size
+            report.created_at = datetime.now(UTC)
+
+        db.commit()
+        db.refresh(report)
+
+        logger.info(
+            "storage_provider=supabase audit_id=%s action=repair_legacy_pdf_ok file_path=%s size=%s",
+            audit.id,
+            report.file_path,
+            report.file_size,
+        )
+        return report
 
     @staticmethod
     def _reports_dir_for_audit(audit_id: int) -> str:
@@ -724,12 +815,16 @@ class PDFService:
         keyword_items = [
             row for row in (items or []) if isinstance(row, dict) and row.get("keyword")
         ]
-        total_keywords = len(keyword_items) if total is None else max(int(total), 0)
+        available_total_keywords = (
+            len(keyword_items) if total is None else max(int(total), 0)
+        )
+        total_keywords = len(keyword_items)
         return {
             "items": keyword_items,
             "keywords": keyword_items,
             "total": total_keywords,
             "total_keywords": total_keywords,
+            "available_total_keywords": available_total_keywords,
             "top_opportunities": sorted(
                 keyword_items,
                 key=lambda row: PDFService._safe_float(
@@ -1735,6 +1830,37 @@ class PDFService:
         return ordered_terms[:limit]
 
     @staticmethod
+    def _collect_competitor_failure_warnings(audit: Audit) -> List[str]:
+        competitor_audits = (
+            audit.competitor_audits if isinstance(audit.competitor_audits, list) else []
+        )
+        warnings: List[str] = []
+        for comp in competitor_audits:
+            if not isinstance(comp, dict):
+                continue
+            benchmark_available = comp.get("benchmark_available")
+            status_value = comp.get("status")
+            try:
+                normalized_status = int(status_value)
+            except (TypeError, ValueError):
+                normalized_status = 200 if status_value in (None, "") else None
+            if benchmark_available is False or (
+                normalized_status is not None and normalized_status != 200
+            ):
+                label = comp.get("domain") or comp.get("url") or "unknown competitor"
+                detail = str(comp.get("error") or "").strip()
+                if not detail and normalized_status is not None:
+                    detail = f"HTTP {normalized_status}"
+                warning = (
+                    f"Competitor benchmark incomplete: {label} could not be audited"
+                )
+                if detail:
+                    warning += f" ({detail})"
+                warning += "."
+                warnings.append(warning)
+        return warnings
+
+    @staticmethod
     def _normalize_ai_suggestion_row(raw: Any) -> Dict[str, Any]:
         if isinstance(raw, dict):
             outline = raw.get("outline", raw.get("content_outline", {}))
@@ -2377,6 +2503,7 @@ class PDFService:
         force_pagespeed_refresh: bool = False,
         force_report_refresh: bool = False,
         force_external_intel_refresh: bool = False,
+        allow_pagespeed_refresh: bool = True,
         return_details: bool = False,
     ) -> Any:
         """
@@ -2394,6 +2521,7 @@ class PDFService:
             force_pagespeed_refresh: If True, re-run PageSpeed even if cached
             force_report_refresh: If True, re-run report regeneration even on cache hit
             force_external_intel_refresh: If True, re-run Agent 1 external intelligence
+            allow_pagespeed_refresh: If False, consume the current PageSpeed state only
             return_details: If True, return a dict with cache metadata
 
         Returns:
@@ -2545,7 +2673,7 @@ class PDFService:
 
         # 2. Check if PageSpeed data exists and is recent
         pagespeed_data = audit.pagespeed_data
-        needs_refresh = (
+        needs_refresh = allow_pagespeed_refresh and (
             force_pagespeed_refresh
             or not pagespeed_data
             or PDFService._is_pagespeed_stale(pagespeed_data)
@@ -2574,7 +2702,7 @@ class PDFService:
                 AuditService.set_pagespeed_data(db, audit_id, pagespeed_data)
                 logger.info("âœ“ PageSpeed data collected and stored")
             except Exception as e:
-                logger.error(f"PageSpeed collection failed: {e}")
+                logger.warning(f"PageSpeed collection failed: {e}")
                 pagespeed_generation_warnings.append(
                     "PageSpeed data could not be refreshed in time for this PDF run."
                 )
@@ -2652,7 +2780,7 @@ class PDFService:
         )
 
         # Initialize from cached context first (fast path)
-        keywords_data_list = cached_keywords[:200]
+        keywords_data_list = cached_keywords[: PDFService.PDF_KEYWORDS_CONTEXT_LIMIT]
         keywords_data = PDFService._build_keywords_payload(
             keywords_data_list, total=len(cached_keywords)
         )
@@ -2818,10 +2946,20 @@ class PDFService:
                     "All supporting GEO datasets are already available in cache."
                 )
 
-            # 1. Keywords (refresh when forced or missing)
-            if should_refresh_keywords:
+            rankings_seed_terms = PDFService._collect_geo_query_terms(
+                audit=audit,
+                domain=domain,
+                keywords_data_list=keywords_data_list,
+                seed_keywords=seed_keywords,
+                limit=20,
+            )
+
+            async def _refresh_keywords_dataset() -> (
+                tuple[List[Dict[str, Any]], Dict[str, Any]]
+            ):
+                service_db = SessionLocal()
                 try:
-                    keyword_svc = KeywordService(db)
+                    keyword_svc = KeywordService(service_db)
                     logger.info("  - Performing fresh keyword research for PDF...")
                     keywords_objs = await PDFService._run_stage_with_timeout(
                         stage_name="Keyword research",
@@ -2835,44 +2973,22 @@ class PDFService:
                     if keywords_objs is None:
                         raise TimeoutError("Keyword research timed out")
 
-                    keywords_data_list = [
+                    fresh_keywords = [
                         _normalize_keyword_row(k) for k in (keywords_objs or [])
                     ]
-                    keywords_data_list = [
-                        k for k in keywords_data_list if k.get("keyword")
-                    ][:200]
-
-                    keywords_data = PDFService._build_keywords_payload(
-                        keywords_data_list
+                    fresh_keywords = [
+                        row for row in fresh_keywords if row.get("keyword")
+                    ][: PDFService.PDF_KEYWORDS_CONTEXT_LIMIT]
+                    return fresh_keywords, PDFService._build_keywords_payload(
+                        fresh_keywords
                     )
-                except Exception as e:
-                    logger.error(f"Error generating Keywords for PDF: {e}")
+                finally:
+                    service_db.close()
 
-            # Fallback to DB if empty
-            if not keywords_data or not keywords_data.get("items"):
+            async def _refresh_backlinks_dataset() -> Dict[str, Any]:
+                service_db = SessionLocal()
                 try:
-                    db.refresh(audit)
-                    if audit.keywords:
-                        logger.info(
-                            f"Using existing Keywords from DB as fallback (found {len(audit.keywords)})"
-                        )
-                        keywords_objs = audit.keywords
-                        keywords_data_list = [
-                            _normalize_keyword_row(k) for k in (keywords_objs or [])
-                        ]
-                        keywords_data_list = [
-                            k for k in keywords_data_list if k.get("keyword")
-                        ]
-                        keywords_data = PDFService._build_keywords_payload(
-                            keywords_data_list
-                        )
-                except Exception as fb_err:
-                    logger.error(f"Fallback for Keywords failed: {fb_err}")
-
-            # 2. Backlinks (refresh when forced or cache is missing)
-            if should_refresh_backlinks:
-                try:
-                    backlink_svc = BacklinkService(db)
+                    backlink_svc = BacklinkService(service_db)
                     logger.info("  - Performing fresh backlinks analysis for PDF...")
                     backlinks_objs = await PDFService._run_stage_with_timeout(
                         stage_name="Backlinks analysis",
@@ -2896,10 +3012,105 @@ class PDFService:
                         }
                         for b in backlinks_objs
                     ]
+                    return PDFService._build_backlinks_payload(backlinks_list)
+                finally:
+                    service_db.close()
 
-                    backlinks_data = PDFService._build_backlinks_payload(backlinks_list)
-                except Exception as e:
-                    logger.error(f"Error generating Backlinks for PDF: {e}")
+            async def _refresh_rankings_dataset() -> Dict[str, Any]:
+                if not rankings_seed_terms:
+                    return PDFService._build_rankings_payload([])
+
+                service_db = SessionLocal()
+                try:
+                    rank_svc = RankTrackerService(service_db)
+                    logger.info("  - Performing fresh rankings tracking for PDF...")
+                    rankings_objs = await PDFService._run_stage_with_timeout(
+                        stage_name="Rankings tracking",
+                        coroutine_factory=lambda: rank_svc.track_rankings(
+                            audit_id, domain, rankings_seed_terms
+                        ),
+                        stage_timeout_seconds=rankings_stage_timeout_seconds,
+                        started_at=started_at,
+                        total_budget_seconds=total_budget_seconds,
+                    )
+                    if rankings_objs is None:
+                        raise TimeoutError("Rankings tracking timed out")
+
+                    fresh_rankings = []
+                    for ranking in rankings_objs:
+                        if isinstance(ranking, dict):
+                            fresh_rankings.append(
+                                {
+                                    "keyword": ranking.get("keyword", ""),
+                                    "position": ranking.get("position", 0),
+                                    "url": ranking.get("url", ""),
+                                    "change": ranking.get("change", 0),
+                                }
+                            )
+                        else:
+                            fresh_rankings.append(
+                                {
+                                    "keyword": getattr(ranking, "keyword", ""),
+                                    "position": getattr(ranking, "position", 0),
+                                    "url": getattr(ranking, "url", ""),
+                                    "change": 0,
+                                }
+                            )
+
+                    return PDFService._build_rankings_payload(fresh_rankings)
+                finally:
+                    service_db.close()
+
+            parallel_refreshes: List[tuple[str, Awaitable[Any]]] = []
+            if should_refresh_keywords:
+                parallel_refreshes.append(("keywords", _refresh_keywords_dataset()))
+            if should_refresh_backlinks:
+                parallel_refreshes.append(("backlinks", _refresh_backlinks_dataset()))
+            if should_refresh_rankings:
+                parallel_refreshes.append(("rankings", _refresh_rankings_dataset()))
+
+            if parallel_refreshes:
+                refresh_results = await asyncio.gather(
+                    *(awaitable for _, awaitable in parallel_refreshes),
+                    return_exceptions=True,
+                )
+                for (dataset_name, _), refresh_result in zip(
+                    parallel_refreshes, refresh_results
+                ):
+                    if isinstance(refresh_result, Exception):
+                        logger.error(
+                            "Error generating %s for PDF: %s",
+                            dataset_name.capitalize(),
+                            refresh_result,
+                        )
+                        continue
+                    if dataset_name == "keywords":
+                        keywords_data_list, keywords_data = refresh_result
+                    elif dataset_name == "backlinks":
+                        backlinks_data = refresh_result
+                    elif dataset_name == "rankings":
+                        rank_tracking_data = refresh_result
+
+            # Fallback to DB if empty
+            if not keywords_data or not keywords_data.get("items"):
+                try:
+                    db.refresh(audit)
+                    if audit.keywords:
+                        logger.info(
+                            f"Using existing Keywords from DB as fallback (found {len(audit.keywords)})"
+                        )
+                        keywords_objs = audit.keywords
+                        keywords_data_list = [
+                            _normalize_keyword_row(k) for k in (keywords_objs or [])
+                        ]
+                        keywords_data_list = [
+                            k for k in keywords_data_list if k.get("keyword")
+                        ]
+                        keywords_data = PDFService._build_keywords_payload(
+                            keywords_data_list
+                        )
+                except Exception as fb_err:
+                    logger.error(f"Fallback for Keywords failed: {fb_err}")
 
             # Fallback to DB if empty
             if not backlinks_data or not backlinks_data.get("items"):
@@ -2928,61 +3139,6 @@ class PDFService:
                         )
                 except Exception as fb_err:
                     logger.error(f"Fallback for Backlinks failed: {fb_err}")
-
-            # 3. Rankings (refresh when forced or cache is missing)
-            if should_refresh_rankings:
-                try:
-                    rank_svc = RankTrackerService(db)
-                    logger.info("  - Performing fresh rankings tracking for PDF...")
-                    kw_terms = PDFService._collect_geo_query_terms(
-                        audit=audit,
-                        domain=domain,
-                        keywords_data_list=keywords_data_list,
-                        seed_keywords=seed_keywords,
-                        limit=20,
-                    )
-
-                    if kw_terms:
-                        rankings_objs = await PDFService._run_stage_with_timeout(
-                            stage_name="Rankings tracking",
-                            coroutine_factory=lambda: rank_svc.track_rankings(
-                                audit_id, domain, kw_terms
-                            ),
-                            stage_timeout_seconds=rankings_stage_timeout_seconds,
-                            started_at=started_at,
-                            total_budget_seconds=total_budget_seconds,
-                        )
-                        if rankings_objs is None:
-                            raise TimeoutError("Rankings tracking timed out")
-                    else:
-                        rankings_objs = []
-
-                    rankings_list = []
-                    for r in rankings_objs:
-                        if isinstance(r, dict):
-                            rankings_list.append(
-                                {
-                                    "keyword": r.get("keyword", ""),
-                                    "position": r.get("position", 0),
-                                    "url": r.get("url", ""),
-                                    "change": r.get("change", 0),
-                                }
-                            )
-                        else:
-                            rankings_list.append(
-                                {
-                                    "keyword": getattr(r, "keyword", ""),
-                                    "position": getattr(r, "position", 0),
-                                    "url": getattr(r, "url", ""),
-                                    "change": 0,
-                                }
-                            )
-
-                    rank_tracking_data = PDFService._build_rankings_payload(
-                        rankings_list
-                    )
-                except Exception as e:
-                    logger.error(f"Error generating Rankings for PDF: {e}")
 
             # Fallback to DB if empty
             if not rank_tracking_data or not rank_tracking_data.get("items"):
@@ -3309,6 +3465,9 @@ class PDFService:
         generation_warnings: List[str] = []
         report_markdown_for_pdf = fallback_markdown_report
         report_persisted = False
+        generation_warnings.extend(
+            PDFService._collect_competitor_failure_warnings(audit)
+        )
         if cached_markdown_is_deterministic:
             generation_warnings.append(
                 "Ignoring cached deterministic fallback report and attempting regeneration."

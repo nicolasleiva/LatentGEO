@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { TrendingUp, AlertCircle } from "lucide-react";
 import { fetchWithBackendAuth } from "@/lib/backend-auth";
+import { formatStableDate } from "@/lib/dates";
 
 interface Citation {
   id: number;
@@ -103,7 +104,7 @@ export default function RecentCitationsTable({
               {citation.citation_type}
             </span>
             <span>Confidence: {(citation.confidence * 100).toFixed(0)}%</span>
-            <span>{new Date(citation.created_at).toLocaleDateString()}</span>
+            <span>{formatStableDate(citation.created_at)}</span>
           </div>
         </div>
       ))}

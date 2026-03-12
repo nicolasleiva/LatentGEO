@@ -14,10 +14,28 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
-# Load your existing .env file
-env_path = Path(__file__).parent.parent.parent.parent / ".env"
-if env_path.exists():
-    load_dotenv(env_path)
+
+def _load_live_env() -> None:
+    explicit_env = os.getenv("LIVE_ENV_FILE") or os.getenv("TEST_ENV_FILE")
+    candidate_paths = []
+    if explicit_env:
+        candidate_paths.append(Path(explicit_env).expanduser())
+
+    repo_root = Path(__file__).resolve().parents[2]
+    candidate_paths.extend(
+        [
+            repo_root / ".env",
+            repo_root / "backend" / ".env",
+        ]
+    )
+
+    for candidate in candidate_paths:
+        if candidate.exists():
+            load_dotenv(candidate, override=False)
+            break
+
+
+_load_live_env()
 
 RUN_INTEGRATION_TESTS = os.getenv("RUN_INTEGRATION_TESTS") == "1"
 STRICT_TEST_MODE = os.getenv("STRICT_TEST_MODE") == "1"
@@ -79,7 +97,7 @@ PROD_TEST_USER_ID = _require_env("PROD_TEST_USER_ID")
 PROD_TEST_KEYWORDS = _parse_csv_env("PROD_TEST_KEYWORDS")
 
 # Import your models
-from app.core.database import Base, ensure_performance_indexes  # noqa: E402
+from app.core.database import Base, run_migrations_to_head  # noqa: E402
 from app.models import Audit, Keyword  # noqa: E402
 
 
@@ -175,14 +193,14 @@ def setup_test_database():
     """
     engine = get_engine()
 
-    # Create all tables (if they don't exist)
-    # WARNING: This does NOT drop existing data
-    Base.metadata.create_all(bind=engine)
-    ensure_performance_indexes(engine)
+    if "sqlite:///:memory:" in DatabaseConfig.DATABASE_URL:
+        Base.metadata.create_all(bind=engine)
+    else:
+        run_migrations_to_head(DatabaseConfig.DATABASE_URL)
 
     redacted_url = _redact_url(DatabaseConfig.DATABASE_URL)
     print(f"✅ Test database initialized: {redacted_url}")
-    print("   Using your existing database configuration")
+    print("   Using formal Alembic migrations for the existing database")
 
     return engine
 

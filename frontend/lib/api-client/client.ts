@@ -5,7 +5,8 @@ import type { paths } from "./schema";
 
 export const typedApiClient = createClient<paths>({
   baseUrl: resolveApiBaseUrl(),
-  fetch: (request: Request) => fetchWithBackendAuth(request),
+  fetch: ((input: RequestInfo | URL, init?: RequestInit) =>
+    fetchWithBackendAuth(input, init)) as typeof fetch,
 });
 
 export function ensureData<T>(

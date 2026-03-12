@@ -1,10 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { CheckCircle, Loader2, Search, XCircle } from "lucide-react";
 
 import { Header } from "@/components/header";
 import { api } from "@/lib/api-client";
+import { formatStableDateTime } from "@/lib/dates";
 import type { LLMVisibility } from "@/lib/types";
 import {
   Card,
@@ -19,20 +20,96 @@ import { Badge } from "@/components/ui/badge";
 
 type LLMVisibilityPageClientProps = {
   auditId: string;
-  initialResults: LLMVisibility[];
-  initialBrandName: string;
+  initialResults?: LLMVisibility[];
+  initialBrandName?: string;
+};
+
+const compareIsoDesc = (left?: string, right?: string) => {
+  const leftTime = left ? Date.parse(left) : Number.NaN;
+  const rightTime = right ? Date.parse(right) : Number.NaN;
+  const normalizedLeft = Number.isFinite(leftTime)
+    ? leftTime
+    : Number.MIN_SAFE_INTEGER;
+  const normalizedRight = Number.isFinite(rightTime)
+    ? rightTime
+    : Number.MIN_SAFE_INTEGER;
+  return normalizedRight - normalizedLeft;
+};
+
+const sortVisibilityResults = (items: LLMVisibility[]): LLMVisibility[] => {
+  return [...items].sort((left, right) => {
+    const checkedAtDelta = compareIsoDesc(left.checked_at, right.checked_at);
+    if (checkedAtDelta !== 0) return checkedAtDelta;
+    if (left.id !== right.id) return right.id - left.id;
+    const llmOrder = left.llm_name.localeCompare(right.llm_name);
+    if (llmOrder !== 0) return llmOrder;
+    return left.query.localeCompare(right.query);
+  });
+};
+
+const mergeVisibilityResults = (
+  current: LLMVisibility[],
+  incoming: LLMVisibility[],
+): LLMVisibility[] => {
+  const merged = new Map<number, LLMVisibility>();
+  for (const item of current) {
+    merged.set(item.id, item);
+  }
+  for (const item of incoming) {
+    merged.set(item.id, item);
+  }
+  return sortVisibilityResults(Array.from(merged.values()));
 };
 
 export default function LLMVisibilityPageClient({
   auditId,
-  initialResults,
-  initialBrandName,
+  initialResults = [],
+  initialBrandName = "",
 }: LLMVisibilityPageClientProps) {
   const [brandName, setBrandName] = useState(initialBrandName);
   const [queries, setQueries] = useState("");
   const [loading, setLoading] = useState(false);
-  const [results, setResults] = useState<LLMVisibility[]>(initialResults);
+  const [results, setResults] = useState<LLMVisibility[]>(() =>
+    sortVisibilityResults(initialResults),
+  );
   const [error, setError] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadInitialState = async () => {
+      try {
+        const [nextResults, audit] = await Promise.all([
+          api.getLLMVisibility(auditId),
+          api.getAuditStatus(auditId),
+        ]);
+        if (cancelled) return;
+
+        const auditUrl = typeof audit?.url === "string" ? audit.url : "";
+        let nextBrandName = "";
+        try {
+          nextBrandName = auditUrl ? new URL(auditUrl).hostname : "";
+        } catch {
+          nextBrandName = "";
+        }
+
+        setBrandName((currentValue) =>
+          currentValue.trim() ? currentValue : nextBrandName,
+        );
+        setResults((currentResults) =>
+          mergeVisibilityResults(currentResults, nextResults),
+        );
+      } catch {
+        if (cancelled) return;
+      }
+    };
+
+    void loadInitialState();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [auditId]);
 
   async function handleCheck() {
     const normalizedBrandName = brandName.trim();
@@ -54,7 +131,9 @@ export default function LLMVisibilityPageClient({
         normalizedBrandName,
         queryList,
       );
-      setResults((previous) => [...newResults, ...previous]);
+      setResults((previous) =>
+        sortVisibilityResults([...newResults, ...previous]),
+      );
     } catch (requestError) {
       setError(
         requestError instanceof Error
@@ -161,7 +240,7 @@ export default function LLMVisibilityPageClient({
                         #{result.id}
                       </Badge>
                       <span className="text-sm text-muted-foreground">
-                        {new Date(result.checked_at).toLocaleString()}
+                        {formatStableDateTime(result.checked_at)}
                       </span>
                     </div>
                     <h3 className="mb-1 text-lg font-semibold">

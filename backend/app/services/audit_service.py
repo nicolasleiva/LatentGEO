@@ -17,13 +17,49 @@ from sqlalchemy.orm import Session
 from ..core.config import settings
 from ..core.database import Base
 from ..core.logger import get_logger
-from ..models import Audit, AuditedPage, AuditStatus, Competitor, Report
+from ..models import (
+    Audit,
+    AuditedPage,
+    AuditPageSpeedJob,
+    AuditPdfJob,
+    AuditStatus,
+    Competitor,
+    Report,
+)
 from ..schemas import AuditCreate
 
 # Importar servicios adicionales
 from .pipeline_service import PipelineService
 
 logger = get_logger(__name__)
+
+_PUBLIC_ARTIFACT_PAYLOAD_KEYS = frozenset(
+    {
+        "audit_id",
+        "pagespeed_status",
+        "pagespeed_job_id",
+        "pagespeed_available",
+        "pagespeed_warnings",
+        "pagespeed_error",
+        "pagespeed_started_at",
+        "pagespeed_completed_at",
+        "pagespeed_retry_after_seconds",
+        "pagespeed_message",
+        "pdf_status",
+        "pdf_job_id",
+        "pdf_available",
+        "pdf_report_id",
+        "pdf_waiting_on",
+        "pdf_dependency_job_id",
+        "pdf_warnings",
+        "pdf_error",
+        "pdf_started_at",
+        "pdf_completed_at",
+        "pdf_retry_after_seconds",
+        "pdf_message",
+        "updated_at",
+    }
+)
 
 
 class AuditService:
@@ -272,6 +308,15 @@ class AuditService:
         audit = db.query(Audit).filter(Audit.id == audit_id).first()
 
         if audit:
+            try:
+                CompetitorService.ensure_target_geo_score(db, audit, commit=False)
+            except Exception as geo_err:
+                db.rollback()
+                logger.warning(
+                    "No se pudo normalizar GEO score para audit %s: %s",
+                    audit_id,
+                    geo_err,
+                )
             # Check if we should enrich with PDF path
             pdf_report = (
                 db.query(Report)
@@ -346,6 +391,14 @@ class AuditService:
         return f"audit.progress.{int(audit_id)}"
 
     @staticmethod
+    def artifact_channel(audit_id: int) -> str:
+        return f"audit.artifacts.{int(audit_id)}"
+
+    @staticmethod
+    def artifact_snapshot_key(audit_id: int) -> str:
+        return f"audit:artifacts:{int(audit_id)}"
+
+    @staticmethod
     def build_progress_payload(audit: Audit) -> Dict[str, Any]:
         status_value = None
         if getattr(audit, "status", None) is not None:
@@ -364,6 +417,237 @@ class AuditService:
         }
 
     @staticmethod
+    def _coerce_artifact_datetime(value: Any) -> Optional[datetime]:
+        if value is None:
+            return None
+        if isinstance(value, str):
+            raw = value.strip()
+            if not raw:
+                return None
+            try:
+                normalized = raw.replace("Z", "+00:00")
+                value = datetime.fromisoformat(normalized)
+            except ValueError:
+                return None
+        if not isinstance(value, datetime):
+            return None
+        if value.tzinfo is None:
+            return value.replace(tzinfo=timezone.utc)
+        return value.astimezone(timezone.utc)
+
+    @staticmethod
+    def _serialize_artifact_datetime(value: Any) -> Optional[str]:
+        normalized = AuditService._coerce_artifact_datetime(value)
+        if normalized is None:
+            return None
+        return normalized.isoformat().replace("+00:00", "Z")
+
+    @staticmethod
+    def build_artifact_payload(
+        audit: Audit,
+        *,
+        pagespeed_job: Optional[AuditPageSpeedJob] = None,
+        pdf_job: Optional[AuditPdfJob] = None,
+        pdf_report: Optional[Report] = None,
+    ) -> Dict[str, Any]:
+        from .pagespeed_job_service import (
+            ACTIVE_PAGESPEED_JOB_STATUSES,
+            DEFAULT_PAGESPEED_RETRY_AFTER_SECONDS,
+            PageSpeedJobService,
+        )
+        from .pdf_job_service import (
+            ACTIVE_PDF_JOB_STATUSES,
+            DEFAULT_PDF_RETRY_AFTER_SECONDS,
+        )
+
+        pagespeed_available = PageSpeedJobService.has_usable_pagespeed_data(
+            audit, require_complete=False
+        )
+        pagespeed_status = getattr(pagespeed_job, "status", None) or (
+            "completed" if pagespeed_available else "idle"
+        )
+        pdf_available = bool(pdf_report and pdf_report.file_path)
+        pdf_status = getattr(pdf_job, "status", None) or (
+            "completed" if pdf_available else "idle"
+        )
+
+        pagespeed_error = None
+        if pagespeed_job and (
+            getattr(pagespeed_job, "error_code", None)
+            or getattr(pagespeed_job, "error_message", None)
+        ):
+            pagespeed_error = {
+                "code": getattr(pagespeed_job, "error_code", None),
+                "message": getattr(pagespeed_job, "error_message", None),
+            }
+
+        pdf_error = None
+        if pdf_job and (
+            getattr(pdf_job, "error_code", None)
+            or getattr(pdf_job, "error_message", None)
+        ):
+            pdf_error = {
+                "code": getattr(pdf_job, "error_code", None),
+                "message": getattr(pdf_job, "error_message", None),
+            }
+
+        updated_candidates: List[datetime] = []
+        for candidate in (
+            getattr(pagespeed_job, "updated_at", None),
+            getattr(pdf_job, "updated_at", None),
+            getattr(pdf_report, "created_at", None),
+        ):
+            normalized_candidate = AuditService._coerce_artifact_datetime(candidate)
+            if normalized_candidate is not None:
+                updated_candidates.append(normalized_candidate)
+        updated_at = (
+            max(updated_candidates)
+            if updated_candidates
+            else AuditService._coerce_artifact_datetime(
+                getattr(audit, "updated_at", None) or getattr(audit, "created_at", None)
+            )
+        )
+
+        return {
+            "audit_id": int(audit.id),
+            "owner_user_id": (getattr(audit, "user_id", None) or "").strip() or None,
+            "owner_email": (
+                str(getattr(audit, "user_email", None)).strip().lower()
+                if getattr(audit, "user_email", None)
+                else None
+            ),
+            "pagespeed_status": pagespeed_status,
+            "pagespeed_job_id": getattr(pagespeed_job, "id", None),
+            "pagespeed_available": pagespeed_available,
+            "pagespeed_warnings": list(getattr(pagespeed_job, "warnings", None) or []),
+            "pagespeed_error": pagespeed_error,
+            "pagespeed_started_at": AuditService._serialize_artifact_datetime(
+                getattr(pagespeed_job, "started_at", None)
+            ),
+            "pagespeed_completed_at": AuditService._serialize_artifact_datetime(
+                getattr(pagespeed_job, "completed_at", None)
+            ),
+            "pagespeed_retry_after_seconds": (
+                DEFAULT_PAGESPEED_RETRY_AFTER_SECONDS
+                if pagespeed_status in ACTIVE_PAGESPEED_JOB_STATUSES
+                else 0
+            ),
+            "pagespeed_message": None,
+            "pdf_status": pdf_status,
+            "pdf_job_id": getattr(pdf_job, "id", None),
+            "pdf_available": pdf_available,
+            "pdf_report_id": (
+                getattr(pdf_report, "id", None)
+                if pdf_available
+                else getattr(pdf_job, "report_id", None)
+            ),
+            "pdf_waiting_on": getattr(pdf_job, "waiting_on", None),
+            "pdf_dependency_job_id": getattr(pdf_job, "dependency_job_id", None),
+            "pdf_warnings": list(getattr(pdf_job, "warnings", None) or []),
+            "pdf_error": pdf_error,
+            "pdf_started_at": AuditService._serialize_artifact_datetime(
+                getattr(pdf_job, "started_at", None)
+                or getattr(pdf_report, "created_at", None)
+            ),
+            "pdf_completed_at": AuditService._serialize_artifact_datetime(
+                getattr(pdf_job, "completed_at", None)
+                or getattr(pdf_report, "created_at", None)
+            ),
+            "pdf_retry_after_seconds": (
+                DEFAULT_PDF_RETRY_AFTER_SECONDS
+                if pdf_status in ACTIVE_PDF_JOB_STATUSES
+                else 0
+            ),
+            "pdf_message": None,
+            "updated_at": AuditService._serialize_artifact_datetime(updated_at),
+        }
+
+    @staticmethod
+    def public_artifact_payload(
+        payload: Dict[str, Any] | None,
+    ) -> Dict[str, Any] | None:
+        if not isinstance(payload, dict):
+            return None
+        public_payload = {
+            key: payload.get(key)
+            for key in _PUBLIC_ARTIFACT_PAYLOAD_KEYS
+            if key in payload
+        }
+        audit_id = payload.get("audit_id")
+        if audit_id is not None:
+            try:
+                public_payload["audit_id"] = int(audit_id)
+            except (TypeError, ValueError):
+                return None
+        return public_payload
+
+    @staticmethod
+    def get_cached_artifact_payload(audit_id: int) -> Optional[Dict[str, Any]]:
+        from .cache_service import cache
+
+        if not cache.enabled:
+            return None
+
+        payload = cache.get(AuditService.artifact_snapshot_key(audit_id))
+        if not isinstance(payload, dict):
+            return None
+        try:
+            if int(payload.get("audit_id")) != int(audit_id):
+                return None
+        except (TypeError, ValueError):
+            return None
+        return payload
+
+    @staticmethod
+    def cache_artifact_payload(payload: Dict[str, Any] | None) -> None:
+        from .cache_service import cache
+
+        if not isinstance(payload, dict) or not cache.enabled:
+            return
+
+        audit_id = payload.get("audit_id")
+        try:
+            normalized_audit_id = int(audit_id)
+        except (TypeError, ValueError):
+            return
+
+        cache.set(
+            AuditService.artifact_snapshot_key(normalized_audit_id),
+            payload,
+            ttl=max(60, int(getattr(settings, "ARTIFACT_SNAPSHOT_TTL_SECONDS", 86400))),
+        )
+
+    @staticmethod
+    def rebuild_artifact_payload(
+        db: Session,
+        audit_id: int,
+    ) -> Optional[Dict[str, Any]]:
+        audit = db.query(Audit).filter(Audit.id == audit_id).first()
+        if audit is None:
+            return None
+
+        pagespeed_job = (
+            db.query(AuditPageSpeedJob)
+            .filter(AuditPageSpeedJob.audit_id == audit_id)
+            .first()
+        )
+        pdf_job = db.query(AuditPdfJob).filter(AuditPdfJob.audit_id == audit_id).first()
+        pdf_report = (
+            db.query(Report)
+            .filter(Report.audit_id == audit_id, Report.report_type == "PDF")
+            .order_by(desc(Report.created_at), desc(Report.id))
+            .first()
+        )
+        payload = AuditService.build_artifact_payload(
+            audit,
+            pagespeed_job=pagespeed_job,
+            pdf_job=pdf_job,
+            pdf_report=pdf_report,
+        )
+        AuditService.cache_artifact_payload(payload)
+        return payload
+
+    @staticmethod
     def publish_progress_event(audit_id: int, payload: Dict[str, Any]) -> None:
         try:
             from .cache_service import cache
@@ -377,6 +661,23 @@ class AuditService:
             )
         except Exception as e:
             logger.error(f"Error publishing progress to Redis: {e}")
+
+    @staticmethod
+    def publish_artifact_event(audit_id: int, payload: Dict[str, Any]) -> None:
+        try:
+            from .cache_service import cache
+
+            AuditService.cache_artifact_payload(payload)
+
+            if not cache.enabled or not cache.redis_client:
+                return
+
+            cache.redis_client.publish(
+                AuditService.artifact_channel(audit_id),
+                json.dumps(AuditService.public_artifact_payload(payload), default=str),
+            )
+        except Exception as e:
+            logger.error(f"Error publishing artifact status to Redis: {e}")
 
     @staticmethod
     def update_audit_progress(
@@ -575,18 +876,46 @@ class AuditService:
         if not isinstance(safe_pagespeed_data, dict):
             safe_pagespeed_data = {}
 
-        audit.target_audit = safe_target_audit
+        normalized_target_audit = (
+            dict(safe_target_audit) if isinstance(safe_target_audit, dict) else {}
+        )
+        target_geo = CompetitorService._calculate_geo_score_with_provenance(
+            normalized_target_audit
+        )
+        normalized_target_audit["geo_score"] = target_geo["score"]
+        normalized_target_audit["benchmark"] = (
+            CompetitorService._format_competitor_data(
+                normalized_target_audit,
+                target_geo["score"],
+                normalized_target_audit.get("url"),
+                score_meta=target_geo,
+                benchmark_available=True,
+            )
+        )
+
+        normalized_competitor_audits: List[Dict[str, Any]] = []
+        competitor_warning_entries: List[Dict[str, Any]] = []
+        for comp_data in safe_competitor_audits:
+            if not isinstance(comp_data, dict):
+                continue
+            normalized_comp = CompetitorService.normalize_competitor_audit_payload(
+                comp_data
+            )
+            normalized_competitor_audits.append(normalized_comp)
+            if not CompetitorService.is_benchmark_available_competitor(normalized_comp):
+                competitor_warning_entries.append(normalized_comp)
+
+        audit.target_audit = normalized_target_audit
         audit.external_intelligence = safe_external_intelligence
         audit.search_results = safe_search_results
-        audit.competitor_audits = safe_competitor_audits
+        audit.competitor_audits = normalized_competitor_audits
         audit.report_markdown = report_markdown
         audit.fix_plan = safe_fix_plan
         audit.pagespeed_data = safe_pagespeed_data
 
         # Calcular y guardar GEO Score para el target audit
         try:
-            # CompetitorService ya estÃ¡ definido en este archivo (lÃ­nea 914)
-            geo_score = CompetitorService._calculate_geo_score(target_audit)
+            geo_score = target_geo["score"]
             audit.geo_score = geo_score
             logger.info(f"GEO Score calculado para audit {audit_id}: {geo_score}")
         except Exception as e:
@@ -668,29 +997,61 @@ class AuditService:
             )
 
         # Guardar competidores con GEO scores calculados
-        for comp_data in safe_competitor_audits:
-            if isinstance(comp_data, dict) and comp_data.get("url"):
+        db.query(Competitor).filter(Competitor.audit_id == audit_id).delete(
+            synchronize_session=False
+        )
+        for comp_data in normalized_competitor_audits:
+            if (
+                isinstance(comp_data, dict)
+                and comp_data.get("url")
+                and CompetitorService.is_benchmark_available_competitor(comp_data)
+            ):
                 try:
-                    # CompetitorService ya estÃ¡ definido en este archivo (lÃ­nea 914)
                     CompetitorService.add_competitor(
                         db=db,
                         audit_id=audit_id,
                         url=comp_data.get("url"),
-                        geo_score=0,  # Se calcularÃ¡ automÃ¡ticamente
+                        geo_score=comp_data.get("geo_score", 0),
                         audit_data=comp_data,
+                        commit=False,
                     )
                 except Exception as e:
                     logger.error(
                         f"Error guardando competidor {comp_data.get('url')}: {e}"
                     )
 
+        for index, comp_data in enumerate(competitor_warning_entries, start=1):
+            comp_label = (
+                comp_data.get("domain") or comp_data.get("url") or f"competitor_{index}"
+            )
+            status_value = comp_data.get("status")
+            comp_error = str(comp_data.get("error") or "").strip()
+            warning_message = (
+                f"Competitor benchmark incomplete: {comp_label} could not be audited"
+            )
+            if comp_error:
+                warning_message += f" ({comp_error})"
+            elif status_value:
+                warning_message += f" (HTTP {status_value})"
+            warning_message += "."
+            AuditService.append_runtime_diagnostic(
+                db,
+                audit_id,
+                source="competitor",
+                stage="benchmark",
+                severity="warning",
+                code=f"competitor_unavailable_{index}",
+                message=warning_message,
+                commit=False,
+            )
+
         # Guardar JSONs como en ag2_pipeline.py
         await AuditService._save_audit_files(
             audit_id,
-            safe_target_audit,
+            normalized_target_audit,
             safe_external_intelligence,
             safe_search_results,
-            safe_competitor_audits,
+            normalized_competitor_audits,
             safe_fix_plan,
             safe_pagespeed_data,
             keywords,
@@ -771,13 +1132,17 @@ class AuditService:
             # Guardar competidores individuales
             for i, comp in enumerate(safe_competitor_audits):
                 try:
+                    if not CompetitorService.is_benchmark_available_competitor(comp):
+                        continue
                     domain = comp.get("domain") or f"competitor_{i}"
                     safe_domain = re.sub(r"[^\w\-_.]", "_", domain)
-                    if not comp.get("geo_score"):
-                        comp["geo_score"] = CompetitorService._calculate_geo_score(comp)
-                    if "benchmark" not in comp:
-                        comp["benchmark"] = CompetitorService._format_competitor_data(
-                            comp, comp.get("geo_score", 0.0), comp.get("url")
+                    if not isinstance(
+                        comp.get("benchmark"), dict
+                    ) or CompetitorService.needs_geo_score_refresh(
+                        comp, comp.get("geo_score")
+                    ):
+                        comp = CompetitorService.normalize_competitor_audit_payload(
+                            comp
                         )
                     comp_path = os.path.join(
                         competitors_dir, f"competitor_{safe_domain}.json"
@@ -2129,93 +2494,304 @@ class ReportService:
 class CompetitorService:
     """Servicio para gestionar competidores"""
 
-    @staticmethod
-    def _calculate_geo_score(audit_data: Dict[str, Any]) -> float:
-        """Calcular GEO score basado en datos de auditorÃ­a (0-100).
+    GEO_SCORE_VERSION = "geo_score_v2"
 
-        - Usa solo seÃ±ales disponibles (no penaliza por ausencia de datos).
-        - Normaliza mÃ©tricas a 0-100 y aplica pesos.
-        """
+    @staticmethod
+    def _coerce_number(value: Any) -> Optional[float]:
+        if isinstance(value, (int, float)):
+            return float(value)
+        try:
+            return float(value)
+        except Exception:
+            return None
+
+    @staticmethod
+    def is_benchmark_available_competitor(audit_data: Dict[str, Any]) -> bool:
+        if not isinstance(audit_data, dict):
+            return False
+
+        explicit_flag = audit_data.get("benchmark_available")
+        if explicit_flag is False:
+            return False
+
+        status_value = audit_data.get("status")
+        if status_value is None:
+            return bool(audit_data.get("url") or audit_data.get("domain"))
+
+        try:
+            return int(status_value) == 200
+        except (TypeError, ValueError):
+            normalized = str(status_value).strip().lower()
+            return normalized in {"200", "ok", "success", "completed"}
+
+    @classmethod
+    def needs_geo_score_refresh(
+        cls,
+        audit_data: Dict[str, Any],
+        stored_score: Any = None,
+    ) -> bool:
+        if not isinstance(audit_data, dict):
+            return False
+
+        benchmark = audit_data.get("benchmark")
+        if not isinstance(benchmark, dict):
+            stored_numeric = cls._coerce_number(stored_score)
+            return stored_numeric is None or stored_numeric <= 0
+
+        benchmark_score = cls._coerce_number(benchmark.get("score"))
+        if benchmark_score is None:
+            benchmark_score = cls._coerce_number(benchmark.get("geo_score"))
+
+        score_status = str(benchmark.get("score_status") or "").strip().lower()
+        score_version = str(benchmark.get("score_version") or "").strip()
+
+        if score_status == "valid_zero" and (benchmark_score or 0.0) <= 0:
+            return False
+
+        if score_version == cls.GEO_SCORE_VERSION and score_status in {
+            "valid",
+            "valid_zero",
+            "insufficient_signals",
+        }:
+            return False
+
+        if score_status == "legacy_unknown":
+            return True
+
+        stored_numeric = cls._coerce_number(stored_score)
+        if benchmark_score is None and (stored_numeric is None or stored_numeric <= 0):
+            return True
+
+        return (benchmark_score or 0.0) <= 0 and not score_status
+
+    @classmethod
+    def _calculate_geo_score_with_provenance(
+        cls, audit_data: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Compute canonical GEO score plus provenance metadata."""
         try:
             weights = []
+            signals_used: List[Dict[str, Any]] = []
 
-            def _coerce_number(value: Any) -> Optional[float]:
-                if isinstance(value, (int, float)):
-                    return float(value)
-                try:
-                    return float(value)
-                except Exception:
-                    return None
-
-            def _add_metric(score_value: Optional[float], weight: float) -> None:
+            def _add_metric(
+                name: str,
+                source: str,
+                score_value: Optional[float],
+                weight: float,
+            ) -> None:
                 if score_value is None:
                     return
                 clamped = max(0.0, min(100.0, score_value))
                 weights.append((clamped, weight))
+                signals_used.append(
+                    {
+                        "signal": name,
+                        "source": source,
+                        "score": round(clamped, 1),
+                        "weight": weight,
+                    }
+                )
 
-            # 1) Schema presence (weight 30)
+            structure = audit_data.get("structure", {}) or {}
+            site_metrics = audit_data.get("site_metrics", {}) or {}
+
             schema_status = (
                 audit_data.get("schema", {}).get("schema_presence", {}).get("status")
             )
             if schema_status is not None:
-                _add_metric(100.0 if schema_status == "present" else 0.0, 30.0)
+                _add_metric(
+                    "schema_presence",
+                    "schema.schema_presence.status",
+                    100.0 if schema_status == "present" else 0.0,
+                    30.0,
+                )
 
-            # 2) Semantic HTML / Structure (weight 20)
-            structure = audit_data.get("structure", {}) or {}
-            semantic_score = _coerce_number(
+            semantic_score = cls._coerce_number(
                 (structure.get("semantic_html") or {}).get("score_percent")
             )
-            used_site_metrics_structure = False
-            if semantic_score is None:
-                site_metrics = audit_data.get("site_metrics", {}) or {}
-                structure_score_percent = _coerce_number(
-                    site_metrics.get("structure_score_percent")
-                )
-                if structure_score_percent is not None:
-                    semantic_score = structure_score_percent
-                    used_site_metrics_structure = True
-            _add_metric(semantic_score, 20.0)
+            structure_score_percent = cls._coerce_number(
+                site_metrics.get("structure_score_percent")
+            )
+            structure_source = "structure.semantic_html.score_percent"
+            structure_score = semantic_score
+            if structure_score_percent is not None and (
+                structure_score is None
+                or (structure_score <= 0 and structure_score_percent > 0)
+            ):
+                structure_score = structure_score_percent
+                structure_source = "site_metrics.structure_score_percent"
+            used_site_metrics_structure = (
+                structure_source == "site_metrics.structure_score_percent"
+            )
+            _add_metric("structure", structure_source, structure_score, 20.0)
 
-            # 3) E-E-A-T Author presence (weight 20)
             author_status = (
                 audit_data.get("eeat", {}).get("author_presence", {}).get("status")
             )
             if author_status is not None:
-                _add_metric(100.0 if author_status == "pass" else 0.0, 20.0)
+                _add_metric(
+                    "author_presence",
+                    "eeat.author_presence.status",
+                    100.0 if author_status == "pass" else 0.0,
+                    20.0,
+                )
 
-            # 4) Conversational Tone (weight 15)
-            tone_score = _coerce_number(
+            tone_score = cls._coerce_number(
                 (audit_data.get("content", {}) or {})
                 .get("conversational_tone", {})
                 .get("score")
             )
             if tone_score is not None:
-                _add_metric((tone_score / 10.0) * 100.0, 15.0)
+                _add_metric(
+                    "conversational_tone",
+                    "content.conversational_tone.score",
+                    (tone_score / 10.0) * 100.0,
+                    15.0,
+                )
 
-            # 5) H1 presence (weight 15)
             h1_status = structure.get("h1_check", {}).get("status")
             if h1_status is not None and not used_site_metrics_structure:
-                _add_metric(100.0 if h1_status == "pass" else 0.0, 15.0)
+                _add_metric(
+                    "h1_presence",
+                    "structure.h1_check.status",
+                    100.0 if h1_status == "pass" else 0.0,
+                    15.0,
+                )
 
             if not weights:
-                return 0.0
+                score = 0.0
+                score_status = "insufficient_signals"
+                score_reason = "No scoreable GEO signals were available."
+            else:
+                total_weight = sum(weight for _, weight in weights)
+                total_score = (
+                    sum(score * weight for score, weight in weights) / total_weight
+                )
+                score = round(max(0.0, min(100.0, total_score)), 1)
+                if score <= 0 and all(metric_score <= 0 for metric_score, _ in weights):
+                    score_status = "valid_zero"
+                    score_reason = "All available GEO signals evaluated to zero."
+                else:
+                    score_status = "valid"
+                    score_reason = "Score computed from available GEO signals."
 
-            total_weight = sum(weight for _, weight in weights)
-            total_score = (
-                sum(score * weight for score, weight in weights) / total_weight
-            )
-            final_score = max(0.0, min(100.0, total_score))
-            return round(final_score, 1)
+            return {
+                "score": score,
+                "score_version": cls.GEO_SCORE_VERSION,
+                "score_status": score_status,
+                "score_source": "canonical_geo_score",
+                "score_reason": score_reason,
+                "signals_used": signals_used,
+                "computed_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            }
         except Exception as e:
             logger.error(f"Error calculando GEO score: {e}")
-            return 0.0  # Sin datos suficientes para calcular
+            return {
+                "score": 0.0,
+                "score_version": cls.GEO_SCORE_VERSION,
+                "score_status": "provider_error",
+                "score_source": "canonical_geo_score",
+                "score_reason": str(e),
+                "signals_used": [],
+                "computed_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            }
+
+    @staticmethod
+    def _calculate_geo_score(audit_data: Dict[str, Any]) -> float:
+        return CompetitorService._calculate_geo_score_with_provenance(audit_data)[
+            "score"
+        ]
+
+    @classmethod
+    def normalize_competitor_audit_payload(
+        cls, audit_data: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        normalized = dict(audit_data or {})
+        benchmark_available = cls.is_benchmark_available_competitor(normalized)
+        normalized["benchmark_available"] = benchmark_available
+        if benchmark_available:
+            score_meta = cls._calculate_geo_score_with_provenance(normalized)
+            normalized["geo_score"] = score_meta["score"]
+            normalized["benchmark"] = cls._format_competitor_data(
+                normalized,
+                score_meta["score"],
+                normalized.get("url"),
+                score_meta=score_meta,
+                benchmark_available=True,
+            )
+        else:
+            score_value = cls._coerce_number(normalized.get("geo_score"))
+            normalized["geo_score"] = score_value if score_value is not None else 0.0
+            normalized.pop("benchmark", None)
+        return normalized
+
+    @classmethod
+    def ensure_target_geo_score(
+        cls,
+        db: Session,
+        audit: Audit,
+        *,
+        commit: bool = True,
+    ) -> float | None:
+        target_audit = (
+            audit.target_audit if isinstance(audit.target_audit, dict) else {}
+        )
+        if not target_audit:
+            return None
+
+        benchmark = target_audit.get("benchmark")
+        if not cls.needs_geo_score_refresh(target_audit, audit.geo_score):
+            benchmark_score = None
+            if isinstance(benchmark, dict):
+                benchmark_score = cls._coerce_number(
+                    benchmark.get("score", benchmark.get("geo_score"))
+                )
+            if benchmark_score is not None and audit.geo_score != benchmark_score:
+                audit.geo_score = benchmark_score
+                db.add(audit)
+                if commit:
+                    db.commit()
+                    db.refresh(audit)
+            return cls._coerce_number(audit.geo_score)
+
+        score_meta = cls._calculate_geo_score_with_provenance(target_audit)
+        normalized_target = dict(target_audit)
+        normalized_target["geo_score"] = score_meta["score"]
+        normalized_target["benchmark"] = cls._format_competitor_data(
+            normalized_target,
+            score_meta["score"],
+            normalized_target.get("url"),
+            score_meta=score_meta,
+            benchmark_available=True,
+        )
+        audit.target_audit = normalized_target
+        audit.geo_score = score_meta["score"]
+        db.add(audit)
+        if commit:
+            db.commit()
+            db.refresh(audit)
+        return score_meta["score"]
 
     @staticmethod
     def _format_competitor_data(
-        audit_data: Dict[str, Any], geo_score: float, url: str = None
+        audit_data: Dict[str, Any],
+        geo_score: float,
+        url: str = None,
+        *,
+        score_meta: Optional[Dict[str, Any]] = None,
+        benchmark_available: Optional[bool] = None,
     ) -> Dict[str, Any]:
         """Formatear datos de competitor para el frontend con todos los campos necesarios"""
         try:
+            score_meta = (
+                score_meta
+                or CompetitorService._calculate_geo_score_with_provenance(audit_data)
+            )
+            benchmark_available = (
+                CompetitorService.is_benchmark_available_competitor(audit_data)
+                if benchmark_available is None
+                else bool(benchmark_available)
+            )
             # Extraer URL
             comp_url = url or audit_data.get("url", "")
             domain = (
@@ -2274,6 +2850,14 @@ class CompetitorService:
                 "url": comp_url,
                 "domain": domain,
                 "geo_score": geo_score,
+                "score": score_meta.get("score", geo_score),
+                "score_version": score_meta.get("score_version"),
+                "score_status": score_meta.get("score_status"),
+                "score_source": score_meta.get("score_source"),
+                "score_reason": score_meta.get("score_reason"),
+                "signals_used": score_meta.get("signals_used", []),
+                "computed_at": score_meta.get("computed_at"),
+                "benchmark_available": benchmark_available,
                 "schema_present": schema_present,
                 "structure_score": structure_score,
                 "eeat_score": eeat_score,
@@ -2287,6 +2871,38 @@ class CompetitorService:
                 "url": url or audit_data.get("url", ""),
                 "domain": "",
                 "geo_score": geo_score,
+                "score": geo_score,
+                "score_version": (
+                    score_meta.get("score_version")
+                    if isinstance(score_meta, dict)
+                    else None
+                ),
+                "score_status": (
+                    score_meta.get("score_status")
+                    if isinstance(score_meta, dict)
+                    else None
+                ),
+                "score_source": (
+                    score_meta.get("score_source")
+                    if isinstance(score_meta, dict)
+                    else None
+                ),
+                "score_reason": (
+                    score_meta.get("score_reason")
+                    if isinstance(score_meta, dict)
+                    else None
+                ),
+                "signals_used": (
+                    score_meta.get("signals_used", [])
+                    if isinstance(score_meta, dict)
+                    else []
+                ),
+                "computed_at": (
+                    score_meta.get("computed_at")
+                    if isinstance(score_meta, dict)
+                    else None
+                ),
+                "benchmark_available": bool(benchmark_available),
                 "schema_present": False,
                 "structure_score": 0,
                 "eeat_score": 0,
@@ -2301,13 +2917,22 @@ class CompetitorService:
         url: str,
         geo_score: float,
         audit_data: Dict[str, Any],
+        *,
+        commit: bool = True,
     ) -> Competitor:
         """AÃ±adir competidor analizado"""
         domain = url.replace("https://", "").replace("http://", "").split("/")[0]
 
         # Si no se proporciona geo_score, calcularlo
         raw_audit_data = audit_data if isinstance(audit_data, dict) else {}
-        if geo_score == 0 or geo_score is None:
+        if not CompetitorService.is_benchmark_available_competitor(raw_audit_data):
+            raise ValueError(f"Competitor {domain} is not benchmarkable")
+        if CompetitorService.needs_geo_score_refresh(raw_audit_data, geo_score):
+            raw_audit_data = CompetitorService.normalize_competitor_audit_payload(
+                raw_audit_data
+            )
+            geo_score = raw_audit_data.get("geo_score", 0.0)
+        elif geo_score == 0 or geo_score is None:
             geo_score = CompetitorService._calculate_geo_score(raw_audit_data)
 
         safe_audit_data = AuditService._sanitize_json_value(raw_audit_data)
@@ -2348,8 +2973,9 @@ class CompetitorService:
             audit_data=safe_audit_data,
         )
         db.add(competitor)
-        db.commit()
-        db.refresh(competitor)
+        if commit:
+            db.commit()
+            db.refresh(competitor)
         return competitor
 
     @staticmethod

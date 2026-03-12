@@ -1,3 +1,4 @@
+import asyncio
 import json
 
 import pytest
@@ -33,6 +34,34 @@ class _DummyRequest:
     async def is_disconnected(self) -> bool:
         self.calls += 1
         return self.calls > self.disconnect_after_calls
+
+
+class _FakePubSub:
+    def subscribe(self, *_args, **_kwargs):
+        return None
+
+    def get_message(self, *_args, **_kwargs):
+        return None
+
+    def unsubscribe(self, *_args, **_kwargs):
+        return None
+
+    def close(self):
+        return None
+
+
+class _FakeRedisClient:
+    def pubsub(self):
+        return _FakePubSub()
+
+
+class _NeverDisconnectRequest:
+    async def is_disconnected(self) -> bool:
+        return False
+
+
+async def _next_sse_chunk(generator):
+    return await generator.__anext__()
 
 
 def _decode_sse_chunk(chunk: bytes) -> tuple[dict, int | None]:
@@ -133,7 +162,7 @@ async def test_sse_event_includes_retry(monkeypatch):
         request=request,
         initial_payload=initial_payload,
     )
-    event_chunk = await anext(generator)
+    event_chunk = await _next_sse_chunk(generator)
     payload, retry_value = _decode_sse_chunk(event_chunk)
     await generator.aclose()
 
@@ -163,12 +192,12 @@ async def test_sse_closes_when_client_disconnects(monkeypatch):
         request=request,
         initial_payload=initial_payload,
     )
-    first_chunk = await anext(generator)
+    first_chunk = await _next_sse_chunk(generator)
     payload, _ = _decode_sse_chunk(first_chunk)
     assert payload["status"] == "running"
 
     with pytest.raises(StopAsyncIteration):
-        await anext(generator)
+        await _next_sse_chunk(generator)
 
 
 @pytest.mark.asyncio
@@ -214,8 +243,8 @@ async def test_sse_fallback_db_without_redis_events(monkeypatch):
         request=request,
         initial_payload=None,
     )
-    first_chunk = await anext(generator)
-    second_chunk = await anext(generator)
+    first_chunk = await _next_sse_chunk(generator)
+    second_chunk = await _next_sse_chunk(generator)
     first_payload, _ = _decode_sse_chunk(first_chunk)
     second_payload, _ = _decode_sse_chunk(second_chunk)
 
@@ -223,4 +252,117 @@ async def test_sse_fallback_db_without_redis_events(monkeypatch):
     assert second_payload["status"] == "completed"
 
     with pytest.raises(StopAsyncIteration):
-        await anext(generator)
+        await _next_sse_chunk(generator)
+
+
+@pytest.mark.asyncio
+async def test_sse_redis_mode_still_rechecks_db_when_no_events_arrive(monkeypatch):
+    monkeypatch.setattr(sse_route.settings, "SSE_RETRY_MS", 5000, raising=False)
+    monkeypatch.setattr(sse_route.settings, "SSE_SOURCE", "redis", raising=False)
+    monkeypatch.setattr(
+        sse_route.settings, "SSE_FALLBACK_DB_INTERVAL_SECONDS", 1, raising=False
+    )
+    monkeypatch.setattr(sse_route.settings, "SSE_MAX_DURATION", 60, raising=False)
+
+    monkeypatch.setattr(sse_route.cache, "enabled", True, raising=False)
+    monkeypatch.setattr(
+        sse_route.cache, "redis_client", _FakeRedisClient(), raising=False
+    )
+
+    payloads = [
+        {
+            "audit_id": 123,
+            "progress": 100,
+            "status": "completed",
+            "error_message": None,
+            "geo_score": 93.0,
+            "total_pages": 6,
+        }
+    ]
+
+    def _fake_load(_audit_id, _current_user):
+        return payloads.pop(0)
+
+    monkeypatch.setattr(sse_route, "_load_owned_audit_payload", _fake_load)
+    request = _NeverDisconnectRequest()
+
+    generator = sse_route.audit_progress_stream(
+        audit_id=123,
+        current_user=object(),
+        request=request,
+        initial_payload={
+            "audit_id": 123,
+            "progress": 15,
+            "status": "running",
+            "error_message": None,
+            "geo_score": None,
+            "total_pages": 1,
+        },
+    )
+
+    first_chunk = await asyncio.wait_for(_next_sse_chunk(generator), timeout=1.0)
+    second_chunk = await asyncio.wait_for(_next_sse_chunk(generator), timeout=3.0)
+    first_payload, _ = _decode_sse_chunk(first_chunk)
+    second_payload, _ = _decode_sse_chunk(second_chunk)
+
+    assert first_payload["status"] == "running"
+    assert second_payload["status"] == "completed"
+    await generator.aclose()
+
+
+@pytest.mark.asyncio
+async def test_artifact_sse_closes_after_active_job_reaches_terminal_state(monkeypatch):
+    monkeypatch.setattr(sse_route.settings, "SSE_RETRY_MS", 5000, raising=False)
+    monkeypatch.setattr(sse_route.settings, "SSE_SOURCE", "db", raising=False)
+    monkeypatch.setattr(
+        sse_route.settings, "SSE_FALLBACK_DB_INTERVAL_SECONDS", 1, raising=False
+    )
+    monkeypatch.setattr(sse_route.settings, "SSE_MAX_DURATION", 60, raising=False)
+
+    payloads = [
+        {
+            "audit_id": 123,
+            "pagespeed_status": "completed",
+            "pagespeed_available": True,
+            "pagespeed_warnings": [],
+            "pagespeed_retry_after_seconds": 0,
+            "pdf_status": "idle",
+            "pdf_available": False,
+            "pdf_warnings": [],
+            "pdf_retry_after_seconds": 0,
+        }
+    ]
+
+    def _fake_load(_audit_id, _current_user):
+        return payloads.pop(0)
+
+    monkeypatch.setattr(sse_route, "_load_owned_artifact_payload", _fake_load)
+    request = _NeverDisconnectRequest()
+
+    generator = sse_route.audit_artifact_stream(
+        audit_id=123,
+        current_user=object(),
+        request=request,
+        initial_payload={
+            "audit_id": 123,
+            "pagespeed_status": "running",
+            "pagespeed_available": False,
+            "pagespeed_warnings": [],
+            "pagespeed_retry_after_seconds": 3,
+            "pdf_status": "waiting",
+            "pdf_available": False,
+            "pdf_warnings": [],
+            "pdf_retry_after_seconds": 3,
+        },
+    )
+
+    first_chunk = await asyncio.wait_for(_next_sse_chunk(generator), timeout=1.0)
+    second_chunk = await asyncio.wait_for(_next_sse_chunk(generator), timeout=3.0)
+    first_payload, _ = _decode_sse_chunk(first_chunk)
+    second_payload, _ = _decode_sse_chunk(second_chunk)
+
+    assert first_payload["pagespeed_status"] == "running"
+    assert second_payload["pagespeed_status"] == "completed"
+
+    with pytest.raises(StopAsyncIteration):
+        await _next_sse_chunk(generator)

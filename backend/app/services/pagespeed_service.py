@@ -4,9 +4,23 @@ from typing import Dict, Optional
 import aiohttp
 
 from ..core.config import settings
-from ..core.external_resilience import run_external_call
 
 logger = logging.getLogger(__name__)
+
+
+def _extract_provider_message(payload: object) -> str | None:
+    if isinstance(payload, dict):
+        error_payload = payload.get("error")
+        if isinstance(error_payload, dict):
+            message = error_payload.get("message")
+            if isinstance(message, str) and message.strip():
+                return message.strip()
+        message = payload.get("message")
+        if isinstance(message, str) and message.strip():
+            return message.strip()
+    if isinstance(payload, str) and payload.strip():
+        return payload.strip()
+    return None
 
 
 class PageSpeedService:
@@ -51,7 +65,7 @@ class PageSpeedService:
 
                     logger.info(f"Calling PageSpeed API: {PageSpeedService.BASE_URL}")
 
-                    async def _fetch_pagespeed():
+                    try:
                         async with session.get(
                             PageSpeedService.BASE_URL,
                             params=params,
@@ -59,15 +73,22 @@ class PageSpeedService:
                                 total=float(settings.PAGESPEED_TIMEOUT_SECONDS)
                             ),
                         ) as resp:
-                            if resp.status == 200:
-                                return resp.status, await resp.json()
-                            return resp.status, await resp.text()
-
-                    status_code, payload = await run_external_call(
-                        "google-pagespeed",
-                        _fetch_pagespeed,
-                        timeout_seconds=float(settings.PAGESPEED_TIMEOUT_SECONDS),
-                    )
+                            status_code = resp.status
+                            payload = (
+                                await resp.json()
+                                if resp.status == 200
+                                else await resp.text()
+                            )
+                    except asyncio.TimeoutError as exc:
+                        raise TimeoutError(
+                            "PageSpeed request timed out before a response was received."
+                        ) from exc
+                    except aiohttp.ClientConnectionError as exc:
+                        if "Connector is closed" in str(exc):
+                            raise TimeoutError(
+                                "PageSpeed request was cancelled after timeout."
+                            ) from exc
+                        raise
 
                     logger.info(f"PageSpeed API response status: {status_code}")
                     if status_code == 200:
@@ -344,26 +365,56 @@ class PageSpeedService:
                         response_text = (
                             payload if isinstance(payload, str) else str(payload)
                         )
+                        provider_message = _extract_provider_message(payload)
                         logger.error(
-                            f"PageSpeed API error {status_code} after retries: {response_text}"
+                            "PageSpeed API error %s after retries: %s",
+                            status_code,
+                            provider_message or response_text,
                         )
-                        return {"error": f"API error: {status_code}"}
+                        return {
+                            "error": f"API error: {status_code}",
+                            "status_code": status_code,
+                            "provider_message": provider_message or response_text,
+                        }
                     else:
                         response_text = (
                             payload if isinstance(payload, str) else str(payload)
                         )
+                        provider_message = _extract_provider_message(payload)
                         logger.error(
-                            f"PageSpeed API error {status_code}: {response_text}"
+                            "PageSpeed API error %s: %s",
+                            status_code,
+                            provider_message or response_text,
                         )
-                        return {"error": f"API error: {status_code}"}
+                        return {
+                            "error": f"API error: {status_code}",
+                            "status_code": status_code,
+                            "provider_message": provider_message or response_text,
+                        }
 
-            except Exception:
+            except TimeoutError as exc:
+                logger.warning(
+                    "PageSpeed timeout/cancellation (attempt %s): %s",
+                    attempt + 1,
+                    exc,
+                )
+                if attempt < max_retries - 1:
+                    await asyncio.sleep(retry_delay)
+                    continue
+                return {
+                    "error": "timeout",
+                    "provider_message": str(exc),
+                    "url": url,
+                    "strategy": strategy,
+                }
+            except Exception as exc:
                 logger.exception(f"PageSpeed exception (attempt {attempt+1})")
                 if attempt < max_retries - 1:
                     await asyncio.sleep(retry_delay)
                     continue
                 return {
                     "error": "Internal server error",
+                    "provider_message": str(exc),
                     "url": url,
                     "strategy": strategy,
                 }

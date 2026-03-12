@@ -1517,15 +1517,10 @@ class PipelineService:
         for comp in competitor_audits:
             if not isinstance(comp, dict):
                 continue
-            geo_score = comp.get("geo_score")
-            if not isinstance(geo_score, (int, float)) or geo_score <= 0:
-                if CompetitorService is not None:
-                    comp["geo_score"] = CompetitorService._calculate_geo_score(comp)
-            if CompetitorService is not None and comp.get("status", 200) == 200:
-                comp["benchmark"] = CompetitorService._format_competitor_data(
-                    comp, comp.get("geo_score", 0.0), comp.get("url")
-                )
-            # Sanitize any legacy benchmark payloads to avoid circular references
+            if CompetitorService is not None:
+                normalized = CompetitorService.normalize_competitor_audit_payload(comp)
+                comp.clear()
+                comp.update(normalized)
             if isinstance(comp.get("benchmark"), dict):
                 comp["benchmark"].pop("audit_data", None)
         return competitor_audits
@@ -6527,12 +6522,10 @@ class PipelineService:
                         summary.setdefault("url", comp_url)
                         summary.setdefault("domain", domain)
                         if CompetitorService is not None:
-                            summary["geo_score"] = (
-                                CompetitorService._calculate_geo_score(summary)
-                            )
-                            summary["benchmark"] = (
-                                CompetitorService._format_competitor_data(
-                                    summary, summary["geo_score"], comp_url
+                            summary["benchmark_available"] = True
+                            summary = (
+                                CompetitorService.normalize_competitor_audit_payload(
+                                    summary
                                 )
                             )
                         logger.info(
@@ -6549,6 +6542,7 @@ class PipelineService:
                         "error": f"No se pudo acceder al sitio (HTTP {status})",
                         "domain": urlparse(comp_url).netloc.replace("www.", ""),
                         "geo_score": 0.0,
+                        "benchmark_available": False,
                     }
                 except Exception as e:
                     logger.error(
@@ -6560,6 +6554,7 @@ class PipelineService:
                         "error": str(e),
                         "domain": urlparse(comp_url).netloc.replace("www.", ""),
                         "geo_score": 0.0,
+                        "benchmark_available": False,
                     }
 
         tasks = [
@@ -8168,13 +8163,16 @@ async def run_initial_audit(
         try:
             from app.services.audit_service import CompetitorService
 
-            normalized_target["geo_score"] = CompetitorService._calculate_geo_score(
+            target_geo = CompetitorService._calculate_geo_score_with_provenance(
                 normalized_target
             )
+            normalized_target["geo_score"] = target_geo["score"]
             normalized_target["benchmark"] = CompetitorService._format_competitor_data(
                 normalized_target,
-                normalized_target["geo_score"],
+                target_geo["score"],
                 normalized_target.get("url"),
+                score_meta=target_geo,
+                benchmark_available=True,
             )
         except Exception:  # nosec B110
             pass

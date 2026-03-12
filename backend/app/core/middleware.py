@@ -3,13 +3,16 @@ Middleware de seguridad para producción.
 Incluye rate limiting, security headers, trusted hosts, y HTTPS redirect.
 """
 
-import hashlib
-import re
 import time
 from collections import defaultdict
 from typing import Callable, Dict, Optional, Tuple
 
 from app.core.logger import get_logger
+from app.core.rate_limit_policy import (
+    is_rate_limit_exempt,
+    resolve_rate_limit_identity,
+    resolve_rate_limit_policy,
+)
 from app.core.request_identity import get_client_ip
 from fastapi import Request, Response
 from fastapi.responses import JSONResponse
@@ -45,11 +48,8 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         self.last_cleanup = time.time()
 
     def _get_client_key(self, request: Request) -> str:
-        """Get unique client identifier (IP + optional user)"""
-        client_ip = get_client_ip(request)
-
-        # Hash for privacy
-        return hashlib.sha256(client_ip.encode()).hexdigest()[:16]
+        """Get unique client identifier (user preferred, IP fallback)."""
+        return resolve_rate_limit_identity(request)
 
     def _cleanup_old_entries(self, current_time: float):
         """Remove expired rate limit entries"""
@@ -71,38 +71,41 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         self.last_cleanup = current_time
 
     def _get_limit_for_path(self, path: str) -> Tuple[int, int]:
-        """Get rate limit and window for specific path"""
-        # Check exact matches first
+        """Get rate limit and window for specific path."""
         if path in self.endpoint_limits:
             return self.endpoint_limits[path]
-
-        # Check prefix matches
         for endpoint, limits in self.endpoint_limits.items():
             if path.startswith(endpoint):
                 return limits
-
         return (self.default_limit, self.default_window)
 
     def _check_rate_limit(
-        self, client_key: str, path: str, current_time: float
+        self,
+        client_key: str,
+        bucket: str,
+        current_time: float,
+        *,
+        limit: int,
+        window: int,
     ) -> Tuple[bool, int, int]:
         """
         Check if request is within rate limit.
         Returns: (is_allowed, remaining, reset_time)
         """
-        limit, window = self._get_limit_for_path(path)
         window_start = current_time - window
 
         # Count requests in current window
-        entries = self.rate_limits[client_key]
+        key = f"{bucket}:{client_key}"
+        entries = self.rate_limits[key]
         valid_entries = [(ts, count) for ts, count in entries if ts > window_start]
         request_count = sum(count for _, count in valid_entries)
 
         # Update entries
-        self.rate_limits[client_key] = valid_entries + [(current_time, 1)]
+        self.rate_limits[key] = valid_entries + [(current_time, 1)]
 
         remaining = max(0, limit - request_count - 1)
-        reset_time = int(window_start + window)
+        oldest_timestamp = valid_entries[0][0] if valid_entries else current_time
+        reset_time = int(oldest_timestamp + window)
 
         if request_count >= limit:
             return (False, 0, reset_time)
@@ -111,10 +114,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
         # Skip rate limiting for health checks and SSE only
-        if (
-            request.url.path in ["/health", "/health/live", "/health/ready", "/"]
-            or "/sse/" in request.url.path
-        ):
+        if is_rate_limit_exempt(request.url.path) or "/sse/" in request.url.path:
             return await call_next(request)
 
         # Skip for trusted IPs
@@ -127,27 +127,36 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
         client_key = self._get_client_key(request)
 
-        # Use more permissive rate limit only for polling-style audit GET endpoints.
-        path_for_limit = request.url.path
-        is_polling_get = bool(
-            request.method == "GET"
-            and re.fullmatch(
-                r"/api/v1/audits/\d+(?:/(?:pages|competitors|report|fix_plan|status))?",
-                path_for_limit,
-            )
-        )
-        if is_polling_get:
-            path_for_limit = "/api/v1/audits"
-        elif request.method == "POST" and path_for_limit.endswith("/generate-pdf"):
-            path_for_limit = "/api/v1/audits/generate-pdf"
-        elif request.method == "POST" and (
-            path_for_limit.endswith("/run-pagespeed")
-            or path_for_limit.endswith("/pagespeed")
-        ):
-            path_for_limit = "/api/v1/audits/run-pagespeed"
+        policy = resolve_rate_limit_policy(request, self)
+        path_for_limit = policy.bucket
+        canonical_limit_path = request.url.path
+        if policy.bucket == "auth":
+            canonical_limit_path = "/api/v1/auth"
+        elif policy.bucket == "audit_read":
+            canonical_limit_path = "/api/v1/audits"
+        elif policy.bucket == "pdf_generate":
+            canonical_limit_path = "/api/v1/audits/generate-pdf"
+        elif policy.bucket == "pdf_status":
+            canonical_limit_path = "/api/v1/audits/pdf-status"
+        elif policy.bucket == "pagespeed_generate":
+            canonical_limit_path = "/api/v1/audits/run-pagespeed"
+        elif policy.bucket == "pagespeed_status":
+            canonical_limit_path = "/api/v1/audits/pagespeed-status"
+        elif policy.bucket == "artifacts_status":
+            canonical_limit_path = "/api/v1/audits/artifacts-status"
+        elif policy.bucket == "webhooks":
+            canonical_limit_path = "/api/v1/webhooks"
+        elif policy.bucket == "github_webhook":
+            canonical_limit_path = "/api/v1/github/webhook"
+
+        limit, window = self._get_limit_for_path(canonical_limit_path)
 
         is_allowed, remaining, reset_time = self._check_rate_limit(
-            client_key, path_for_limit, current_time
+            client_key,
+            path_for_limit,
+            current_time,
+            limit=limit,
+            window=window,
         )
 
         if not is_allowed:
@@ -158,22 +167,21 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                 status_code=429,
                 content={"detail": "Too many requests. Please slow down."},
                 headers={
-                    "X-RateLimit-Limit": str(
-                        self._get_limit_for_path(path_for_limit)[0]
-                    ),
+                    "X-RateLimit-Limit": str(limit),
                     "X-RateLimit-Remaining": "0",
                     "X-RateLimit-Reset": str(reset_time),
                     "Retry-After": str(reset_time - int(current_time)),
+                    "X-RateLimit-Bucket": policy.bucket,
                 },
             )
 
         response = await call_next(request)
 
         # Add rate limit headers to response (use the same path_for_limit logic)
-        limit, window = self._get_limit_for_path(path_for_limit)
         response.headers["X-RateLimit-Limit"] = str(limit)
         response.headers["X-RateLimit-Remaining"] = str(remaining)
         response.headers["X-RateLimit-Reset"] = str(reset_time)
+        response.headers["X-RateLimit-Bucket"] = policy.bucket
 
         return response
 
@@ -321,6 +329,9 @@ def configure_security_middleware(app, settings, enable_rate_limiting: bool = Tr
         # Heavy operations - stricter limits
         "/api/v1/audits/generate-pdf": (10, 60),  # 10 per minute
         "/api/v1/audits/run-pagespeed": (10, 60),  # 10 per minute
+        "/api/v1/audits/pdf-status": (120, 60),  # polling-safe
+        "/api/v1/audits/pagespeed-status": (120, 60),  # polling-safe
+        "/api/v1/audits/artifacts-status": (120, 60),  # polling-safe
         # Search endpoints - moderate limits
         "/api/v1/search": (30, 60),  # 30 per minute
         # Webhooks - unlimited (internal use)

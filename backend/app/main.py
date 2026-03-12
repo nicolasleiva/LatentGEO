@@ -6,7 +6,8 @@ from fastapi import APIRouter, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.utils import get_openapi
 
-from .core.config import settings
+from .core.auth_context import AuthContextMiddleware
+from .core.config import _is_development_like_environment, settings
 from .core.database import init_db
 from .core.logger import get_logger
 from .core.middleware import configure_security_middleware
@@ -120,11 +121,7 @@ def create_app() -> FastAPI:
 
     cors_origins = set(settings.CORS_ORIGINS)
     # Keep local/docker defaults only for non-production-like environments.
-    if settings.DEBUG or settings.ENVIRONMENT.lower() in {
-        "development",
-        "dev",
-        "local",
-    }:
+    if settings.DEBUG or _is_development_like_environment(settings.ENVIRONMENT):
         cors_origins.add("http://frontend:3000")
         cors_origins.add("http://localhost:3000")
         cors_origins.add("http://localhost:8000")
@@ -148,14 +145,10 @@ def create_app() -> FastAPI:
         enable_rate_limiting=use_fallback_rate_limit,
     )
 
-    # Add ProxyHeaders middleware to get real IP behind Nginx/ALB
-    from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
-
-    app.add_middleware(
-        ProxyHeadersMiddleware, trusted_hosts=settings.FORWARDED_ALLOW_IPS
-    )
-
     # Add distributed Redis-backed rate limiting in production.
+    # Middleware order matters: last added runs first.
+    # Desired order for request identity is:
+    # ProxyHeaders -> AuthContext -> RateLimit -> security middleware stack.
     if use_distributed_rate_limit:
         app.add_middleware(RateLimitMiddleware)
         logger.info("Rate limiting enabled (mode=redis-distributed)")
@@ -163,6 +156,15 @@ def create_app() -> FastAPI:
         logger.info("Rate limiting enabled (mode=core-fallback)")
     else:
         logger.info("Rate limiting disabled (mode=disabled-debug)")
+
+    app.add_middleware(AuthContextMiddleware)
+
+    # Add ProxyHeaders middleware to get real IP behind Nginx/ALB.
+    from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
+
+    app.add_middleware(
+        ProxyHeadersMiddleware, trusted_hosts=settings.FORWARDED_ALLOW_IPS
+    )
 
     # Add legacy redirect middleware last so it executes first in Starlette stack order.
     if settings.DEBUG and settings.LEGACY_API_REDIRECT_ENABLED:

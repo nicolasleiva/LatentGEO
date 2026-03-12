@@ -4,10 +4,20 @@ Configuración de la aplicación
 
 import json
 import os
+from pathlib import Path
 from typing import Any, Optional
 
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+_CONFIG_PATH = Path(__file__).resolve()
+_BACKEND_DIR = _CONFIG_PATH.parents[2]
+_REPO_ROOT = _CONFIG_PATH.parents[3]
+_ENV_FILES = (
+    _REPO_ROOT / ".env",
+    _BACKEND_DIR / ".env",
+    Path(".env"),
+)
 
 
 def _parse_string_list(value: Any) -> list[str]:
@@ -43,6 +53,8 @@ def _is_development_like_environment(value: Optional[str]) -> bool:
         "development",
         "dev",
         "local",
+        "docker",
+        "docker-local",
         "test",
         "testing",
     }
@@ -52,7 +64,7 @@ class Settings(BaseSettings):
     """Configuración de la aplicación"""
 
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=_ENV_FILES,
         env_file_encoding="utf-8",
         extra="ignore",
     )
@@ -213,7 +225,10 @@ class Settings(BaseSettings):
     ALLOW_INSECURE_SSL_FALLBACK: bool = (
         os.getenv("ALLOW_INSECURE_SSL_FALLBACK", "False").lower() == "true"
     )
-    PDF_LOCK_TTL_SECONDS: int = int(os.getenv("PDF_LOCK_TTL_SECONDS", "900"))
+    PDF_LOCK_TTL_SECONDS: int = int(os.getenv("PDF_LOCK_TTL_SECONDS", "1800"))
+    PAGESPEED_LOCK_TTL_SECONDS: int = int(
+        os.getenv("PAGESPEED_LOCK_TTL_SECONDS", "300")
+    )
     MAX_CRAWL_DEFAULT: int = 50
     RESPECT_ROBOTS: bool = os.getenv("RESPECT_ROBOTS", "False").lower() == "true"
     MAX_AUDIT_DEFAULT: int = 5
@@ -228,6 +243,12 @@ class Settings(BaseSettings):
     )
     SSE_HEARTBEAT_SECONDS: int = int(os.getenv("SSE_HEARTBEAT_SECONDS", "30"))
     SSE_RETRY_MS: int = int(os.getenv("SSE_RETRY_MS", "5000"))
+    ARTIFACT_SNAPSHOT_TTL_SECONDS: int = int(
+        os.getenv("ARTIFACT_SNAPSHOT_TTL_SECONDS", "86400")
+    )
+    ARTIFACT_STATUS_DEGRADED_RETRY_AFTER_SECONDS: int = int(
+        os.getenv("ARTIFACT_STATUS_DEGRADED_RETRY_AFTER_SECONDS", "10")
+    )
 
     # LLM output limits (report generation)
     NV_MAX_TOKENS_REPORT: int = int(os.getenv("NV_MAX_TOKENS_REPORT", "8192"))
@@ -304,6 +325,9 @@ class Settings(BaseSettings):
     RATE_LIMIT_DEFAULT: int = 100  # requests per minute
     RATE_LIMIT_AUTH: int = 10  # auth endpoints per minute
     RATE_LIMIT_HEAVY: int = 5  # heavy operations per minute
+    RATE_LIMIT_REDIS_RETRY_COOLDOWN_SECONDS: int = int(
+        os.getenv("RATE_LIMIT_REDIS_RETRY_COOLDOWN_SECONDS", "30")
+    )
 
     # ===== SUPABASE INTEGRATION =====
     SUPABASE_URL: Optional[str] = os.getenv("SUPABASE_URL")
@@ -375,8 +399,9 @@ class Settings(BaseSettings):
                 self.ENVIRONMENT
             )
 
-        # Defaults for local/dev only
-        if self.ENVIRONMENT != "production":
+        # Defaults for local/dev-like only. Staging/production-like environments
+        # must declare their own origins/proxies explicitly.
+        if _is_development_like_environment(self.ENVIRONMENT):
             if not self.CORS_ORIGINS:
                 self.CORS_ORIGINS = [
                     "http://localhost:3000",
@@ -496,6 +521,10 @@ def validate_environment():
         if "*" in settings.FORWARDED_ALLOW_IPS:
             errors.append(
                 "FORWARDED_ALLOW_IPS cannot include '*' in production. Set explicit proxy IPs/CIDRs."
+            )
+        if "172.18.0.0/16" in settings.FORWARDED_ALLOW_IPS:
+            errors.append(
+                "FORWARDED_ALLOW_IPS cannot trust Docker bridge CIDR 172.18.0.0/16 in production."
             )
 
     # 5. HubSpot/GitHub Integration Security

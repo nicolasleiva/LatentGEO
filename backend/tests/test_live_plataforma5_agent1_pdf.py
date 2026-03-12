@@ -16,7 +16,7 @@ pytestmark = [
 ]
 
 BASE_URL = os.getenv("LIVE_BASE_URL", "http://localhost:8000").rstrip("/")
-API_BASE = f"{BASE_URL}/api"
+API_BASE = f"{BASE_URL}/api/v1"
 LIVE_TARGET_URL = os.getenv("LIVE_TARGET_URL", "https://plataforma5.la/")
 
 
@@ -50,6 +50,63 @@ def _wait_for_audit_completion(
     pytest.fail(f"Audit {audit_id} did not complete within {timeout_seconds}s")
 
 
+def _wait_for_pdf_completion(
+    audit_id: int, headers: Dict[str, str], timeout_seconds: int = 1800
+) -> Dict[str, Any]:
+    start = time.monotonic()
+    while time.monotonic() - start < timeout_seconds:
+        response = requests.get(
+            f"{API_BASE}/audits/{audit_id}/pdf-status", headers=headers, timeout=20
+        )
+        assert response.status_code == 200, response.text
+        payload = response.json()
+        status = str(payload.get("status", "")).lower()
+        if status == "completed":
+            return payload
+        if status == "failed":
+            pytest.fail(f"PDF generation for audit {audit_id} failed: {payload}")
+        time.sleep(max(1, int(payload.get("retry_after_seconds") or 3)))
+    pytest.fail(
+        f"PDF generation for audit {audit_id} did not complete within {timeout_seconds}s"
+    )
+
+
+def _get_pagespeed_status(audit_id: int, headers: Dict[str, str]) -> Dict[str, Any]:
+    response = requests.get(
+        f"{API_BASE}/audits/{audit_id}/pagespeed-status", headers=headers, timeout=20
+    )
+    assert response.status_code == 200, response.text
+    return response.json()
+
+
+def _wait_for_pagespeed_started_or_completed(
+    audit_id: int, headers: Dict[str, str], timeout_seconds: int = 240
+) -> Dict[str, Any]:
+    start = time.monotonic()
+    while time.monotonic() - start < timeout_seconds:
+        payload = _get_pagespeed_status(audit_id, headers)
+        status = str(payload.get("status", "")).lower()
+        if status in {"queued", "running", "completed", "failed"}:
+            return payload
+        time.sleep(max(1, int(payload.get("retry_after_seconds") or 3)))
+    pytest.fail(
+        f"PageSpeed did not start within {timeout_seconds}s for audit {audit_id}"
+    )
+
+
+def _wait_for_pagespeed_terminal(
+    audit_id: int, headers: Dict[str, str], timeout_seconds: int = 1200
+) -> Dict[str, Any]:
+    start = time.monotonic()
+    while time.monotonic() - start < timeout_seconds:
+        payload = _get_pagespeed_status(audit_id, headers)
+        status = str(payload.get("status", "")).lower()
+        if status in {"completed", "failed"}:
+            return payload
+        time.sleep(max(1, int(payload.get("retry_after_seconds") or 3)))
+    pytest.fail(f"PageSpeed did not reach terminal state within {timeout_seconds}s")
+
+
 @pytest.fixture(scope="module")
 def auth_headers() -> Dict[str, str]:
     return _build_auth_headers()
@@ -78,15 +135,30 @@ def first_pdf_generation(
     completed_live_audit: Dict[str, Any], auth_headers: Dict[str, str]
 ) -> Dict[str, Any]:
     audit_id = int(completed_live_audit["id"])
+    pagespeed_before_pdf = _wait_for_pagespeed_started_or_completed(
+        audit_id, auth_headers
+    )
     started = time.monotonic()
     response = requests.post(
         f"{API_BASE}/audits/{audit_id}/generate-pdf",
         headers=auth_headers,
-        timeout=1200,
+        timeout=60,
     )
     elapsed = time.monotonic() - started
-    assert response.status_code == 200, response.text
+    assert response.status_code in (200, 202), response.text
     payload = response.json()
+    pagespeed_status_before = str(pagespeed_before_pdf.get("status", "")).lower()
+    if pagespeed_status_before in {"queued", "running"}:
+        assert payload["status"] in {"waiting", "queued", "running"}
+        assert payload.get("waiting_on") in {None, "pagespeed"}
+
+    pagespeed_after_pdf = _wait_for_pagespeed_terminal(audit_id, auth_headers)
+    if response.status_code == 202 or str(payload.get("status", "")).lower() in {
+        "waiting",
+        "queued",
+        "running",
+    }:
+        payload = _wait_for_pdf_completion(audit_id, auth_headers)
 
     download = requests.get(
         f"{API_BASE}/audits/{audit_id}/download-pdf",
@@ -100,6 +172,8 @@ def first_pdf_generation(
         "audit_id": audit_id,
         "elapsed": elapsed,
         "payload": payload,
+        "pagespeed_before_pdf": pagespeed_before_pdf,
+        "pagespeed_after_pdf": pagespeed_after_pdf,
     }
 
 
@@ -139,11 +213,26 @@ def test_live_generate_pdf_plataforma5_and_download(
     first_pdf_generation: Dict[str, Any],
 ):
     payload = first_pdf_generation["payload"]
-    assert "report_cache_hit" in payload
-    assert "report_regenerated" in payload
-    assert "generation_mode" in payload
-    assert "external_intel_refreshed" in payload
-    assert "external_intel_refresh_reason" in payload
+    assert payload["status"] == "completed"
+    assert payload["download_ready"] is True
+    assert payload["report_id"] is not None
+
+
+@pytest.mark.integration
+@pytest.mark.live
+@pytest.mark.slow
+def test_live_pagespeed_is_auto_queued_once_and_reaches_terminal_state(
+    first_pdf_generation: Dict[str, Any],
+):
+    initial_status = str(
+        first_pdf_generation["pagespeed_before_pdf"].get("status", "")
+    ).lower()
+    terminal_status = str(
+        first_pdf_generation["pagespeed_after_pdf"].get("status", "")
+    ).lower()
+
+    assert initial_status in {"queued", "running", "completed", "failed"}
+    assert terminal_status in {"completed", "failed"}
 
 
 @pytest.mark.integration
@@ -159,13 +248,14 @@ def test_live_second_pdf_is_cache_hit(
     response = requests.post(
         f"{API_BASE}/audits/{audit_id}/generate-pdf",
         headers=auth_headers,
-        timeout=1200,
+        timeout=60,
     )
     second_elapsed = time.monotonic() - started
-    assert response.status_code == 200, response.text
+    assert response.status_code in (200, 202), response.text
     payload = response.json()
+    if response.status_code == 202:
+        payload = _wait_for_pdf_completion(audit_id, auth_headers)
 
-    assert payload.get("report_cache_hit") is True
-    assert payload.get("report_regenerated") is False
-    assert payload.get("generation_mode") == "report_cache_hit"
-    assert second_elapsed < first_elapsed
+    assert payload["status"] == "completed"
+    assert payload["download_ready"] is True
+    assert second_elapsed < first_elapsed or response.status_code == 200

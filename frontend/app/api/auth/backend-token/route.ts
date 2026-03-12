@@ -7,7 +7,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest) {
-  if (process.env.AUTH0_TOKEN_BRIDGE_ENABLED !== "true") {
+  if (process.env.AUTH0_TOKEN_BRIDGE_ENABLED?.trim().toLowerCase() !== "true") {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 

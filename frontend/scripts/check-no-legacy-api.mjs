@@ -2,6 +2,8 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { hasLegacyApiViolation } from "../lib/legacy-api-check.mjs";
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const frontendRoot = path.resolve(__dirname, "..");
@@ -11,7 +13,6 @@ const scopes = ["app", "components", "hooks", "lib", "__tests__", "e2e"].map(
 );
 
 const excludedPathFragments = [path.join("lib", "api-client")];
-const legacyApiPattern = /\/api\/(?!v1\/|auth(?:\/|$)|sse(?:\/|$))/g;
 
 function walk(dir) {
   const entries = readdirSync(dir, { withFileTypes: true });
@@ -59,8 +60,7 @@ for (const scopeDir of scopes) {
     const lines = content.split(/\r?\n/);
 
     lines.forEach((line, index) => {
-      legacyApiPattern.lastIndex = 0;
-      if (legacyApiPattern.test(line)) {
+      if (hasLegacyApiViolation(line)) {
         const relativePath = path
           .relative(frontendRoot, filePath)
           .replaceAll("\\", "/");

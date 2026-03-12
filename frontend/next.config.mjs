@@ -9,14 +9,15 @@ const strictBuild = process.env.STRICT_BUILD === "1";
 const ciValidationBuild =
   process.env.CI === "true" || process.env.GITHUB_ACTIONS === "true";
 const allowLocalhostApiOrigin =
-  process.env.ALLOW_LOCALHOST_API_ORIGIN === "1" || ciValidationBuild;
+  process.env.ALLOW_LOCALHOST_API_ORIGIN === "1" ||
+  ciValidationBuild ||
+  (!isProd && !strictBuild);
 const configDir = path.dirname(fileURLToPath(import.meta.url));
 const httpsEnforced = isProd && process.env.FORCE_HTTPS === "true";
 const devFallbackApiUrl = "http://localhost:8000";
 const localHostnames = new Set(["localhost", "127.0.0.1", "0.0.0.0"]);
-const buildValidationFallbackApiUrl = ciValidationBuild
-  ? devFallbackApiUrl
-  : "";
+const buildValidationFallbackApiUrl =
+  ciValidationBuild || (!isProd && !strictBuild) ? devFallbackApiUrl : "";
 
 function selectApiUrl(...candidates) {
   for (const candidate of candidates) {
