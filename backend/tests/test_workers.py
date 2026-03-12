@@ -247,7 +247,7 @@ async def test_pdf_execute_job_releases_lock_before_resuming_waiting_job(
 
     def _resume(_db, audit, pagespeed_job):
         order.append("resume")
-        assert audit.id == audit.id
+        assert audit.id == job.audit_id
         assert pagespeed_job is None
         return _db.query(AuditPdfJob).filter(AuditPdfJob.id == job.id).first()
 
