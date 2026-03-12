@@ -4,10 +4,9 @@ Middleware that decodes the bearer token once and stores auth context on request
 
 from __future__ import annotations
 
+from app.core.auth import get_user_from_bearer_token
 from fastapi import HTTPException, Request
 from starlette.middleware.base import BaseHTTPMiddleware
-
-from app.core.auth import get_user_from_bearer_token
 
 
 class AuthContextMiddleware(BaseHTTPMiddleware):

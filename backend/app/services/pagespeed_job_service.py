@@ -8,16 +8,15 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any, Iterable, Optional
 
-from fastapi import HTTPException
-from sqlalchemy.exc import DBAPIError, OperationalError
-from sqlalchemy.orm import Session
-
 from app.core.config import settings
 from app.core.logger import get_logger
 from app.models import Audit, AuditPageSpeedJob, AuditPageSpeedJobStatus
 from app.schemas import AuditPageSpeedStatusResponse, PDFStatusError
 from app.services.audit_service import AuditService
 from app.services.cache_service import cache
+from fastapi import HTTPException
+from sqlalchemy.exc import DBAPIError, OperationalError
+from sqlalchemy.orm import Session
 
 logger = get_logger(__name__)
 
@@ -535,8 +534,8 @@ class PageSpeedJobService:
     @staticmethod
     async def execute_job(db: Session, job_id: int) -> AuditPageSpeedJob:
         from app.core.llm_kimi import get_llm_function
-        from app.services.pipeline_service import PipelineService
         from app.services.pagespeed_service import PageSpeedService
+        from app.services.pipeline_service import PipelineService
         from app.workers.tasks import _save_pagespeed_analysis, _save_pagespeed_data
 
         job = db.query(AuditPageSpeedJob).filter(AuditPageSpeedJob.id == job_id).first()

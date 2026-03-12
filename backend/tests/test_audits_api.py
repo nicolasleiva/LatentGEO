@@ -8,11 +8,11 @@ from unittest.mock import patch
 
 from app.core.config import settings
 from app.models import Audit, AuditPageSpeedJob, AuditPdfJob, Competitor, Report
-from app.services.cache_service import cache
+from app.schemas import AuditStatus
 from app.services.audit_service import AuditService
+from app.services.cache_service import cache
 from app.services.pagespeed_job_service import PageSpeedJobService
 from app.services.pdf_job_service import PDFJobService
-from app.schemas import AuditStatus
 from fastapi.testclient import TestClient
 from sqlalchemy.exc import OperationalError
 

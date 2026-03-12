@@ -9,9 +9,8 @@ import os
 import threading
 from typing import Any
 
-from celery.signals import worker_process_shutdown
-
 from app.core.logger import get_logger
+from celery.signals import worker_process_shutdown
 
 logger = get_logger(__name__)
 

@@ -7,7 +7,7 @@ from pathlib import Path
 import app.core.logger as logger_module
 import pytest
 import start_server as start_server_module
-from app.core.config import Settings, _REPO_ROOT, settings, validate_environment
+from app.core.config import _REPO_ROOT, Settings, settings, validate_environment
 from app.core.middleware import SecurityHeadersMiddleware
 from fastapi import FastAPI
 from fastapi.testclient import TestClient

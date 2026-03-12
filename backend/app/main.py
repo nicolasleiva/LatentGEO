@@ -6,8 +6,8 @@ from fastapi import APIRouter, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.utils import get_openapi
 
-from .core.config import _is_development_like_environment, settings
 from .core.auth_context import AuthContextMiddleware
+from .core.config import _is_development_like_environment, settings
 from .core.database import init_db
 from .core.logger import get_logger
 from .core.middleware import configure_security_middleware

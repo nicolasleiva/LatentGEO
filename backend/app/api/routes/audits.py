@@ -8,8 +8,8 @@ from app.core.database import get_db
 from app.core.logger import get_logger
 from app.models import Audit, AuditPageSpeedJob, AuditStatus, Competitor
 from app.schemas import (
-    AuditConfigRequest,
     AuditArtifactsStatusResponse,
+    AuditConfigRequest,
     AuditCreate,
     AuditOverview,
     AuditPageSpeedStatusResponse,
@@ -19,18 +19,18 @@ from app.schemas import (
     ChatMessage,
     PDFDownloadUrlResponse,
 )
+from app.services import pdf_job_service as pdf_job_service_module
 from app.services.audit_local_service import AuditLocalService
 from app.services.audit_service import AuditService
-from app.services.pagespeed_job_service import (
-    DEFAULT_PAGESPEED_RETRY_AFTER_SECONDS,
-    PageSpeedJobService,
-)
 from app.services.competitor_filters import (
     infer_vertical_hint,
     is_valid_competitor_domain,
     normalize_domain,
 )
-from app.services import pdf_job_service as pdf_job_service_module
+from app.services.pagespeed_job_service import (
+    DEFAULT_PAGESPEED_RETRY_AFTER_SECONDS,
+    PageSpeedJobService,
+)
 from app.services.pdf_job_service import (
     DEFAULT_PDF_RETRY_AFTER_SECONDS,
     PDFJobService,

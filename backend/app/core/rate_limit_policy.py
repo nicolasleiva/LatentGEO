@@ -7,9 +7,8 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-from fastapi import Request
-
 from app.core.request_identity import get_client_ip
+from fastapi import Request
 
 _AUDIT_READ_PATH_RE = re.compile(
     r"^/api/v1/audits/\d+"

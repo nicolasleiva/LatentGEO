@@ -3,11 +3,10 @@ from __future__ import annotations
 import sys
 import time
 
-from sqlalchemy.exc import OperationalError
-
 from app.core.config import settings
 from app.core.database import run_migrations_to_head
 from app.core.logger import get_logger
+from sqlalchemy.exc import OperationalError
 
 logger = get_logger(__name__)
 

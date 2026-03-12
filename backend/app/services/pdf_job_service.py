@@ -9,10 +9,6 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any, Iterable, Optional
 
-from fastapi import HTTPException
-from sqlalchemy.exc import DBAPIError, OperationalError
-from sqlalchemy.orm import Session
-
 from app.core.config import settings
 from app.core.logger import get_logger
 from app.models import (
@@ -25,6 +21,9 @@ from app.models import (
 from app.schemas import AuditPDFStatusResponse, PDFStatusError
 from app.services.audit_service import AuditService
 from app.services.cache_service import cache
+from fastapi import HTTPException
+from sqlalchemy.exc import DBAPIError, OperationalError
+from sqlalchemy.orm import Session
 
 logger = get_logger(__name__)
 
@@ -573,8 +572,8 @@ class PDFJobService:
 
     @staticmethod
     async def execute_job(db: Session, job_id: int) -> AuditPdfJob:
-        from app.services.pdf_service import PDFService
         from app.services.pagespeed_job_service import PageSpeedJobService
+        from app.services.pdf_service import PDFService
 
         job = db.query(AuditPdfJob).filter(AuditPdfJob.id == job_id).first()
         if job is None:
