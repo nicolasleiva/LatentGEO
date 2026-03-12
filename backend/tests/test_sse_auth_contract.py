@@ -1,5 +1,5 @@
-import json
 import asyncio
+import json
 
 import pytest
 from app.api.routes import sse as sse_route
