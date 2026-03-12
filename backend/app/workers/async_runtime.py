@@ -63,9 +63,9 @@ class _WorkerAsyncRuntime:
         finally:
             try:
                 asyncio.set_event_loop(None)
-            except Exception:
-                pass
-            if not loop.is_closed():
+            except RuntimeError as exc:
+                logger.debug("Async runtime event loop detach skipped: %s", exc)
+            if not loop.is_closed() and not loop.is_running():
                 loop.close()
             self._loop = None
             self._pid = None
