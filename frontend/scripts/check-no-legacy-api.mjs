@@ -62,16 +62,13 @@ for (const scopeDir of scopes) {
     const lines = content.split(/\r?\n/);
 
     lines.forEach((line, index) => {
+      const sanitizedLine = allowedInternalApiPatterns.reduce(
+        (currentLine, pattern) => currentLine.replace(pattern, "/api/v1/__allowed__"),
+        line,
+      );
       legacyApiPattern.lastIndex = 0;
-      const matches = Array.from(line.matchAll(legacyApiPattern));
-      const disallowedMatches = matches.filter((match) => {
-        const candidate = match[0];
-        return !allowedInternalApiPatterns.some((pattern) => {
-          pattern.lastIndex = 0;
-          return pattern.test(candidate);
-        });
-      });
-      if (disallowedMatches.length > 0) {
+      const matches = Array.from(sanitizedLine.matchAll(legacyApiPattern));
+      if (matches.length > 0) {
         const relativePath = path
           .relative(frontendRoot, filePath)
           .replaceAll("\\", "/");

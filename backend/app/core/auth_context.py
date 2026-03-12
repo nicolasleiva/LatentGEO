@@ -4,10 +4,23 @@ Middleware that decodes the bearer token once and stores auth context on request
 
 from __future__ import annotations
 
+import os
+
 from app.core.auth import get_user_from_bearer_token
 from app.core.config import _is_development_like_environment, settings
 from fastapi import HTTPException, Request
 from starlette.middleware.base import BaseHTTPMiddleware
+
+
+def _legacy_user_header_enabled() -> bool:
+    if settings.DEBUG:
+        return True
+
+    raw_environment = os.getenv("ENVIRONMENT", "").strip()
+    if not raw_environment:
+        return False
+
+    return _is_development_like_environment(raw_environment)
 
 
 class AuthContextMiddleware(BaseHTTPMiddleware):
@@ -24,10 +37,7 @@ class AuthContextMiddleware(BaseHTTPMiddleware):
                     request.state.auth_user = get_user_from_bearer_token(token)
                 except HTTPException as exc:
                     request.state.auth_error = exc
-        elif settings.DEBUG or (
-            bool(settings.ENVIRONMENT)
-            and _is_development_like_environment(settings.ENVIRONMENT)
-        ):
+        elif _legacy_user_header_enabled():
             legacy_user_id = request.headers.get("X-User-ID", "").strip()
             if legacy_user_id:
                 # Test/internal fallback only. Production rate-limit identity must

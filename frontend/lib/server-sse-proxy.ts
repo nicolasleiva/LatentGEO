@@ -68,6 +68,16 @@ export async function proxyProtectedSse(
   const upstreamAbortController = new AbortController();
   const abortUpstream = () => upstreamAbortController.abort();
   request.signal.addEventListener("abort", abortUpstream, { once: true });
+  let streamOwnsCleanup = false;
+  let cleanedUp = false;
+
+  const cleanupAbortForwarding = () => {
+    if (cleanedUp) {
+      return;
+    }
+    cleanedUp = true;
+    request.signal.removeEventListener("abort", abortUpstream);
+  };
 
   try {
     const upstreamUrl = new URL(backendPath, API_BASE_URL);
@@ -103,6 +113,7 @@ export async function proxyProtectedSse(
     }
 
     const reader = upstreamResponse.body.getReader();
+    streamOwnsCleanup = true;
     const proxiedBody = new ReadableStream<Uint8Array>({
       start(controller) {
         const pump = async () => {
@@ -120,12 +131,20 @@ export async function proxyProtectedSse(
           } catch (streamError) {
             controller.error(streamError);
           } finally {
-            reader.releaseLock();
+            upstreamAbortController.abort();
+            try {
+              reader.releaseLock();
+            } catch {
+              // Ignore release errors after cancellation.
+            }
+            cleanupAbortForwarding();
           }
         };
         void pump();
       },
       cancel() {
+        upstreamAbortController.abort();
+        cleanupAbortForwarding();
         return reader.cancel();
       },
     });
@@ -151,6 +170,8 @@ export async function proxyProtectedSse(
       { status: 502 },
     );
   } finally {
-    request.signal.removeEventListener("abort", abortUpstream);
+    if (!streamOwnsCleanup) {
+      cleanupAbortForwarding();
+    }
   }
 }

@@ -300,6 +300,7 @@ async def audit_artifact_stream(
     last_emit_ts = start_time
     last_db_check_ts = 0.0
     last_payload_signature = None
+    saw_active_artifact = False
 
     try:
         initial = initial_payload or await run_in_threadpool(
@@ -312,6 +313,7 @@ async def audit_artifact_stream(
         last_payload_signature = json.dumps(initial, sort_keys=True, default=str)
         last_emit_ts = monotonic()
         last_db_check_ts = last_emit_ts
+        saw_active_artifact = _artifact_payload_has_active_job(initial)
 
         if use_redis_source:
             try:
@@ -381,6 +383,9 @@ async def audit_artifact_stream(
 
             if payload is not None:
                 payload_signature = json.dumps(payload, sort_keys=True, default=str)
+                saw_active_artifact = (
+                    saw_active_artifact or _artifact_payload_has_active_job(payload)
+                )
                 if payload_signature != last_payload_signature:
                     yield _serialize_sse_event(
                         ServerSentEvent(

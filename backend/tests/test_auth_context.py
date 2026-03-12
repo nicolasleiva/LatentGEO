@@ -22,6 +22,7 @@ def test_auth_context_does_not_enable_legacy_header_when_environment_is_unset(
 ):
     monkeypatch.setattr(settings, "DEBUG", False, raising=False)
     monkeypatch.setattr(settings, "ENVIRONMENT", "", raising=False)
+    monkeypatch.delenv("ENVIRONMENT", raising=False)
 
     app = _build_app()
     with TestClient(app) as client:
@@ -29,3 +30,18 @@ def test_auth_context_does_not_enable_legacy_header_when_environment_is_unset(
 
     assert response.status_code == 200
     assert response.json()["legacy_user_id"] is None
+
+
+def test_auth_context_only_allows_legacy_header_for_explicit_dev_environment(
+    monkeypatch,
+):
+    monkeypatch.setattr(settings, "DEBUG", False, raising=False)
+    monkeypatch.setattr(settings, "ENVIRONMENT", "development", raising=False)
+    monkeypatch.setenv("ENVIRONMENT", "development")
+
+    app = _build_app()
+    with TestClient(app) as client:
+        response = client.get("/whoami", headers={"X-User-ID": "dev-user"})
+
+    assert response.status_code == 200
+    assert response.json()["legacy_user_id"] == "dev-user"
