@@ -1,11 +1,21 @@
 import { expect, test, type BrowserContext, type Page } from "@playwright/test";
 
-const baseUrl = process.env.RELEASE_BASE_URL || process.env.PERF_BASE_URL || "http://localhost:3000";
-const apiUrl = process.env.RELEASE_API_URL || process.env.PERF_API_URL || process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+const baseUrl =
+  process.env.RELEASE_BASE_URL ||
+  process.env.PERF_BASE_URL ||
+  "http://localhost:3000";
+const apiUrl =
+  process.env.RELEASE_API_URL ||
+  process.env.PERF_API_URL ||
+  process.env.NEXT_PUBLIC_API_URL ||
+  "http://localhost:8000";
 const locale = process.env.RELEASE_LOCALE || process.env.PERF_LOCALE || "en";
-const seededAuditId = process.env.RELEASE_AUDIT_ID || process.env.PERF_AUDIT_ID || "28";
-const authEmail = process.env.RELEASE_AUTH_EMAIL || process.env.PERF_AUTH_EMAIL || "";
-const authPassword = process.env.RELEASE_AUTH_PASSWORD || process.env.PERF_AUTH_PASSWORD || "";
+const seededAuditId =
+  process.env.RELEASE_AUDIT_ID || process.env.PERF_AUDIT_ID || "28";
+const authEmail =
+  process.env.RELEASE_AUTH_EMAIL || process.env.PERF_AUTH_EMAIL || "";
+const authPassword =
+  process.env.RELEASE_AUTH_PASSWORD || process.env.PERF_AUTH_PASSWORD || "";
 
 const isRedirectAbort = (error: unknown) => {
   const message = error instanceof Error ? error.message : String(error);
@@ -18,7 +28,10 @@ const isAuthUrl = (value: string) =>
   value.includes("/authorize") ||
   value.includes("/u/login");
 
-const navigateWithAuthRedirectTolerance = async (page: Page, target: string) => {
+const navigateWithAuthRedirectTolerance = async (
+  page: Page,
+  target: string,
+) => {
   try {
     await page.goto(target, { waitUntil: "domcontentloaded" });
   } catch (error) {
@@ -87,7 +100,9 @@ const waitForAnyVisibleText = async (
   while (Date.now() < deadline) {
     for (const value of values) {
       try {
-        await expect(page.getByText(value).first()).toBeVisible({ timeout: 1_500 });
+        await expect(page.getByText(value).first()).toBeVisible({
+          timeout: 1_500,
+        });
         return;
       } catch (error) {
         lastError = error instanceof Error ? error : new Error(String(error));
@@ -96,7 +111,10 @@ const waitForAnyVisibleText = async (
     await page.waitForTimeout(500);
   }
 
-  throw lastError ?? new Error("Expected at least one matching artifact state to be visible.");
+  throw (
+    lastError ??
+    new Error("Expected at least one matching artifact state to be visible.")
+  );
 };
 
 const waitForAnyVisibleButton = async (
@@ -121,7 +139,10 @@ const waitForAnyVisibleButton = async (
     await page.waitForTimeout(500);
   }
 
-  throw lastError ?? new Error("Expected at least one matching button state to be visible.");
+  throw (
+    lastError ??
+    new Error("Expected at least one matching button state to be visible.")
+  );
 };
 
 const openAuthenticatedRoute = async (page: Page, routePath: string) => {
@@ -208,9 +229,13 @@ test("audit detail renders without 500s", async () => {
     await openAuthenticatedRoute(page, baseAuditPath);
     await expect(page.getByTestId("geo-tool-card-dashboard")).toBeVisible();
     await expect(page.getByTestId("geo-tool-card-commerce")).toBeVisible();
-    await expect(page.getByTestId("geo-tool-card-article-engine")).toBeVisible();
+    await expect(
+      page.getByTestId("geo-tool-card-article-engine"),
+    ).toBeVisible();
     await waitForVisibleText(page, /Execution Tool Suite/i);
-    await expect(page.getByRole("button", { name: /Export PDF/i })).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: /Export PDF/i }),
+    ).toBeVisible();
 
     await page.getByRole("tab", { name: "Narrative" }).click();
     await waitForVisibleText(page, /Narrative Report \(Markdown\)/i);
@@ -239,7 +264,10 @@ test("analytics and GEO pages render without 500s", async () => {
     await expect(page.getByTestId("geo-tab-commerce")).toBeVisible();
     await waitForVisibleText(page, /Commerce Query Analyzer/i);
 
-    await openAuthenticatedRoute(page, `${baseAuditPath}/geo?tab=article-engine`);
+    await openAuthenticatedRoute(
+      page,
+      `${baseAuditPath}/geo?tab=article-engine`,
+    );
     await expect(page.getByTestId("geo-tab-article-engine")).toBeVisible();
     await waitForVisibleText(page, /Generate Article Batch/i);
     assertNoCriticalFailures(criticalFailures);
@@ -309,7 +337,10 @@ test("delivery integrations render without 500s", async () => {
         .or(page.getByText(/Guided Odoo Briefing/i)),
     ).toBeVisible();
 
-    await openAuthenticatedRoute(page, `/${locale}/integrations/hubspot/connect`);
+    await openAuthenticatedRoute(
+      page,
+      `/${locale}/integrations/hubspot/connect`,
+    );
     await waitForVisibleText(page, /Connect HubSpot/i);
     assertNoCriticalFailures(criticalFailures);
   });

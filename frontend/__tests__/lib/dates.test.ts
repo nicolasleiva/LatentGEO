@@ -21,9 +21,9 @@ describe("stable date formatting", () => {
   });
 
   it("keeps locale-specific formatting deterministic without Intl drift", () => {
-    expect(formatStableDate("2026-03-10T23:30:00-03:00", { locale: "es" })).toBe(
-      "11/3/2026",
-    );
+    expect(
+      formatStableDate("2026-03-10T23:30:00-03:00", { locale: "es" }),
+    ).toBe("11/3/2026");
     expect(
       formatStableDateTime("2026-03-10T23:30:00-03:00", { locale: "es" }),
     ).toBe("11/3/2026, 02:30 UTC");

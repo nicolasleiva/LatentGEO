@@ -47,17 +47,15 @@ describe("pdf-download helpers", () => {
   });
 
   it("downloads audit PDFs through the protected frontend route without navigating the page", async () => {
-    const fetchMock = vi
-      .spyOn(globalThis, "fetch")
-      .mockResolvedValue(
-        new Response(new Blob(["pdf-data"], { type: "application/pdf" }), {
-          status: 200,
-          headers: {
-            "Content-Type": "application/pdf",
-            "Content-Disposition": 'attachment; filename="audit_42_report.pdf"',
-          },
-        }),
-      );
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(new Blob(["pdf-data"], { type: "application/pdf" }), {
+        status: 200,
+        headers: {
+          "Content-Type": "application/pdf",
+          "Content-Disposition": 'attachment; filename="audit_42_report.pdf"',
+        },
+      }),
+    );
     const clickSpy = vi
       .spyOn(HTMLAnchorElement.prototype, "click")
       .mockImplementation(() => {});

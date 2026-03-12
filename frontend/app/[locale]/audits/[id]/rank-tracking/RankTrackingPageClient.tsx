@@ -47,7 +47,9 @@ type RankTrackingWithTopResults = RankTracking & {
 const compareIsoDesc = (left?: string, right?: string) => {
   const leftTime = left ? Date.parse(left) : Number.NaN;
   const rightTime = right ? Date.parse(right) : Number.NaN;
-  const normalizedLeft = Number.isFinite(leftTime) ? leftTime : Number.MIN_SAFE_INTEGER;
+  const normalizedLeft = Number.isFinite(leftTime)
+    ? leftTime
+    : Number.MIN_SAFE_INTEGER;
   const normalizedRight = Number.isFinite(rightTime)
     ? rightTime
     : Number.MIN_SAFE_INTEGER;
@@ -58,7 +60,9 @@ const sortTopResults = (results?: RankTopResult[]): RankTopResult[] => {
   if (!Array.isArray(results)) return [];
   return [...results].sort((left, right) => {
     const leftPosition =
-      typeof left.position === "number" ? left.position : Number.MAX_SAFE_INTEGER;
+      typeof left.position === "number"
+        ? left.position
+        : Number.MAX_SAFE_INTEGER;
     const rightPosition =
       typeof right.position === "number"
         ? right.position
@@ -77,9 +81,7 @@ const normalizeRanking = (
   };
 };
 
-const sortRankings = (
-  items: RankTracking[],
-): RankTrackingWithTopResults[] => {
+const sortRankings = (items: RankTracking[]): RankTrackingWithTopResults[] => {
   return items.map(normalizeRanking).sort((left, right) => {
     const trackedAtOrder = compareIsoDesc(left.tracked_at, right.tracked_at);
     if (trackedAtOrder !== 0) return trackedAtOrder;
@@ -137,7 +139,9 @@ export default function RankTrackingPageClient({
 
         setForm({
           domain: hostname,
-          keywords: Array.from(new Set(suggestedKeywords)).slice(0, 5).join(", "),
+          keywords: Array.from(new Set(suggestedKeywords))
+            .slice(0, 5)
+            .join(", "),
         });
         setRankings(sortRankings(nextRankings));
       } catch {

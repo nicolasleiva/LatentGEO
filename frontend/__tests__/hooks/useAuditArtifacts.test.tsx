@@ -10,7 +10,8 @@ vi.mock("@/lib/api-client", () => ({
 
 const fetchWithBackendAuthMock = vi.fn();
 vi.mock("@/lib/backend-auth", () => ({
-  fetchWithBackendAuth: (...args: unknown[]) => fetchWithBackendAuthMock(...args),
+  fetchWithBackendAuth: (...args: unknown[]) =>
+    fetchWithBackendAuthMock(...args),
 }));
 
 vi.mock("@/lib/pdf-download", () => ({
@@ -94,13 +95,29 @@ describe("artifact hook wrappers", () => {
     );
     await waitFor(() => expect(MockEventSource.instances.length).toBe(1));
 
-    expect(MockEventSource.instances[0].url).toBe("/api/sse/audits/42/artifacts");
+    expect(MockEventSource.instances[0].url).toBe(
+      "/api/sse/audits/42/artifacts",
+    );
 
     expect(Object.keys(pdfHook.result.current).sort()).toEqual(
-      ["generate", "isBusy", "isPolling", "isSubmitting", "refreshStatus", "state"].sort(),
+      [
+        "generate",
+        "isBusy",
+        "isPolling",
+        "isSubmitting",
+        "refreshStatus",
+        "state",
+      ].sort(),
     );
     expect(Object.keys(pageSpeedHook.result.current).sort()).toEqual(
-      ["generate", "isBusy", "isPolling", "isSubmitting", "refreshStatus", "state"].sort(),
+      [
+        "generate",
+        "isBusy",
+        "isPolling",
+        "isSubmitting",
+        "refreshStatus",
+        "state",
+      ].sort(),
     );
 
     act(() => {

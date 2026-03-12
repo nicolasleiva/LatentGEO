@@ -97,11 +97,9 @@ export const formatStableNumber = (
   const minimumFractionDigits = options.minimumFractionDigits ?? 0;
   const maximumFractionDigits =
     options.maximumFractionDigits ?? Math.max(minimumFractionDigits, 0);
-  const cacheKey = [
-    locale,
-    minimumFractionDigits,
-    maximumFractionDigits,
-  ].join("|");
+  const cacheKey = [locale, minimumFractionDigits, maximumFractionDigits].join(
+    "|",
+  );
   const cached = numberFormatterCache.get(cacheKey);
   if (cached) {
     return cached.format(value);

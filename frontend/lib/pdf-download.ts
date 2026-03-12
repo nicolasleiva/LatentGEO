@@ -4,7 +4,8 @@ export type PdfDownloadUrlPayload = {
   storage_provider?: string;
 };
 
-const FALLBACK_CONTENT_DISPOSITION_NAME = /filename\*=UTF-8''([^;]+)|filename="?([^"]+)"?/i;
+const FALLBACK_CONTENT_DISPOSITION_NAME =
+  /filename\*=UTF-8''([^;]+)|filename="?([^"]+)"?/i;
 
 export const getPdfDownloadUrlFromPayload = (payload: unknown): string => {
   if (!payload || typeof payload !== "object") {
@@ -109,11 +110,14 @@ export const downloadAuditPdf = async (
     throw new Error("Audit ID is invalid.");
   }
 
-  const response = await fetch(`/api/audits/${normalizedAuditId}/download-pdf`, {
-    method: "GET",
-    cache: "no-store",
-    credentials: "same-origin",
-  });
+  const response = await fetch(
+    `/api/audits/${normalizedAuditId}/download-pdf`,
+    {
+      method: "GET",
+      cache: "no-store",
+      credentials: "same-origin",
+    },
+  );
 
   if (!response.ok) {
     throw new Error(

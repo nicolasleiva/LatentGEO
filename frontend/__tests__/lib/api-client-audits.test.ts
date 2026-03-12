@@ -25,9 +25,9 @@ describe("api-client audits", () => {
       });
     });
 
-    await expect(
-      createAudit({ url: "https://example.com" }),
-    ).resolves.toEqual({ id: 321 });
+    await expect(createAudit({ url: "https://example.com" })).resolves.toEqual({
+      id: 321,
+    });
 
     expect(sentRequest).not.toBeNull();
     expect(sentRequest?.url).toBe("http://localhost:8000/api/v1/audits/");

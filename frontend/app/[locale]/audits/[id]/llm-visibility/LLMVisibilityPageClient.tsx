@@ -27,16 +27,16 @@ type LLMVisibilityPageClientProps = {
 const compareIsoDesc = (left?: string, right?: string) => {
   const leftTime = left ? Date.parse(left) : Number.NaN;
   const rightTime = right ? Date.parse(right) : Number.NaN;
-  const normalizedLeft = Number.isFinite(leftTime) ? leftTime : Number.MIN_SAFE_INTEGER;
+  const normalizedLeft = Number.isFinite(leftTime)
+    ? leftTime
+    : Number.MIN_SAFE_INTEGER;
   const normalizedRight = Number.isFinite(rightTime)
     ? rightTime
     : Number.MIN_SAFE_INTEGER;
   return normalizedRight - normalizedLeft;
 };
 
-const sortVisibilityResults = (
-  items: LLMVisibility[],
-): LLMVisibility[] => {
+const sortVisibilityResults = (items: LLMVisibility[]): LLMVisibility[] => {
   return [...items].sort((left, right) => {
     const checkedAtOrder = compareIsoDesc(left.checked_at, right.checked_at);
     if (checkedAtOrder !== 0) return checkedAtOrder;
@@ -113,7 +113,9 @@ export default function LLMVisibilityPageClient({
         normalizedBrandName,
         queryList,
       );
-      setResults((previous) => sortVisibilityResults([...newResults, ...previous]));
+      setResults((previous) =>
+        sortVisibilityResults([...newResults, ...previous]),
+      );
     } catch (requestError) {
       setError(
         requestError instanceof Error

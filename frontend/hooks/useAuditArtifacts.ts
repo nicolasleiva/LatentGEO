@@ -99,7 +99,11 @@ type AuditArtifactsStoreState = {
 
 type Listener = () => void;
 
-const ACTIVE_PDF_STATUSES = new Set<PdfJobStatus>(["queued", "waiting", "running"]);
+const ACTIVE_PDF_STATUSES = new Set<PdfJobStatus>([
+  "queued",
+  "waiting",
+  "running",
+]);
 const ACTIVE_PAGESPEED_STATUSES = new Set<PageSpeedJobStatus>([
   "queued",
   "running",
@@ -184,10 +188,7 @@ const normalizeError = (
   };
 };
 
-const normalizePdfStatus = (
-  payload: unknown,
-  auditId: number,
-): PdfJobState => {
+const normalizePdfStatus = (payload: unknown, auditId: number): PdfJobState => {
   if (!payload || typeof payload !== "object") {
     return buildIdlePdfState(auditId);
   }
@@ -327,7 +328,8 @@ const extractApiErrorMessage = (payload: unknown, fallback: string): string => {
     if (typeof message === "string" && message.trim()) {
       return message;
     }
-    const error = (payload as { error?: { message?: unknown } | unknown }).error;
+    const error = (payload as { error?: { message?: unknown } | unknown })
+      .error;
     if (error && typeof error === "object") {
       const errorMessage = (error as { message?: unknown }).message;
       if (typeof errorMessage === "string" && errorMessage.trim()) {
@@ -353,7 +355,10 @@ const fetchArtifactsStatus = async (
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
     throw new Error(
-      extractApiErrorMessage(payload, "Failed to fetch artifact generation status."),
+      extractApiErrorMessage(
+        payload,
+        "Failed to fetch artifact generation status.",
+      ),
     );
   }
   return payload as AuditArtifactsPayload;
@@ -404,9 +409,7 @@ class AuditArtifactsStore {
       | ((current: AuditArtifactsStoreState) => AuditArtifactsStoreState),
   ) {
     const nextState =
-      typeof updater === "function"
-        ? updater(this.state)
-        : updater;
+      typeof updater === "function" ? updater(this.state) : updater;
     this.state = nextState;
     this.stateEpoch += 1;
     this.emit();
@@ -636,7 +639,9 @@ class AuditArtifactsStore {
       );
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) {
-        throw new Error(extractApiErrorMessage(payload, "Failed to generate PDF."));
+        throw new Error(
+          extractApiErrorMessage(payload, "Failed to generate PDF."),
+        );
       }
 
       const pdf = normalizePdfStatus(payload, this.auditId);
@@ -717,7 +722,9 @@ type UseAuditArtifactsOptions = {
 
 export function useAuditArtifacts({ auditId }: UseAuditArtifactsOptions) {
   const numericAuditId = Number(auditId);
-  const normalizedAuditId = Number.isFinite(numericAuditId) ? numericAuditId : 0;
+  const normalizedAuditId = Number.isFinite(numericAuditId)
+    ? numericAuditId
+    : 0;
   const store = useMemo(() => getStore(normalizedAuditId), [normalizedAuditId]);
   const snapshot = useSyncExternalStore(
     store.subscribe,

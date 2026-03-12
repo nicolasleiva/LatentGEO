@@ -96,17 +96,19 @@ describe("backend-auth cross-tab coordination", () => {
     getAccessTokenMock.mockResolvedValue("test-token");
 
     let sentRequest: Request | null = null;
-    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      sentRequest =
-        input instanceof Request
-          ? new Request(input, init)
-          : new Request(input.toString(), init);
+    const fetchMock = vi.fn(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        sentRequest =
+          input instanceof Request
+            ? new Request(input, init)
+            : new Request(input.toString(), init);
 
-      return new Response(JSON.stringify({ ok: true }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      });
-    });
+        return new Response(JSON.stringify({ ok: true }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      },
+    );
     global.fetch = fetchMock as unknown as typeof fetch;
 
     const { fetchWithBackendAuth } = await import("@/lib/backend-auth");
@@ -137,32 +139,34 @@ describe("backend-auth cross-tab coordination", () => {
     getAccessTokenMock.mockResolvedValue(null);
 
     let sentBackendRequest: Request | null = null;
-    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = input instanceof Request ? input.url : input.toString();
+    const fetchMock = vi.fn(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = input instanceof Request ? input.url : input.toString();
 
-      if (url.includes("/api/auth/backend-token")) {
-        return new Response(
-          JSON.stringify({
-            token: "bridge-token",
-            expires_at: Date.now() + 120_000,
-          }),
-          {
-            status: 200,
-            headers: { "Content-Type": "application/json" },
-          },
-        );
-      }
+        if (url.includes("/api/auth/backend-token")) {
+          return new Response(
+            JSON.stringify({
+              token: "bridge-token",
+              expires_at: Date.now() + 120_000,
+            }),
+            {
+              status: 200,
+              headers: { "Content-Type": "application/json" },
+            },
+          );
+        }
 
-      sentBackendRequest =
-        input instanceof Request
-          ? new Request(input, init)
-          : new Request(input.toString(), init);
+        sentBackendRequest =
+          input instanceof Request
+            ? new Request(input, init)
+            : new Request(input.toString(), init);
 
-      return new Response(JSON.stringify({ ok: true }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      });
-    });
+        return new Response(JSON.stringify({ ok: true }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      },
+    );
     global.fetch = fetchMock as unknown as typeof fetch;
 
     const { fetchWithBackendAuth } = await import("@/lib/backend-auth");

@@ -165,9 +165,10 @@ const getBridgedBackendAccessToken = async (): Promise<string | null> => {
       return null;
     }
 
-    const payload = (await response.json().catch(() => null)) as
-      | { token?: string; expires_at?: number }
-      | null;
+    const payload = (await response.json().catch(() => null)) as {
+      token?: string;
+      expires_at?: number;
+    } | null;
     if (!payload?.token) {
       return null;
     }
@@ -236,7 +237,9 @@ const buildAuthorizedHeaders = (
   init: RequestInit | undefined,
   token: string | null,
 ) => {
-  const headers = new Headers(input instanceof Request ? input.headers : undefined);
+  const headers = new Headers(
+    input instanceof Request ? input.headers : undefined,
+  );
   const initHeaders = new Headers(init?.headers);
 
   initHeaders.forEach((value, key) => {

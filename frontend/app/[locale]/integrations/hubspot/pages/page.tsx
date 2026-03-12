@@ -207,8 +207,7 @@ export default function HubSpotPages() {
                 </p>
               </div>
               <div className="text-sm text-muted-foreground">
-                Last synced:{" "}
-                {formatStableDate(page.last_synced_at)}
+                Last synced: {formatStableDate(page.last_synced_at)}
               </div>
             </CardContent>
           </Card>

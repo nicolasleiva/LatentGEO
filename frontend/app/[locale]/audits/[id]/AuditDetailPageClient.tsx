@@ -325,7 +325,9 @@ export default function AuditDetailPageClient({
     }
     if (
       pageSpeedState.status === "completed" &&
-      (pageSpeedState.pagespeed_available || pageSpeedData || audit?.pagespeed_data)
+      (pageSpeedState.pagespeed_available ||
+        pageSpeedData ||
+        audit?.pagespeed_data)
     ) {
       return "PageSpeed ready.";
     }
@@ -983,7 +985,8 @@ export default function AuditDetailPageClient({
                     )}
                     {pageSpeedState.status === "queued"
                       ? "Queued PageSpeed"
-                      : pageSpeedGenerating || pageSpeedState.status === "running"
+                      : pageSpeedGenerating ||
+                          pageSpeedState.status === "running"
                         ? "Running PageSpeed"
                         : pageSpeedState.pagespeed_available ||
                             Boolean(pageSpeedData || audit?.pagespeed_data)
@@ -1004,17 +1007,19 @@ export default function AuditDetailPageClient({
                       ? "Queued for PDF"
                       : pdfState.status === "waiting"
                         ? "Waiting on PageSpeed"
-                      : pdfGenerating || pdfState.status === "running"
-                        ? "Building PDF..."
-                        : pdfState.status === "completed"
-                          ? "Download PDF"
-                          : pdfState.status === "failed"
-                            ? "Retry PDF"
-                            : "Export PDF"}
+                        : pdfGenerating || pdfState.status === "running"
+                          ? "Building PDF..."
+                          : pdfState.status === "completed"
+                            ? "Download PDF"
+                            : pdfState.status === "failed"
+                              ? "Retry PDF"
+                              : "Export PDF"}
                   </Button>
                   <Button
                     data-testid="open-geo-dashboard-button"
-                    onMouseEnter={() => warmGeoNavigation(geoRoutes.geoDashboard)}
+                    onMouseEnter={() =>
+                      warmGeoNavigation(geoRoutes.geoDashboard)
+                    }
                     onFocus={() => warmGeoNavigation(geoRoutes.geoDashboard)}
                     onClick={() => {
                       warmGeoNavigation(geoRoutes.geoDashboard);
@@ -1040,7 +1045,9 @@ export default function AuditDetailPageClient({
                 ) : null}
 
                 {pdfState.warnings[0] ? (
-                  <p className="text-sm text-amber-600">{pdfState.warnings[0]}</p>
+                  <p className="text-sm text-amber-600">
+                    {pdfState.warnings[0]}
+                  </p>
                 ) : null}
 
                 {pageSpeedStatusNotice ? (

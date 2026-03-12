@@ -92,10 +92,11 @@ export default function AuditDetailActionsClient({
     if (pageSpeedState.status === "running") {
       return "PageSpeed analysis in progress.";
     }
-    if (pageSpeedState.status === "completed" && pageSpeedState.pagespeed_available) {
-      return hasPageSpeed
-        ? "PageSpeed refreshed."
-        : "PageSpeed data ready.";
+    if (
+      pageSpeedState.status === "completed" &&
+      pageSpeedState.pagespeed_available
+    ) {
+      return hasPageSpeed ? "PageSpeed refreshed." : "PageSpeed data ready.";
     }
     if (pageSpeedState.status === "failed") {
       return (
@@ -143,7 +144,9 @@ export default function AuditDetailActionsClient({
       {pdfNotice ? (
         <p
           className={`text-sm ${
-            state.status === "failed" ? "text-destructive" : "text-muted-foreground"
+            state.status === "failed"
+              ? "text-destructive"
+              : "text-muted-foreground"
           }`}
         >
           {pdfNotice}

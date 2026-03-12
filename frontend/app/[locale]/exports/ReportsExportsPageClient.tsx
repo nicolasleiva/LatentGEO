@@ -88,13 +88,13 @@ function ExportAuditRow({
       ? "PDF queued."
       : state.status === "waiting"
         ? "PDF waiting for the active PageSpeed refresh."
-      : state.status === "running"
-        ? "PDF building..."
-        : state.status === "completed" && state.download_ready
-          ? "PDF ready to download."
-          : state.status === "failed"
-            ? state.error?.message || "PDF generation failed."
-            : null);
+        : state.status === "running"
+          ? "PDF building..."
+          : state.status === "completed" && state.download_ready
+            ? "PDF ready to download."
+            : state.status === "failed"
+              ? state.error?.message || "PDF generation failed."
+              : null);
 
   return (
     <Card className="glass-card p-6 hover:bg-muted/50 transition-all">
@@ -152,13 +152,13 @@ function ExportAuditRow({
               ? "Queued PDF"
               : state.status === "waiting"
                 ? "Waiting on PageSpeed"
-              : isBusy || state.status === "running"
-                ? "Building PDF"
-                : state.status === "completed"
-                  ? "Download PDF"
-                  : state.status === "failed"
-                    ? "Retry PDF"
-                    : "Build PDF"}
+                : isBusy || state.status === "running"
+                  ? "Building PDF"
+                  : state.status === "completed"
+                    ? "Download PDF"
+                    : state.status === "failed"
+                      ? "Retry PDF"
+                      : "Build PDF"}
           </Button>
 
           <Button
