@@ -490,15 +490,15 @@ class AuditService:
                 "message": getattr(pdf_job, "error_message", None),
             }
 
-        updated_candidates = [
-            AuditService._coerce_artifact_datetime(candidate)
-            for candidate in (
-                getattr(pagespeed_job, "updated_at", None),
-                getattr(pdf_job, "updated_at", None),
-                getattr(pdf_report, "created_at", None),
-            )
-            if candidate is not None
-        ]
+        updated_candidates: List[datetime] = []
+        for candidate in (
+            getattr(pagespeed_job, "updated_at", None),
+            getattr(pdf_job, "updated_at", None),
+            getattr(pdf_report, "created_at", None),
+        ):
+            normalized_candidate = AuditService._coerce_artifact_datetime(candidate)
+            if normalized_candidate is not None:
+                updated_candidates.append(normalized_candidate)
         updated_at = (
             max(updated_candidates)
             if updated_candidates
