@@ -424,6 +424,87 @@ describe("ArticleEngine component", () => {
     expect((fetchWithBackendAuth as jest.Mock).mock.calls).toHaveLength(2);
   });
 
+  it("shows an error when terminal SSE hydration fails", async () => {
+    (
+      globalThis as unknown as { EventSource: typeof MockEventSource }
+    ).EventSource = MockEventSource;
+
+    (fetchWithBackendAuth as jest.Mock)
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          has_data: true,
+          batch_id: 41,
+          status: "processing",
+          summary: {
+            generated_count: 0,
+            failed_count: 0,
+            pipeline_stage: "generating_articles",
+            strategy_source: "generated_auto",
+          },
+          is_legacy: false,
+          can_regenerate: true,
+          articles: [
+            {
+              index: 1,
+              title: "Queued title",
+              target_keyword: "queued keyword",
+              focus_url: "https://store.example.com/",
+              generation_status: "queued",
+            },
+          ],
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 502,
+        text: async () =>
+          JSON.stringify({
+            detail: {
+              message: "Hydration failed",
+            },
+          }),
+      });
+
+    render(<ArticleEngine auditId={3} backendUrl="http://localhost:8000" />);
+
+    await waitFor(() => expect(MockEventSource.instances.length).toBe(1));
+
+    act(() => {
+      MockEventSource.instances[0].onmessage?.(
+        new MessageEvent("message", {
+          data: JSON.stringify({
+            batch_id: 41,
+            audit_id: 3,
+            status: "completed",
+            summary: {
+              generated_count: 1,
+              failed_count: 0,
+              pipeline_stage: "completed",
+            },
+            articles: [
+              {
+                index: 1,
+                title: "Queued title",
+                target_keyword: "queued keyword",
+                focus_url: "https://store.example.com/",
+                generation_status: "completed",
+                generation_error: null,
+                citation_readiness_score: 100,
+                user_authority_urls: [],
+              },
+            ],
+            is_legacy: false,
+            can_regenerate: true,
+          }),
+        }),
+      );
+    });
+
+    expect(await screen.findByText(/hydration failed/i)).toBeInTheDocument();
+  });
+
   it("resets article authority link drafts when a new batch becomes latest", async () => {
     (fetchWithBackendAuth as jest.Mock)
       .mockResolvedValueOnce({

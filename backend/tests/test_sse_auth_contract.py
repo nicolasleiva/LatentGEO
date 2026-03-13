@@ -513,3 +513,81 @@ async def test_article_batch_sse_fallback_db_emits_compact_terminal_payload(
 
     with pytest.raises(StopAsyncIteration):
         await _next_sse_chunk(generator)
+
+
+@pytest.mark.asyncio
+async def test_article_batch_stream_closes_pubsub_even_when_unsubscribe_fails(
+    monkeypatch,
+):
+    class _FailingUnsubscribePubSub:
+        def __init__(self):
+            self.closed = False
+            self.unsubscribe_attempted = False
+
+        def subscribe(self, *_args, **_kwargs):
+            return None
+
+        def get_message(self, *_args, **_kwargs):
+            return None
+
+        def unsubscribe(self, *_args, **_kwargs):
+            self.unsubscribe_attempted = True
+            raise RuntimeError("unsubscribe failed")
+
+        def close(self):
+            self.closed = True
+
+    class _FakeRedisClient:
+        def __init__(self, pubsub):
+            self._pubsub = pubsub
+
+        def pubsub(self):
+            return self._pubsub
+
+    pubsub = _FailingUnsubscribePubSub()
+    monkeypatch.setattr(sse_route.settings, "SSE_RETRY_MS", 5000, raising=False)
+    monkeypatch.setattr(sse_route.settings, "SSE_SOURCE", "redis", raising=False)
+    monkeypatch.setattr(sse_route.settings, "SSE_MAX_DURATION", 60, raising=False)
+    monkeypatch.setattr(sse_route.cache, "enabled", True, raising=False)
+    monkeypatch.setattr(
+        sse_route.cache,
+        "redis_client",
+        _FakeRedisClient(pubsub),
+        raising=False,
+    )
+
+    generator = sse_route.article_batch_progress_stream(
+        batch_id=8,
+        current_user=object(),
+        request=_DummyRequest(disconnect_after_calls=0),
+        initial_payload={
+            "batch_id": 8,
+            "audit_id": 123,
+            "status": "processing",
+            "summary": {"pipeline_stage": "generating_articles"},
+            "articles": [
+                {
+                    "index": 1,
+                    "title": "Queued title",
+                    "target_keyword": "queued keyword",
+                    "focus_url": "https://store.example.com/",
+                    "generation_status": "queued",
+                    "generation_error": None,
+                    "citation_readiness_score": 0,
+                    "user_authority_urls": [],
+                }
+            ],
+            "is_legacy": False,
+            "can_regenerate": True,
+        },
+    )
+
+    first_chunk = await _next_sse_chunk(generator)
+    payload, _ = _decode_sse_chunk(first_chunk)
+    assert payload["status"] == "processing"
+
+    with pytest.raises(StopAsyncIteration):
+        await _next_sse_chunk(generator)
+
+    assert pubsub.unsubscribe_attempted is True
+    assert pubsub.closed is True

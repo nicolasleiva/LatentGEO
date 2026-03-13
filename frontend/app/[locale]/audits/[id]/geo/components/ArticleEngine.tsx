@@ -459,7 +459,17 @@ export default function ArticleEngine({
             stopStreaming();
             stopPolling();
             activeBatchIdRef.current = null;
-            void hydrateLatestBatch();
+            hydrateLatestBatch().catch((hydrateError) => {
+              console.error(
+                "[ArticleEngine] Failed to hydrate batch after terminal SSE",
+                hydrateError,
+              );
+              setError(
+                hydrateError instanceof Error
+                  ? hydrateError.message
+                  : String(hydrateError),
+              );
+            });
           }
         } catch (streamError) {
           console.error("[ArticleEngine] SSE parse failed", streamError);

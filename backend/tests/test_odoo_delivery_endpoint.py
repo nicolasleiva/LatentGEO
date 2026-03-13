@@ -677,6 +677,123 @@ def test_prepare_odoo_drafts_truncates_long_action_keys_and_paths(
     assert action.draft_payload["source_action_key"].startswith("fix:TITLE_MISSING:")
 
 
+def test_prepare_article_drafts_reuses_normalized_native_created_action(
+    db_session, monkeypatch
+):
+    _configure_test_encryption_key(monkeypatch)
+
+    audit = Audit(
+        url="https://odoo-articles.example.com",
+        domain="odoo-articles.example.com",
+        status=AuditStatus.COMPLETED,
+        user_id="test-user",
+        user_email="test@example.com",
+    )
+    connection = OdooConnection(
+        owner_user_id="test-user",
+        owner_email="test@example.com",
+        base_url="https://odoo.example.com",
+        database="prod-db",
+        expected_email="ops@client.com",
+        api_key=OdooAuth.encrypt_api_key("odoo_test_key_000000000001"),
+        capabilities={"website": True},
+        is_active=True,
+    )
+    db_session.add_all([audit, connection])
+    db_session.commit()
+    db_session.refresh(audit)
+    db_session.refresh(connection)
+
+    long_slug = "odoo-" + ("very-long-article-slug-" * 40)
+    normalized_action_key = OdooDraftService._normalize_action_key(
+        f"article:{long_slug}"
+    )
+    db_session.add(
+        GeoArticleBatch(
+            audit_id=audit.id,
+            requested_count=1,
+            language="en",
+            tone="executive",
+            include_schema=True,
+            status="completed",
+            summary={"generated_count": 1},
+            articles=[
+                {
+                    "slug": long_slug,
+                    "title": "Long slug article",
+                    "markdown": "# Long slug article",
+                    "meta_description": "Long slug article",
+                    "generation_status": "completed",
+                }
+            ],
+        )
+    )
+    db_session.add(
+        OdooDraftAction(
+            connection_id=connection.id,
+            audit_id=audit.id,
+            action_key=normalized_action_key,
+            draft_type="article",
+            status="native_created",
+            title="Long slug article",
+            target_model="blog.post",
+            external_record_id="123",
+        )
+    )
+    db_session.commit()
+
+    class _FakeOdooClient:
+        def __init__(self):
+            self.create_calls = 0
+
+        async def fields_get(self, *_args, **_kwargs):
+            return {"name": {"type": "char", "readonly": False, "required": False}}
+
+        async def search_read(self, *_args, **_kwargs):
+            return [{"id": 1, "name": "Main blog"}]
+
+        async def create(self, *_args, **_kwargs):
+            self.create_calls += 1
+            return 999
+
+    class _FakeClientContext:
+        def __init__(self, client):
+            self.client = client
+
+        async def __aenter__(self):
+            return self.client
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+    fake_client = _FakeOdooClient()
+    service = OdooDraftService(db_session)
+
+    async def _fake_build_client(_connection):
+        return _FakeClientContext(fake_client)
+
+    monkeypatch.setattr(service.connection_service, "build_client", _fake_build_client)
+
+    asyncio.run(
+        service._prepare_article_drafts(
+            audit=audit,
+            connection=connection,
+            sync_run=None,
+            plan={
+                "article_deliverables": [
+                    {
+                        "title": "Long slug article",
+                        "slug": long_slug,
+                        "focus_url": "https://odoo-articles.example.com/blog/long",
+                    }
+                ]
+            },
+        )
+    )
+
+    assert fake_client.create_calls == 0
+
+
 def test_get_odoo_sync_status_reads_latest_sync_summary_without_build_plan(
     client, db_session, monkeypatch
 ):

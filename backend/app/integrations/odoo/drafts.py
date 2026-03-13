@@ -473,7 +473,8 @@ class OdooDraftService:
             for deliverable in article_deliverables:
                 title = str(deliverable.get("title") or "Odoo article draft").strip()
                 slug = str(deliverable.get("slug") or self._slugify(title)).strip()
-                action_key = f"article:{slug}"
+                raw_action_key = f"article:{slug}"
+                action_key = self._normalize_action_key(raw_action_key)
                 existing = (
                     self.db.query(OdooDraftAction)
                     .filter(
@@ -531,7 +532,7 @@ class OdooDraftService:
                             self.db,
                             connection=connection,
                             audit=audit,
-                            action_key=action_key,
+                            action_key=raw_action_key,
                             draft_type="article",
                             status="failed",
                             title=title,
@@ -550,7 +551,7 @@ class OdooDraftService:
                         self.db,
                         connection=connection,
                         audit=audit,
-                        action_key=action_key,
+                        action_key=raw_action_key,
                         draft_type="article",
                         status="native_created",
                         title=title,
@@ -569,7 +570,7 @@ class OdooDraftService:
                     self.db,
                     connection=connection,
                     audit=audit,
-                    action_key=action_key,
+                    action_key=raw_action_key,
                     draft_type="article",
                     status="draft",
                     title=title,

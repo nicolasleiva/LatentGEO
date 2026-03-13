@@ -35,6 +35,7 @@ class AIContentService:
         domain: str,
         topics: List[str],
         count: int = 5,
+        create_strategy_run: bool = False,
     ) -> List[AIContentSuggestion]:
         """
         Genera sugerencias de contenido usando IA basándose en el contexto real del negocio.
@@ -127,7 +128,7 @@ class AIContentService:
                     "Kimi returned invalid JSON payload for AI content suggestions."
                 )
 
-            strategy_run_id = uuid.uuid4().hex
+            strategy_run_id = uuid.uuid4().hex if create_strategy_run else None
             normalized_suggestions = []
             seen_titles = set()
             for sugg in ai_suggestions:
@@ -161,7 +162,7 @@ class AIContentService:
                     },
                     priority=sugg.get("priority", "medium"),
                     strategy_run_id=strategy_run_id,
-                    strategy_order=idx,
+                    strategy_order=idx if create_strategy_run else None,
                 )
                 self.db.add(suggestion)
                 suggestions.append(suggestion)

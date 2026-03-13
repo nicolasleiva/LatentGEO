@@ -3,6 +3,7 @@ Tests para los Celery Workers
 """
 
 import asyncio
+import os
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
@@ -212,6 +213,28 @@ def test_worker_async_runtime_reuses_same_loop_for_multiple_coroutines():
     assert first_loop_id == second_loop_id
 
     _worker_async_runtime.close()
+
+
+def test_worker_async_runtime_drops_inherited_loop_without_closing_it():
+    class _InheritedLoop:
+        def is_closed(self) -> bool:
+            return False
+
+        def close(self) -> None:
+            raise AssertionError("Inherited loop should not be closed on PID mismatch")
+
+    inherited_loop = _InheritedLoop()
+    runtime = _worker_async_runtime
+    runtime.close()
+    runtime._loop = inherited_loop
+    runtime._pid = os.getpid() + 1000
+
+    loop = runtime._ensure_loop_locked()
+
+    assert loop is not inherited_loop
+    assert runtime._pid == os.getpid()
+
+    runtime.close()
 
 
 def test_pdf_runtime_technical_detail_omits_raw_exception_message():

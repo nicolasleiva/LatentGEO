@@ -917,6 +917,7 @@ class GeoArticleEngineService:
             GeoArticleEngineService._strategy_generation_domain(audit),
             [str(topic).strip() for topic in (topics or []) if str(topic).strip()],
             count=article_count,
+            create_strategy_run=True,
         )
         items = [
             GeoArticleEngineService._parse_ai_strategy_row(row) for row in suggestions

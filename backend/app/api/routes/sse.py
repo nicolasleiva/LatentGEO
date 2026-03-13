@@ -633,6 +633,13 @@ async def article_batch_progress_stream(
                     )
                     try:
                         await run_in_threadpool(pubsub.unsubscribe, redis_channel)
+                    except Exception:
+                        logger.debug(
+                            "Failed to unsubscribe article batch Redis pubsub for batch %s",
+                            batch_id,
+                            exc_info=True,
+                        )
+                    try:
                         await run_in_threadpool(pubsub.close)
                     except Exception:
                         logger.debug(
@@ -695,6 +702,13 @@ async def article_batch_progress_stream(
         if pubsub:
             try:
                 await run_in_threadpool(pubsub.unsubscribe, redis_channel)
+            except Exception:
+                logger.debug(
+                    "Article batch SSE Redis unsubscribe failed for batch %s",
+                    batch_id,
+                    exc_info=True,
+                )
+            try:
                 await run_in_threadpool(pubsub.close)
             except Exception:
                 logger.debug(
