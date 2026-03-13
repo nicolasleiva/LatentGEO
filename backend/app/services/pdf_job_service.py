@@ -937,7 +937,11 @@ class PDFJobService:
             try:
                 db.expunge_all()
             except Exception:
-                pass
+                logger.warning(
+                    "Failed to clear SQLAlchemy identity map after PDF job failure for audit %s",
+                    audit_id_for_lock,
+                    exc_info=True,
+                )
             audit = db.query(Audit).filter(Audit.id == audit_id_for_lock).first()
             error_code, error_message = PDFJobService.classify_error(exc)
             job = PDFJobService.mark_job_failed_by_id(

@@ -3,6 +3,11 @@
 import { AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
+type PageIssue = {
+  severity: "critical" | "high" | "medium";
+  msg: string;
+};
+
 type AuditPageFindingsSectionProps = {
   pages: any[];
   visiblePages: any[];
@@ -32,7 +37,7 @@ export default function AuditPageFindingsSection({
           </div>
         ) : (
           visiblePages.map((page: any) => {
-            const issues = [];
+            const issues: PageIssue[] = [];
             const hasCriticalIssue = issues.some(
               (issue) => issue.severity === "critical",
             );
