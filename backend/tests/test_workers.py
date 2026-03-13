@@ -12,6 +12,7 @@ from app.models import Audit, AuditPdfJob, AuditStatus
 from app.services.pdf_job_service import PDFJobService
 from app.workers.async_runtime import _worker_async_runtime, run_worker_coroutine
 from app.workers.tasks import generate_pdf_task, run_audit_task, run_pagespeed_task
+from fastapi import HTTPException
 from sqlalchemy import inspect as sa_inspect
 from sqlalchemy.orm import Session
 
@@ -213,6 +214,19 @@ def test_worker_async_runtime_reuses_same_loop_for_multiple_coroutines():
     _worker_async_runtime.close()
 
 
+def test_pdf_runtime_technical_detail_omits_raw_exception_message():
+    assert (
+        PDFJobService.runtime_technical_detail(ValueError("token=super-secret"))
+        == "ValueError"
+    )
+    assert (
+        PDFJobService.runtime_technical_detail(
+            HTTPException(status_code=503, detail={"error_code": "db_unavailable"})
+        )
+        == "HTTPException:db_unavailable"
+    )
+
+
 @pytest.mark.asyncio
 async def test_pdf_execute_job_releases_lock_before_resuming_waiting_job(
     db_session: Session, monkeypatch
@@ -283,3 +297,120 @@ async def test_pdf_execute_job_releases_lock_before_resuming_waiting_job(
     await PDFJobService.execute_job(db_session, job.id)
 
     assert order[:2] == ["release", "resume"]
+
+
+def test_mark_job_failed_clears_dependency_job_id(db_session: Session):
+    audit = Audit(
+        url="https://pdf-failure-dependency.com",
+        status=AuditStatus.COMPLETED,
+        domain="pdf-failure-dependency.com",
+    )
+    db_session.add(audit)
+    db_session.commit()
+    db_session.refresh(audit)
+
+    job = AuditPdfJob(
+        audit_id=audit.id,
+        status="waiting",
+        waiting_on="pagespeed",
+        dependency_job_id=77,
+    )
+    db_session.add(job)
+    db_session.commit()
+    db_session.refresh(job)
+
+    failed_job = PDFJobService.mark_job_failed(
+        db_session,
+        job,
+        error_code="worker_unavailable",
+        error_message="worker unavailable",
+    )
+    assert failed_job.dependency_job_id is None
+
+    job.status = "waiting"
+    job.waiting_on = "pagespeed"
+    job.dependency_job_id = 88
+    db_session.add(job)
+    db_session.commit()
+    db_session.refresh(job)
+
+    failed_by_id = PDFJobService.mark_job_failed_by_id(
+        db_session,
+        job.id,
+        error_code="worker_unavailable",
+        error_message="worker unavailable",
+    )
+    assert failed_by_id is not None
+    assert failed_by_id.dependency_job_id is None
+
+
+@pytest.mark.asyncio
+async def test_pdf_execute_job_raises_when_failed_state_cannot_be_persisted(
+    db_session: Session, monkeypatch
+):
+    audit = Audit(
+        url="https://pdf-persist-failure.com",
+        status=AuditStatus.COMPLETED,
+        domain="pdf-persist-failure.com",
+    )
+    db_session.add(audit)
+    db_session.commit()
+    db_session.refresh(audit)
+
+    job = AuditPdfJob(
+        audit_id=audit.id,
+        status="queued",
+    )
+    db_session.add(job)
+    db_session.commit()
+    db_session.refresh(job)
+
+    monkeypatch.setattr(
+        "app.services.pdf_job_service.acquire_pdf_generation_lock",
+        lambda _audit_id: (True, "token-456", "redis"),
+    )
+    monkeypatch.setattr(
+        "app.services.pdf_job_service.release_pdf_generation_lock",
+        lambda *_args, **_kwargs: None,
+    )
+    monkeypatch.setattr(
+        "app.services.pagespeed_job_service.PageSpeedJobService.get_job_reconciled",
+        lambda *_args, **_kwargs: None,
+    )
+    monkeypatch.setattr(
+        "app.services.pagespeed_job_service.PageSpeedJobService.has_active_job",
+        lambda *_args, **_kwargs: False,
+    )
+
+    async def _raise_pdf_failure(*_args, **_kwargs):
+        raise ValueError("provider token=secret")
+
+    monkeypatch.setattr(
+        "app.services.pdf_service.PDFService.generate_pdf_with_complete_context",
+        _raise_pdf_failure,
+    )
+    monkeypatch.setattr(
+        PDFJobService,
+        "mark_job_failed_by_id",
+        staticmethod(lambda *_args, **_kwargs: None),
+    )
+    monkeypatch.setattr(
+        PDFJobService,
+        "mark_job_failed",
+        staticmethod(lambda *_args, **_kwargs: None),
+    )
+    monkeypatch.setattr(
+        PDFJobService,
+        "persist_runtime_diagnostic_safely",
+        staticmethod(lambda *_args, **_kwargs: None),
+    )
+    monkeypatch.setattr(
+        PDFJobService,
+        "publish_status_event",
+        staticmethod(lambda *_args, **_kwargs: None),
+    )
+
+    with pytest.raises(
+        RuntimeError, match="Could not persist failed PDF job state"
+    ):
+        await PDFJobService.execute_job(db_session, job.id)

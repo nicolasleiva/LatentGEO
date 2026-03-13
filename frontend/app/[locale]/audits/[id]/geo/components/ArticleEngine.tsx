@@ -291,6 +291,7 @@ export default function ArticleEngine({
   const statusSignatureRef = useRef("");
   const activeBatchIdRef = useRef<number | null>(null);
   const hydratingLatestRef = useRef(false);
+  const authorityLinksBatchRef = useRef<number | null>(null);
 
   const stopPolling = useCallback(() => {
     if (pollingRef.current) {
@@ -536,15 +537,27 @@ export default function ArticleEngine({
   ]);
 
   useEffect(() => {
-    if (!result?.articles?.length) return;
+    if (!result) {
+      authorityLinksBatchRef.current = null;
+      setAuthorityLinks({});
+      setRegenerateErrors({});
+      return;
+    }
+
+    const isNewBatch = authorityLinksBatchRef.current !== result.batch_id;
     setAuthorityLinks((previous) => {
-      const next = { ...previous };
+      const base = isNewBatch ? {} : previous;
+      const next = { ...base };
       for (const article of result.articles) {
-        if (previous[article.index]) continue;
+        if (Object.prototype.hasOwnProperty.call(base, article.index)) continue;
         next[article.index] = (article.user_authority_urls || []).join("\n");
       }
       return next;
     });
+    if (isNewBatch) {
+      setRegenerateErrors({});
+    }
+    authorityLinksBatchRef.current = result.batch_id;
   }, [result]);
 
   useEffect(() => {
@@ -629,7 +642,7 @@ export default function ArticleEngine({
   };
 
   const regenerateArticle = async (article: ArticleItem) => {
-    if (!result?.can_regenerate) return;
+    if (!result?.can_regenerate || regeneratingIndex !== null) return;
     setRegeneratingIndex(article.index);
     setRegenerateErrors((previous) => ({
       ...previous,
@@ -653,9 +666,19 @@ export default function ArticleEngine({
         return;
       }
       if (!res.ok) throw new Error(await parseErrorMessage(res));
-      const payload = normalizeBatch(await res.json());
+      const raw = await res.json();
+      const payload = normalizeBatch(raw, {
+        compact: !TERMINAL_BATCH_STATUSES.has(
+          safeText(raw?.status, "processing"),
+        ),
+      });
       if (!payload) throw new Error("Invalid article batch response");
-      setResult(payload);
+      applyBatchResult(payload);
+      if (!TERMINAL_BATCH_STATUSES.has(payload.status)) {
+        startBatchTransport(payload.batch_id);
+      } else {
+        await hydrateLatestBatch();
+      }
     } catch (err: any) {
       setRegenerateErrors((previous) => ({
         ...previous,
@@ -1085,7 +1108,7 @@ export default function ArticleEngine({
                     disabled={
                       !result.can_regenerate ||
                       !TERMINAL_BATCH_STATUSES.has(result.status) ||
-                      regeneratingIndex === article.index
+                      regeneratingIndex !== null
                     }
                     title={
                       result.can_regenerate

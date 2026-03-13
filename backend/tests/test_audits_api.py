@@ -1180,7 +1180,9 @@ def test_summary_and_overview_use_cached_overview_snapshot(
     assert overview_response.json()["domain"] == "example-overview-cache.com"
 
 
-def test_pdf_job_failure_persists_original_exception_detail(setup_test_db, monkeypatch):
+def test_pdf_job_failure_persists_sanitized_exception_detail(
+    setup_test_db, monkeypatch
+):
     testing_session_local = sessionmaker(
         autocommit=False,
         autoflush=False,
@@ -1235,7 +1237,7 @@ def test_pdf_job_failure_persists_original_exception_detail(setup_test_db, monke
         assert stored_audit is not None
         diagnostics = stored_audit.runtime_diagnostics or []
         assert diagnostics
-        assert diagnostics[-1]["technical_detail"] == "RuntimeError: renderer exploded"
+        assert diagnostics[-1]["technical_detail"] == "RuntimeError"
     finally:
         session.close()
 

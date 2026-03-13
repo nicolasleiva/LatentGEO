@@ -23,11 +23,23 @@ class MockEventSource {
   }
 }
 
+const originalEventSource = (globalThis as { EventSource?: unknown })
+  .EventSource;
+
 describe("ArticleEngine component", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     MockEventSource.instances = [];
     delete (globalThis as { EventSource?: unknown }).EventSource;
+  });
+
+  afterEach(() => {
+    if (originalEventSource) {
+      (globalThis as { EventSource?: unknown }).EventSource =
+        originalEventSource;
+    } else {
+      delete (globalThis as { EventSource?: unknown }).EventSource;
+    }
   });
 
   it("renders keyword strategy and competitor gaps from latest batch", async () => {
@@ -181,11 +193,14 @@ describe("ArticleEngine component", () => {
       screen.getByRole("button", { name: /generate article batch/i }),
     );
 
-    const lastCall = (fetchWithBackendAuth as jest.Mock).mock.calls[1];
-    expect(lastCall[0]).toBe(
+    const generateCall = (fetchWithBackendAuth as jest.Mock).mock.calls.find(
+      ([url]) =>
+        url === "http://localhost:8000/api/v1/geo/article-engine/generate",
+    );
+    expect(generateCall?.[0]).toBe(
       "http://localhost:8000/api/v1/geo/article-engine/generate",
     );
-    const payload = JSON.parse(lastCall[1].body);
+    const payload = JSON.parse(generateCall?.[1].body as string);
     expect(payload.audit_id).toBe(3);
     expect(payload.target_topics).toBeUndefined();
     expect(await screen.findByText(/queued title/i)).toBeInTheDocument();
@@ -240,8 +255,11 @@ describe("ArticleEngine component", () => {
       screen.getByRole("button", { name: /generate article batch/i }),
     );
 
-    const lastCall = (fetchWithBackendAuth as jest.Mock).mock.calls[1];
-    expect(JSON.parse(lastCall[1].body)).toMatchObject({
+    const generateCall = (fetchWithBackendAuth as jest.Mock).mock.calls.find(
+      ([url]) =>
+        url === "http://localhost:8000/api/v1/geo/article-engine/generate",
+    );
+    expect(JSON.parse(generateCall?.[1].body as string)).toMatchObject({
       audit_id: 3,
       target_topics: ["odoo colombia", "sap business one"],
       authority_urls: [
@@ -404,5 +422,201 @@ describe("ArticleEngine component", () => {
       "http://localhost:8000/api/v1/geo/article-engine/latest/3",
     );
     expect((fetchWithBackendAuth as jest.Mock).mock.calls).toHaveLength(2);
+  });
+
+  it("resets article authority link drafts when a new batch becomes latest", async () => {
+    (fetchWithBackendAuth as jest.Mock)
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          has_data: true,
+          batch_id: 41,
+          status: "completed",
+          summary: {
+            generated_count: 1,
+            failed_count: 0,
+          },
+          is_legacy: false,
+          can_regenerate: true,
+          articles: [
+            {
+              index: 1,
+              title: "Batch one",
+              target_keyword: "batch one",
+              focus_url: "https://store.example.com/one",
+              generation_status: "completed",
+              user_authority_urls: ["https://authority.example.com/original"],
+            },
+          ],
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          has_data: true,
+          batch_id: 42,
+          status: "completed",
+          summary: {
+            generated_count: 1,
+            failed_count: 0,
+          },
+          is_legacy: false,
+          can_regenerate: true,
+          articles: [
+            {
+              index: 1,
+              title: "Batch two",
+              target_keyword: "batch two",
+              focus_url: "https://store.example.com/two",
+              generation_status: "completed",
+              user_authority_urls: ["https://authority.example.com/fresh"],
+            },
+          ],
+        }),
+      });
+
+    const user = userEvent.setup();
+    const { rerender } = render(
+      <ArticleEngine auditId={3} backendUrl="http://localhost:8000" />,
+    );
+
+    const firstTextarea = await screen.findByDisplayValue(
+      "https://authority.example.com/original",
+    );
+    await user.clear(firstTextarea);
+    await user.type(firstTextarea, "https://authority.example.com/edited");
+    expect(
+      screen.getByDisplayValue("https://authority.example.com/edited"),
+    ).toBeInTheDocument();
+
+    rerender(<ArticleEngine auditId={4} backendUrl="http://localhost:8000" />);
+
+    expect(
+      await screen.findByDisplayValue("https://authority.example.com/fresh"),
+    ).toBeInTheDocument();
+  });
+
+  it("blocks concurrent regenerations and restarts transport for non-terminal results", async () => {
+    (
+      globalThis as unknown as { EventSource: typeof MockEventSource }
+    ).EventSource = MockEventSource;
+
+    let resolveRegenerate:
+      | ((value: {
+          ok: boolean;
+          status: number;
+          json: () => Promise<unknown>;
+        }) => void)
+      | null = null;
+    const regenerateResponse = new Promise<{
+      ok: boolean;
+      status: number;
+      json: () => Promise<unknown>;
+    }>((resolve) => {
+      resolveRegenerate = resolve;
+    });
+
+    (fetchWithBackendAuth as jest.Mock)
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          has_data: true,
+          batch_id: 55,
+          status: "completed",
+          summary: {
+            generated_count: 2,
+            failed_count: 0,
+            pipeline_stage: "completed",
+          },
+          is_legacy: false,
+          can_regenerate: true,
+          articles: [
+            {
+              index: 1,
+              title: "Article one",
+              target_keyword: "article one",
+              focus_url: "https://store.example.com/one",
+              generation_status: "completed",
+              markdown: "# Article one",
+              user_authority_urls: [],
+            },
+            {
+              index: 2,
+              title: "Article two",
+              target_keyword: "article two",
+              focus_url: "https://store.example.com/two",
+              generation_status: "completed",
+              markdown: "# Article two",
+              user_authority_urls: [],
+            },
+          ],
+        }),
+      })
+      .mockImplementationOnce(() => regenerateResponse);
+
+    const user = userEvent.setup();
+    render(<ArticleEngine auditId={3} backendUrl="http://localhost:8000" />);
+
+    const regenerateButtons = await screen.findAllByRole("button", {
+      name: /regenerate article/i,
+    });
+
+    const firstClick = user.click(regenerateButtons[0]);
+
+    await waitFor(() => {
+      expect(regenerateButtons[0]).toBeDisabled();
+      expect(regenerateButtons[1]).toBeDisabled();
+    });
+
+    await user.click(regenerateButtons[1]);
+    expect(
+      (fetchWithBackendAuth as jest.Mock).mock.calls.filter(([url]) =>
+        String(url).includes("/regenerate"),
+      ),
+    ).toHaveLength(1);
+
+    resolveRegenerate?.({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        batch_id: 55,
+        status: "processing",
+        summary: {
+          generated_count: 1,
+          failed_count: 0,
+          pipeline_stage: "generating_articles",
+        },
+        is_legacy: false,
+        can_regenerate: true,
+        articles: [
+          {
+            index: 1,
+            title: "Article one",
+            target_keyword: "article one",
+            focus_url: "https://store.example.com/one",
+            generation_status: "processing",
+            user_authority_urls: [],
+          },
+          {
+            index: 2,
+            title: "Article two",
+            target_keyword: "article two",
+            focus_url: "https://store.example.com/two",
+            generation_status: "completed",
+            user_authority_urls: [],
+          },
+        ],
+      }),
+    });
+
+    await firstClick;
+
+    await waitFor(() => expect(MockEventSource.instances.length).toBe(1));
+    expect(MockEventSource.instances[0].url).toBe(
+      "/api/sse/article-engine/55/progress",
+    );
   });
 });

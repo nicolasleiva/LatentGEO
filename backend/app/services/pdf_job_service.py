@@ -224,9 +224,6 @@ class PDFJobService:
                 if error_code:
                     return f"HTTPException:{error_code}"
             return f"HTTPException:{exc.status_code}"
-        detail = " ".join(str(exc or "").split()).strip()
-        if detail:
-            return f"{type(exc).__name__}: {detail}"
         return type(exc).__name__
 
     @staticmethod
@@ -598,6 +595,7 @@ class PDFJobService:
                     AuditPdfJob.error_message: error_message[:500],
                     AuditPdfJob.warnings: warnings or [],
                     AuditPdfJob.waiting_on: None,
+                    AuditPdfJob.dependency_job_id: None,
                     AuditPdfJob.completed_at: now,
                     AuditPdfJob.updated_at: now,
                 },
@@ -615,6 +613,7 @@ class PDFJobService:
         job.error_message = error_message[:500]
         job.warnings = warnings or []
         job.waiting_on = None
+        job.dependency_job_id = None
         job.completed_at = now
         job.updated_at = now
         db.add(job)
@@ -642,6 +641,7 @@ class PDFJobService:
                     AuditPdfJob.error_message: error_message[:500],
                     AuditPdfJob.warnings: warnings or [],
                     AuditPdfJob.waiting_on: None,
+                    AuditPdfJob.dependency_job_id: None,
                     AuditPdfJob.completed_at: now,
                     AuditPdfJob.updated_at: now,
                 },
@@ -944,24 +944,27 @@ class PDFJobService:
                 )
             audit = db.query(Audit).filter(Audit.id == audit_id_for_lock).first()
             error_code, error_message = PDFJobService.classify_error(exc)
-            job = PDFJobService.mark_job_failed_by_id(
+            failed_job = PDFJobService.mark_job_failed_by_id(
                 db,
                 job_id,
                 error_code=error_code,
                 error_message=error_message,
             )
-            if job is None:
+            if failed_job is None:
                 original_job = (
                     db.query(AuditPdfJob).filter(AuditPdfJob.id == job_id).first()
-                    or job
                 )
                 if original_job is not None:
-                    job = PDFJobService.mark_job_failed(
+                    failed_job = PDFJobService.mark_job_failed(
                         db,
                         original_job,
                         error_code=error_code,
                         error_message=error_message,
                     )
+            if failed_job is None:
+                raise RuntimeError(
+                    f"Could not persist failed PDF job state for job_id={job_id} code={error_code}"
+                )
             PDFJobService.persist_runtime_diagnostic_safely(
                 db,
                 audit_id_for_lock,
@@ -973,7 +976,7 @@ class PDFJobService:
                 technical_detail=PDFJobService.runtime_technical_detail(exc),
             )
             if audit is not None:
-                PDFJobService.publish_status_event(db, audit, job=job)
-            return job
+                PDFJobService.publish_status_event(db, audit, job=failed_job)
+            return failed_job
         finally:
             release_pdf_generation_lock(audit_id_for_lock, lock_token, lock_mode)
