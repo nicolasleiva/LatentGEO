@@ -7,7 +7,7 @@ from app.core.auth import AuthUser, get_current_user
 from app.core.config import settings
 from app.core.database import SessionLocal, get_db
 from app.core.logger import get_logger
-from app.models import AuditedPage, Audit, AuditPageSpeedJob, AuditStatus, Competitor
+from app.models import Audit, AuditedPage, AuditPageSpeedJob, AuditStatus, Competitor
 from app.schemas import (
     AuditArtifactsStatusResponse,
     AuditConfigRequest,

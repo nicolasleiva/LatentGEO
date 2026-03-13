@@ -1,5 +1,4 @@
 import pytest
-
 from app.models import Audit, AuditStatus
 from app.services.rank_tracker_service import RankTrackerService
 

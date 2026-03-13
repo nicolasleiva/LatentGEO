@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import html
 import re
-from hashlib import sha256
 from datetime import datetime, timezone
+from hashlib import sha256
 from typing import Any, Dict, Optional
 
 from sqlalchemy.orm import Session, load_only

@@ -33,41 +33,6 @@ export default function AuditPageFindingsSection({
         ) : (
           visiblePages.map((page: any) => {
             const issues = [];
-            if (page.audit_data) {
-              const semanticHtmlScore =
-                page.audit_data?.structure?.semantic_html?.score_percent;
-              if (page.audit_data?.structure?.h1_check?.status !== "pass") {
-                issues.push({
-                  severity: "critical",
-                  msg: "Missing or multiple H1",
-                });
-              }
-              if (
-                !page.audit_data?.schema?.schema_presence?.status ||
-                page.audit_data?.schema?.schema_presence?.status !== "present"
-              ) {
-                issues.push({
-                  severity: "high",
-                  msg: "Missing schema markup",
-                });
-              }
-              if (page.audit_data?.eeat?.author_presence?.status !== "pass") {
-                issues.push({
-                  severity: "high",
-                  msg: "Author not identified",
-                });
-              }
-              if (
-                semanticHtmlScore === null ||
-                semanticHtmlScore === undefined ||
-                semanticHtmlScore < 50
-              ) {
-                issues.push({
-                  severity: "medium",
-                  msg: "Low semantic HTML score",
-                });
-              }
-            }
             const hasCriticalIssue = issues.some(
               (issue) => issue.severity === "critical",
             );

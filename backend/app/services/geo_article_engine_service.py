@@ -19,7 +19,6 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import urlparse
 
-from bs4 import BeautifulSoup
 from app.core.config import settings
 from app.core.llm_kimi import (
     KimiGenerationError,
@@ -32,13 +31,14 @@ from app.core.llm_kimi import (
 )
 from app.core.logger import get_logger
 from app.models import AIContentSuggestion, Audit, GeoArticleBatch, Keyword
-from app.services.crawler_service import CrawlerService
 from app.services.competitor_filters import (
     infer_vertical_hint,
     is_valid_competitor_domain,
     normalize_domain,
 )
+from app.services.crawler_service import CrawlerService
 from app.services.duplicate_content_service import DuplicateContentService
+from bs4 import BeautifulSoup
 from sqlalchemy.orm import Session, load_only
 
 logger = get_logger(__name__)
@@ -1473,11 +1473,11 @@ class GeoArticleEngineService:
         }
         if not allowed:
             return []
-        pattern = re.compile(r"\[source:\s*([^\]]+)\]", re.IGNORECASE)
-        url_pattern = re.compile(r"https?://[^\s,\]]+")
         invalid = []
-        for match in pattern.findall(markdown):
-            for url in url_pattern.findall(match):
+        for source_segment in GeoArticleEngineService._iter_source_segments(markdown):
+            for url in GeoArticleEngineService._extract_urls_from_source_segment(
+                source_segment
+            ):
                 cleaned = url.strip()
                 normalized = GeoArticleEngineService._normalize_url(cleaned)
                 if normalized and normalized not in allowed:
@@ -1488,11 +1488,11 @@ class GeoArticleEngineService:
     def _extract_citation_urls(markdown: str) -> List[str]:
         if not markdown:
             return []
-        pattern = re.compile(r"\[source:\s*([^\]]+)\]", re.IGNORECASE)
-        url_pattern = re.compile(r"https?://[^\s,\]]+")
         urls = set()
-        for match in pattern.findall(markdown):
-            for url in url_pattern.findall(match):
+        for source_segment in GeoArticleEngineService._iter_source_segments(markdown):
+            for url in GeoArticleEngineService._extract_urls_from_source_segment(
+                source_segment
+            ):
                 cleaned = url.strip()
                 if not cleaned:
                     continue
@@ -1500,6 +1500,38 @@ class GeoArticleEngineService:
                 if normalized:
                     urls.add(normalized)
         return [url for url in urls if url]
+
+    @staticmethod
+    def _iter_source_segments(markdown: str) -> List[str]:
+        if not markdown:
+            return []
+        marker = "[source:"
+        lowered = markdown.lower()
+        segments: List[str] = []
+        search_from = 0
+        while True:
+            start = lowered.find(marker, search_from)
+            if start < 0:
+                break
+            content_start = start + len(marker)
+            end = markdown.find("]", content_start)
+            if end < 0:
+                break
+            segment = markdown[content_start:end].strip()
+            if segment:
+                segments.append(segment)
+            search_from = end + 1
+        return segments
+
+    @staticmethod
+    def _extract_urls_from_source_segment(segment: str) -> List[str]:
+        urls: List[str] = []
+        for token in segment.replace(",", " ").split():
+            cleaned = token.strip().strip("()[]{}<>\"'.,;|")
+            lowered = cleaned.lower()
+            if lowered.startswith("http://") or lowered.startswith("https://"):
+                urls.append(cleaned)
+        return urls
 
     @staticmethod
     def _append_required_citations(
@@ -2317,8 +2349,10 @@ class GeoArticleEngineService:
     @staticmethod
     def _citation_score(markdown: str, include_schema: bool, sources_count: int) -> int:
         text = markdown or ""
-        source_tags = len(
-            re.findall(r"\[source:\s*https?://[^\]]+\]", text, flags=re.IGNORECASE)
+        source_tags = sum(
+            1
+            for segment in GeoArticleEngineService._iter_source_segments(text)
+            if GeoArticleEngineService._extract_urls_from_source_segment(segment)
         )
         faq_section = "faq" in text.lower()
         competitor_section = (

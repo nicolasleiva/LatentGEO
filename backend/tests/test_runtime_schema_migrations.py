@@ -1,7 +1,6 @@
-from sqlalchemy import create_engine, inspect
-
-from app.core.database import run_migrations_to_head
 from app.core.config import settings
+from app.core.database import run_migrations_to_head
+from sqlalchemy import create_engine, inspect
 
 
 def test_runtime_migration_expands_odoo_draft_action_lengths(tmp_path, monkeypatch):

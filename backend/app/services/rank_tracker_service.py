@@ -2,9 +2,9 @@ import logging
 from typing import Any, Dict, List
 
 import aiohttp
-from sqlalchemy.exc import DBAPIError, DataError, InvalidRequestError
-from sqlalchemy.orm.exc import UnmappedInstanceError
+from sqlalchemy.exc import DataError, DBAPIError, InvalidRequestError
 from sqlalchemy.orm import Session
+from sqlalchemy.orm.exc import UnmappedInstanceError
 
 from ..core.config import settings
 from ..core.external_resilience import run_external_call

@@ -219,12 +219,6 @@ describe("Audit detail GEO tools navigation", () => {
     );
 
     await waitFor(() => {
-      expect(fetchWithBackendAuth).not.toHaveBeenCalledWith(
-        "http://localhost:8000/api/v1/audits/6",
-      );
-    });
-
-    await waitFor(() => {
       const executionSignalsCard =
         screen.getByText("Execution Signals").parentElement?.parentElement;
 
@@ -244,5 +238,10 @@ describe("Audit detail GEO tools navigation", () => {
         within(fixPlanRow as HTMLElement).getByText("3"),
       ).toBeInTheDocument();
     });
+
+    const calledUrls = (fetchWithBackendAuth as jest.Mock).mock.calls.map(
+      ([url]) => String(url),
+    );
+    expect(calledUrls).not.toContain("http://localhost:8000/api/v1/audits/6");
   });
 });
