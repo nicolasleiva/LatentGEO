@@ -1,3 +1,4 @@
+import json
 import logging
 from urllib.parse import urlparse
 
@@ -286,6 +287,27 @@ def test_filter_competitor_urls_rejects_marketplaces_and_publishers_for_devtools
     assert "www.inc.com" not in competitor_hosts
     missing_hosts = {"cursor.com"} - competitor_hosts
     assert not missing_hosts
+
+
+def test_filter_competitor_urls_does_not_false_match_short_blocked_hosts():
+    items = [
+        {
+            "link": "https://www.innovationinc.com.co/erp",
+            "title": "ERP implementation in Colombia",
+            "snippet": "ERP implementation specialists in Colombia.",
+        }
+    ]
+
+    competitors = PipelineService.filter_competitor_urls(
+        items,
+        target_domain="example.dev",
+        core_terms=["erp", "implementation"],
+        anchor_terms=["erp"],
+        vertical_hint="software",
+        limit=5,
+    )
+
+    assert _host_set(competitors) == {"www.innovationinc.com.co"}
 
 
 def test_extract_anchor_terms_requires_repeated_signal():
@@ -845,6 +867,68 @@ async def test_agent1_uses_pruned_queries_when_strict_core_filter_empties(
     assert queries[0]["query"] == "consultoría transformación digital México"
     assert any("aplicando bypass permisivo" in r.message for r in caplog.records)
     assert any("bypass_used=True" in r.message for r in caplog.records)
+
+
+@pytest.mark.asyncio
+async def test_agent1_bypass_still_rejects_outlier_only_queries(monkeypatch):
+    service = PipelineService()
+    target = _make_target_audit(
+        "https://erp.example.com/",
+        "ERP implementation",
+        "ERP implementation services",
+        "ERP implementation and migration",
+    )
+    target["language"] = "es"
+    target["market"] = "Colombia"
+
+    async def fake_llm(*_args, **_kwargs):
+        return json.dumps(
+            {
+                "category": "Software",
+                "subcategory": "ERP implementation",
+                "confidence_score": 90,
+                "reasoning": "Strong software signals",
+                "competitor_queries": [
+                    "erp implementación colombia",
+                    "growth analytics colombia",
+                ],
+                "direct_competitors": [],
+                "market_position": "challenger",
+            }
+        )
+
+    def fake_build_core_profile(*_args, **_kwargs):
+        return {
+            "core_terms": ["erp", "implementación"],
+            "strong_core_terms": ["erp", "implementación"],
+            "weak_core_terms": [],
+            "anchor_terms": ["erp"],
+            "outlier_terms": ["growth", "analytics"],
+        }
+
+    def passthrough_prune(queries, *_args, **_kwargs):
+        return queries
+
+    monkeypatch.setattr(
+        PipelineService,
+        "_build_core_business_profile",
+        staticmethod(fake_build_core_profile),
+    )
+    monkeypatch.setattr(
+        PipelineService,
+        "_prune_competitor_queries",
+        staticmethod(passthrough_prune),
+    )
+
+    external_intel, queries = await service.analyze_external_intelligence(
+        target,
+        llm_function=fake_llm,
+        mode="full",
+        retry_policy={"max_retries": 0, "timeout_seconds": 10},
+    )
+
+    assert external_intel.get("status") == "ok"
+    assert [row["query"] for row in queries] == ["erp implementación colombia"]
 
 
 @pytest.mark.asyncio

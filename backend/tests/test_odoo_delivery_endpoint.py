@@ -794,6 +794,13 @@ def test_prepare_article_drafts_reuses_normalized_native_created_action(
     assert fake_client.create_calls == 0
 
 
+def test_normalize_action_key_hashes_full_value():
+    first = OdooDraftService._normalize_action_key("article:" + ("a" * 990) + "one")
+    second = OdooDraftService._normalize_action_key("article:" + ("a" * 990) + "two")
+
+    assert first != second
+
+
 def test_get_odoo_sync_status_reads_latest_sync_summary_without_build_plan(
     client, db_session, monkeypatch
 ):

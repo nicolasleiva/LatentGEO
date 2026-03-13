@@ -895,6 +895,27 @@ class GeoArticleEngineService:
         return str(row[0] or "").strip() or None
 
     @staticmethod
+    def delete_strategy_run(
+        db: Session,
+        *,
+        audit_id: int,
+        strategy_run_id: Optional[str],
+    ) -> None:
+        normalized_run_id = str(strategy_run_id or "").strip()
+        if not normalized_run_id:
+            return
+
+        (
+            db.query(AIContentSuggestion)
+            .filter(
+                AIContentSuggestion.audit_id == audit_id,
+                AIContentSuggestion.strategy_run_id == normalized_run_id,
+            )
+            .delete(synchronize_session=False)
+        )
+        db.commit()
+
+    @staticmethod
     def _strategy_generation_domain(audit: Audit) -> str:
         domain = str(getattr(audit, "domain", "") or "").strip()
         if domain:
@@ -3594,6 +3615,10 @@ class GeoArticleEngineService:
             audit.id,
             strategy_run_id=strategy_run_id,
         )
+        if article_index < 1:
+            raise ValueError(
+                f"Article index must be a positive integer, got {article_index}."
+            )
         if len(strategy_items) < article_index:
             raise ArticleStrategyRequiredError(
                 "ARTICLE_STRATEGY_REQUIRED: strategy run does not include this article slot."

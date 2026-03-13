@@ -42,6 +42,7 @@ _ALLOW_INTERNAL_TEST_JWT_ENV = "ALLOW_INTERNAL_TEST_JWT"
 _jwks_lock = threading.Lock()
 _jwks_cache: dict[str, Any] = {"keys_by_kid": {}, "expires_at": 0.0}
 _auth_failure_counts: Counter[str] = Counter()
+_auth_failure_counts_lock = threading.Lock()
 _DEFAULT_ADMIN_ROLE_NAMES = frozenset({"admin", "ops-admin"})
 
 
@@ -193,11 +194,13 @@ def _record_auth_failure(
     issuer_expected: Optional[str] = None,
     issuer_got: Optional[str] = None,
 ) -> None:
-    _auth_failure_counts[reason] += 1
+    with _auth_failure_counts_lock:
+        _auth_failure_counts[reason] += 1
+        failure_count = _auth_failure_counts[reason]
     logger.warning(
         "auth_rejected",
         error_code=reason,
-        count=_auth_failure_counts[reason],
+        count=failure_count,
         sub=context.get("sub"),
         kid=context.get("kid"),
         iss=context.get("iss"),
@@ -230,7 +233,8 @@ def _auth_exception(
 
 def get_auth_failure_metrics() -> dict[str, int]:
     """Exposes in-memory auth failure counters for diagnostics/tests."""
-    return dict(_auth_failure_counts)
+    with _auth_failure_counts_lock:
+        return dict(_auth_failure_counts)
 
 
 def _fetch_jwks(issuer: str) -> dict[str, dict[str, Any]]:

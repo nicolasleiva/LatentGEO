@@ -36,7 +36,7 @@ from app.services.query_discovery_service import QueryDiscoveryService
 from app.services.schema_optimizer_service import SchemaOptimizerService
 from app.workers.celery_app import celery_app
 from fastapi import APIRouter, BackgroundTasks, Body, Depends, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.orm import Session
 
 logger = get_logger(__name__)
@@ -327,12 +327,59 @@ class ArticleEngineRequest(BaseModel):
     include_schema: bool = True
     market: Optional[str] = None
     target_topics: Optional[List[str]] = None
-    authority_urls: Optional[List[str]] = None
+    authority_urls: List[str] = Field(default_factory=list, max_length=10)
     run_async: bool = True
+
+    @field_validator("authority_urls")
+    @classmethod
+    def validate_authority_urls(cls, value: List[str]) -> List[str]:
+        normalized_urls: List[str] = []
+        for raw_url in value or []:
+            candidate = str(raw_url or "").strip()
+            if not candidate:
+                continue
+            if len(candidate) > 2048:
+                raise ValueError("authority_urls entries must be <= 2048 characters")
+            normalized_urls.append(candidate)
+        return normalized_urls
 
 
 class ArticleRegenerateRequest(BaseModel):
-    authority_urls: List[str] = Field(default_factory=list)
+    authority_urls: List[str] = Field(default_factory=list, max_length=10)
+
+    @field_validator("authority_urls")
+    @classmethod
+    def validate_authority_urls(cls, value: List[str]) -> List[str]:
+        normalized_urls: List[str] = []
+        for raw_url in value or []:
+            candidate = str(raw_url or "").strip()
+            if not candidate:
+                continue
+            if len(candidate) > 2048:
+                raise ValueError("authority_urls entries must be <= 2048 characters")
+            normalized_urls.append(candidate)
+        return normalized_urls
+
+
+def _cleanup_generated_strategy_run(
+    db: Session,
+    *,
+    audit_id: int,
+    seed_data: dict[str, Any] | None,
+) -> None:
+    if not seed_data:
+        return
+
+    strategy_source = str(seed_data.get("strategy_source") or "").strip()
+    if strategy_source not in {"generated_auto", "generated_from_topics"}:
+        return
+
+    db.rollback()
+    GeoArticleEngineService.delete_strategy_run(
+        db,
+        audit_id=audit_id,
+        strategy_run_id=seed_data.get("strategy_run_id"),
+    )
 
 
 # ============= Citation Tracking Endpoints =============
@@ -1257,6 +1304,8 @@ async def generate_article_batch(
     current_user: AuthUser = Depends(get_current_user),
 ):
     """Create and process article-engine batch with strict GEO/SEO data-pack rules."""
+    seed_data: dict[str, Any] | None = None
+    batch = None
     try:
         audit = _get_owned_audit(db, request.audit_id, current_user)
         seed_data = await GeoArticleEngineService.prepare_batch_seed_data(
@@ -1336,16 +1385,34 @@ async def generate_article_batch(
                     )
         return GeoArticleEngineService.serialize_batch(processed)
     except KimiUnavailableError:
+        if batch is None and seed_data:
+            _cleanup_generated_strategy_run(
+                db,
+                audit_id=request.audit_id,
+                seed_data=seed_data,
+            )
         raise HTTPException(
             status_code=503,
             detail=_safe_http_error_detail("KIMI_UNAVAILABLE"),
         )
     except KimiSearchUnavailableError:
+        if batch is None and seed_data:
+            _cleanup_generated_strategy_run(
+                db,
+                audit_id=request.audit_id,
+                seed_data=seed_data,
+            )
         raise HTTPException(
             status_code=503,
             detail=_safe_http_error_detail("KIMI_UNAVAILABLE"),
         )
     except (ArticleDataPackIncompleteError, InsufficientAuthoritySourcesError) as exc:
+        if batch is None and seed_data:
+            _cleanup_generated_strategy_run(
+                db,
+                audit_id=request.audit_id,
+                seed_data=seed_data,
+            )
         code = (
             "INSUFFICIENT_AUTHORITY_SOURCES"
             if isinstance(exc, InsufficientAuthoritySourcesError)
@@ -1356,21 +1423,45 @@ async def generate_article_batch(
             detail=_safe_http_error_detail(code),
         )
     except ArticleStrategyRequiredError:
+        if batch is None and seed_data:
+            _cleanup_generated_strategy_run(
+                db,
+                audit_id=request.audit_id,
+                seed_data=seed_data,
+            )
         raise HTTPException(
             status_code=422,
             detail=_safe_http_error_detail("ARTICLE_STRATEGY_REQUIRED"),
         )
     except (KimiGenerationError, KimiSearchError):
+        if batch is None and seed_data:
+            _cleanup_generated_strategy_run(
+                db,
+                audit_id=request.audit_id,
+                seed_data=seed_data,
+            )
         raise HTTPException(
             status_code=502,
             detail=_safe_http_error_detail("KIMI_GENERATION_FAILED"),
         )
     except ValueError:
+        if batch is None and seed_data:
+            _cleanup_generated_strategy_run(
+                db,
+                audit_id=request.audit_id,
+                seed_data=seed_data,
+            )
         raise HTTPException(
             status_code=400,
             detail=_safe_http_error_detail("INVALID_INPUT"),
         )
     except Exception as e:
+        if batch is None and seed_data:
+            _cleanup_generated_strategy_run(
+                db,
+                audit_id=request.audit_id,
+                seed_data=seed_data,
+            )
         logger.error(f"Error generating article batch: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
 

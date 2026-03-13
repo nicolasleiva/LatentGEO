@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta, timezone
 
 from app.core.config import settings
-from app.models import Audit, AuditStatus, GeoArticleBatch
+from app.models import AIContentSuggestion, Audit, AuditStatus, GeoArticleBatch
 from app.services.geo_article_engine_service import (
     ArticleDataPackIncompleteError,
     GeoArticleEngineService,
@@ -163,6 +163,96 @@ def test_article_engine_generate_auto_builds_strategy_when_missing(
     payload = response.json()
     assert payload["summary"]["strategy_run_id"] == "strategy-auto"
     assert payload["summary"]["strategy_source"] == "generated_auto"
+
+
+def test_article_engine_generate_cleans_up_generated_strategy_rows_when_batch_creation_fails(
+    client, db_session, monkeypatch
+):
+    audit_id = _seed_audit(db_session)
+    strategy_run_id = "orphaned-strategy-run"
+
+    async def fake_prepare_batch_seed_data(*args, **kwargs):
+        db_session.add(
+            AIContentSuggestion(
+                audit_id=audit_id,
+                topic="Orphaned title",
+                suggestion_type="guide",
+                priority="high",
+                content_outline={"target_keyword": "orphaned keyword"},
+                strategy_run_id=strategy_run_id,
+                strategy_order=0,
+            )
+        )
+        db_session.commit()
+        return {
+            "strategy_run_id": strategy_run_id,
+            "strategy_items": [
+                {
+                    "title": "Orphaned title",
+                    "target_keyword": "orphaned keyword",
+                    "strategy_run_id": strategy_run_id,
+                }
+            ],
+            "strategy_source": "generated_auto",
+            "article_authority_assignments": {1: []},
+            "global_authority_urls": [],
+            "unmatched_authority_urls": [],
+            "authority_source_cache": [],
+        }
+
+    def fake_create_batch(**kwargs):
+        raise ArticleDataPackIncompleteError(
+            "ARTICLE_DATA_PACK_INCOMPLETE: missing required fields"
+        )
+
+    monkeypatch.setattr(
+        GeoArticleEngineService,
+        "prepare_batch_seed_data",
+        staticmethod(fake_prepare_batch_seed_data),
+    )
+    monkeypatch.setattr(
+        GeoArticleEngineService, "create_batch", staticmethod(fake_create_batch)
+    )
+
+    response = client.post(
+        "/api/v1/geo/article-engine/generate",
+        json={
+            "audit_id": audit_id,
+            "article_count": 1,
+            "language": "es",
+            "tone": "growth",
+            "include_schema": True,
+            "run_async": True,
+        },
+    )
+
+    assert response.status_code == 422
+    assert (
+        db_session.query(AIContentSuggestion)
+        .filter(AIContentSuggestion.strategy_run_id == strategy_run_id)
+        .count()
+        == 0
+    )
+
+
+def test_article_engine_generate_rejects_too_many_authority_urls(client, db_session):
+    audit_id = _seed_audit(db_session)
+
+    response = client.post(
+        "/api/v1/geo/article-engine/generate",
+        json={
+            "audit_id": audit_id,
+            "article_count": 1,
+            "language": "es",
+            "tone": "growth",
+            "include_schema": True,
+            "authority_urls": [
+                f"https://authority.example.com/{idx}" for idx in range(11)
+            ],
+        },
+    )
+
+    assert response.status_code == 422
 
 
 def test_article_engine_async_generate_and_status_endpoint(

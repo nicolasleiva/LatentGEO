@@ -2073,8 +2073,16 @@ class PipelineService:
                 logger.info(f"PIPELINE: Excluyendo {url} (ruta no competitiva: {path})")
                 return None
 
+            def _domain_matches(pattern: str, host: str) -> bool:
+                normalized_pattern = str(pattern or "").lower().lstrip(".")
+                normalized_host = str(host or "").lower().strip(".")
+                return bool(normalized_pattern) and (
+                    normalized_host == normalized_pattern
+                    or normalized_host.endswith(f".{normalized_pattern}")
+                )
+
             for pattern in bad_patterns:
-                if pattern in domain_clean:
+                if _domain_matches(pattern, domain_clean):
                     logger.info(
                         f"PIPELINE: Excluyendo {url} (patrón prohibido: {pattern})"
                     )
@@ -6698,6 +6706,10 @@ class PipelineService:
                 for item in pruned_queries_snapshot:
                     candidate_query = str(item.get("query", "")).strip()
                     if not candidate_query:
+                        continue
+                    if self._query_uses_only_outlier_terms(
+                        candidate_query, core_profile
+                    ):
                         continue
                     if self._query_uses_only_weak_core_terms(
                         candidate_query, core_profile

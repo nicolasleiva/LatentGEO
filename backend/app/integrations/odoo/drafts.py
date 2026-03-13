@@ -63,13 +63,7 @@ class OdooDraftService:
 
     @classmethod
     def _normalize_action_key(cls, value: Any) -> str:
-        normalized = (
-            cls._normalize_optional_text(
-                value,
-                max_length=cls.ACTION_KEY_MAX_LENGTH * 2,
-            )
-            or "odoo-draft"
-        )
+        normalized = cls._normalize_text(value) or "odoo-draft"
         if len(normalized) <= cls.ACTION_KEY_MAX_LENGTH:
             return normalized
 
