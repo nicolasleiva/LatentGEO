@@ -1,4 +1,5 @@
 import logging
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
@@ -8,6 +9,41 @@ from ...services.pagespeed_service import PageSpeedService
 
 router = APIRouter(prefix="/pagespeed", tags=["pagespeed"])
 logger = logging.getLogger(__name__)
+
+_PAGESPEED_TIMEOUT_DETAIL = "PageSpeed provider timed out before returning a result."
+_PAGESPEED_UPSTREAM_DETAIL = (
+    "PageSpeed provider returned an error while processing the request."
+)
+_PAGESPEED_GENERIC_DETAIL = (
+    "PageSpeed analysis failed due to an upstream provider error."
+)
+
+
+_PAGESPEED_SENSITIVE_KEYS = {
+    "error",
+    "message",
+    "public_message",
+    "provider_message",
+    "stack",
+    "stack_trace",
+    "trace",
+    "traceback",
+    "exception",
+    "exc_info",
+}
+
+
+def _sanitize_pagespeed_payload(value: Any) -> Any:
+    if isinstance(value, dict):
+        sanitized: dict[str, Any] = {}
+        for key, nested_value in value.items():
+            if str(key).strip().lower() in _PAGESPEED_SENSITIVE_KEYS:
+                continue
+            sanitized[key] = _sanitize_pagespeed_payload(nested_value)
+        return sanitized
+    if isinstance(value, list):
+        return [_sanitize_pagespeed_payload(item) for item in value]
+    return value
 
 
 def _map_pagespeed_exception(exc: Exception) -> HTTPException:
@@ -21,13 +57,13 @@ def _map_pagespeed_exception(exc: Exception) -> HTTPException:
         logger.warning("PageSpeed provider timed out: %s", exc)
         return HTTPException(
             status_code=504,
-            detail="PageSpeed provider timed out before returning a result.",
+            detail=_PAGESPEED_TIMEOUT_DETAIL,
         )
 
     logger.exception("Unexpected PageSpeed failure.")
     return HTTPException(
         status_code=502,
-        detail="PageSpeed analysis failed due to an upstream provider error.",
+        detail=_PAGESPEED_GENERIC_DETAIL,
     )
 
 
@@ -39,18 +75,12 @@ def _raise_for_pagespeed_payload(payload: object) -> None:
         return
 
     status_code = payload.get("status_code")
-    provider_message = payload.get("provider_message")
-    detail = (
-        provider_message.strip()
-        if isinstance(provider_message, str) and provider_message.strip()
-        else error.strip()
-    )
     normalized_error = error.strip().lower()
 
     if normalized_error == "timeout":
         raise HTTPException(
             status_code=504,
-            detail=detail or "PageSpeed provider timed out before returning a result.",
+            detail=_PAGESPEED_TIMEOUT_DETAIL,
         )
     if normalized_error.startswith("api error:"):
         raise HTTPException(
@@ -59,11 +89,11 @@ def _raise_for_pagespeed_payload(payload: object) -> None:
                 if isinstance(status_code, int) and 400 <= status_code <= 599
                 else 502
             ),
-            detail=detail,
+            detail=_PAGESPEED_UPSTREAM_DETAIL,
         )
     raise HTTPException(
         status_code=502,
-        detail="PageSpeed analysis failed due to an upstream provider error.",
+        detail=_PAGESPEED_GENERIC_DETAIL,
     )
 
 
@@ -78,7 +108,7 @@ async def analyze_pagespeed(
             url, settings.GOOGLE_PAGESPEED_API_KEY, strategy
         )
         _raise_for_pagespeed_payload(payload)
-        return payload
+        return _sanitize_pagespeed_payload(payload)
     except HTTPException:
         raise
     except Exception as exc:
@@ -103,7 +133,10 @@ async def compare_strategies(
             url, settings.GOOGLE_PAGESPEED_API_KEY, "desktop"
         )
         _raise_for_pagespeed_payload(desktop)
-        return {"mobile": mobile, "desktop": desktop}
+        return {
+            "mobile": _sanitize_pagespeed_payload(mobile),
+            "desktop": _sanitize_pagespeed_payload(desktop),
+        }
     except HTTPException:
         raise
     except Exception as exc:

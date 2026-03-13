@@ -1425,7 +1425,7 @@ def test_pagespeed_job_provider_warning_persists_runtime_warning(
     async def _fake_analyze_url(*args, **kwargs):
         return {
             "error": "timeout",
-            "provider_message": "Lighthouse returned error: NO_FCP",
+            "public_message": "PageSpeed request timed out before a response was received.",
             "strategy": "desktop",
             "url": str(audit.url),
         }
@@ -1447,7 +1447,10 @@ def test_pagespeed_job_provider_warning_persists_runtime_warning(
     db_session.refresh(job)
     assert job.status == "completed"
     assert job.warnings
-    assert "NO_FCP" in job.warnings[0]
+    assert (
+        job.warnings[0] == "Desktop PageSpeed unavailable: "
+        "PageSpeed request timed out before a response was received."
+    )
 
     diagnostics_response = client.get(f"/api/v1/audits/{audit.id}/diagnostics")
     assert diagnostics_response.status_code == 200
@@ -1456,4 +1459,7 @@ def test_pagespeed_job_provider_warning_persists_runtime_warning(
     assert diagnostics[0]["source"] == "pagespeed"
     assert diagnostics[0]["severity"] == "warning"
     assert diagnostics[0]["code"] == "pagespeed_warning_1"
-    assert "NO_FCP" in diagnostics[0]["message"]
+    assert (
+        diagnostics[0]["message"] == "Desktop PageSpeed unavailable: "
+        "PageSpeed request timed out before a response was received."
+    )

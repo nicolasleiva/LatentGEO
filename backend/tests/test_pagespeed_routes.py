@@ -60,7 +60,7 @@ def test_pagespeed_analyze_maps_error_payload_to_upstream_status(client):
             return_value={
                 "error": "API error: 503",
                 "status_code": 503,
-                "provider_message": "Lighthouse unavailable upstream",
+                "public_message": "Lighthouse unavailable upstream",
             }
         ),
     ):
@@ -70,7 +70,9 @@ def test_pagespeed_analyze_maps_error_payload_to_upstream_status(client):
         )
 
     assert response.status_code == 503
-    assert response.json() == {"detail": "Lighthouse unavailable upstream"}
+    assert response.json() == {
+        "detail": "PageSpeed provider returned an error while processing the request."
+    }
 
 
 def test_pagespeed_compare_maps_timeout_payload_to_504(client, monkeypatch):
@@ -82,7 +84,7 @@ def test_pagespeed_compare_maps_timeout_payload_to_504(client, monkeypatch):
             side_effect=[
                 {
                     "error": "timeout",
-                    "provider_message": "PageSpeed request timed out before a response was received.",
+                    "public_message": "PageSpeed request timed out before a response was received.",
                 }
             ]
         ),
@@ -94,7 +96,7 @@ def test_pagespeed_compare_maps_timeout_payload_to_504(client, monkeypatch):
 
     assert response.status_code == 504
     assert response.json() == {
-        "detail": "PageSpeed request timed out before a response was received."
+        "detail": "PageSpeed provider timed out before returning a result."
     }
 
 
@@ -104,7 +106,7 @@ def test_pagespeed_analyze_masks_unknown_error_payloads(client):
         new=AsyncMock(
             return_value={
                 "error": "internal provider stack trace",
-                "provider_message": "token=secret upstream crash",
+                "public_message": "token=secret upstream crash",
             }
         ),
     ):
@@ -117,3 +119,37 @@ def test_pagespeed_analyze_masks_unknown_error_payloads(client):
     assert response.json() == {
         "detail": "PageSpeed analysis failed due to an upstream provider error."
     }
+
+
+def test_pagespeed_analyze_strips_sensitive_keys_from_success_payload(client):
+    with patch(
+        "app.api.routes.pagespeed.PageSpeedService.analyze_url",
+        new=AsyncMock(
+            return_value={
+                "url": "https://example.com",
+                "strategy": "mobile",
+                "performance_score": 91,
+                "metadata": {
+                    "fetch_time": "2026-03-13T00:00:00Z",
+                    "traceback": "Traceback (most recent call last): secret",
+                },
+                "screenshots": [
+                    {"data": "data:image/png;base64,abc", "timestamp": 1200}
+                ],
+                "public_message": "internal details",
+                "traceback": "Traceback (most recent call last): secret",
+            }
+        ),
+    ):
+        response = client.get(
+            "/api/v1/pagespeed/analyze",
+            params={"url": "https://example.com", "strategy": "mobile"},
+        )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["performance_score"] == 91
+    assert "public_message" not in payload
+    assert "provider_message" not in payload
+    assert "traceback" not in payload
+    assert "traceback" not in payload["metadata"]
