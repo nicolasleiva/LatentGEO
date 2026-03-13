@@ -410,7 +410,5 @@ async def test_pdf_execute_job_raises_when_failed_state_cannot_be_persisted(
         staticmethod(lambda *_args, **_kwargs: None),
     )
 
-    with pytest.raises(
-        RuntimeError, match="Could not persist failed PDF job state"
-    ):
+    with pytest.raises(RuntimeError, match="Could not persist failed PDF job state"):
         await PDFJobService.execute_job(db_session, job.id)
