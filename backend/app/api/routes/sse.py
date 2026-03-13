@@ -45,17 +45,29 @@ def _load_owned_audit_payload(audit_id: int, current_user: AuthUser) -> dict[str
 def _load_owned_artifact_payload(
     audit_id: int, current_user: AuthUser
 ) -> dict[str, Any]:
-    cached_payload = AuditService.get_cached_artifact_payload(audit_id)
-    if cached_payload is not None:
-        ensure_artifact_snapshot_access(cached_payload, current_user)
-        public_cached_payload = AuditService.public_artifact_payload(cached_payload)
-        if public_cached_payload is not None:
-            return public_cached_payload
-
     from app.core.database import SessionLocal
 
     db_session = SessionLocal()
     try:
+        audit_projection = AuditService.get_audit_projection(
+            db_session,
+            audit_id,
+            Audit.id,
+            Audit.user_id,
+            Audit.user_email,
+            Audit.created_at,
+        )
+        audit_projection = ensure_audit_access(audit_projection, current_user)
+
+        cached_payload = AuditService.get_cached_artifact_payload(audit_id)
+        if cached_payload is not None and AuditService.artifact_payload_matches_audit(
+            cached_payload, audit_projection
+        ):
+            ensure_artifact_snapshot_access(cached_payload, current_user)
+            public_cached_payload = AuditService.public_artifact_payload(cached_payload)
+            if public_cached_payload is not None:
+                return public_cached_payload
+
         payload = AuditService.rebuild_artifact_payload(db_session, audit_id)
         ensure_artifact_snapshot_access(payload, current_user)
         return AuditService.public_artifact_payload(payload) or {
@@ -160,6 +172,7 @@ def _load_owned_article_batch_payload(
             Audit.id,
             Audit.user_id,
             Audit.user_email,
+            Audit.created_at,
         )
         ensure_audit_access(audit_projection, current_user)
 
@@ -168,6 +181,9 @@ def _load_owned_article_batch_payload(
         )
         if (
             cached_payload
+            and GeoArticleEngineService.batch_status_payload_matches_batch(
+                cached_payload, batch_meta
+            )
             and not GeoArticleEngineService.batch_status_payload_requires_refresh(
                 cached_payload
             )

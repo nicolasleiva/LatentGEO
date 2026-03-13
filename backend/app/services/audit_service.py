@@ -364,6 +364,8 @@ class AuditService:
         db.flush()
         db.commit()
         db.refresh(audit)
+        AuditService.invalidate_artifact_payload(audit.id)
+        AuditService.invalidate_overview_payload(audit.id)
 
         # Level 2: Invalidate list cache for this user
         if audit.user_email:
@@ -594,6 +596,25 @@ class AuditService:
         return public_payload
 
     @staticmethod
+    def overview_payload_matches_audit(
+        payload: Dict[str, Any] | None, audit: Audit | None
+    ) -> bool:
+        if not isinstance(payload, dict) or audit is None:
+            return False
+        try:
+            if int(payload.get("id")) != int(audit.id):
+                return False
+        except (TypeError, ValueError):
+            return False
+        payload_created_at = AuditService._serialize_artifact_datetime(
+            payload.get("created_at")
+        )
+        audit_created_at = AuditService._serialize_artifact_datetime(audit.created_at)
+        if payload_created_at and audit_created_at:
+            return payload_created_at == audit_created_at
+        return True
+
+    @staticmethod
     def build_progress_payload(audit: Audit) -> Dict[str, Any]:
         status_value = None
         if getattr(audit, "status", None) is not None:
@@ -705,6 +726,9 @@ class AuditService:
 
         return {
             "audit_id": int(audit.id),
+            "audit_created_at": AuditService._serialize_artifact_datetime(
+                getattr(audit, "created_at", None)
+            ),
             "owner_user_id": (getattr(audit, "user_id", None) or "").strip() or None,
             "owner_email": (
                 str(getattr(audit, "user_email", None)).strip().lower()
@@ -775,6 +799,25 @@ class AuditService:
             except (TypeError, ValueError):
                 return None
         return public_payload
+
+    @staticmethod
+    def artifact_payload_matches_audit(
+        payload: Dict[str, Any] | None, audit: Audit | None
+    ) -> bool:
+        if not isinstance(payload, dict) or audit is None:
+            return False
+        try:
+            if int(payload.get("audit_id")) != int(audit.id):
+                return False
+        except (TypeError, ValueError):
+            return False
+        payload_created_at = AuditService._serialize_artifact_datetime(
+            payload.get("audit_created_at")
+        )
+        audit_created_at = AuditService._serialize_artifact_datetime(audit.created_at)
+        if payload_created_at and audit_created_at:
+            return payload_created_at == audit_created_at
+        return True
 
     @staticmethod
     def _artifact_payload_requires_db_refresh(payload: Dict[str, Any]) -> bool:
@@ -888,6 +931,21 @@ class AuditService:
         except Exception as exc:  # nosec B110
             logger.warning(
                 "Unable to invalidate overview snapshot for audit %s: %s",
+                audit_id,
+                exc,
+            )
+
+    @staticmethod
+    def invalidate_artifact_payload(audit_id: int) -> None:
+        from .cache_service import cache
+
+        if not cache.enabled:
+            return
+        try:
+            cache.delete(AuditService.artifact_snapshot_key(audit_id))
+        except Exception as exc:  # nosec B110
+            logger.warning(
+                "Unable to invalidate artifact snapshot for audit %s: %s",
                 audit_id,
                 exc,
             )

@@ -220,6 +220,44 @@ def test_configure_chat_ignores_odoo_delivery_preferences_but_keeps_existing_pro
     }
 
 
+def test_get_audit_ignores_stale_cached_overview_snapshot(
+    client: TestClient, db_session, monkeypatch
+):
+    audit = Audit(
+        url="https://example-stale-overview.com",
+        domain="example-stale-overview.com",
+        status=AuditStatus.PENDING,
+        user_id="test-user",
+        user_email="test@example.com",
+        language="es",
+    )
+    db_session.add(audit)
+    db_session.commit()
+    db_session.refresh(audit)
+
+    monkeypatch.setattr(
+        AuditService,
+        "get_cached_overview_payload",
+        staticmethod(
+            lambda _audit_id: {
+                "id": audit.id,
+                "created_at": "2000-01-01T00:00:00Z",
+                "language": "pt",
+                "intake_profile": {"add_articles": True, "article_count": 9},
+                "owner_user_id": "test-user",
+                "owner_email": "test@example.com",
+            }
+        ),
+    )
+
+    response = client.get(f"/api/v1/audits/{audit.id}")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["language"] == "es"
+    assert payload["intake_profile"] is None
+
+
 def test_configure_chat_dispatch_failure_marks_audit_failed_but_keeps_config(
     setup_test_db, monkeypatch
 ):
@@ -512,11 +550,10 @@ def test_generate_pdf_pagespeed_dispatch_failure_fails_waiting_pdf_job(
         session.close()
 
 
-def test_artifact_status_endpoints_use_cached_snapshot_without_touching_db(
+def test_artifact_status_endpoints_use_matching_cached_snapshot_without_rebuild(
     client: TestClient, db_session, monkeypatch
 ):
     audit = Audit(
-        id=73,
         url="https://example-artifact-cache-hit.com",
         domain="example-artifact-cache-hit.com",
         status=AuditStatus.COMPLETED,
@@ -524,24 +561,28 @@ def test_artifact_status_endpoints_use_cached_snapshot_without_touching_db(
         user_email="test@example.com",
         pagespeed_data={"desktop": {"score": 0.91}},
     )
+    db_session.add(audit)
+    db_session.commit()
+    db_session.refresh(audit)
+
     pagespeed_job = AuditPageSpeedJob(
         id=11,
-        audit_id=73,
+        audit_id=audit.id,
         status="running",
         warnings=["PageSpeed still refreshing."],
     )
     pdf_job = AuditPdfJob(
         id=19,
-        audit_id=73,
+        audit_id=audit.id,
         status="waiting",
         waiting_on="pagespeed",
         dependency_job_id=11,
     )
     pdf_report = Report(
         id=101,
-        audit_id=73,
+        audit_id=audit.id,
         report_type="PDF",
-        file_path="supabase://audits/73/report.pdf",
+        file_path=f"supabase://audits/{audit.id}/report.pdf",
     )
     snapshot = AuditService.build_artifact_payload(
         audit,
@@ -550,17 +591,26 @@ def test_artifact_status_endpoints_use_cached_snapshot_without_touching_db(
         pdf_report=pdf_report,
     )
 
-    monkeypatch.setattr(cache, "enabled", True, raising=False)
-    monkeypatch.setattr(cache, "get", lambda key: snapshot, raising=False)
+    monkeypatch.setattr(
+        AuditService,
+        "get_cached_artifact_payload",
+        staticmethod(lambda _audit_id: snapshot),
+    )
+    monkeypatch.setattr(
+        AuditService,
+        "rebuild_artifact_payload",
+        staticmethod(
+            lambda *_args, **_kwargs: (_ for _ in ()).throw(
+                AssertionError(
+                    "rebuild_artifact_payload should not run for a matching cache hit"
+                )
+            )
+        ),
+    )
 
-    def _fail_query(*args, **kwargs):
-        raise AssertionError("db.query should not run on artifact snapshot cache hit")
-
-    monkeypatch.setattr(db_session, "query", _fail_query)
-
-    pdf_response = client.get("/api/v1/audits/73/pdf-status")
-    pagespeed_response = client.get("/api/v1/audits/73/pagespeed-status")
-    artifacts_response = client.get("/api/v1/audits/73/artifacts-status")
+    pdf_response = client.get(f"/api/v1/audits/{audit.id}/pdf-status")
+    pagespeed_response = client.get(f"/api/v1/audits/{audit.id}/pagespeed-status")
+    artifacts_response = client.get(f"/api/v1/audits/{audit.id}/artifacts-status")
 
     assert pdf_response.status_code == 200
     assert pdf_response.json()["status"] == "waiting"
@@ -682,8 +732,20 @@ def test_artifact_status_rebuilds_snapshot_on_cache_miss(
 def test_artifact_status_authorizes_from_cached_snapshot(
     client: TestClient, db_session, monkeypatch
 ):
+    audit = Audit(
+        url="https://example-artifact-cache-auth.com",
+        domain="example-artifact-cache-auth.com",
+        status=AuditStatus.COMPLETED,
+        user_id="test-user",
+        user_email="test@example.com",
+    )
+    db_session.add(audit)
+    db_session.commit()
+    db_session.refresh(audit)
+
     snapshot = {
-        "audit_id": 88,
+        "audit_id": audit.id,
+        "audit_created_at": AuditService._serialize_artifact_datetime(audit.created_at),
         "owner_user_id": "different-user",
         "owner_email": "different@example.com",
         "pagespeed_status": "idle",
@@ -710,17 +772,24 @@ def test_artifact_status_authorizes_from_cached_snapshot(
         "updated_at": "2026-03-11T00:00:00Z",
     }
 
-    monkeypatch.setattr(cache, "enabled", True, raising=False)
-    monkeypatch.setattr(cache, "get", lambda key: snapshot, raising=False)
+    monkeypatch.setattr(
+        AuditService,
+        "get_cached_artifact_payload",
+        staticmethod(lambda _audit_id: snapshot),
+    )
+    monkeypatch.setattr(
+        AuditService,
+        "rebuild_artifact_payload",
+        staticmethod(
+            lambda *_args, **_kwargs: (_ for _ in ()).throw(
+                AssertionError(
+                    "rebuild_artifact_payload should not run for a matching cache hit"
+                )
+            )
+        ),
+    )
 
-    def _fail_query(*args, **kwargs):
-        raise AssertionError(
-            "db.query should not run when cached snapshot denies access"
-        )
-
-    monkeypatch.setattr(db_session, "query", _fail_query)
-
-    response = client.get("/api/v1/audits/88/artifacts-status")
+    response = client.get(f"/api/v1/audits/{audit.id}/artifacts-status")
     assert response.status_code == 403
 
 
@@ -728,8 +797,20 @@ def test_artifact_status_keeps_running_snapshot_in_cache(
     client: TestClient, db_session, monkeypatch
 ):
     monkeypatch.setattr(settings, "BROKER_DISPATCH_GRACE_SECONDS", 1, raising=False)
+    audit = Audit(
+        url="https://example-artifact-running-cache.com",
+        domain="example-artifact-running-cache.com",
+        status=AuditStatus.COMPLETED,
+        user_id="test-user",
+        user_email="test@example.com",
+    )
+    db_session.add(audit)
+    db_session.commit()
+    db_session.refresh(audit)
+
     snapshot = {
-        "audit_id": 89,
+        "audit_id": audit.id,
+        "audit_created_at": AuditService._serialize_artifact_datetime(audit.created_at),
         "owner_user_id": "test-user",
         "owner_email": "test@example.com",
         "pagespeed_status": "running",
@@ -756,17 +837,24 @@ def test_artifact_status_keeps_running_snapshot_in_cache(
         "updated_at": "2026-03-11T00:00:00Z",
     }
 
-    monkeypatch.setattr(cache, "enabled", True, raising=False)
-    monkeypatch.setattr(cache, "get", lambda key: snapshot, raising=False)
+    monkeypatch.setattr(
+        AuditService,
+        "get_cached_artifact_payload",
+        staticmethod(lambda _audit_id: snapshot),
+    )
+    monkeypatch.setattr(
+        AuditService,
+        "rebuild_artifact_payload",
+        staticmethod(
+            lambda *_args, **_kwargs: (_ for _ in ()).throw(
+                AssertionError(
+                    "rebuild_artifact_payload should not run for a matching cache hit"
+                )
+            )
+        ),
+    )
 
-    def _fail_query(*args, **kwargs):
-        raise AssertionError(
-            "db.query should not run when the active snapshot is cached"
-        )
-
-    monkeypatch.setattr(db_session, "query", _fail_query)
-
-    response = client.get("/api/v1/audits/89/artifacts-status")
+    response = client.get(f"/api/v1/audits/{audit.id}/artifacts-status")
 
     assert response.status_code == 200
     assert response.json()["pagespeed_status"] == "running"
@@ -1017,13 +1105,25 @@ def test_get_audit_and_summary_return_slim_shell_and_keep_heavy_aliases(
 def test_summary_and_overview_use_cached_overview_snapshot(
     client: TestClient, db_session, monkeypatch
 ):
+    audit = Audit(
+        url="https://example-overview-cache.com",
+        domain="example-overview-cache.com",
+        status=AuditStatus.COMPLETED,
+        user_id="test-user",
+        user_email="test@example.com",
+        language="en",
+    )
+    db_session.add(audit)
+    db_session.commit()
+    db_session.refresh(audit)
+
     snapshot = {
-        "id": 144,
+        "id": audit.id,
         "url": "https://example-overview-cache.com",
         "domain": "example-overview-cache.com",
         "status": "completed",
         "progress": 100,
-        "created_at": "2026-03-11T00:00:00Z",
+        "created_at": AuditService._serialize_artifact_datetime(audit.created_at),
         "started_at": "2026-03-11T00:00:10Z",
         "completed_at": "2026-03-11T00:03:10Z",
         "geo_score": 87.5,
@@ -1053,19 +1153,28 @@ def test_summary_and_overview_use_cached_overview_snapshot(
         "owner_email": "test@example.com",
     }
 
-    monkeypatch.setattr(cache, "enabled", True, raising=False)
-    monkeypatch.setattr(cache, "get", lambda _key: snapshot, raising=False)
+    monkeypatch.setattr(
+        AuditService,
+        "get_cached_overview_payload",
+        staticmethod(lambda _audit_id: snapshot),
+    )
+    monkeypatch.setattr(
+        AuditService,
+        "rebuild_overview_payload",
+        staticmethod(
+            lambda *_args, **_kwargs: (_ for _ in ()).throw(
+                AssertionError(
+                    "rebuild_overview_payload should not run for a matching cache hit"
+                )
+            )
+        ),
+    )
 
-    def _fail_query(*_args, **_kwargs):
-        raise AssertionError("db.query should not run on overview snapshot cache hit")
-
-    monkeypatch.setattr(db_session, "query", _fail_query)
-
-    summary_response = client.get("/api/v1/audits/144/summary")
-    overview_response = client.get("/api/v1/audits/144/overview")
+    summary_response = client.get(f"/api/v1/audits/{audit.id}/summary")
+    overview_response = client.get(f"/api/v1/audits/{audit.id}/overview")
 
     assert summary_response.status_code == 200
-    assert summary_response.json()["id"] == 144
+    assert summary_response.json()["id"] == audit.id
     assert summary_response.json()["fix_plan_count"] == 4
     assert overview_response.status_code == 200
     assert overview_response.json()["domain"] == "example-overview-cache.com"
@@ -1198,6 +1307,57 @@ def test_stale_queued_pdf_job_is_reconciled_on_status_lookup(
     assert reconciled_job is not None
     assert reconciled_job.status == "failed"
     assert reconciled_job.error_code == "worker_unavailable"
+
+
+def test_pdf_status_ignores_stale_cached_artifact_snapshot(
+    client: TestClient, db_session, monkeypatch
+):
+    audit = Audit(
+        url="https://example-stale-pdf-cache.com",
+        domain="example-stale-pdf-cache.com",
+        status=AuditStatus.COMPLETED,
+        user_id="test-user",
+        user_email="test@example.com",
+    )
+    db_session.add(audit)
+    db_session.commit()
+    db_session.refresh(audit)
+    monkeypatch.setattr(settings, "BROKER_DISPATCH_GRACE_SECONDS", 1, raising=False)
+
+    stale_job = AuditPdfJob(
+        audit_id=audit.id,
+        status="queued",
+        celery_task_id=None,
+        updated_at=datetime.now(timezone.utc) - timedelta(seconds=30),
+    )
+    db_session.add(stale_job)
+    db_session.commit()
+
+    monkeypatch.setattr(
+        AuditService,
+        "get_cached_artifact_payload",
+        staticmethod(
+            lambda _audit_id: {
+                "audit_id": audit.id,
+                "audit_created_at": "2000-01-01T00:00:00Z",
+                "pdf_status": "completed",
+                "pdf_available": True,
+                "pdf_warnings": [],
+                "pdf_retry_after_seconds": 0,
+                "pagespeed_status": "idle",
+                "pagespeed_available": False,
+                "pagespeed_warnings": [],
+                "pagespeed_retry_after_seconds": 0,
+                "owner_user_id": "test-user",
+                "owner_email": "test@example.com",
+            }
+        ),
+    )
+
+    response = client.get(f"/api/v1/audits/{audit.id}/pdf-status")
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "failed"
 
 
 def test_stale_queued_pagespeed_job_is_reconciled_on_status_lookup(

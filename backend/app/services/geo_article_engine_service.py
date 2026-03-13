@@ -2889,6 +2889,25 @@ class GeoArticleEngineService:
         return payload
 
     @staticmethod
+    def batch_status_payload_matches_batch(
+        payload: Dict[str, Any] | None, batch: GeoArticleBatch | None
+    ) -> bool:
+        if not isinstance(payload, dict) or batch is None:
+            return False
+        try:
+            if int(payload.get("batch_id")) != int(batch.id):
+                return False
+        except (TypeError, ValueError):
+            return False
+        payload_created_at = str(payload.get("created_at") or "").strip()
+        batch_created_at = (
+            batch.created_at.isoformat() if getattr(batch, "created_at", None) else ""
+        )
+        if payload_created_at and batch_created_at:
+            return payload_created_at == batch_created_at
+        return True
+
+    @staticmethod
     def invalidate_batch_status_payload(batch_id: int) -> None:
         from app.services.cache_service import cache
 

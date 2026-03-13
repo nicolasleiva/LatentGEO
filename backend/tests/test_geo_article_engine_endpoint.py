@@ -387,6 +387,69 @@ def test_article_engine_status_marks_legacy_batches_read_only(client, db_session
     assert "markdown" not in payload["articles"][0]
 
 
+def test_article_engine_status_ignores_stale_cached_snapshot(
+    client, db_session, monkeypatch
+):
+    audit_id = _seed_audit(db_session)
+    batch = GeoArticleBatch(
+        audit_id=audit_id,
+        requested_count=1,
+        language="es",
+        tone="growth",
+        include_schema=True,
+        status="processing",
+        summary={
+            "requested_count": 1,
+            "processed_count": 0,
+            "generated_count": 0,
+            "failed_count": 0,
+            "last_progress_at": datetime.now(timezone.utc).isoformat(),
+        },
+        articles=[
+            {
+                "index": 1,
+                "title": "Fresh title",
+                "target_keyword": "fresh keyword",
+                "focus_url": "https://store.example.com/",
+                "generation_status": "queued",
+            }
+        ],
+    )
+    db_session.add(batch)
+    db_session.commit()
+    db_session.refresh(batch)
+
+    monkeypatch.setattr(
+        GeoArticleEngineService,
+        "get_cached_batch_status_payload",
+        staticmethod(
+            lambda _batch_id: {
+                "batch_id": batch.id,
+                "audit_id": audit_id,
+                "created_at": "2000-01-01T00:00:00Z",
+                "status": "completed",
+                "summary": {
+                    "requested_count": 1,
+                    "processed_count": 1,
+                    "generated_count": 1,
+                    "failed_count": 0,
+                    "last_progress_at": datetime.now(timezone.utc).isoformat(),
+                },
+                "articles": [],
+                "is_legacy": False,
+                "can_regenerate": True,
+            }
+        ),
+    )
+
+    response = client.get(f"/api/v1/geo/article-engine/status/{batch.id}")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "processing"
+    assert payload["articles"][0]["generation_status"] == "queued"
+
+
 def test_article_engine_latest_keeps_full_article_payload(client, db_session):
     audit_id = _seed_audit(db_session)
     batch = GeoArticleBatch(

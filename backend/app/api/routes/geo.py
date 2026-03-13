@@ -233,7 +233,14 @@ def _reconcile_article_batch_runtime_state(
         batch.summary = summary
         db.commit()
         db.refresh(batch)
-        GeoArticleEngineService.publish_batch_status_for_batch(batch)
+        try:
+            GeoArticleEngineService.publish_batch_status_for_batch(batch)
+        except Exception as exc:  # nosec B110
+            logger.warning(
+                "Could not publish batch status for batch %s after reconcile: %s",
+                batch.id,
+                exc,
+            )
 
     return batch
 
@@ -1286,6 +1293,14 @@ async def generate_article_batch(
             batch.summary = summary
             db.commit()
             db.refresh(batch)
+            try:
+                GeoArticleEngineService.publish_batch_status_for_batch(batch)
+            except Exception as exc:  # nosec B110
+                logger.warning(
+                    "Could not publish batch status for batch %s after queueing: %s",
+                    batch.id,
+                    exc,
+                )
             return GeoArticleEngineService.serialize_batch(batch)
 
         processed = await GeoArticleEngineService.process_batch(db, batch.id)
@@ -1378,6 +1393,9 @@ def get_article_batch_status(
         )
         if (
             cached_payload
+            and GeoArticleEngineService.batch_status_payload_matches_batch(
+                cached_payload, batch_meta
+            )
             and not GeoArticleEngineService.batch_status_payload_requires_refresh(
                 cached_payload
             )

@@ -1,4 +1,5 @@
 import logging
+from hashlib import sha256
 from typing import Any, Dict, List
 
 import aiohttp
@@ -26,6 +27,14 @@ def _normalize_limited_text(value: Any, max_length: int) -> tuple[str, bool]:
     if len(normalized) <= max_length:
         return normalized, False
     return normalized[:max_length].rstrip(), True
+
+
+def _redact_keyword_for_logs(value: str) -> str:
+    normalized = " ".join(str(value or "").split()).strip()
+    if not normalized:
+        return "empty"
+    digest = sha256(normalized.encode("utf-8")).hexdigest()[:8]
+    return f"sha256:{digest}/len:{len(normalized)}"
 
 
 class RankTrackerService:
@@ -218,9 +227,9 @@ class RankTrackerService:
             if not self._persist_ranking(ranking):
                 persistence_failures += 1
                 logger.warning(
-                    "Rank tracking row could not be persisted for audit %s keyword=%r",
+                    "Rank tracking row could not be persisted for audit %s keyword=%s",
                     audit_id,
-                    keyword,
+                    _redact_keyword_for_logs(keyword),
                 )
                 continue
             created_rankings.append(ranking)
@@ -261,10 +270,23 @@ class RankTrackerService:
         skipped_keywords: int,
         persistence_failures: int,
     ) -> None:
+        def _safe_append(**kwargs: Any) -> None:
+            try:
+                AuditService.append_runtime_diagnostic(
+                    self.db,
+                    audit_id,
+                    commit=False,
+                    **kwargs,
+                )
+            except Exception as exc:  # nosec B110
+                logger.warning(
+                    "Failed to persist rank-tracking diagnostic for audit %s: %s",
+                    audit_id,
+                    exc,
+                )
+
         if truncated_keywords > 0:
-            AuditService.append_runtime_diagnostic(
-                self.db,
-                audit_id,
+            _safe_append(
                 source="rank-tracking",
                 stage="persist-rankings",
                 severity="warning",
@@ -272,12 +294,9 @@ class RankTrackerService:
                 message=(
                     f"Rank tracking truncated {truncated_keywords} keyword values to fit database limits."
                 ),
-                commit=False,
             )
         if skipped_keywords > 0:
-            AuditService.append_runtime_diagnostic(
-                self.db,
-                audit_id,
+            _safe_append(
                 source="rank-tracking",
                 stage="persist-rankings",
                 severity="warning",
@@ -285,12 +304,9 @@ class RankTrackerService:
                 message=(
                     f"Rank tracking skipped {skipped_keywords} empty keyword values after normalization."
                 ),
-                commit=False,
             )
         if persistence_failures > 0:
-            AuditService.append_runtime_diagnostic(
-                self.db,
-                audit_id,
+            _safe_append(
                 source="rank-tracking",
                 stage="persist-rankings",
                 severity="warning",
@@ -298,7 +314,6 @@ class RankTrackerService:
                 message=(
                     f"Rank tracking could not persist {persistence_failures} rows and continued with the remaining results."
                 ),
-                commit=False,
             )
 
     def get_rankings(self, audit_id: int) -> List[RankTracking]:

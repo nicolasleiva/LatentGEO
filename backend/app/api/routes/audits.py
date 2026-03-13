@@ -62,6 +62,7 @@ _AUDIT_ACCESS_FIELDS = (
     Audit.user_id,
     Audit.user_email,
 )
+_AUDIT_CACHE_VALIDATION_FIELDS = _AUDIT_ACCESS_FIELDS + (Audit.created_at,)
 _AUDIT_STATUS_FIELDS = _AUDIT_ACCESS_FIELDS + (
     Audit.url,
     Audit.domain,
@@ -182,8 +183,16 @@ def _get_owned_artifact_payload(
     audit_id: int,
     current_user: AuthUser,
 ) -> tuple[dict, str]:
+    audit = _get_owned_projected_audit(
+        db,
+        audit_id,
+        current_user,
+        *_AUDIT_CACHE_VALIDATION_FIELDS,
+    )
     cached_payload = AuditService.get_cached_artifact_payload(audit_id)
-    if cached_payload is not None:
+    if cached_payload is not None and AuditService.artifact_payload_matches_audit(
+        cached_payload, audit
+    ):
         ensure_artifact_snapshot_access(cached_payload, current_user)
         return cached_payload, "redis"
 
@@ -281,8 +290,16 @@ def _get_owned_overview_payload(
     audit_id: int,
     current_user: AuthUser,
 ) -> AuditOverview:
+    audit_stub = _get_owned_projected_audit(
+        db,
+        audit_id,
+        current_user,
+        *_AUDIT_CACHE_VALIDATION_FIELDS,
+    )
     cached_payload = AuditService.get_cached_overview_payload(audit_id)
-    if cached_payload is not None:
+    if cached_payload is not None and AuditService.overview_payload_matches_audit(
+        cached_payload, audit_stub
+    ):
         ensure_artifact_snapshot_access(cached_payload, current_user)
         public_payload = AuditService.public_overview_payload(cached_payload) or {}
         return AuditOverview(**public_payload)
