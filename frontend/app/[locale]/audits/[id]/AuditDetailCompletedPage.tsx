@@ -69,9 +69,12 @@ type AuditDetailCompletedPageProps = {
 };
 
 const resolveCategory = (overview: AuditOverview) =>
-  overview.category || "Unclassified";
+  overview.category ??
+  overview.external_intelligence?.category ??
+  "Unclassified";
 
-const resolveMarket = (overview: AuditOverview) => overview.market || "—";
+const resolveMarket = (overview: AuditOverview) =>
+  overview.market ?? overview.external_intelligence?.market ?? "—";
 
 const toolCardClassName =
   "group block rounded-2xl border border-border/70 bg-card p-6 transition-[transform,border-color,background-color] hover:-translate-y-1 hover:border-border hover:bg-muted/30";

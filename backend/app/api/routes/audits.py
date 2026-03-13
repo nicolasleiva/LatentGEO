@@ -540,7 +540,8 @@ async def run_audit_sync(audit_id: int):
         db.close()
 
 
-def _dispatch_pdf_job_after_response(db: Session, audit_id: int, job_id: int) -> None:
+def _dispatch_pdf_job_after_response(audit_id: int, job_id: int) -> None:
+    db = SessionLocal()
     try:
         audit = AuditService.get_audit_projection(db, audit_id, *_AUDIT_PDF_FIELDS)
         if audit is None:
@@ -573,13 +574,15 @@ def _dispatch_pdf_job_after_response(db: Session, audit_id: int, job_id: int) ->
             exc=exc,
             message="PDF generation could not be dispatched after the request was accepted.",
         )
+    finally:
+        db.close()
 
 
 def _dispatch_pagespeed_job_after_response(
-    db: Session,
     audit_id: int,
     job_id: int,
 ) -> None:
+    db = SessionLocal()
     try:
         audit = AuditService.get_audit_projection(db, audit_id, *_AUDIT_PDF_FIELDS)
         if audit is None:
@@ -612,9 +615,12 @@ def _dispatch_pagespeed_job_after_response(
             exc=exc,
             message="PageSpeed analysis could not be dispatched after the request was accepted.",
         )
+    finally:
+        db.close()
 
 
-def _dispatch_audit_after_chat_config(db: Session, audit_id: int) -> None:
+def _dispatch_audit_after_chat_config(audit_id: int) -> None:
+    db = SessionLocal()
     try:
         audit = AuditService.get_audit_projection(
             db,
@@ -657,6 +663,8 @@ def _dispatch_audit_after_chat_config(db: Session, audit_id: int) -> None:
             message="Audit configuration was saved, but the pipeline could not be dispatched.",
             technical_detail=type(exc).__name__,
         )
+    finally:
+        db.close()
 
 
 async def _create_audit_internal(
@@ -1230,7 +1238,6 @@ async def run_pagespeed_analysis(
         )
         background_tasks.add_task(
             _dispatch_pagespeed_job_after_response,
-            db,
             audit.id,
             job.id,
         )
@@ -1474,7 +1481,6 @@ async def generate_audit_pdf(
                 )
                 background_tasks.add_task(
                     _dispatch_pagespeed_job_after_response,
-                    db,
                     audit.id,
                     current_pagespeed_job.id,
                 )
@@ -1546,7 +1552,6 @@ async def generate_audit_pdf(
         )
         background_tasks.add_task(
             _dispatch_pdf_job_after_response,
-            db,
             audit.id,
             job.id,
         )
@@ -1714,7 +1719,6 @@ async def configure_audit_chat(
         db.refresh(audit)
         background_tasks.add_task(
             _dispatch_audit_after_chat_config,
-            db,
             audit.id,
         )
 

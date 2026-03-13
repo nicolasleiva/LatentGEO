@@ -2803,6 +2803,7 @@ class PDFService:
         try:
             from .ai_content_service import AIContentService
             from .backlink_service import BacklinkService
+            from .keyword_service import KeywordService
             from .llm_visibility_service import LLMVisibilityService
             from .rank_tracker_service import RankTrackerService
 
@@ -2885,7 +2886,9 @@ class PDFService:
                 except (TypeError, ValueError):
                     return False
 
-            should_refresh_keywords = False
+            should_refresh_keywords = force_fresh_geo or not _payload_has_observed_rows(
+                "keywords", keywords_data
+            )
             should_refresh_backlinks = (
                 force_fresh_geo
                 or not _payload_has_observed_rows("backlinks", backlinks_data)
@@ -2916,7 +2919,7 @@ class PDFService:
             if refreshed_geo_context:
                 logger.info(
                     "Selective GEO refresh for PDF: "
-                    "keywords=False (persisted-only), "
+                    f"keywords={should_refresh_keywords}, "
                     f"backlinks={should_refresh_backlinks}, "
                     f"rankings={should_refresh_rankings}, "
                     f"llm_visibility={should_refresh_llm_visibility}, "
@@ -2966,6 +2969,46 @@ class PDFService:
                 finally:
                     service_db.close()
 
+            async def _refresh_keywords_dataset() -> Dict[str, Any]:
+                service_db = SessionLocal()
+                try:
+                    keyword_svc = KeywordService(service_db)
+                    logger.info("  - Performing fresh keyword research for PDF...")
+                    keywords_objs = await PDFService._run_stage_with_timeout(
+                        stage_name="Keyword research",
+                        coroutine_factory=lambda: keyword_svc.research_keywords(
+                            audit_id, domain, seed_keywords
+                        ),
+                        stage_timeout_seconds=keyword_stage_timeout_seconds,
+                        started_at=started_at,
+                        total_budget_seconds=total_budget_seconds,
+                    )
+                    if keywords_objs is None:
+                        raise TimeoutError("Keyword research timed out")
+
+                    fresh_keywords = [
+                        _normalize_keyword_row(keyword)
+                        for keyword in (keywords_objs or [])
+                    ]
+                    fresh_keywords = [
+                        keyword
+                        for keyword in fresh_keywords
+                        if keyword.get("keyword")
+                    ]
+                    fresh_keywords.sort(
+                        key=_keyword_opportunity_score,
+                        reverse=True,
+                    )
+                    limited_keywords = fresh_keywords[
+                        : PDFService.PDF_KEYWORDS_CONTEXT_LIMIT
+                    ]
+                    return PDFService._build_keywords_payload(
+                        limited_keywords,
+                        total=len(fresh_keywords),
+                    )
+                finally:
+                    service_db.close()
+
             async def _refresh_rankings_dataset() -> Dict[str, Any]:
                 if not rankings_seed_terms:
                     return PDFService._build_rankings_payload([])
@@ -3012,6 +3055,8 @@ class PDFService:
                     service_db.close()
 
             parallel_refreshes: List[tuple[str, Awaitable[Any]]] = []
+            if should_refresh_keywords:
+                parallel_refreshes.append(("keywords", _refresh_keywords_dataset()))
             if should_refresh_backlinks:
                 parallel_refreshes.append(("backlinks", _refresh_backlinks_dataset()))
             if should_refresh_rankings:
@@ -3032,7 +3077,14 @@ class PDFService:
                             refresh_result,
                         )
                         continue
-                    if dataset_name == "backlinks":
+                    if dataset_name == "keywords":
+                        keywords_data = refresh_result
+                        keywords_data_list = (
+                            refresh_result.get("items", [])
+                            if isinstance(refresh_result, dict)
+                            else []
+                        )
+                    elif dataset_name == "backlinks":
                         backlinks_data = refresh_result
                     elif dataset_name == "rankings":
                         rank_tracking_data = refresh_result

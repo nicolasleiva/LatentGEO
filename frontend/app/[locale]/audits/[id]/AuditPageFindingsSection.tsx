@@ -68,19 +68,29 @@ export default function AuditPageFindingsSection({
                 });
               }
             }
-            if (issues.length === 0 && Number(page.critical_issues || 0) > 0) {
+            const hasCriticalIssue = issues.some(
+              (issue) => issue.severity === "critical",
+            );
+            const hasHighIssue = issues.some(
+              (issue) => issue.severity === "high",
+            );
+            const hasMediumIssue = issues.some(
+              (issue) => issue.severity === "medium",
+            );
+
+            if (!hasCriticalIssue && Number(page.critical_issues || 0) > 0) {
               issues.push({
                 severity: "critical",
                 msg: `${page.critical_issues} critical issue${page.critical_issues === 1 ? "" : "s"} detected`,
               });
             }
-            if (issues.length < 2 && Number(page.high_issues || 0) > 0) {
+            if (!hasHighIssue && Number(page.high_issues || 0) > 0) {
               issues.push({
                 severity: "high",
                 msg: `${page.high_issues} high-priority issue${page.high_issues === 1 ? "" : "s"} detected`,
               });
             }
-            if (issues.length < 3 && Number(page.medium_issues || 0) > 0) {
+            if (!hasMediumIssue && Number(page.medium_issues || 0) > 0) {
               issues.push({
                 severity: "medium",
                 msg: `${page.medium_issues} medium-priority issue${page.medium_issues === 1 ? "" : "s"} detected`,

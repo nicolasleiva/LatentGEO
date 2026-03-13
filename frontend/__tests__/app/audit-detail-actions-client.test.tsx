@@ -38,7 +38,7 @@ describe("AuditDetailActionsClient", () => {
     __resetAuditArtifactsStoreForTests();
   });
 
-  it("queues PDF generation, refreshes status, and only downloads after an explicit click", async () => {
+  it("queues PDF generation, refreshes status, and auto-downloads when the PDF is ready", async () => {
     let artifactStatusPolls = 0;
     fetchWithBackendAuthMock.mockImplementation(
       (url: string, init?: RequestInit) => {
@@ -168,20 +168,15 @@ describe("AuditDetailActionsClient", () => {
       );
     });
 
-    expect(downloadAuditPdfMock).not.toHaveBeenCalled();
+    await waitFor(() => {
+      expect(downloadAuditPdfMock).toHaveBeenCalledWith(42);
+    });
     expect(screen.getByRole("button", { name: /download pdf/i })).toBeEnabled();
 
     expect(
       screen.getByText("PageSpeed data could not be refreshed in time."),
     ).toBeInTheDocument();
 
-    await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: /download pdf/i }));
-    });
-
-    await waitFor(() => {
-      expect(downloadAuditPdfMock).toHaveBeenCalledWith("42");
-    });
     expect(fetchWithBackendAuthMock).toHaveBeenCalledTimes(3);
   });
 
@@ -193,38 +188,41 @@ describe("AuditDetailActionsClient", () => {
           resolveDownload = resolve;
         }),
     );
-    fetchWithBackendAuthMock.mockResolvedValue(
-      new Response(
-        JSON.stringify({
-          audit_id: 42,
-          pagespeed_status: "completed",
-          pagespeed_job_id: null,
-          pagespeed_available: true,
-          pagespeed_warnings: [],
-          pagespeed_error: null,
-          pagespeed_started_at: null,
-          pagespeed_completed_at: null,
-          pagespeed_retry_after_seconds: 0,
-          pagespeed_message: null,
-          pdf_status: "completed",
-          pdf_job_id: 7,
-          pdf_available: true,
-          pdf_report_id: 18,
-          pdf_waiting_on: null,
-          pdf_dependency_job_id: null,
-          pdf_warnings: [],
-          pdf_error: null,
-          pdf_started_at: "2026-03-11T13:20:00Z",
-          pdf_completed_at: "2026-03-11T13:21:00Z",
-          pdf_retry_after_seconds: 0,
-          pdf_message: null,
-          updated_at: "2026-03-11T13:21:00Z",
-        }),
-        {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        },
-      ),
+    fetchWithBackendAuthMock.mockImplementation(
+      () =>
+        Promise.resolve(
+          new Response(
+            JSON.stringify({
+              audit_id: 42,
+              pagespeed_status: "completed",
+              pagespeed_job_id: null,
+              pagespeed_available: true,
+              pagespeed_warnings: [],
+              pagespeed_error: null,
+              pagespeed_started_at: null,
+              pagespeed_completed_at: null,
+              pagespeed_retry_after_seconds: 0,
+              pagespeed_message: null,
+              pdf_status: "completed",
+              pdf_job_id: 7,
+              pdf_available: true,
+              pdf_report_id: 18,
+              pdf_waiting_on: null,
+              pdf_dependency_job_id: null,
+              pdf_warnings: [],
+              pdf_error: null,
+              pdf_started_at: "2026-03-11T13:20:00Z",
+              pdf_completed_at: "2026-03-11T13:21:00Z",
+              pdf_retry_after_seconds: 0,
+              pdf_message: null,
+              updated_at: "2026-03-11T13:21:00Z",
+            }),
+            {
+              status: 200,
+              headers: { "Content-Type": "application/json" },
+            },
+          ),
+        ),
     );
 
     render(<AuditDetailActionsClient auditId="42" hasPageSpeed={true} />);

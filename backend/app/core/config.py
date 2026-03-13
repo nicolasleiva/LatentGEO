@@ -553,6 +553,8 @@ def validate_environment():
             errors.append("AUTH0_JWKS_FETCH_TIMEOUT_MS must be > 0.")
         if settings.RATE_LIMIT_REDIS_SOCKET_TIMEOUT_SECONDS <= 0:
             errors.append("RATE_LIMIT_REDIS_SOCKET_TIMEOUT_SECONDS must be > 0.")
+        if settings.BROKER_DISPATCH_GRACE_SECONDS < 0:
+            errors.append("BROKER_DISPATCH_GRACE_SECONDS must be >= 0.")
         if settings.AUTH0_JWKS_CACHE_TTL_SECONDS <= 0:
             errors.append("AUTH0_JWKS_CACHE_TTL_SECONDS must be > 0.")
         if settings.DB_POOL_SIZE <= 0:

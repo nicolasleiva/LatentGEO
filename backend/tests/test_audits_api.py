@@ -3,7 +3,6 @@ Tests para el API de Auditorías
 """
 
 from datetime import datetime, timedelta, timezone
-import time
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -248,6 +247,10 @@ def test_configure_chat_dispatch_failure_marks_audit_failed_but_keeps_config(
         )
 
         monkeypatch.setattr(
+            "app.api.routes.audits.SessionLocal",
+            TestingSessionLocal,
+        )
+        monkeypatch.setattr(
             run_audit_task,
             "delay",
             lambda *_args, **_kwargs: (_ for _ in ()).throw(
@@ -255,7 +258,7 @@ def test_configure_chat_dispatch_failure_marks_audit_failed_but_keeps_config(
             ),
         )
 
-        _dispatch_audit_after_chat_config(session, audit.id)
+        _dispatch_audit_after_chat_config(audit.id)
 
         session.expire_all()
         stored_audit = session.query(Audit).filter(Audit.id == audit.id).first()
@@ -387,11 +390,13 @@ def test_generate_pdf_dispatch_failure_marks_job_failed_after_response(
             force_report_refresh=False,
             force_external_intel_refresh=False,
         )
-        job_id = job.id
-
         from app.api.routes.audits import _dispatch_pdf_job_after_response
         from app.workers.tasks import run_pdf_generation_job_task
 
+        monkeypatch.setattr(
+            "app.api.routes.audits.SessionLocal",
+            TestingSessionLocal,
+        )
         calls = {"count": 0}
 
         def _fail_pdf_delay(*_args, **_kwargs):
@@ -400,7 +405,7 @@ def test_generate_pdf_dispatch_failure_marks_job_failed_after_response(
 
         monkeypatch.setattr(run_pdf_generation_job_task, "delay", _fail_pdf_delay)
 
-        _dispatch_pdf_job_after_response(session, audit.id, job.id)
+        _dispatch_pdf_job_after_response(audit.id, job.id)
 
         session.expire_all()
         job = session.query(AuditPdfJob).filter(AuditPdfJob.audit_id == audit.id).first()
@@ -463,6 +468,10 @@ def test_generate_pdf_pagespeed_dispatch_failure_fails_waiting_pdf_job(
             run_pdf_generation_job_task,
         )
 
+        monkeypatch.setattr(
+            "app.api.routes.audits.SessionLocal",
+            TestingSessionLocal,
+        )
         calls = {"pagespeed": 0, "pdf": 0}
 
         def _fail_pagespeed_delay(*_args, **_kwargs):
@@ -478,7 +487,7 @@ def test_generate_pdf_pagespeed_dispatch_failure_fails_waiting_pdf_job(
         )
         monkeypatch.setattr(run_pdf_generation_job_task, "delay", _record_pdf_delay)
 
-        _dispatch_pagespeed_job_after_response(session, audit.id, pagespeed_job.id)
+        _dispatch_pagespeed_job_after_response(audit.id, pagespeed_job.id)
 
         session.expire_all()
         pagespeed_job = (

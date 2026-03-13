@@ -190,10 +190,10 @@ def _ensure_runtime_indexes() -> None:
 def _ensure_runtime_tables() -> None:
     bind = op.get_bind()
     table_names = _table_names(bind)
-    for table_name in ("audit_pdf_jobs", "audit_pagespeed_jobs"):
+    for table_name, table in Base.metadata.tables.items():
         if table_name in table_names:
             continue
-        Base.metadata.tables[table_name].create(bind=bind, checkfirst=True)
+        table.create(bind=bind, checkfirst=True)
 
 
 def upgrade() -> None:

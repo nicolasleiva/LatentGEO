@@ -70,8 +70,19 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    bind = op.get_bind()
+    table_name = "ai_content_suggestions"
+    if table_name not in _table_names(bind):
+        return
+
+    index_names = _index_names(bind, table_name)
+    column_names = _column_names(bind, table_name)
     with op.batch_alter_table("ai_content_suggestions") as batch_op:
-        batch_op.drop_index("idx_ai_content_suggestions_audit_strategy")
-        batch_op.drop_index("ix_ai_content_suggestions_strategy_run_id")
-        batch_op.drop_column("strategy_order")
-        batch_op.drop_column("strategy_run_id")
+        if "idx_ai_content_suggestions_audit_strategy" in index_names:
+            batch_op.drop_index("idx_ai_content_suggestions_audit_strategy")
+        if "ix_ai_content_suggestions_strategy_run_id" in index_names:
+            batch_op.drop_index("ix_ai_content_suggestions_strategy_run_id")
+        if "strategy_order" in column_names:
+            batch_op.drop_column("strategy_order")
+        if "strategy_run_id" in column_names:
+            batch_op.drop_column("strategy_run_id")

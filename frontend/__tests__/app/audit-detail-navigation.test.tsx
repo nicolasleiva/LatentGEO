@@ -61,7 +61,10 @@ describe("Audit detail GEO tools navigation", () => {
       prefetch: mockPrefetch,
     });
     (fetchWithBackendAuth as jest.Mock).mockImplementation((url: string) => {
-      if (url.endsWith("/api/v1/audits/6")) {
+      if (
+        url.endsWith("/api/v1/audits/6/summary") ||
+        url.endsWith("/api/v1/audits/6/overview")
+      ) {
         return Promise.resolve({
           ok: true,
           status: 200,
