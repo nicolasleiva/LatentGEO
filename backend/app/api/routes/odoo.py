@@ -515,7 +515,11 @@ async def get_odoo_sync_status(
             .order_by(OdooSyncRun.started_at.desc(), OdooSyncRun.id.desc())
             .first()
         )
-        summary = sync_run.summary if isinstance(getattr(sync_run, "summary", None), dict) else {}
+        summary = (
+            sync_run.summary
+            if isinstance(getattr(sync_run, "summary", None), dict)
+            else {}
+        )
         return {
             "audit_id": audit.id,
             "connection_id": connection.id,

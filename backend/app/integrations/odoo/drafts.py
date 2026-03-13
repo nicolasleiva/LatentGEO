@@ -55,9 +55,7 @@ class OdooDraftService:
             return None
         rendered = str(value)
         normalized = (
-            cls._normalize_text(rendered)
-            if collapse_whitespace
-            else rendered.strip()
+            cls._normalize_text(rendered) if collapse_whitespace else rendered.strip()
         )
         if not normalized:
             return None
@@ -65,10 +63,13 @@ class OdooDraftService:
 
     @classmethod
     def _normalize_action_key(cls, value: Any) -> str:
-        normalized = cls._normalize_optional_text(
-            value,
-            max_length=cls.ACTION_KEY_MAX_LENGTH * 2,
-        ) or "odoo-draft"
+        normalized = (
+            cls._normalize_optional_text(
+                value,
+                max_length=cls.ACTION_KEY_MAX_LENGTH * 2,
+            )
+            or "odoo-draft"
+        )
         if len(normalized) <= cls.ACTION_KEY_MAX_LENGTH:
             return normalized
 
@@ -100,9 +101,14 @@ class OdooDraftService:
             collapse_whitespace=False,
         )
         normalized_target_path = raw_target_path
-        if normalized_target_path and len(normalized_target_path) > cls.TARGET_PATH_MAX_LENGTH:
+        if (
+            normalized_target_path
+            and len(normalized_target_path) > cls.TARGET_PATH_MAX_LENGTH
+        ):
             normalized_payload["source_target_path"] = normalized_target_path
-            normalized_target_path = normalized_target_path[: cls.TARGET_PATH_MAX_LENGTH]
+            normalized_target_path = normalized_target_path[
+                : cls.TARGET_PATH_MAX_LENGTH
+            ]
 
         return {
             "action_key": normalized_action_key,

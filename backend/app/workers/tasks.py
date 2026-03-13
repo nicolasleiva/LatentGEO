@@ -794,7 +794,14 @@ def _set_article_batch_task_state(
     batch.summary = summary
     db.commit()
     db.refresh(batch)
-    GeoArticleEngineService.publish_batch_status_for_batch(batch)
+    try:
+        GeoArticleEngineService.publish_batch_status_for_batch(batch)
+    except Exception as exc:  # nosec B110
+        logger.warning(
+            "Unable to publish article batch status for batch %s: %s",
+            batch_id,
+            exc,
+        )
 
 
 @celery_app.task(

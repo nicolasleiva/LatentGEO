@@ -406,7 +406,9 @@ def test_article_engine_latest_keeps_full_article_payload(client, db_session):
                 "generation_status": "completed",
                 "citation_readiness_score": 88,
                 "markdown": "# Full markdown",
-                "sources": [{"title": "Authority", "url": "https://authority.example.com/guide"}],
+                "sources": [
+                    {"title": "Authority", "url": "https://authority.example.com/guide"}
+                ],
                 "keyword_strategy": {
                     "primary_keyword": "full keyword",
                     "secondary_keywords": ["full keyword guide"],
@@ -432,8 +434,13 @@ def test_article_engine_latest_keeps_full_article_payload(client, db_session):
     payload = response.json()
     assert payload["has_data"] is True
     assert payload["articles"][0]["markdown"] == "# Full markdown"
-    assert payload["articles"][0]["sources"][0]["url"] == "https://authority.example.com/guide"
-    assert payload["articles"][0]["keyword_strategy"]["primary_keyword"] == "full keyword"
+    assert (
+        payload["articles"][0]["sources"][0]["url"]
+        == "https://authority.example.com/guide"
+    )
+    assert (
+        payload["articles"][0]["keyword_strategy"]["primary_keyword"] == "full keyword"
+    )
 
 
 def test_article_engine_regenerate_rejects_legacy_batches(client, db_session):

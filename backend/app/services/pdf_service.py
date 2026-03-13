@@ -743,7 +743,10 @@ class PDFService:
 
         try:
             audit = AuditService.get_audit(db, audit_id)
-            if not audit or not str(getattr(audit, "report_markdown", "") or "").strip():
+            if (
+                not audit
+                or not str(getattr(audit, "report_markdown", "") or "").strip()
+            ):
                 return ""
 
             complete_context = PDFService._load_complete_audit_context(db, audit_id)
@@ -2991,9 +2994,7 @@ class PDFService:
                         for keyword in (keywords_objs or [])
                     ]
                     fresh_keywords = [
-                        keyword
-                        for keyword in fresh_keywords
-                        if keyword.get("keyword")
+                        keyword for keyword in fresh_keywords if keyword.get("keyword")
                     ]
                     fresh_keywords.sort(
                         key=_keyword_opportunity_score,

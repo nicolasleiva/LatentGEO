@@ -170,7 +170,11 @@ class PDFJobService:
 
     @staticmethod
     def get_job(db: Session, audit_id: int) -> AuditPdfJob | None:
-        job = db.query(AuditPdfJob).filter(AuditPdfJob.audit_id == audit_id).first()
+        return db.query(AuditPdfJob).filter(AuditPdfJob.audit_id == audit_id).first()
+
+    @staticmethod
+    def get_job_reconciled(db: Session, audit_id: int) -> AuditPdfJob | None:
+        job = PDFJobService.get_job(db, audit_id)
         if job is None:
             return None
         return PDFJobService._reconcile_stale_queued_job(db, job)
@@ -380,7 +384,8 @@ class PDFJobService:
             job,
             error_code="worker_unavailable",
             error_message=(
-                classified_message or "Background worker unavailable. Try again shortly."
+                classified_message
+                or "Background worker unavailable. Try again shortly."
             ),
         )
         PDFJobService.persist_runtime_diagnostic_safely(
@@ -412,7 +417,10 @@ class PDFJobService:
         job = db.query(AuditPdfJob).filter(AuditPdfJob.audit_id == audit.id).first()
         if job is None:
             return None
-        if job.status != AuditPdfJobStatus.WAITING.value or job.waiting_on != "pagespeed":
+        if (
+            job.status != AuditPdfJobStatus.WAITING.value
+            or job.waiting_on != "pagespeed"
+        ):
             return job
         if (
             pagespeed_job is not None
@@ -434,12 +442,25 @@ class PDFJobService:
         db: Session,
         job: AuditPdfJob,
     ) -> AuditPdfJob:
-        if not PDFJobService._queued_dispatch_grace_expired(job):
-            return job
+        locked_job = (
+            db.query(AuditPdfJob)
+            .filter(
+                AuditPdfJob.id == job.id,
+                AuditPdfJob.status == AuditPdfJobStatus.QUEUED.value,
+                AuditPdfJob.celery_task_id.is_(None),
+            )
+            .with_for_update()
+            .first()
+        )
+        if locked_job is None:
+            refreshed_job = PDFJobService.get_job(db, job.audit_id)
+            return refreshed_job or job
+        if not PDFJobService._queued_dispatch_grace_expired(locked_job):
+            return locked_job
 
         audit = AuditService.get_audit_projection(
             db,
-            job.audit_id,
+            locked_job.audit_id,
             Audit.id,
             Audit.user_id,
             Audit.user_email,
@@ -452,13 +473,13 @@ class PDFJobService:
         logger.warning(
             "pdf_dispatch_stale audit_id=%s job_id=%s status=%s",
             audit.id,
-            job.id,
-            job.status,
+            locked_job.id,
+            locked_job.status,
         )
         return PDFJobService.mark_dispatch_failed(
             db,
             audit,
-            job,
+            locked_job,
             message="Queued PDF generation was never dispatched to a worker.",
         )
 
@@ -472,7 +493,7 @@ class PDFJobService:
         force_report_refresh: bool,
         force_external_intel_refresh: bool,
     ) -> AuditPdfJob:
-        job = PDFJobService.get_job(db, audit_id)
+        job = PDFJobService.get_job_reconciled(db, audit_id)
         if job is None:
             job = AuditPdfJob(audit_id=audit_id)
             db.add(job)
@@ -682,7 +703,8 @@ class PDFJobService:
             audit.id,
             AuditService.build_artifact_payload(
                 audit,
-                pagespeed_job=pagespeed_job or PageSpeedJobService.get_job(db, audit.id),
+                pagespeed_job=pagespeed_job
+                or PageSpeedJobService.get_job(db, audit.id),
                 pdf_job=job or PDFJobService.get_job(db, audit.id),
                 pdf_report=report or PDFJobService.get_latest_pdf_report(db, audit.id),
             ),
@@ -708,7 +730,7 @@ class PDFJobService:
         audit: Audit,
         pagespeed_job: AuditPageSpeedJob | None,
     ) -> AuditPdfJob | None:
-        job = PDFJobService.get_job(db, audit.id)
+        job = PDFJobService.get_job_reconciled(db, audit.id)
         if job is None:
             return None
         if job.status != AuditPdfJobStatus.WAITING.value:
@@ -807,7 +829,7 @@ class PDFJobService:
             return job
 
         try:
-            pagespeed_job = PageSpeedJobService.get_job(db, audit.id)
+            pagespeed_job = PageSpeedJobService.get_job_reconciled(db, audit.id)
             if pagespeed_job is not None and PageSpeedJobService.has_active_job(
                 pagespeed_job
             ):
@@ -824,7 +846,9 @@ class PDFJobService:
                     pagespeed_job.id,
                     audit.id,
                 )
-                refreshed_pagespeed_job = PageSpeedJobService.get_job(db, audit.id)
+                refreshed_pagespeed_job = PageSpeedJobService.get_job_reconciled(
+                    db, audit.id
+                )
                 if (
                     refreshed_pagespeed_job is None
                     or not PageSpeedJobService.has_active_job(refreshed_pagespeed_job)
@@ -906,7 +930,9 @@ class PDFJobService:
             )
             return job
         except Exception as exc:
-            logger.error("PDF job failed for audit %s", audit_id_for_lock, exc_info=True)
+            logger.error(
+                "PDF job failed for audit %s", audit_id_for_lock, exc_info=True
+            )
             db.rollback()
             try:
                 db.expunge_all()
@@ -922,7 +948,8 @@ class PDFJobService:
             )
             if job is None:
                 original_job = (
-                    db.query(AuditPdfJob).filter(AuditPdfJob.id == job_id).first() or job
+                    db.query(AuditPdfJob).filter(AuditPdfJob.id == job_id).first()
+                    or job
                 )
                 if original_job is not None:
                     job = PDFJobService.mark_job_failed(

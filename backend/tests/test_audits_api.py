@@ -408,7 +408,9 @@ def test_generate_pdf_dispatch_failure_marks_job_failed_after_response(
         _dispatch_pdf_job_after_response(audit.id, job.id)
 
         session.expire_all()
-        job = session.query(AuditPdfJob).filter(AuditPdfJob.audit_id == audit.id).first()
+        job = (
+            session.query(AuditPdfJob).filter(AuditPdfJob.audit_id == audit.id).first()
+        )
         assert calls["count"] >= 1
         assert job is not None
         assert job.status == "failed"
@@ -495,7 +497,9 @@ def test_generate_pdf_pagespeed_dispatch_failure_fails_waiting_pdf_job(
             .filter(AuditPageSpeedJob.audit_id == audit.id)
             .first()
         )
-        pdf_job = session.query(AuditPdfJob).filter(AuditPdfJob.audit_id == audit.id).first()
+        pdf_job = (
+            session.query(AuditPdfJob).filter(AuditPdfJob.audit_id == audit.id).first()
+        )
         assert calls["pagespeed"] >= 1
         assert pagespeed_job is not None
         assert pagespeed_job.status == "failed"
@@ -756,7 +760,9 @@ def test_artifact_status_keeps_running_snapshot_in_cache(
     monkeypatch.setattr(cache, "get", lambda key: snapshot, raising=False)
 
     def _fail_query(*args, **kwargs):
-        raise AssertionError("db.query should not run when the active snapshot is cached")
+        raise AssertionError(
+            "db.query should not run when the active snapshot is cached"
+        )
 
     monkeypatch.setattr(db_session, "query", _fail_query)
 
@@ -1065,9 +1071,7 @@ def test_summary_and_overview_use_cached_overview_snapshot(
     assert overview_response.json()["domain"] == "example-overview-cache.com"
 
 
-def test_pdf_job_failure_persists_original_exception_detail(
-    setup_test_db, monkeypatch
-):
+def test_pdf_job_failure_persists_original_exception_detail(setup_test_db, monkeypatch):
     testing_session_local = sessionmaker(
         autocommit=False,
         autoflush=False,

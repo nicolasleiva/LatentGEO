@@ -339,7 +339,7 @@ def test_audits_competitors_route_filters_marketplaces_and_publishers(
     domains = {item.get("domain", "") for item in payload}
     assert "marketplace.visualstudio.com" not in domains
     assert "inc.com" not in domains
-    assert "cursor.com" in domains
+    assert any(item.get("domain") == "cursor.com" for item in payload)
 
 
 def test_audits_competitors_route_returns_nullable_signals_for_incomplete_rows(

@@ -472,22 +472,26 @@ class OdooConnectionService:
         self, *, owner_user_id: str, owner_email: Optional[str]
     ) -> list[OdooConnection]:
         owner_email_normalized = _normalize_email(owner_email)
-        query = self.db.query(OdooConnection).options(
-            load_only(
-                OdooConnection.id,
-                OdooConnection.label,
-                OdooConnection.base_url,
-                OdooConnection.database,
-                OdooConnection.expected_email,
-                OdooConnection.odoo_version,
-                OdooConnection.capabilities,
-                OdooConnection.warnings,
-                OdooConnection.detected_user,
-                OdooConnection.last_validated_at,
-                OdooConnection.is_active,
-                OdooConnection.updated_at,
+        query = (
+            self.db.query(OdooConnection)
+            .options(
+                load_only(
+                    OdooConnection.id,
+                    OdooConnection.label,
+                    OdooConnection.base_url,
+                    OdooConnection.database,
+                    OdooConnection.expected_email,
+                    OdooConnection.odoo_version,
+                    OdooConnection.capabilities,
+                    OdooConnection.warnings,
+                    OdooConnection.detected_user,
+                    OdooConnection.last_validated_at,
+                    OdooConnection.is_active,
+                    OdooConnection.updated_at,
+                )
             )
-        ).filter(OdooConnection.is_active.is_(True))
+            .filter(OdooConnection.is_active.is_(True))
+        )
         if owner_user_id:
             query = query.filter(
                 (OdooConnection.owner_user_id == owner_user_id)

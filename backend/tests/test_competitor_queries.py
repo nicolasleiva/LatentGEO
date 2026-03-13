@@ -507,9 +507,7 @@ def test_prune_queries_rejects_generic_devtools_query_without_strong_core():
     target["language"] = "en"
     target["market"] = "Colombia"
     target["category"] = "Developer Tools"
-    target["subcategory"] = (
-        "AI-Assisted Software Development & Coding Productivity"
-    )
+    target["subcategory"] = "AI-Assisted Software Development & Coding Productivity"
     target["content"]["nav_items"] = [
         "VS Code Extension",
         "Bring Your Own Key",

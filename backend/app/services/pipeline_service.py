@@ -3086,7 +3086,9 @@ class PipelineService:
         vertical_hint = str(
             (effective_core_profile or {}).get("vertical_hint") or "other"
         ).lower()
-        strict_vertical = vertical_hint in PipelineService._strict_competitor_verticals()
+        strict_vertical = (
+            vertical_hint in PipelineService._strict_competitor_verticals()
+        )
         broad_vertical = vertical_hint in PipelineService._broad_competitor_verticals()
 
         market_tokens: List[str] = []
@@ -3533,16 +3535,16 @@ class PipelineService:
                 has_profile_strong_term
                 or effective_core_match_count >= 1
                 or (not strict_vertical and has_profile_core_term)
-            ) and (
-                has_commerce_term or has_market_term or has_competitor_marker
-            ):
+            ) and (has_commerce_term or has_market_term or has_competitor_marker):
                 filtered.append(q)
                 logger.debug("Query aceptada: core profile + intención")
                 continue
 
             # 3.7 Comercio + mercado (fallback robusto para e-commerce/local intent)
-            if has_commerce_term and has_market_term and (
-                broad_vertical or not strict_vertical
+            if (
+                has_commerce_term
+                and has_market_term
+                and (broad_vertical or not strict_vertical)
             ):
                 filtered.append(q)
                 logger.debug("Query aceptada: comercio + mercado")
@@ -4831,7 +4833,11 @@ class PipelineService:
             return strong_match_count >= 1 or effective_match_count >= 2
         if vertical_hint in PipelineService._broad_competitor_verticals():
             return effective_match_count >= 1 or strong_match_count >= 1
-        return strong_match_count >= 1 or effective_match_count >= 1 or core_match_count >= 2
+        return (
+            strong_match_count >= 1
+            or effective_match_count >= 1
+            or core_match_count >= 2
+        )
 
     @staticmethod
     def _query_uses_only_outlier_terms(
@@ -4909,7 +4915,11 @@ class PipelineService:
             for term in (core_profile.get("strong_core_terms") or [])
             if str(term).strip()
         ]
-        anchor_term = (strong_core_terms or core_terms)[0] if (strong_core_terms or core_terms) else ""
+        anchor_term = (
+            (strong_core_terms or core_terms)[0]
+            if (strong_core_terms or core_terms)
+            else ""
+        )
         if vertical_hint == "ecommerce":
             if is_spanish:
                 product = PipelineService._pluralize_spanish(anchor_term or "productos")

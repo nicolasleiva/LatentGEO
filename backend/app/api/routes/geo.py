@@ -1373,9 +1373,14 @@ def get_article_batch_status(
             raise HTTPException(status_code=404, detail="Article batch not found")
         _get_owned_audit(db, batch_meta.audit_id, current_user)
 
-        cached_payload = GeoArticleEngineService.get_cached_batch_status_payload(batch_id)
-        if cached_payload and not GeoArticleEngineService.batch_status_payload_requires_refresh(
+        cached_payload = GeoArticleEngineService.get_cached_batch_status_payload(
+            batch_id
+        )
+        if (
             cached_payload
+            and not GeoArticleEngineService.batch_status_payload_requires_refresh(
+                cached_payload
+            )
         ):
             return {"has_data": True, **cached_payload}
 
@@ -1468,7 +1473,9 @@ async def regenerate_article(
             detail=_safe_http_error_detail("INVALID_INPUT"),
         )
     except Exception as e:
-        logger.error(f"Error regenerating article batch={batch_id} idx={article_index}: {e}")
+        logger.error(
+            f"Error regenerating article batch={batch_id} idx={article_index}: {e}"
+        )
         raise HTTPException(status_code=500, detail="Internal server error")
 
 

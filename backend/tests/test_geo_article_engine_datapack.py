@@ -872,7 +872,9 @@ async def test_regenerate_article_uses_user_authority_urls(db_session, monkeypat
     db_session.commit()
     db_session.refresh(batch)
 
-    async def fake_llm(*, system_prompt, user_prompt, max_tokens=None, timeout_seconds=None):
+    async def fake_llm(
+        *, system_prompt, user_prompt, max_tokens=None, timeout_seconds=None
+    ):
         return "{}"
 
     async def fake_user_authority_sources(_urls):
@@ -897,11 +899,19 @@ async def test_regenerate_article_uses_user_authority_urls(db_session, monkeypat
             "focus_url": "https://store.example.com/",
             "required_sources": {
                 "internal": [{"title": "Store", "url": "https://store.example.com/"}],
-                "external": [{"title": "Statista", "url": "https://www.statista.com/topics/123/footwear/"}],
+                "external": [
+                    {
+                        "title": "Statista",
+                        "url": "https://www.statista.com/topics/123/footwear/",
+                    }
+                ],
                 "user_authority": kwargs["user_authority_sources"],
                 "all": [
                     {"title": "Store", "url": "https://store.example.com/"},
-                    {"title": "Statista", "url": "https://www.statista.com/topics/123/footwear/"},
+                    {
+                        "title": "Statista",
+                        "url": "https://www.statista.com/topics/123/footwear/",
+                    },
                     *kwargs["user_authority_sources"],
                 ],
             },

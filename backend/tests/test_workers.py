@@ -256,7 +256,7 @@ async def test_pdf_execute_job_releases_lock_before_resuming_waiting_job(
         return next(pagespeed_job_sequence, None)
 
     monkeypatch.setattr(
-        "app.services.pagespeed_job_service.PageSpeedJobService.get_job",
+        "app.services.pagespeed_job_service.PageSpeedJobService.get_job_reconciled",
         _get_pagespeed_job,
     )
     monkeypatch.setattr(

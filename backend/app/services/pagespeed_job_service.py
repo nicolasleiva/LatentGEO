@@ -179,11 +179,15 @@ class PageSpeedJobService:
 
     @staticmethod
     def get_job(db: Session, audit_id: int) -> AuditPageSpeedJob | None:
-        job = (
+        return (
             db.query(AuditPageSpeedJob)
             .filter(AuditPageSpeedJob.audit_id == audit_id)
             .first()
         )
+
+    @staticmethod
+    def get_job_reconciled(db: Session, audit_id: int) -> AuditPageSpeedJob | None:
+        job = PageSpeedJobService.get_job(db, audit_id)
         if job is None:
             return None
         return PageSpeedJobService._reconcile_stale_queued_job(db, job)
@@ -407,9 +411,8 @@ class PageSpeedJobService:
                 audit,
                 pagespeed_job=job or PageSpeedJobService.get_job(db, audit.id),
                 pdf_job=pdf_job or PDFJobService.get_job(db, audit.id),
-                pdf_report=pdf_report or PDFJobService.get_latest_pdf_report(
-                    db, audit.id
-                ),
+                pdf_report=pdf_report
+                or PDFJobService.get_latest_pdf_report(db, audit.id),
             ),
         )
 
@@ -425,7 +428,7 @@ class PageSpeedJobService:
         pdf_job: AuditPdfJob | None = None,
         pdf_report: Report | None = None,
     ) -> AuditPageSpeedJob:
-        job = PageSpeedJobService.get_job(db, audit.id)
+        job = PageSpeedJobService.get_job_reconciled(db, audit.id)
         if job is None:
             job = AuditPageSpeedJob(audit_id=audit.id)
             db.add(job)
@@ -533,7 +536,8 @@ class PageSpeedJobService:
             job,
             error_code="worker_unavailable",
             error_message=(
-                classified_message or "Background worker unavailable. Try again shortly."
+                classified_message
+                or "Background worker unavailable. Try again shortly."
             ),
         )
         AuditService.append_runtime_diagnostic(
@@ -567,12 +571,25 @@ class PageSpeedJobService:
         db: Session,
         job: AuditPageSpeedJob,
     ) -> AuditPageSpeedJob:
-        if not PageSpeedJobService._queued_dispatch_grace_expired(job):
-            return job
+        locked_job = (
+            db.query(AuditPageSpeedJob)
+            .filter(
+                AuditPageSpeedJob.id == job.id,
+                AuditPageSpeedJob.status == AuditPageSpeedJobStatus.QUEUED.value,
+                AuditPageSpeedJob.celery_task_id.is_(None),
+            )
+            .with_for_update()
+            .first()
+        )
+        if locked_job is None:
+            refreshed_job = PageSpeedJobService.get_job(db, job.audit_id)
+            return refreshed_job or job
+        if not PageSpeedJobService._queued_dispatch_grace_expired(locked_job):
+            return locked_job
 
         audit = AuditService.get_audit_projection(
             db,
-            job.audit_id,
+            locked_job.audit_id,
             Audit.id,
             Audit.user_id,
             Audit.user_email,
@@ -585,13 +602,13 @@ class PageSpeedJobService:
         logger.warning(
             "pagespeed_dispatch_stale audit_id=%s job_id=%s status=%s",
             audit.id,
-            job.id,
-            job.status,
+            locked_job.id,
+            locked_job.status,
         )
         return PageSpeedJobService.mark_dispatch_failed(
             db,
             audit,
-            job,
+            locked_job,
             message="Queued PageSpeed analysis was never dispatched to a worker.",
         )
 
@@ -622,7 +639,7 @@ class PageSpeedJobService:
         if not settings.ENABLE_PAGESPEED or not settings.GOOGLE_PAGESPEED_API_KEY:
             return None
 
-        existing_job = PageSpeedJobService.get_job(db, audit.id)
+        existing_job = PageSpeedJobService.get_job_reconciled(db, audit.id)
         if PageSpeedJobService.has_active_job(existing_job):
             return existing_job
 

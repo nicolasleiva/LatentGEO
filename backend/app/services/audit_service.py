@@ -154,10 +154,9 @@ class AuditService:
         query = db.query(AuditedPage)
         if fields:
             query = query.options(load_only(*fields))
-        return (
-            query.filter(AuditedPage.audit_id == audit_id, AuditedPage.id == page_id)
-            .first()
-        )
+        return query.filter(
+            AuditedPage.audit_id == audit_id, AuditedPage.id == page_id
+        ).first()
 
     @staticmethod
     def _normalize_intake_profile(
@@ -582,7 +581,9 @@ class AuditService:
         if not isinstance(payload, dict):
             return None
         public_payload = {
-            key: payload.get(key) for key in _PUBLIC_OVERVIEW_PAYLOAD_KEYS if key in payload
+            key: payload.get(key)
+            for key in _PUBLIC_OVERVIEW_PAYLOAD_KEYS
+            if key in payload
         }
         audit_id = payload.get("id")
         if audit_id is not None:
@@ -871,7 +872,9 @@ class AuditService:
         cache.set(
             AuditService.overview_snapshot_key(normalized_audit_id),
             payload,
-            ttl=max(60, int(getattr(settings, "AUDIT_OVERVIEW_SNAPSHOT_TTL_SECONDS", 86400))),
+            ttl=max(
+                60, int(getattr(settings, "AUDIT_OVERVIEW_SNAPSHOT_TTL_SECONDS", 86400))
+            ),
         )
 
     @staticmethod
@@ -909,8 +912,8 @@ class AuditService:
         if audit is None:
             return None
 
-        pagespeed_job = PageSpeedJobService.get_job(db, audit_id)
-        pdf_job = PDFJobService.get_job(db, audit_id)
+        pagespeed_job = PageSpeedJobService.get_job_reconciled(db, audit_id)
+        pdf_job = PDFJobService.get_job_reconciled(db, audit_id)
         pdf_report = (
             db.query(Report)
             .filter(Report.audit_id == audit_id, Report.report_type == "PDF")
@@ -994,9 +997,10 @@ class AuditService:
             artifact_payload = dict(artifact_payload or {})
             if not artifact_payload.get("pagespeed_available"):
                 artifact_payload["pagespeed_available"] = True
-            if not artifact_payload.get("pagespeed_status") or str(
-                artifact_payload.get("pagespeed_status")
-            ).lower() == "idle":
+            if (
+                not artifact_payload.get("pagespeed_status")
+                or str(artifact_payload.get("pagespeed_status")).lower() == "idle"
+            ):
                 artifact_payload["pagespeed_status"] = "completed"
 
         payload = AuditService.build_overview_payload(
@@ -1008,7 +1012,9 @@ class AuditService:
             ),
             report_ready=report_ready,
             external_intelligence_summary=AuditService._summarize_external_intelligence(
-                external_intelligence if isinstance(external_intelligence, dict) else None
+                external_intelligence
+                if isinstance(external_intelligence, dict)
+                else None
             ),
         )
         AuditService.cache_overview_payload(payload)

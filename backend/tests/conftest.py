@@ -153,7 +153,7 @@ def db_session(setup_test_db) -> Generator:
 
 
 @pytest.fixture(scope="function")
-def client(db_session) -> Generator:
+def client(db_session, monkeypatch) -> Generator:
     """
     Fixture para obtener un TestClient de FastAPI con la base de datos de test.
     """
@@ -167,8 +167,15 @@ def client(db_session) -> Generator:
     def override_get_current_user():
         return AuthUser(user_id="test-user", email="test@example.com")
 
+    route_session_factory = sessionmaker(
+        autocommit=False,
+        autoflush=False,
+        bind=db_session.connection(),
+    )
+
     app.dependency_overrides[get_db] = override_get_db
     app.dependency_overrides[get_current_user] = override_get_current_user
+    monkeypatch.setattr("app.api.routes.audits.SessionLocal", route_session_factory)
 
     try:
         with TestClient(app) as c:

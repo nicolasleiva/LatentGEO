@@ -149,9 +149,7 @@ _AUDITED_PAGE_COMPACT_FIELDS = (
     AuditedPage.medium_issues,
     AuditedPage.low_issues,
 )
-_AUDITED_PAGE_DETAIL_FIELDS = _AUDITED_PAGE_COMPACT_FIELDS + (
-    AuditedPage.audit_data,
-)
+_AUDITED_PAGE_DETAIL_FIELDS = _AUDITED_PAGE_COMPACT_FIELDS + (AuditedPage.audit_data,)
 
 
 def _get_owned_audit(db: Session, audit_id: int, current_user: AuthUser) -> Audit:
@@ -1196,7 +1194,7 @@ async def run_pagespeed_analysis(
         normalized_strategy = "both"
 
     try:
-        existing_job = PageSpeedJobService.get_job(db, audit.id)
+        existing_job = PageSpeedJobService.get_job_reconciled(db, audit.id)
         if PageSpeedJobService.has_active_job(existing_job):
             response = PageSpeedJobService.build_status_response(
                 audit=audit,
@@ -1406,8 +1404,8 @@ async def generate_audit_pdf(
     try:
         lookup_started_at = perf_counter()
         existing_report = PDFJobService.get_latest_pdf_report(db, audit.id)
-        existing_job = PDFJobService.get_job(db, audit.id)
-        current_pagespeed_job = PageSpeedJobService.get_job(db, audit.id)
+        existing_job = PDFJobService.get_job_reconciled(db, audit.id)
+        current_pagespeed_job = PageSpeedJobService.get_job_reconciled(db, audit.id)
         needs_pagespeed = _pdf_requires_pagespeed_refresh(
             audit,
             force_pagespeed_refresh=force_pagespeed_refresh,

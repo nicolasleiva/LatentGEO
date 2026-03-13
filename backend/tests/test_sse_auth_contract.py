@@ -460,9 +460,7 @@ async def test_article_batch_sse_fallback_db_emits_compact_terminal_payload(
                     "generation_status": "completed",
                     "generation_error": None,
                     "citation_readiness_score": 100,
-                    "user_authority_urls": [
-                        "https://authority.example.com/guide"
-                    ],
+                    "user_authority_urls": ["https://authority.example.com/guide"],
                 }
             ],
             "is_legacy": False,

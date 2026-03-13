@@ -163,9 +163,14 @@ def _load_owned_article_batch_payload(
         )
         ensure_audit_access(audit_projection, current_user)
 
-        cached_payload = GeoArticleEngineService.get_cached_batch_status_payload(batch_id)
-        if cached_payload and not GeoArticleEngineService.batch_status_payload_requires_refresh(
+        cached_payload = GeoArticleEngineService.get_cached_batch_status_payload(
+            batch_id
+        )
+        if (
             cached_payload
+            and not GeoArticleEngineService.batch_status_payload_requires_refresh(
+                cached_payload
+            )
         ):
             return cached_payload
 
@@ -573,7 +578,9 @@ async def article_batch_progress_stream(
             now = monotonic()
 
             if now - start_time > max_duration:
-                logger.warning("Article batch SSE stream timeout for batch %s", batch_id)
+                logger.warning(
+                    "Article batch SSE stream timeout for batch %s", batch_id
+                )
                 yield _serialize_sse_event(
                     ServerSentEvent(
                         raw_data=json.dumps({"error": "Stream timeout"}),
@@ -583,7 +590,9 @@ async def article_batch_progress_stream(
                 break
 
             if await request.is_disconnected():
-                logger.info("Article batch SSE client disconnected for batch %s", batch_id)
+                logger.info(
+                    "Article batch SSE client disconnected for batch %s", batch_id
+                )
                 break
 
             payload: dict[str, Any] | None = None
