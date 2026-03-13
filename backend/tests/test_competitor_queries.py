@@ -126,7 +126,7 @@ def test_normalize_token_root_strips_accents_and_plural_noise():
 def test_filter_competitor_urls_matches_consultora_with_consulting_variants():
     items = [
         {
-            "link": "https://example-consulting.com/services",
+            "link": "https://consulting-example.invalid/services",
             "title": "Digital transformation consulting firm",
             "snippet": "Enterprise consulting for large-scale transformation programs.",
         }
@@ -138,7 +138,7 @@ def test_filter_competitor_urls_matches_consultora_with_consulting_variants():
         limit=5,
     )
     competitor_hosts = _host_set(competitors)
-    missing_hosts = {"example-consulting.com"} - competitor_hosts
+    missing_hosts = {"consulting-example.invalid"} - competitor_hosts
     assert not missing_hosts
 
 
@@ -235,7 +235,7 @@ def test_filter_competitor_urls_excludes_directory_sites():
             "snippet": "Compare consulting providers in Argentina.",
         },
         {
-            "link": "https://www.example-consulting.com/",
+            "link": "https://www.consulting-example.invalid/",
             "title": "Digital transformation consulting services",
             "snippet": "Consulting for enterprise modernization.",
         },
@@ -250,7 +250,7 @@ def test_filter_competitor_urls_excludes_directory_sites():
 
     assert "clutch.co" not in _host_set(competitors)
     competitor_hosts = _host_set(competitors)
-    missing_hosts = {"www.example-consulting.com"} - competitor_hosts
+    missing_hosts = {"www.consulting-example.invalid"} - competitor_hosts
     assert not missing_hosts
 
 
@@ -323,7 +323,7 @@ def test_filter_competitor_urls_blocks_government_and_academic_segments():
             "snippet": "University research and consulting lab.",
         },
         {
-            "link": "https://www.example-consulting.com/",
+            "link": "https://www.consulting-example.invalid/",
             "title": "Digital transformation consulting services",
             "snippet": "Consulting for enterprise modernization.",
         },
@@ -340,7 +340,7 @@ def test_filter_competitor_urls_blocks_government_and_academic_segments():
     competitor_hosts = _host_set(competitors)
     assert "www.example.gob.mx" not in competitor_hosts
     assert "research.example.ac.uk" not in competitor_hosts
-    assert "www.example-consulting.com" in competitor_hosts
+    assert "www.consulting-example.invalid" in competitor_hosts
 
 
 def test_extract_anchor_terms_requires_repeated_signal():
