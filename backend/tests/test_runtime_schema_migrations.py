@@ -1,6 +1,6 @@
+import sqlalchemy as sa
 from app.core.config import settings
 from app.core.database import run_migrations_to_head
-import sqlalchemy as sa
 from sqlalchemy import create_engine, inspect
 
 
