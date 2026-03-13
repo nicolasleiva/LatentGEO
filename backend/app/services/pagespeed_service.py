@@ -444,7 +444,7 @@ class PageSpeedService:
                     url=url,
                     strategy=strategy,
                 )
-            except Exception as exc:
+            except Exception:
                 logger.exception(f"PageSpeed exception (attempt {attempt+1})")
                 if attempt < max_retries - 1:
                     await asyncio.sleep(retry_delay)
