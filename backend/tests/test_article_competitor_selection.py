@@ -71,6 +71,8 @@ def _seed_audit(
             suggestion_type="guide",
             priority="high",
             content_outline={"target_keyword": "pet food online"},
+            strategy_run_id="strategy-run-petshop",
+            strategy_order=0,
         )
     )
     db_session.commit()
@@ -297,3 +299,71 @@ def test_audits_competitors_route_filters_social_domains(client, db_session):
     }
     missing_domains = {"royalcanin.com"} - normalized_domains
     assert not missing_domains
+
+
+def test_audits_competitors_route_filters_marketplaces_and_publishers(
+    client, db_session
+):
+    audit = _seed_audit(
+        db_session,
+        competitors=[
+            {
+                "url": "https://marketplace.visualstudio.com/items?itemName=test.ai",
+                "domain": "marketplace.visualstudio.com",
+                "status": 200,
+            },
+            {
+                "url": "https://www.inc.com/article/ai-coding-tools.html",
+                "domain": "inc.com",
+                "status": 200,
+            },
+            {
+                "url": "https://cursor.com/",
+                "domain": "cursor.com",
+                "status": 200,
+                "structure": {"semantic_html": {"score_percent": 72}},
+            },
+        ],
+    )
+    audit.external_intelligence = {
+        "category": "Developer Tools",
+        "subcategory": "AI-Assisted Software Development & Coding Productivity",
+    }
+    db_session.add(audit)
+    db_session.commit()
+
+    response = client.get(f"/api/v1/audits/{audit.id}/competitors")
+    assert response.status_code == 200
+    payload = response.json()
+
+    domains = {item.get("domain", "") for item in payload}
+    assert "marketplace.visualstudio.com" not in domains
+    assert "inc.com" not in domains
+    assert any(item.get("domain") == "cursor.com" for item in payload)
+
+
+def test_audits_competitors_route_returns_nullable_signals_for_incomplete_rows(
+    client, db_session
+):
+    audit = _seed_audit(
+        db_session,
+        competitors=[
+            {
+                "url": "https://unknown.example.com",
+                "domain": "unknown.example.com",
+                "status": 200,
+            }
+        ],
+    )
+
+    response = client.get(f"/api/v1/audits/{audit.id}/competitors")
+    assert response.status_code == 200
+    payload = response.json()
+    assert len(payload) == 1
+    competitor = payload[0]
+    assert competitor["score_status"] == "insufficient_signals"
+    assert competitor["schema_present"] is None
+    assert competitor["structure_score"] is None
+    assert competitor["eeat_score"] is None
+    assert competitor["h1_present"] is None
+    assert competitor["tone_score"] is None

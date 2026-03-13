@@ -11,7 +11,7 @@ export default async function GitHubAutoFixPage({
   await requireServerViewer(`/${locale}/audits/${id}/github-auto-fix`);
 
   const [audit, connectionsResult] = await Promise.all([
-    serverJson(`/api/v1/audits/${id}`).catch(() => null),
+    serverJson(`/api/v1/audits/${id}/summary`).catch(() => null),
     serverJson<any[]>("/api/v1/github/connections")
       .then((data) => ({
         data: Array.isArray(data) ? data : [],

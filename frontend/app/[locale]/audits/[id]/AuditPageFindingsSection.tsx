@@ -3,6 +3,11 @@
 import { AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
+type PageIssue = {
+  severity: "critical" | "high" | "medium";
+  msg: string;
+};
+
 type AuditPageFindingsSectionProps = {
   pages: any[];
   visiblePages: any[];
@@ -32,38 +37,33 @@ export default function AuditPageFindingsSection({
           </div>
         ) : (
           visiblePages.map((page: any) => {
-            const issues = [];
-            const semanticHtmlScore =
-              page.audit_data?.structure?.semantic_html?.score_percent;
-            if (page.audit_data?.structure?.h1_check?.status !== "pass") {
+            const issues: PageIssue[] = [];
+            const hasCriticalIssue = issues.some(
+              (issue) => issue.severity === "critical",
+            );
+            const hasHighIssue = issues.some(
+              (issue) => issue.severity === "high",
+            );
+            const hasMediumIssue = issues.some(
+              (issue) => issue.severity === "medium",
+            );
+
+            if (!hasCriticalIssue && Number(page.critical_issues || 0) > 0) {
               issues.push({
                 severity: "critical",
-                msg: "Missing or multiple H1",
+                msg: `${page.critical_issues} critical issue${page.critical_issues === 1 ? "" : "s"} detected`,
               });
             }
-            if (
-              !page.audit_data?.schema?.schema_presence?.status ||
-              page.audit_data?.schema?.schema_presence?.status !== "present"
-            ) {
+            if (!hasHighIssue && Number(page.high_issues || 0) > 0) {
               issues.push({
                 severity: "high",
-                msg: "Missing schema markup",
+                msg: `${page.high_issues} high-priority issue${page.high_issues === 1 ? "" : "s"} detected`,
               });
             }
-            if (page.audit_data?.eeat?.author_presence?.status !== "pass") {
-              issues.push({
-                severity: "high",
-                msg: "Author not identified",
-              });
-            }
-            if (
-              semanticHtmlScore === null ||
-              semanticHtmlScore === undefined ||
-              semanticHtmlScore < 50
-            ) {
+            if (!hasMediumIssue && Number(page.medium_issues || 0) > 0) {
               issues.push({
                 severity: "medium",
-                msg: "Low semantic HTML score",
+                msg: `${page.medium_issues} medium-priority issue${page.medium_issues === 1 ? "" : "s"} detected`,
               });
             }
 

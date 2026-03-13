@@ -146,8 +146,42 @@ def test_generate_commerce_campaign_and_latest(client, db_session):
 def test_generate_article_engine_batch_and_latest(client, db_session, monkeypatch):
     audit_id = _seed_audit(db_session)
 
+    async def fake_prepare_batch_seed_data(*args, **kwargs):
+        return {
+            "strategy_run_id": "strategy-test",
+            "strategy_items": [
+                {
+                    "title": f"Queued article {idx + 1}",
+                    "target_keyword": f"keyword {idx + 1}",
+                    "strategy_run_id": "strategy-test",
+                }
+                for idx in range(kwargs["article_count"])
+            ],
+            "strategy_source": "generated_auto",
+            "article_authority_assignments": {
+                idx + 1: [] for idx in range(kwargs["article_count"])
+            },
+            "global_authority_urls": [],
+            "unmatched_authority_urls": [],
+            "authority_source_cache": [],
+        }
+
     def fake_create_batch(
-        *, db, audit, article_count, language, tone, include_schema, market=None
+        *,
+        db,
+        audit,
+        article_count,
+        language,
+        tone,
+        include_schema,
+        market=None,
+        strategy_run_id=None,
+        strategy_items=None,
+        strategy_source="generated_auto",
+        article_authority_assignments=None,
+        global_authority_urls=None,
+        unmatched_authority_urls=None,
+        authority_source_cache=None,
     ):
         row = GeoArticleBatch(
             audit_id=audit.id,
@@ -160,8 +194,20 @@ def test_generate_article_engine_batch_and_latest(client, db_session, monkeypatc
                 "generated_count": 0,
                 "failed_count": 0,
                 "average_citation_readiness_score": 0.0,
+                "strategy_run_id": strategy_run_id or "strategy-test",
+                "strategy_source": strategy_source,
+                "generated_titles": strategy_items or [],
             },
-            articles=[],
+            articles=[
+                {
+                    "index": idx + 1,
+                    "title": f"Queued article {idx + 1}",
+                    "target_keyword": f"keyword {idx + 1}",
+                    "focus_url": "https://store.example.com/",
+                    "generation_status": "queued",
+                }
+                for idx in range(article_count)
+            ],
         )
         db.add(row)
         db.commit()
@@ -231,6 +277,11 @@ def test_generate_article_engine_batch_and_latest(client, db_session, monkeypatc
         db.refresh(row)
         return row
 
+    monkeypatch.setattr(
+        GeoArticleEngineService,
+        "prepare_batch_seed_data",
+        staticmethod(fake_prepare_batch_seed_data),
+    )
     monkeypatch.setattr(
         GeoArticleEngineService, "create_batch", staticmethod(fake_create_batch)
     )

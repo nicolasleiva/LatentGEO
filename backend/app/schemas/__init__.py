@@ -118,6 +118,14 @@ class AuditSummary(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class AuditExternalIntelligenceStatus(BaseModel):
+    status: Optional[str] = None
+    error_code: Optional[str] = None
+    error_message: Optional[str] = None
+    warning_code: Optional[str] = None
+    warning_message: Optional[str] = None
+
+
 class AuditOverview(BaseModel):
     id: int
     url: str
@@ -149,7 +157,7 @@ class AuditOverview(BaseModel):
     pdf_available: bool = False
     pdf_status: Optional[str] = None
     pdf_warnings: List[str] = Field(default_factory=list)
-    external_intelligence: Optional[Dict[str, Any]] = None
+    external_intelligence: Optional[AuditExternalIntelligenceStatus] = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -367,6 +375,8 @@ class AIContentSuggestionResponse(BaseModel):
     suggestion_type: str
     content_outline: Optional[Dict[str, Any]] = None
     priority: str
+    strategy_run_id: Optional[str] = None
+    strategy_order: Optional[int] = None
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)

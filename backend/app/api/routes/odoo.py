@@ -3,6 +3,7 @@ Odoo integration routes.
 """
 
 import json
+from time import perf_counter
 from typing import Any, Dict, List, Optional
 from urllib.parse import urlparse
 
@@ -23,12 +24,25 @@ from ...integrations.odoo import (
     OdooSyncService,
 )
 from ...models import Audit, AuditStatus
-from ...models.odoo import OdooConnection
+from ...models.odoo import OdooConnection, OdooSyncRun
 from ...services.audit_service import AuditService
 from ...services.odoo_delivery_service import OdooDeliveryService
 
 router = APIRouter(prefix="/odoo", tags=["odoo"])
 logger = get_logger(__name__)
+
+_ODOO_AUDIT_READ_FIELDS = (
+    Audit.id,
+    Audit.user_id,
+    Audit.user_email,
+    Audit.status,
+    Audit.odoo_connection_id,
+    Audit.url,
+    Audit.domain,
+    Audit.language,
+    Audit.market,
+    Audit._intake_profile_raw,
+)
 
 
 class OdooConnectionPayload(BaseModel):
@@ -223,8 +237,30 @@ def _get_owned_audit(db: Session, audit_id: int, current_user: AuthUser) -> Audi
     return ensure_audit_access(audit, current_user)
 
 
+def _get_owned_projected_audit(
+    db: Session,
+    audit_id: int,
+    current_user: AuthUser,
+    *fields,
+) -> Audit:
+    audit = AuditService.get_audit_projection(db, audit_id, *fields)
+    return ensure_audit_access(audit, current_user)
+
+
 def _get_completed_audit(db: Session, audit_id: int, current_user: AuthUser) -> Audit:
     audit = _get_owned_audit(db, audit_id, current_user)
+    if audit.status != AuditStatus.COMPLETED:
+        raise HTTPException(status_code=400, detail="Audit is not completed yet")
+    return audit
+
+
+def _get_completed_projected_audit(
+    db: Session,
+    audit_id: int,
+    current_user: AuthUser,
+    *fields,
+) -> Audit:
+    audit = _get_owned_projected_audit(db, audit_id, current_user, *fields)
     if audit.status != AuditStatus.COMPLETED:
         raise HTTPException(status_code=400, detail="Audit is not completed yet")
     return audit
@@ -282,11 +318,23 @@ def _serialize_connection(connection: OdooConnection) -> Dict[str, Any]:
     }
 
 
+def _log_odoo_route_timing(route_name: str, started_at: float, **context: Any) -> None:
+    elapsed_ms = int((perf_counter() - started_at) * 1000)
+    context_parts = [
+        f"{key}={value}"
+        for key, value in context.items()
+        if value is not None and value != ""
+    ]
+    suffix = f" {' '.join(context_parts)}" if context_parts else ""
+    logger.info(f"odoo_route={route_name} duration_ms={elapsed_ms}{suffix}")
+
+
 async def _build_delivery_plan(
     audit_id: int,
     db: Session = Depends(get_db),
     current_user: AuthUser = Depends(get_current_user),
 ):
+    started_at = perf_counter()
     try:
         audit = _get_completed_audit(db, audit_id, current_user)
         return await OdooDeliveryService.build_plan(db, audit)
@@ -297,6 +345,8 @@ async def _build_delivery_plan(
     except Exception as exc:
         logger.error(f"Error building Odoo delivery plan for audit {audit_id}: {exc}")
         raise HTTPException(status_code=500, detail="Internal server error") from exc
+    finally:
+        _log_odoo_route_timing("delivery-plan", started_at, audit_id=audit_id)
 
 
 @router.post("/connections/test", response_model=OdooConnectionTestResponse)
@@ -366,12 +416,20 @@ def list_odoo_connections(
     db: Session = Depends(get_db),
     current_user: AuthUser = Depends(get_current_user),
 ):
+    started_at = perf_counter()
     service = OdooConnectionService(db)
-    rows = service.list_connections(
-        owner_user_id=current_user.user_id,
-        owner_email=current_user.email,
-    )
-    return [_serialize_connection(row) for row in rows]
+    try:
+        rows = service.list_connections(
+            owner_user_id=current_user.user_id,
+            owner_email=current_user.email,
+        )
+        return [_serialize_connection(row) for row in rows]
+    finally:
+        _log_odoo_route_timing(
+            "connections",
+            started_at,
+            user_id=current_user.user_id,
+        )
 
 
 @router.delete("/connections/{connection_id}", status_code=204)
@@ -439,14 +497,36 @@ async def get_odoo_sync_status(
     db: Session = Depends(get_db),
     current_user: AuthUser = Depends(get_current_user),
 ):
-    audit = _get_completed_audit(db, audit_id, current_user)
-    connection = _get_selected_connection_for_audit(db, audit, current_user)
-    plan = await OdooDeliveryService.build_plan(db, audit)
-    return {
-        "audit_id": audit.id,
-        "connection_id": connection.id,
-        "summary": plan.get("sync_summary") or {},
-    }
+    started_at = perf_counter()
+    try:
+        audit = _get_completed_projected_audit(
+            db,
+            audit_id,
+            current_user,
+            *_ODOO_AUDIT_READ_FIELDS,
+        )
+        connection = _get_selected_connection_for_audit(db, audit, current_user)
+        sync_run = (
+            db.query(OdooSyncRun)
+            .filter(
+                OdooSyncRun.audit_id == audit.id,
+                OdooSyncRun.connection_id == connection.id,
+            )
+            .order_by(OdooSyncRun.started_at.desc(), OdooSyncRun.id.desc())
+            .first()
+        )
+        summary = (
+            sync_run.summary
+            if isinstance(getattr(sync_run, "summary", None), dict)
+            else {}
+        )
+        return {
+            "audit_id": audit.id,
+            "connection_id": connection.id,
+            "summary": summary,
+        }
+    finally:
+        _log_odoo_route_timing("sync", started_at, audit_id=audit_id)
 
 
 @router.post("/drafts/{audit_id}/prepare", response_model=OdooDraftsResponse)
@@ -482,15 +562,24 @@ async def get_odoo_drafts(
     db: Session = Depends(get_db),
     current_user: AuthUser = Depends(get_current_user),
 ):
-    audit = _get_completed_audit(db, audit_id, current_user)
-    connection = _get_selected_connection_for_audit(db, audit, current_user)
-    service = OdooDraftService(db)
-    grouped = service.grouped_drafts(audit_id=audit.id, connection_id=connection.id)
-    return {
-        "audit_id": audit.id,
-        "connection_id": connection.id,
-        **grouped,
-    }
+    started_at = perf_counter()
+    try:
+        audit = _get_completed_projected_audit(
+            db,
+            audit_id,
+            current_user,
+            *_ODOO_AUDIT_READ_FIELDS,
+        )
+        connection = _get_selected_connection_for_audit(db, audit, current_user)
+        service = OdooDraftService(db)
+        grouped = service.grouped_drafts(audit_id=audit.id, connection_id=connection.id)
+        return {
+            "audit_id": audit.id,
+            "connection_id": connection.id,
+            **grouped,
+        }
+    finally:
+        _log_odoo_route_timing("drafts", started_at, audit_id=audit_id)
 
 
 @router.get("/delivery-plan/{audit_id}")
@@ -532,6 +621,7 @@ async def save_odoo_delivery_brief(
 
     db.commit()
     db.refresh(audit)
+    AuditService.invalidate_overview_payload(audit.id)
 
     plan = await OdooDeliveryService.build_plan(db, audit)
     return {

@@ -15,7 +15,7 @@ from __future__ import annotations
 import inspect
 import json
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import urlparse
 
@@ -36,7 +36,10 @@ from app.services.competitor_filters import (
     is_valid_competitor_domain,
     normalize_domain,
 )
-from sqlalchemy.orm import Session
+from app.services.crawler_service import CrawlerService
+from app.services.duplicate_content_service import DuplicateContentService
+from bs4 import BeautifulSoup
+from sqlalchemy.orm import Session, load_only
 
 logger = get_logger(__name__)
 
@@ -49,6 +52,14 @@ class InsufficientAuthoritySourcesError(ValueError):
     """Raised when required authority sources are missing for an article."""
 
 
+class ArticleStrategyRequiredError(ValueError):
+    """Raised when no valid strategy run is available for article generation."""
+
+
+class LegacyBatchReadOnlyError(ValueError):
+    """Raised when legacy batches attempt unsupported mutations."""
+
+
 class GeoArticleEngineService:
     """Service for strict article generation based on audited context."""
 
@@ -56,6 +67,8 @@ class GeoArticleEngineService:
     DEFAULT_TOP_K = 10
     MIN_EXTERNAL_SOURCES = 3
     MIN_INTERNAL_SOURCES = 2
+    STATUS_SNAPSHOT_TTL_SECONDS = 86400
+    STATUS_STALE_FALLBACK_SECONDS = 10
 
     STOPWORDS = {
         "the",
@@ -281,16 +294,17 @@ class GeoArticleEngineService:
         *, title: str, snippet: str, url: str, topic_terms: List[str]
     ) -> Dict[str, Any]:
         text = f"{title} {snippet}".lower()
-        url_lower = (url or "").lower()
+        parsed = urlparse(url if "://" in (url or "") else f"https://{url}")
+        url_path = f"{parsed.path or ''} {parsed.query or ''}".lower()
         article_hit = any(
             cue in text for cue in GeoArticleEngineService.ARTICLE_CUES
-        ) or any(cue in url_lower for cue in GeoArticleEngineService.ARTICLE_URL_CUES)
+        ) or any(cue in url_path for cue in GeoArticleEngineService.ARTICLE_URL_CUES)
         qa_hit = any(cue in text for cue in GeoArticleEngineService.QA_CUES) or any(
-            cue in url_lower for cue in GeoArticleEngineService.QA_URL_CUES
+            cue in url_path for cue in GeoArticleEngineService.QA_URL_CUES
         )
         topic_hits = 0
         for term in topic_terms:
-            if term and (term in text or term in url_lower):
+            if term and (term in text or term in url_path):
                 topic_hits += 1
         score = (3 if article_hit else 0) + (1 if qa_hit else 0) + min(3, topic_hits)
         return {
@@ -672,6 +686,55 @@ class GeoArticleEngineService:
         return GeoArticleEngineService._rank_authority_sources(sources)
 
     @staticmethod
+    def _extract_html_title(html: str, fallback: str) -> str:
+        try:
+            soup = BeautifulSoup(html or "", "html.parser")
+            title = soup.title.string if soup.title and soup.title.string else ""
+        except Exception:  # nosec B110
+            title = ""
+        cleaned = str(title or "").strip()
+        return cleaned or fallback
+
+    @staticmethod
+    async def _build_user_authority_sources(
+        authority_urls: List[str],
+    ) -> List[Dict[str, Any]]:
+        sources: List[Dict[str, Any]] = []
+        seen = set()
+        for raw_url in authority_urls or []:
+            normalized = GeoArticleEngineService._normalize_url(
+                str(raw_url or "").strip()
+            )
+            if not normalized or normalized in seen:
+                continue
+            seen.add(normalized)
+            html = await CrawlerService.get_page_content(normalized)
+            if not html:
+                continue
+            text = DuplicateContentService.extract_text(html)
+            excerpt = text[:2000].strip()
+            if not excerpt:
+                continue
+            title = GeoArticleEngineService._extract_html_title(
+                html,
+                GeoArticleEngineService._url_path_title(normalized),
+            )
+            sources.append(
+                {
+                    "title": title,
+                    "url": normalized,
+                    "domain": GeoArticleEngineService._normalize_domain(normalized),
+                    "snippet": excerpt[:320],
+                    "excerpt": excerpt,
+                    "source_type": "user_authority",
+                    "authority_score": 10,
+                    "authority_topic_hits": 0,
+                    "authority_has_qa_signal": False,
+                }
+            )
+        return sources
+
+    @staticmethod
     def _extract_audit_keywords(audit: Audit, max_keywords: int = 80) -> List[str]:
         keywords: List[str] = []
         seen = set()
@@ -755,48 +818,389 @@ class GeoArticleEngineService:
         return 2
 
     @staticmethod
-    def _extract_ai_strategy_items(db: Session, audit_id: int) -> List[Dict[str, Any]]:
+    def _parse_ai_strategy_row(row: AIContentSuggestion) -> Dict[str, Any]:
+        outline = row.content_outline if isinstance(row.content_outline, dict) else {}
+        sections = outline.get("sections") if isinstance(outline, dict) else []
+        cleaned_sections = [
+            str(s).strip()
+            for s in (sections if isinstance(sections, list) else [])
+            if str(s).strip()
+        ]
+        return {
+            "title": str(row.topic or "").strip(),
+            "target_keyword": str(outline.get("target_keyword") or "").strip().lower(),
+            "sections": cleaned_sections,
+            "priority": str(row.priority or "medium").strip().lower(),
+            "suggestion_type": str(row.suggestion_type or "guide").strip().lower(),
+            "business_context": str(outline.get("business_context") or "").strip(),
+            "created_at": row.created_at.isoformat() if row.created_at else "",
+            "strategy_run_id": str(row.strategy_run_id or "").strip(),
+            "strategy_order": int(row.strategy_order or 0),
+        }
+
+    @staticmethod
+    def _extract_ai_strategy_items(
+        db: Session,
+        audit_id: int,
+        *,
+        strategy_run_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        query = db.query(AIContentSuggestion).filter(
+            AIContentSuggestion.audit_id == audit_id
+        )
+        if strategy_run_id:
+            rows = (
+                query.filter(AIContentSuggestion.strategy_run_id == strategy_run_id)
+                .order_by(
+                    AIContentSuggestion.strategy_order.asc(),
+                    AIContentSuggestion.created_at.asc(),
+                )
+                .all()
+            )
+            return [GeoArticleEngineService._parse_ai_strategy_row(row) for row in rows]
+
         rows = (
-            db.query(AIContentSuggestion)
-            .filter(AIContentSuggestion.audit_id == audit_id)
-            .order_by(AIContentSuggestion.created_at.desc())
+            query.filter(AIContentSuggestion.strategy_run_id.isnot(None))
+            .order_by(
+                AIContentSuggestion.created_at.desc(),
+                AIContentSuggestion.strategy_order.asc(),
+            )
             .all()
         )
-        parsed: List[Dict[str, Any]] = []
-        for row in rows:
-            outline = (
-                row.content_outline if isinstance(row.content_outline, dict) else {}
-            )
-            sections = outline.get("sections") if isinstance(outline, dict) else []
-            cleaned_sections = [
-                str(s).strip()
-                for s in (sections if isinstance(sections, list) else [])
-                if str(s).strip()
-            ]
-            parsed.append(
-                {
-                    "title": str(row.topic or "").strip(),
-                    "target_keyword": str(outline.get("target_keyword") or "")
-                    .strip()
-                    .lower(),
-                    "sections": cleaned_sections,
-                    "priority": str(row.priority or "medium").strip().lower(),
-                    "suggestion_type": str(row.suggestion_type or "guide")
-                    .strip()
-                    .lower(),
-                    "business_context": str(
-                        outline.get("business_context") or ""
-                    ).strip(),
-                    "created_at": row.created_at.isoformat() if row.created_at else "",
-                }
-            )
-
+        parsed = [GeoArticleEngineService._parse_ai_strategy_row(row) for row in rows]
         parsed.sort(
-            key=lambda item: GeoArticleEngineService._priority_weight(
-                item.get("priority", "medium")
+            key=lambda item: (
+                item.get("strategy_run_id", ""),
+                item.get("strategy_order", 0),
+                GeoArticleEngineService._priority_weight(
+                    item.get("priority", "medium")
+                ),
             )
         )
         return parsed
+
+    @staticmethod
+    def _get_latest_strategy_run_id(db: Session, audit_id: int) -> Optional[str]:
+        row = (
+            db.query(AIContentSuggestion.strategy_run_id)
+            .filter(
+                AIContentSuggestion.audit_id == audit_id,
+                AIContentSuggestion.strategy_run_id.isnot(None),
+            )
+            .order_by(AIContentSuggestion.created_at.desc())
+            .first()
+        )
+        if not row:
+            return None
+        return str(row[0] or "").strip() or None
+
+    @staticmethod
+    def delete_strategy_run(
+        db: Session,
+        *,
+        audit_id: int,
+        strategy_run_id: Optional[str],
+    ) -> None:
+        normalized_run_id = str(strategy_run_id or "").strip()
+        if not normalized_run_id:
+            return
+
+        (
+            db.query(AIContentSuggestion)
+            .filter(
+                AIContentSuggestion.audit_id == audit_id,
+                AIContentSuggestion.strategy_run_id == normalized_run_id,
+            )
+            .delete(synchronize_session=False)
+        )
+        db.commit()
+
+    @staticmethod
+    def _strategy_generation_domain(audit: Audit) -> str:
+        domain = str(getattr(audit, "domain", "") or "").strip()
+        if domain:
+            return domain
+        parsed = urlparse(str(getattr(audit, "url", "") or "").strip())
+        return parsed.netloc.replace("www.", "").strip()
+
+    @staticmethod
+    async def _generate_strategy_run(
+        db: Session,
+        audit: Audit,
+        *,
+        article_count: int,
+        topics: Optional[List[str]] = None,
+    ) -> tuple[str, List[Dict[str, Any]]]:
+        from app.services.ai_content_service import AIContentService
+
+        suggestions = await AIContentService(db).generate_suggestions(
+            audit.id,
+            GeoArticleEngineService._strategy_generation_domain(audit),
+            [str(topic).strip() for topic in (topics or []) if str(topic).strip()],
+            count=article_count,
+            create_strategy_run=True,
+        )
+        items = [
+            GeoArticleEngineService._parse_ai_strategy_row(row) for row in suggestions
+        ]
+        strategy_run_id = str(items[0].get("strategy_run_id") if items else "").strip()
+        if not strategy_run_id or len(items) < article_count:
+            raise ArticleStrategyRequiredError(
+                "ARTICLE_STRATEGY_REQUIRED: unable to build a complete strategy run."
+            )
+        return strategy_run_id, items[:article_count]
+
+    @staticmethod
+    async def resolve_batch_strategy(
+        db: Session,
+        audit: Audit,
+        *,
+        article_count: int,
+        target_topics: Optional[List[str]] = None,
+    ) -> tuple[str, List[Dict[str, Any]], str]:
+        normalized_count = max(
+            1, min(GeoArticleEngineService.MAX_ARTICLES, int(article_count))
+        )
+        cleaned_topics = [
+            str(topic).strip() for topic in (target_topics or []) if str(topic).strip()
+        ]
+        if cleaned_topics:
+            strategy_run_id, items = (
+                await GeoArticleEngineService._generate_strategy_run(
+                    db,
+                    audit,
+                    article_count=normalized_count,
+                    topics=cleaned_topics,
+                )
+            )
+            return strategy_run_id, items, "generated_from_topics"
+
+        latest_run_id = GeoArticleEngineService._get_latest_strategy_run_id(
+            db, audit.id
+        )
+        if latest_run_id:
+            latest_items = GeoArticleEngineService._extract_ai_strategy_items(
+                db,
+                audit.id,
+                strategy_run_id=latest_run_id,
+            )
+            if len(latest_items) >= normalized_count:
+                return latest_run_id, latest_items[:normalized_count], "reused_latest"
+
+        strategy_run_id, items = await GeoArticleEngineService._generate_strategy_run(
+            db,
+            audit,
+            article_count=normalized_count,
+            topics=[],
+        )
+        return strategy_run_id, items, "generated_auto"
+
+    @staticmethod
+    def _resolve_strategy_run_items(
+        db: Session,
+        audit_id: int,
+        *,
+        article_count: int,
+        strategy_run_id: Optional[str] = None,
+    ) -> tuple[str, List[Dict[str, Any]]]:
+        resolved_run_id = (
+            strategy_run_id
+            or GeoArticleEngineService._get_latest_strategy_run_id(db, audit_id)
+        )
+        if not resolved_run_id:
+            raise ArticleStrategyRequiredError(
+                "ARTICLE_STRATEGY_REQUIRED: generate titles first or provide target topics."
+            )
+
+        items = GeoArticleEngineService._extract_ai_strategy_items(
+            db,
+            audit_id,
+            strategy_run_id=resolved_run_id,
+        )
+        if len(items) < article_count:
+            raise ArticleStrategyRequiredError(
+                f"ARTICLE_STRATEGY_REQUIRED: latest strategy run has {len(items)} titles; {article_count} requested."
+            )
+        return resolved_run_id, items[:article_count]
+
+    @staticmethod
+    def _normalize_authority_urls(authority_urls: Optional[List[str]]) -> List[str]:
+        normalized_urls: List[str] = []
+        seen_urls = set()
+        for raw_url in authority_urls or []:
+            normalized = GeoArticleEngineService._normalize_url(
+                str(raw_url or "").strip()
+            )
+            if not normalized or normalized in seen_urls:
+                continue
+            seen_urls.add(normalized)
+            normalized_urls.append(normalized)
+        return normalized_urls
+
+    @staticmethod
+    def _extract_match_tokens(text: str) -> List[str]:
+        tokens: List[str] = []
+        seen = set()
+        for token in re.findall(r"[a-zA-Z0-9\-]{3,}", (text or "").lower()):
+            cleaned = token.strip("-")
+            if (
+                not cleaned
+                or cleaned in seen
+                or cleaned in GeoArticleEngineService.STOPWORDS
+            ):
+                continue
+            seen.add(cleaned)
+            tokens.append(cleaned)
+        return tokens
+
+    @staticmethod
+    def _strategy_item_match_terms(
+        audit: Audit, strategy_item: Dict[str, Any]
+    ) -> List[str]:
+        primary_keyword = str(strategy_item.get("target_keyword") or "").strip().lower()
+        title = str(strategy_item.get("title") or "").strip().lower()
+        terms = GeoArticleEngineService._extract_topic_terms(audit, primary_keyword)
+        for token in GeoArticleEngineService._extract_match_tokens(title):
+            if token not in terms:
+                terms.append(token)
+        return terms[:20]
+
+    @staticmethod
+    def _score_user_authority_source_for_item(
+        source: Dict[str, Any],
+        strategy_item: Dict[str, Any],
+        topic_terms: List[str],
+    ) -> int:
+        text_parts = [
+            str(source.get("title") or ""),
+            str(source.get("snippet") or ""),
+            str(source.get("excerpt") or "")[:600],
+            str(source.get("url") or ""),
+        ]
+        source_text = " ".join(text_parts).lower()
+        source_content_text = " ".join(text_parts[:3]).lower()
+        source_tokens = set(
+            GeoArticleEngineService._extract_match_tokens(source_content_text)
+        )
+        keyword = str(strategy_item.get("target_keyword") or "").strip().lower()
+        title = str(strategy_item.get("title") or "").strip().lower()
+        title_tokens = set(GeoArticleEngineService._extract_match_tokens(title))
+        meta = GeoArticleEngineService._authority_source_metadata(
+            title=str(source.get("title") or ""),
+            snippet=f"{str(source.get('snippet') or '')} {str(source.get('excerpt') or '')[:240]}",
+            url=str(source.get("url") or ""),
+            topic_terms=topic_terms,
+        )
+
+        topic_hits = int(meta.get("topic_hits", 0))
+        keyword_match = bool(keyword and keyword in source_text)
+        overlap = len(source_tokens.intersection(title_tokens.union(set(topic_terms))))
+        if topic_hits == 0 and not keyword_match and overlap == 0:
+            return 0
+
+        score = topic_hits * 10 + int(meta.get("score", 0))
+        if keyword_match:
+            score += 8
+        score += overlap
+        return score
+
+    @staticmethod
+    def _assign_user_authority_urls_to_articles(
+        audit: Audit,
+        strategy_items: List[Dict[str, Any]],
+        authority_sources: List[Dict[str, Any]],
+    ) -> tuple[Dict[int, List[str]], List[str]]:
+        assignments: Dict[int, List[str]] = {
+            idx + 1: [] for idx in range(len(strategy_items))
+        }
+        if not strategy_items:
+            return assignments, [
+                str(source.get("url") or "").strip() for source in authority_sources
+            ]
+
+        topic_terms_by_item = [
+            GeoArticleEngineService._strategy_item_match_terms(audit, item)
+            for item in strategy_items
+        ]
+        unmatched_urls: List[str] = []
+        for source in authority_sources:
+            url = str(source.get("url") or "").strip()
+            if not url:
+                continue
+            best_index = -1
+            best_score = 0
+            for idx, item in enumerate(strategy_items):
+                score = GeoArticleEngineService._score_user_authority_source_for_item(
+                    source,
+                    item,
+                    topic_terms_by_item[idx],
+                )
+                if score > best_score:
+                    best_score = score
+                    best_index = idx
+            if best_index >= 0 and best_score > 0:
+                assignments[best_index + 1].append(url)
+            else:
+                unmatched_urls.append(url)
+        return assignments, unmatched_urls
+
+    @staticmethod
+    def _serialize_authority_source_cache(
+        authority_sources: List[Dict[str, Any]],
+    ) -> List[Dict[str, Any]]:
+        serialized: List[Dict[str, Any]] = []
+        seen = set()
+        for source in authority_sources:
+            normalized = GeoArticleEngineService._normalize_url(
+                str(source.get("url") or "").strip()
+            )
+            if not normalized or normalized in seen:
+                continue
+            seen.add(normalized)
+            serialized.append(
+                {
+                    "title": str(source.get("title") or "").strip(),
+                    "url": normalized,
+                    "domain": str(source.get("domain") or "").strip(),
+                    "snippet": str(source.get("snippet") or "").strip(),
+                    "excerpt": str(source.get("excerpt") or "").strip(),
+                    "source_type": "user_authority",
+                }
+            )
+        return serialized
+
+    @staticmethod
+    def _resolve_authority_sources_from_cache(
+        summary: Dict[str, Any], authority_urls: List[str]
+    ) -> List[Dict[str, Any]]:
+        cached_rows = summary.get("_authority_source_cache") or []
+        cache_map: Dict[str, Dict[str, Any]] = {}
+        if isinstance(cached_rows, list):
+            for row in cached_rows:
+                if not isinstance(row, dict):
+                    continue
+                normalized = GeoArticleEngineService._normalize_url(
+                    str(row.get("url") or "").strip()
+                )
+                if not normalized:
+                    continue
+                cache_map[normalized] = {
+                    "title": str(row.get("title") or "").strip(),
+                    "url": normalized,
+                    "domain": str(row.get("domain") or "").strip(),
+                    "snippet": str(row.get("snippet") or "").strip(),
+                    "excerpt": str(row.get("excerpt") or "").strip(),
+                    "source_type": "user_authority",
+                }
+        resolved: List[Dict[str, Any]] = []
+        for raw_url in authority_urls:
+            normalized = GeoArticleEngineService._normalize_url(
+                str(raw_url or "").strip()
+            )
+            if not normalized or normalized not in cache_map:
+                continue
+            resolved.append(cache_map[normalized])
+        return resolved
 
     @staticmethod
     def _build_primary_keyword_pool(
@@ -819,6 +1223,192 @@ class GeoArticleEngineService:
                 pool.append(cleaned)
 
         return pool
+
+    @staticmethod
+    def _build_generated_titles_summary(
+        strategy_items: List[Dict[str, Any]],
+    ) -> List[Dict[str, Any]]:
+        generated_titles: List[Dict[str, Any]] = []
+        for idx, item in enumerate(strategy_items):
+            generated_titles.append(
+                {
+                    "index": idx + 1,
+                    "title": str(item.get("title") or "").strip(),
+                    "target_keyword": str(item.get("target_keyword") or "")
+                    .strip()
+                    .lower(),
+                    "suggestion_type": str(item.get("suggestion_type") or "guide")
+                    .strip()
+                    .lower(),
+                }
+            )
+        return generated_titles
+
+    @staticmethod
+    def _build_placeholder_articles(
+        *,
+        focus_urls: List[str],
+        strategy_items: List[Dict[str, Any]],
+        article_authority_assignments: Optional[Dict[int, List[str]]] = None,
+    ) -> List[Dict[str, Any]]:
+        placeholders: List[Dict[str, Any]] = []
+        for idx, item in enumerate(strategy_items):
+            focus_url = focus_urls[idx % len(focus_urls)] if focus_urls else ""
+            title = str(item.get("title") or "").strip() or f"Article {idx + 1}"
+            assigned_authority_urls = [
+                str(url).strip()
+                for url in (article_authority_assignments or {}).get(idx + 1, [])
+                if str(url).strip()
+            ]
+            placeholders.append(
+                {
+                    "index": idx + 1,
+                    "title": title,
+                    "slug": GeoArticleEngineService._slugify(f"{title}-{idx + 1}"),
+                    "target_keyword": str(item.get("target_keyword") or "")
+                    .strip()
+                    .lower(),
+                    "focus_url": focus_url,
+                    "generation_status": "queued",
+                    "generation_error": None,
+                    "keyword_strategy": {
+                        "primary_keyword": str(item.get("target_keyword") or "")
+                        .strip()
+                        .lower(),
+                        "secondary_keywords": [],
+                        "search_intent": "",
+                    },
+                    "competitor_gap_map": {},
+                    "evidence_summary": [],
+                    "sources": [],
+                    "citation_readiness_score": 0,
+                    "markdown": "",
+                    "meta_title": "",
+                    "meta_description": "",
+                    "user_authority_urls": assigned_authority_urls,
+                }
+            )
+        return placeholders
+
+    @staticmethod
+    def _strategy_items_from_batch(batch: GeoArticleBatch) -> List[Dict[str, Any]]:
+        generated_titles = (batch.summary or {}).get("generated_titles") or []
+        strategy_items: List[Dict[str, Any]] = []
+        source_rows = generated_titles if isinstance(generated_titles, list) else []
+        if not source_rows:
+            source_rows = batch.articles or []
+        for row in source_rows:
+            if not isinstance(row, dict):
+                continue
+            title = str(row.get("title") or "").strip()
+            keyword = (
+                str(
+                    row.get("target_keyword")
+                    or row.get("primary_keyword")
+                    or row.get("keyword")
+                    or ""
+                )
+                .strip()
+                .lower()
+            )
+            if not title and not keyword:
+                continue
+            strategy_items.append(
+                {
+                    "title": title or f"{keyword.title()}: GEO + SEO Playbook",
+                    "target_keyword": keyword,
+                    "sections": [],
+                    "priority": "medium",
+                    "suggestion_type": str(row.get("suggestion_type") or "guide")
+                    .strip()
+                    .lower(),
+                    "business_context": "",
+                    "strategy_run_id": str(
+                        (batch.summary or {}).get("strategy_run_id") or ""
+                    ).strip(),
+                    "strategy_order": int((row.get("index") or len(strategy_items) + 1))
+                    - 1,
+                }
+            )
+        return strategy_items
+
+    @staticmethod
+    def _is_legacy_batch(batch: GeoArticleBatch) -> bool:
+        summary = batch.summary or {}
+        return not bool(str(summary.get("strategy_run_id") or "").strip())
+
+    @staticmethod
+    async def prepare_batch_seed_data(
+        db: Session,
+        audit: Audit,
+        *,
+        article_count: int,
+        target_topics: Optional[List[str]] = None,
+        authority_urls: Optional[List[str]] = None,
+    ) -> Dict[str, Any]:
+        strategy_run_id, strategy_items, strategy_source = (
+            await GeoArticleEngineService.resolve_batch_strategy(
+                db,
+                audit,
+                article_count=article_count,
+                target_topics=target_topics,
+            )
+        )
+
+        normalized_authority_urls = GeoArticleEngineService._normalize_authority_urls(
+            authority_urls
+        )
+        authority_sources: List[Dict[str, Any]] = []
+        unmatched_authority_urls: List[str] = []
+        article_authority_assignments: Dict[int, List[str]] = {
+            idx + 1: [] for idx in range(len(strategy_items))
+        }
+
+        if normalized_authority_urls:
+            authority_sources = (
+                await GeoArticleEngineService._build_user_authority_sources(
+                    normalized_authority_urls
+                )
+            )
+            fetched_urls = {
+                GeoArticleEngineService._normalize_url(
+                    str(source.get("url") or "").strip()
+                )
+                for source in authority_sources
+            }
+            unmatched_authority_urls.extend(
+                [url for url in normalized_authority_urls if url not in fetched_urls]
+            )
+            matched_assignments, topic_unmatched = (
+                GeoArticleEngineService._assign_user_authority_urls_to_articles(
+                    audit,
+                    strategy_items,
+                    authority_sources,
+                )
+            )
+            article_authority_assignments.update(matched_assignments)
+            unmatched_authority_urls.extend(topic_unmatched)
+
+        deduped_unmatched: List[str] = []
+        seen_unmatched = set()
+        for url in unmatched_authority_urls:
+            normalized = GeoArticleEngineService._normalize_url(str(url or "").strip())
+            if not normalized or normalized in seen_unmatched:
+                continue
+            seen_unmatched.add(normalized)
+            deduped_unmatched.append(normalized)
+
+        return {
+            "strategy_run_id": strategy_run_id,
+            "strategy_items": strategy_items,
+            "strategy_source": strategy_source,
+            "article_authority_assignments": article_authority_assignments,
+            "global_authority_urls": normalized_authority_urls,
+            "unmatched_authority_urls": deduped_unmatched,
+            "authority_source_cache": GeoArticleEngineService._serialize_authority_source_cache(
+                authority_sources
+            ),
+        }
 
     @staticmethod
     def _extract_competitors_from_audit(
@@ -905,11 +1495,11 @@ class GeoArticleEngineService:
         }
         if not allowed:
             return []
-        pattern = re.compile(r"\[source:\s*([^\]]+)\]", re.IGNORECASE)
-        url_pattern = re.compile(r"https?://[^\s,\]]+")
         invalid = []
-        for match in pattern.findall(markdown):
-            for url in url_pattern.findall(match):
+        for source_segment in GeoArticleEngineService._iter_source_segments(markdown):
+            for url in GeoArticleEngineService._extract_urls_from_source_segment(
+                source_segment
+            ):
                 cleaned = url.strip()
                 normalized = GeoArticleEngineService._normalize_url(cleaned)
                 if normalized and normalized not in allowed:
@@ -920,11 +1510,11 @@ class GeoArticleEngineService:
     def _extract_citation_urls(markdown: str) -> List[str]:
         if not markdown:
             return []
-        pattern = re.compile(r"\[source:\s*([^\]]+)\]", re.IGNORECASE)
-        url_pattern = re.compile(r"https?://[^\s,\]]+")
         urls = set()
-        for match in pattern.findall(markdown):
-            for url in url_pattern.findall(match):
+        for source_segment in GeoArticleEngineService._iter_source_segments(markdown):
+            for url in GeoArticleEngineService._extract_urls_from_source_segment(
+                source_segment
+            ):
                 cleaned = url.strip()
                 if not cleaned:
                     continue
@@ -934,18 +1524,52 @@ class GeoArticleEngineService:
         return [url for url in urls if url]
 
     @staticmethod
+    def _iter_source_segments(markdown: str) -> List[str]:
+        if not markdown:
+            return []
+        marker = "[source:"
+        lowered = markdown.lower()
+        segments: List[str] = []
+        search_from = 0
+        while True:
+            start = lowered.find(marker, search_from)
+            if start < 0:
+                break
+            content_start = start + len(marker)
+            end = markdown.find("]", content_start)
+            if end < 0:
+                break
+            segment = markdown[content_start:end].strip()
+            if segment:
+                segments.append(segment)
+            search_from = end + 1
+        return segments
+
+    @staticmethod
+    def _extract_urls_from_source_segment(segment: str) -> List[str]:
+        urls: List[str] = []
+        for token in segment.replace(",", " ").split():
+            cleaned = token.strip().strip("()[]{}<>\"'.,;|")
+            lowered = cleaned.lower()
+            if lowered.startswith("http://") or lowered.startswith("https://"):
+                urls.append(cleaned)
+        return urls
+
+    @staticmethod
     def _append_required_citations(
         markdown: str,
         *,
         internal_urls: List[str],
         external_urls: List[str],
+        user_authority_urls: Optional[List[str]] = None,
         language: str,
     ) -> str:
         if not markdown:
             return markdown
         internal = [url for url in internal_urls if url]
         external = [url for url in external_urls if url]
-        if not internal and not external:
+        user_authority = [url for url in (user_authority_urls or []) if url]
+        if not internal and not external and not user_authority:
             return markdown
         section_title = (
             "## Fuentes" if language.lower().startswith("es") else "## Sources"
@@ -953,6 +1577,13 @@ class GeoArticleEngineService:
         lines = [markdown.rstrip(), "", section_title]
         if internal:
             lines.append(f"- Audited internal reference. [Source: {internal[0]}]")
+        if user_authority:
+            label = (
+                "Referencia de autoridad aportada por el usuario."
+                if language.lower().startswith("es")
+                else "User-provided authority reference."
+            )
+            lines.append(f"- {label} [Source: {user_authority[0]}]")
         if external:
             lines.append(f"- External reference for context. [Source: {external[0]}]")
         return "\n".join(lines)
@@ -1336,6 +1967,7 @@ class GeoArticleEngineService:
         internal_sources: List[Dict[str, str]],
         external_sources: List[Dict[str, str]],
         fallback_external_sources: List[Dict[str, str]],
+        user_authority_sources: Optional[List[Dict[str, Any]]] = None,
         audit_only: bool = False,
     ) -> Dict[str, List[Dict[str, str]]]:
         ordered_internal: List[Dict[str, str]] = []
@@ -1358,11 +1990,22 @@ class GeoArticleEngineService:
                 "Need at least 2 internal audited sources per article."
             )
 
-        selected_external: List[Dict[str, str]] = []
+        selected_user_authority: List[Dict[str, str]] = []
+        for item in user_authority_sources or []:
+            url = str(item.get("url") or "").strip()
+            if not url:
+                continue
+            selected_user_authority.append(item)
+
+        selected_external: List[Dict[str, str]] = list(selected_user_authority)
         if not audit_only:
             merged_external = []
             seen_external = set()
-            for source_pool in (external_sources, fallback_external_sources):
+            for source_pool in (
+                user_authority_sources or [],
+                external_sources,
+                fallback_external_sources,
+            ):
                 for item in source_pool:
                     url = str(item.get("url") or "").strip()
                     if not url or url in seen_external:
@@ -1383,6 +2026,7 @@ class GeoArticleEngineService:
         return {
             "internal": selected_internal,
             "external": selected_external,
+            "user_authority": selected_user_authority,
             "all": selected_internal + selected_external,
         }
 
@@ -1452,6 +2096,7 @@ class GeoArticleEngineService:
         internal_sources: List[Dict[str, str]],
         fallback_external_sources: List[Dict[str, str]],
         ai_strategy_item: Optional[Dict[str, Any]],
+        user_authority_sources: Optional[List[Dict[str, Any]]] = None,
         audit_keywords: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
         audit_domain = GeoArticleEngineService._normalize_domain(
@@ -1642,6 +2287,7 @@ class GeoArticleEngineService:
             internal_sources=internal_sources,
             external_sources=external_from_serp,
             fallback_external_sources=fallback_external_sources,
+            user_authority_sources=user_authority_sources,
             audit_only=audit_only,
         )
         audited_context = GeoArticleEngineService._build_audited_context(
@@ -1675,6 +2321,14 @@ class GeoArticleEngineService:
             "audited_context": audited_context,
             "topic_terms": topic_terms,
             "extra_searches": extra_searches if not audit_only else [],
+            "user_authority_context": [
+                {
+                    "title": str(source.get("title") or "").strip(),
+                    "url": str(source.get("url") or "").strip(),
+                    "excerpt": str(source.get("excerpt") or "").strip(),
+                }
+                for source in (required_sources.get("user_authority") or [])
+            ],
         }
         GeoArticleEngineService._validate_article_data_pack(pack)
         return pack
@@ -1717,8 +2371,10 @@ class GeoArticleEngineService:
     @staticmethod
     def _citation_score(markdown: str, include_schema: bool, sources_count: int) -> int:
         text = markdown or ""
-        source_tags = len(
-            re.findall(r"\[source:\s*https?://[^\]]+\]", text, flags=re.IGNORECASE)
+        source_tags = sum(
+            1
+            for segment in GeoArticleEngineService._iter_source_segments(text)
+            if GeoArticleEngineService._extract_urls_from_source_segment(segment)
         )
         faq_section = "faq" in text.lower()
         competitor_section = (
@@ -1744,6 +2400,11 @@ class GeoArticleEngineService:
     ) -> Dict[str, Any]:
         ai_strategy = data_pack.get("ai_content_strategy", {})
         title_hint = str(ai_strategy.get("title") or "").strip()
+        if not title_hint:
+            primary_kw = data_pack.get("keyword_strategy", {}).get(
+                "primary_keyword", "keyword"
+            )
+            title_hint = f"{primary_kw.title()}: GEO + SEO Playbook"
         section_hints = ai_strategy.get("sections", [])
         section_hints = [str(s).strip() for s in section_hints if str(s).strip()]
         audit_only = (
@@ -1763,6 +2424,12 @@ class GeoArticleEngineService:
             for src in data_pack.get("required_sources", {}).get("all", [])
             if isinstance(src, dict) and src.get("url")
         ]
+        user_authority_urls = {
+            GeoArticleEngineService._normalize_url(str(src.get("url") or ""))
+            for src in data_pack.get("required_sources", {}).get("user_authority", [])
+            if isinstance(src, dict) and src.get("url")
+        }
+        require_user_authority = bool(user_authority_urls)
 
         current_year = datetime.now().year
         system_prompt = (
@@ -1784,6 +2451,7 @@ class GeoArticleEngineService:
                 "article_data_pack": data_pack,
                 "audited_context": data_pack.get("audited_context", {}),
                 "allowed_sources": allowed_sources,
+                "user_authority_context": data_pack.get("user_authority_context", []),
                 "title_hint": title_hint,
                 "section_hints": section_hints,
                 "mandatory_section_heading": "How to beat top competitor for this keyword",
@@ -1807,6 +2475,8 @@ class GeoArticleEngineService:
                     "If a claim cannot be supported by the audited sources, label it as 'Insufficient data'.",
                     "If external sources are provided, include a dedicated Q&A/FAQ section with citations.",
                     "Every Q&A answer should include at least one source citation.",
+                    f"Use the exact title_hint as the final article title: {title_hint}",
+                    "Do not rewrite or replace the title_hint.",
                 ],
                 "output_schema": {
                     "title": "string",
@@ -1884,12 +2554,20 @@ class GeoArticleEngineService:
         missing_external = require_external and not external_urls.intersection(
             citation_urls
         )
+        missing_user_authority = (
+            require_user_authority
+            and not user_authority_urls.intersection(citation_urls)
+        )
         missing_qa = require_qa and not GeoArticleEngineService._has_required_qa(
             markdown, min_pairs=min_qa_pairs
         )
 
         needs_repair = (
-            invalid_citations or missing_internal or missing_external or missing_qa
+            invalid_citations
+            or missing_internal
+            or missing_external
+            or missing_user_authority
+            or missing_qa
         )
         if needs_repair and getattr(
             settings, "GEO_ARTICLE_REPAIR_INVALID_CITATIONS", True
@@ -1933,17 +2611,22 @@ class GeoArticleEngineService:
             missing_external = require_external and not external_urls.intersection(
                 citation_urls
             )
+            missing_user_authority = (
+                require_user_authority
+                and not user_authority_urls.intersection(citation_urls)
+            )
             missing_qa = require_qa and not GeoArticleEngineService._has_required_qa(
                 markdown, min_pairs=min_qa_pairs
             )
 
         if getattr(settings, "GEO_ARTICLE_REPAIR_INVALID_CITATIONS", True) and (
-            missing_internal or missing_external
+            missing_internal or missing_external or missing_user_authority
         ):
             markdown = GeoArticleEngineService._append_required_citations(
                 markdown,
                 internal_urls=sorted(internal_urls),
                 external_urls=sorted(external_urls),
+                user_authority_urls=sorted(user_authority_urls),
                 language=language,
             )
             citation_urls = GeoArticleEngineService._extract_citation_urls(markdown)
@@ -1952,6 +2635,10 @@ class GeoArticleEngineService:
             )
             missing_external = require_external and not external_urls.intersection(
                 citation_urls
+            )
+            missing_user_authority = (
+                require_user_authority
+                and not user_authority_urls.intersection(citation_urls)
             )
         if (
             getattr(settings, "GEO_ARTICLE_REPAIR_INVALID_CITATIONS", True)
@@ -1976,18 +2663,17 @@ class GeoArticleEngineService:
             raise KimiGenerationError("Article missing required internal citations.")
         if missing_external:
             raise KimiGenerationError("Article missing required external citations.")
+        if missing_user_authority:
+            raise KimiGenerationError(
+                "Article missing required user authority citation."
+            )
         if missing_qa:
             raise KimiGenerationError("Article missing required Q&A/FAQ section.")
 
         markdown = GeoArticleEngineService._ensure_competitor_section(
             markdown, data_pack
         )
-        title = str(parsed.get("title") or title_hint or "").strip()
-        if not title:
-            primary_kw = data_pack.get("keyword_strategy", {}).get(
-                "primary_keyword", "keyword"
-            )
-            title = f"{primary_kw.title()}: GEO + SEO Playbook"
+        title = title_hint
 
         primary_kw = data_pack.get("keyword_strategy", {}).get("primary_keyword", "")
         meta_title = str(parsed.get("meta_title") or title).strip()
@@ -2012,6 +2698,15 @@ class GeoArticleEngineService:
                         {"claim": claim, "source_url": source_url}
                     )
         if not normalized_evidence:
+            for src in data_pack.get("required_sources", {}).get("user_authority", [])[
+                :1
+            ]:
+                normalized_evidence.append(
+                    {
+                        "claim": "User-provided authority reference used in article rationale.",
+                        "source_url": src.get("url", ""),
+                    }
+                )
             for src in data_pack.get("required_sources", {}).get("external", [])[:3]:
                 normalized_evidence.append(
                     {
@@ -2043,6 +2738,16 @@ class GeoArticleEngineService:
 
     @staticmethod
     def _error_payload(exc: Exception) -> Dict[str, str]:
+        if isinstance(exc, LegacyBatchReadOnlyError):
+            return {
+                "code": "LEGACY_BATCH_READ_ONLY",
+                "message": str(exc),
+            }
+        if isinstance(exc, ArticleStrategyRequiredError):
+            return {
+                "code": "ARTICLE_STRATEGY_REQUIRED",
+                "message": str(exc),
+            }
         if isinstance(exc, InsufficientAuthoritySourcesError):
             return {
                 "code": "INSUFFICIENT_AUTHORITY_SOURCES",
@@ -2070,14 +2775,236 @@ class GeoArticleEngineService:
 
     @staticmethod
     def _serialize_batch(batch: GeoArticleBatch) -> Dict[str, Any]:
+        is_legacy = GeoArticleEngineService._is_legacy_batch(batch)
         return {
             "batch_id": batch.id,
             "audit_id": batch.audit_id,
             "created_at": batch.created_at.isoformat() if batch.created_at else None,
             "status": batch.status,
-            "summary": batch.summary or {},
+            "summary": GeoArticleEngineService._public_batch_summary(batch.summary),
             "articles": batch.articles or [],
+            "is_legacy": is_legacy,
+            "can_regenerate": not is_legacy,
         }
+
+    @staticmethod
+    def _public_batch_summary(summary: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+        if not isinstance(summary, dict):
+            return {}
+        return {
+            str(key): value
+            for key, value in summary.items()
+            if isinstance(key, str) and not key.startswith("_")
+        }
+
+    @staticmethod
+    def _serialize_compact_article(article: Dict[str, Any]) -> Dict[str, Any]:
+        return {
+            "index": int(article.get("index") or 0),
+            "title": str(article.get("title") or "").strip(),
+            "target_keyword": str(article.get("target_keyword") or "").strip(),
+            "focus_url": str(article.get("focus_url") or "").strip(),
+            "generation_status": str(article.get("generation_status") or "").strip(),
+            "generation_error": (
+                dict(article.get("generation_error"))
+                if isinstance(article.get("generation_error"), dict)
+                else article.get("generation_error")
+            ),
+            "citation_readiness_score": float(
+                article.get("citation_readiness_score") or 0
+            ),
+            "user_authority_urls": [
+                str(url).strip()
+                for url in (article.get("user_authority_urls") or [])
+                if str(url).strip()
+            ],
+        }
+
+    @staticmethod
+    def _serialize_batch_status(batch: GeoArticleBatch) -> Dict[str, Any]:
+        is_legacy = GeoArticleEngineService._is_legacy_batch(batch)
+        return {
+            "batch_id": batch.id,
+            "audit_id": batch.audit_id,
+            "created_at": batch.created_at.isoformat() if batch.created_at else None,
+            "status": batch.status,
+            "summary": GeoArticleEngineService._public_batch_summary(batch.summary),
+            "articles": [
+                GeoArticleEngineService._serialize_compact_article(article)
+                for article in (batch.articles or [])
+                if isinstance(article, dict)
+            ],
+            "is_legacy": is_legacy,
+            "can_regenerate": not is_legacy,
+        }
+
+    @staticmethod
+    def article_batch_channel(batch_id: int) -> str:
+        return f"article.batch.{int(batch_id)}"
+
+    @staticmethod
+    def article_batch_snapshot_key(batch_id: int) -> str:
+        return f"article:batch:{int(batch_id)}:status"
+
+    @staticmethod
+    def get_batch_status_projection(
+        db: Session, batch_id: int
+    ) -> Optional[GeoArticleBatch]:
+        return (
+            db.query(GeoArticleBatch)
+            .options(
+                load_only(
+                    GeoArticleBatch.id,
+                    GeoArticleBatch.audit_id,
+                    GeoArticleBatch.status,
+                    GeoArticleBatch.summary,
+                    GeoArticleBatch.created_at,
+                )
+            )
+            .filter(GeoArticleBatch.id == batch_id)
+            .first()
+        )
+
+    @staticmethod
+    def cache_batch_status_payload(payload: Dict[str, Any] | None) -> None:
+        from app.services.cache_service import cache
+
+        if not isinstance(payload, dict) or not cache.enabled:
+            return
+        batch_id = payload.get("batch_id")
+        try:
+            normalized_batch_id = int(batch_id)
+        except (TypeError, ValueError):
+            return
+        cache.set(
+            GeoArticleEngineService.article_batch_snapshot_key(normalized_batch_id),
+            payload,
+            ttl=max(
+                60,
+                int(
+                    getattr(
+                        settings,
+                        "GEO_ARTICLE_STATUS_SNAPSHOT_TTL_SECONDS",
+                        GeoArticleEngineService.STATUS_SNAPSHOT_TTL_SECONDS,
+                    )
+                    or GeoArticleEngineService.STATUS_SNAPSHOT_TTL_SECONDS
+                ),
+            ),
+        )
+
+    @staticmethod
+    def get_cached_batch_status_payload(batch_id: int) -> Optional[Dict[str, Any]]:
+        from app.services.cache_service import cache
+
+        if not cache.enabled:
+            return None
+        payload = cache.get(
+            GeoArticleEngineService.article_batch_snapshot_key(batch_id)
+        )
+        if not isinstance(payload, dict):
+            return None
+        try:
+            if int(payload.get("batch_id")) != int(batch_id):
+                return None
+        except (TypeError, ValueError):
+            return None
+        return payload
+
+    @staticmethod
+    def batch_status_payload_matches_batch(
+        payload: Dict[str, Any] | None, batch: GeoArticleBatch | None
+    ) -> bool:
+        if not isinstance(payload, dict) or batch is None:
+            return False
+        try:
+            if int(payload.get("batch_id")) != int(batch.id):
+                return False
+        except (TypeError, ValueError):
+            return False
+        payload_created_at = str(payload.get("created_at") or "").strip()
+        batch_created_at = (
+            batch.created_at.isoformat() if getattr(batch, "created_at", None) else ""
+        )
+        if payload_created_at and batch_created_at:
+            return payload_created_at == batch_created_at
+        return True
+
+    @staticmethod
+    def invalidate_batch_status_payload(batch_id: int) -> None:
+        from app.services.cache_service import cache
+
+        if not cache.enabled:
+            return
+        cache.delete(GeoArticleEngineService.article_batch_snapshot_key(batch_id))
+
+    @staticmethod
+    def batch_status_payload_requires_refresh(payload: Dict[str, Any]) -> bool:
+        if not isinstance(payload, dict):
+            return True
+        status = str(payload.get("status") or "").strip().lower()
+        if status in {"completed", "failed", "partial_failed"}:
+            return False
+        summary = (
+            payload.get("summary") if isinstance(payload.get("summary"), dict) else {}
+        )
+        last_progress_raw = summary.get("last_progress_at")
+        if not isinstance(last_progress_raw, str) or not last_progress_raw.strip():
+            return True
+        try:
+            last_progress = datetime.fromisoformat(
+                last_progress_raw.replace("Z", "+00:00")
+            )
+        except ValueError:
+            return True
+        if last_progress.tzinfo is None:
+            last_progress = last_progress.replace(tzinfo=timezone.utc)
+        else:
+            last_progress = last_progress.astimezone(timezone.utc)
+        stale_after = max(
+            1,
+            int(
+                getattr(
+                    settings,
+                    "GEO_ARTICLE_STATUS_STALE_FALLBACK_SECONDS",
+                    max(
+                        int(
+                            getattr(settings, "SSE_FALLBACK_DB_INTERVAL_SECONDS", 10)
+                            or 10
+                        ),
+                        GeoArticleEngineService.STATUS_STALE_FALLBACK_SECONDS,
+                    ),
+                )
+                or GeoArticleEngineService.STATUS_STALE_FALLBACK_SECONDS
+            ),
+        )
+        return datetime.now(timezone.utc) - last_progress > timedelta(
+            seconds=stale_after
+        )
+
+    @staticmethod
+    def publish_batch_status_payload(payload: Dict[str, Any] | None) -> None:
+        from app.services.cache_service import cache
+
+        if not isinstance(payload, dict):
+            return
+        GeoArticleEngineService.cache_batch_status_payload(payload)
+        if not cache.enabled or not cache.redis_client:
+            return
+        try:
+            cache.redis_client.publish(
+                GeoArticleEngineService.article_batch_channel(
+                    int(payload.get("batch_id") or 0)
+                ),
+                json.dumps(payload, default=str),
+            )
+        except Exception as exc:  # nosec B110
+            logger.warning("Error publishing article batch status to Redis: %s", exc)
+
+    @staticmethod
+    def publish_batch_status_for_batch(batch: GeoArticleBatch) -> None:
+        GeoArticleEngineService.publish_batch_status_payload(
+            GeoArticleEngineService._serialize_batch_status(batch)
+        )
 
     @staticmethod
     def create_batch(
@@ -2089,6 +3016,13 @@ class GeoArticleEngineService:
         tone: str = "executive",
         include_schema: bool = True,
         market: Optional[str] = None,
+        strategy_run_id: Optional[str] = None,
+        strategy_items: Optional[List[Dict[str, Any]]] = None,
+        strategy_source: str = "reused_latest",
+        article_authority_assignments: Optional[Dict[int, List[str]]] = None,
+        global_authority_urls: Optional[List[str]] = None,
+        unmatched_authority_urls: Optional[List[str]] = None,
+        authority_source_cache: Optional[List[Dict[str, Any]]] = None,
     ) -> GeoArticleBatch:
         if not is_kimi_configured():
             raise KimiUnavailableError(
@@ -2118,7 +3052,34 @@ class GeoArticleEngineService:
                 "ARTICLE_DATA_PACK_INCOMPLETE: no keyword seeds found in audit."
             )
 
+        resolved_strategy_run_id = strategy_run_id
+        resolved_strategy_items = strategy_items or []
+        if not resolved_strategy_items:
+            (
+                resolved_strategy_run_id,
+                resolved_strategy_items,
+            ) = GeoArticleEngineService._resolve_strategy_run_items(
+                db,
+                audit.id,
+                article_count=normalized_count,
+                strategy_run_id=strategy_run_id,
+            )
+        elif not resolved_strategy_run_id:
+            resolved_strategy_run_id = str(
+                resolved_strategy_items[0].get("strategy_run_id") or ""
+            ).strip()
+
+        if not resolved_strategy_run_id:
+            raise ArticleStrategyRequiredError(
+                "ARTICLE_STRATEGY_REQUIRED: generate titles first or provide target topics."
+            )
+
         selected_market = GeoArticleEngineService._extract_market(audit, market)
+        placeholder_articles = GeoArticleEngineService._build_placeholder_articles(
+            focus_urls=focus_urls,
+            strategy_items=resolved_strategy_items[:normalized_count],
+            article_authority_assignments=article_authority_assignments,
+        )
 
         batch = GeoArticleBatch(
             audit_id=audit.id,
@@ -2137,6 +3098,24 @@ class GeoArticleEngineService:
                 "tone": tone,
                 "include_schema": include_schema,
                 "market": selected_market,
+                "strategy_run_id": resolved_strategy_run_id,
+                "strategy_source": str(strategy_source or "reused_latest").strip()
+                or "reused_latest",
+                "pipeline_stage": "titles_ready",
+                "generated_titles": GeoArticleEngineService._build_generated_titles_summary(
+                    resolved_strategy_items[:normalized_count]
+                ),
+                "global_authority_urls": [
+                    str(url).strip()
+                    for url in (global_authority_urls or [])
+                    if str(url).strip()
+                ],
+                "unmatched_authority_urls": [
+                    str(url).strip()
+                    for url in (unmatched_authority_urls or [])
+                    if str(url).strip()
+                ],
+                "_authority_source_cache": authority_source_cache or [],
                 "keyword_strategy_mode": (
                     "audit_only"
                     if GeoArticleEngineService._audit_only_mode()
@@ -2145,11 +3124,12 @@ class GeoArticleEngineService:
                 "started_at": datetime.now(timezone.utc).isoformat(),
                 "last_progress_at": datetime.now(timezone.utc).isoformat(),
             },
-            articles=[],
+            articles=placeholder_articles,
         )
         db.add(batch)
         db.commit()
         db.refresh(batch)
+        GeoArticleEngineService.publish_batch_status_for_batch(batch)
         return batch
 
     @staticmethod
@@ -2212,6 +3192,7 @@ class GeoArticleEngineService:
         batch.summary = summary
         db.commit()
         db.refresh(batch)
+        GeoArticleEngineService.publish_batch_status_for_batch(batch)
 
     @staticmethod
     async def process_batch(db: Session, batch_id: int) -> GeoArticleBatch:
@@ -2278,59 +3259,85 @@ class GeoArticleEngineService:
             )
         )
         audit_keywords = GeoArticleEngineService._extract_audit_keywords(audit)
-        ai_strategy_items = GeoArticleEngineService._extract_ai_strategy_items(
-            db, audit.id
-        )
-        keyword_pool = GeoArticleEngineService._build_primary_keyword_pool(
-            audit_keywords=audit_keywords,
-            ai_strategy_items=ai_strategy_items,
-        )
-        if not keyword_pool:
-            raise ArticleDataPackIncompleteError(
-                "ARTICLE_DATA_PACK_INCOMPLETE: no keyword candidates available."
+        summary = dict(batch.summary or {})
+        strategy_run_id = str(summary.get("strategy_run_id") or "").strip()
+        has_authority_cache = bool(summary.get("_authority_source_cache"))
+        if strategy_run_id:
+            ai_strategy_items = GeoArticleEngineService._extract_ai_strategy_items(
+                db,
+                audit.id,
+                strategy_run_id=strategy_run_id,
+            )
+        else:
+            ai_strategy_items = GeoArticleEngineService._strategy_items_from_batch(
+                batch
             )
 
         generated_articles: List[Dict[str, Any]] = []
         total_score = 0.0
         success_count = 0
         requested_count = int(batch.requested_count or 1)
-        abort_on_first_timeout = bool(
-            getattr(settings, "GEO_ARTICLE_ABORT_ON_FIRST_TIMEOUT", True)
-        )
-        aborted_by_timeout = False
+        article_retry_count = 1
+        if len(ai_strategy_items) < requested_count:
+            raise ArticleStrategyRequiredError(
+                f"ARTICLE_STRATEGY_REQUIRED: batch needs {requested_count} titled slots, found {len(ai_strategy_items)}."
+            )
+        ai_strategy_items = ai_strategy_items[:requested_count]
 
         # Initialize runtime progress metadata for watchdog reconciliation.
         batch.status = "processing"
         batch.summary = {
-            **(batch.summary or {}),
+            **summary,
             "requested_count": requested_count,
             "processed_count": 0,
             "generated_count": 0,
             "failed_count": 0,
+            "generated_titles": summary.get("generated_titles")
+            or GeoArticleEngineService._build_generated_titles_summary(
+                ai_strategy_items
+            ),
+            "pipeline_stage": "generating_articles",
             "last_progress_at": datetime.now(timezone.utc).isoformat(),
         }
         db.commit()
         db.refresh(batch)
+        GeoArticleEngineService.publish_batch_status_for_batch(batch)
 
         brand_token = GeoArticleEngineService._extract_brand_token(audit)
+        existing_articles = {
+            int(item.get("index") or idx + 1): item
+            for idx, item in enumerate(batch.articles or [])
+            if isinstance(item, dict)
+        }
 
         def _build_article_context(
             idx: int,
         ) -> tuple[Optional[Dict[str, Any]], str, str, Dict[str, Any]]:
             ai_item = ai_strategy_items[idx] if idx < len(ai_strategy_items) else None
+            existing_article = existing_articles.get(idx + 1, {})
             primary_keyword = (
                 str((ai_item or {}).get("target_keyword") or "").strip().lower()
-                or keyword_pool[idx % len(keyword_pool)]
+                or str(existing_article.get("target_keyword") or "").strip().lower()
             )
             if brand_token and brand_token not in primary_keyword.lower():
                 primary_keyword = f"{brand_token} {primary_keyword}".strip()
-            focus_url = focus_urls[idx % len(focus_urls)]
-            title_hint = str((ai_item or {}).get("title") or "").strip()
+            focus_url = str(existing_article.get("focus_url") or "").strip()
+            if not focus_url:
+                focus_url = focus_urls[idx % len(focus_urls)]
+            title_hint = str(
+                (ai_item or {}).get("title") or existing_article.get("title") or ""
+            ).strip()
+            user_authority_urls = existing_article.get("user_authority_urls") or []
+            if not isinstance(user_authority_urls, list):
+                user_authority_urls = []
             base_article = {
                 "index": idx + 1,
                 "focus_url": focus_url,
                 "target_keyword": primary_keyword,
                 "title": title_hint or f"{primary_keyword.title()}: GEO + SEO Playbook",
+                "slug": GeoArticleEngineService._slugify(
+                    f"{title_hint or primary_keyword}-{idx + 1}"
+                ),
                 "generation_status": "failed",
                 "generation_error": None,
                 "keyword_strategy": {},
@@ -2338,6 +3345,12 @@ class GeoArticleEngineService:
                 "evidence_summary": [],
                 "sources": [],
                 "citation_readiness_score": 0,
+                "markdown": "",
+                "meta_title": "",
+                "meta_description": "",
+                "user_authority_urls": [
+                    str(url).strip() for url in user_authority_urls if str(url).strip()
+                ],
                 "created_at": datetime.now(timezone.utc).isoformat(),
             }
             return ai_item, primary_keyword, focus_url, base_article
@@ -2348,25 +3361,68 @@ class GeoArticleEngineService:
             )
 
             try:
-                data_pack = await GeoArticleEngineService._build_article_data_pack(
-                    audit=audit,
-                    primary_keyword=primary_keyword,
-                    market=market,
-                    language=language,
-                    focus_url=focus_url,
-                    llm_function=article_llm_function,
-                    internal_sources=internal_sources,
-                    fallback_external_sources=fallback_external_sources,
-                    ai_strategy_item=ai_item,
-                    audit_keywords=audit_keywords,
-                )
-                generated = await GeoArticleEngineService._generate_article_content(
-                    llm_function=article_llm_function,
-                    data_pack=data_pack,
-                    tone=tone,
-                    include_schema=include_schema,
-                    language=language,
-                )
+                user_authority_sources: List[Dict[str, Any]] = []
+                if base_article["user_authority_urls"]:
+                    user_authority_sources = (
+                        GeoArticleEngineService._resolve_authority_sources_from_cache(
+                            summary,
+                            base_article["user_authority_urls"],
+                        )
+                    )
+                    if not has_authority_cache and not user_authority_sources:
+                        user_authority_sources = (
+                            await GeoArticleEngineService._build_user_authority_sources(
+                                base_article["user_authority_urls"]
+                            )
+                        )
+
+                last_error: Optional[Exception] = None
+                data_pack: Dict[str, Any] = {}
+                generated: Dict[str, Any] = {}
+                for attempt in range(article_retry_count + 1):
+                    try:
+                        data_pack = (
+                            await GeoArticleEngineService._build_article_data_pack(
+                                audit=audit,
+                                primary_keyword=primary_keyword,
+                                market=market,
+                                language=language,
+                                focus_url=focus_url,
+                                llm_function=article_llm_function,
+                                internal_sources=internal_sources,
+                                fallback_external_sources=fallback_external_sources,
+                                ai_strategy_item=ai_item,
+                                user_authority_sources=user_authority_sources,
+                                audit_keywords=audit_keywords,
+                            )
+                        )
+                        generated = (
+                            await GeoArticleEngineService._generate_article_content(
+                                llm_function=article_llm_function,
+                                data_pack=data_pack,
+                                tone=tone,
+                                include_schema=include_schema,
+                                language=language,
+                            )
+                        )
+                        last_error = None
+                        break
+                    except Exception as exc:  # pylint: disable=broad-except
+                        last_error = exc
+                        error_payload = GeoArticleEngineService._error_payload(exc)
+                        should_retry = (
+                            attempt < article_retry_count
+                            and error_payload.get("code") == "KIMI_GENERATION_FAILED"
+                        )
+                        if should_retry:
+                            logger.warning(
+                                "Retrying article batch=%s idx=%s after %s.",
+                                batch_id,
+                                index + 1,
+                                error_payload.get("code"),
+                            )
+                            continue
+                        raise last_error
 
                 markdown = generated.get("markdown", "")
                 sources = data_pack.get("required_sources", {}).get("all", [])
@@ -2378,9 +3434,9 @@ class GeoArticleEngineService:
 
                 article = {
                     **base_article,
-                    "title": generated.get("title") or base_article["title"],
+                    "title": base_article["title"],
                     "slug": GeoArticleEngineService._slugify(
-                        f"{generated.get('title') or base_article['title']}-{index + 1}"
+                        f"{base_article['title']}-{index + 1}"
                     ),
                     "markdown": markdown,
                     "meta_title": generated.get("meta_title"),
@@ -2409,6 +3465,7 @@ class GeoArticleEngineService:
                     "audit_signals": data_pack.get("audit_signals", {}),
                     "citation_readiness_score": score,
                     "provider": data_pack.get("provider", "kimi-2.5-search"),
+                    "user_authority_urls": base_article.get("user_authority_urls", []),
                 }
                 generated_articles.append(article)
                 success_count += 1
@@ -2427,47 +3484,6 @@ class GeoArticleEngineService:
                     }
                 )
 
-                if (
-                    abort_on_first_timeout
-                    and GeoArticleEngineService._is_kimi_timeout_error(error_payload)
-                ):
-                    logger.warning(
-                        "Aborting article batch=%s after first KIMI timeout (idx=%s).",
-                        batch_id,
-                        index + 1,
-                    )
-                    for tail_idx in range(index + 1, requested_count):
-                        (
-                            _tail_ai_item,
-                            _tail_keyword,
-                            _tail_focus_url,
-                            tail_base_article,
-                        ) = _build_article_context(tail_idx)
-                        generated_articles.append(
-                            {
-                                **tail_base_article,
-                                "generation_status": "failed",
-                                "generation_error": {
-                                    "code": "KIMI_TIMEOUT_ABORTED",
-                                    "message": "Batch aborted after first KIMI timeout.",
-                                },
-                            }
-                        )
-                    GeoArticleEngineService._persist_batch_progress(
-                        db,
-                        batch=batch,
-                        status="processing",
-                        requested_count=requested_count,
-                        generated_articles=generated_articles,
-                        success_count=success_count,
-                        total_score=total_score,
-                        extra_summary={
-                            "failure_reason": "KIMI_TIMEOUT_ABORTED: Batch aborted after first KIMI timeout."
-                        },
-                    )
-                    aborted_by_timeout = True
-                    break
-
             GeoArticleEngineService._persist_batch_progress(
                 db,
                 batch=batch,
@@ -2485,12 +3501,10 @@ class GeoArticleEngineService:
         else:
             status = "partial_failed"
 
-        final_summary = {"completed_at": datetime.now(timezone.utc).isoformat()}
-        if aborted_by_timeout:
-            final_summary.setdefault(
-                "failure_reason",
-                "KIMI_TIMEOUT_ABORTED: Batch aborted after first KIMI timeout.",
-            )
+        final_summary = {
+            "completed_at": datetime.now(timezone.utc).isoformat(),
+            "pipeline_stage": "completed",
+        }
 
         GeoArticleEngineService._persist_batch_progress(
             db,
@@ -2501,6 +3515,237 @@ class GeoArticleEngineService:
             success_count=success_count,
             total_score=total_score,
             extra_summary=final_summary,
+        )
+        return batch
+
+    @staticmethod
+    async def regenerate_article(
+        db: Session,
+        *,
+        batch_id: int,
+        article_index: int,
+        authority_urls: List[str],
+    ) -> GeoArticleBatch:
+        batch = db.query(GeoArticleBatch).filter(GeoArticleBatch.id == batch_id).first()
+        if not batch:
+            raise ValueError(f"GeoArticleBatch {batch_id} not found.")
+        if GeoArticleEngineService._is_legacy_batch(batch):
+            raise LegacyBatchReadOnlyError(
+                "LEGACY_BATCH_READ_ONLY: This batch was generated before the strategy-run system. Create a new batch to regenerate articles."
+            )
+        if batch.status not in {"completed", "failed", "partial_failed"}:
+            raise ValueError("Batch is still processing.")
+
+        audit = db.query(Audit).filter(Audit.id == batch.audit_id).first()
+        if not audit:
+            raise ValueError(f"Audit {batch.audit_id} not found for batch {batch_id}.")
+
+        llm_function = get_llm_function()
+        if llm_function is None:
+            raise KimiUnavailableError("Kimi provider function is unavailable.")
+
+        article_llm_timeout_seconds = (
+            GeoArticleEngineService._resolve_article_llm_timeout_seconds()
+        )
+        llm_supports_timeout = GeoArticleEngineService._llm_supports_timeout_seconds(
+            llm_function
+        )
+
+        async def article_llm_function(
+            *, system_prompt: str, user_prompt: str, max_tokens: Optional[int] = None
+        ) -> str:
+            llm_kwargs: Dict[str, Any] = {
+                "system_prompt": system_prompt,
+                "user_prompt": user_prompt,
+            }
+            if max_tokens is not None:
+                llm_kwargs["max_tokens"] = max_tokens
+            if llm_supports_timeout:
+                llm_kwargs["timeout_seconds"] = article_llm_timeout_seconds
+            return await llm_function(**llm_kwargs)
+
+        articles = list(batch.articles or [])
+        target_article = None
+        target_position = None
+        for idx, item in enumerate(articles):
+            if not isinstance(item, dict):
+                continue
+            if int(item.get("index") or idx + 1) == article_index:
+                target_article = dict(item)
+                target_position = idx
+                break
+        if target_article is None or target_position is None:
+            raise ValueError(
+                f"Article index {article_index} not found in batch {batch_id}."
+            )
+
+        normalized_urls = GeoArticleEngineService._normalize_authority_urls(
+            authority_urls
+        )
+
+        user_authority_sources = []
+        if normalized_urls:
+            user_authority_sources = (
+                await GeoArticleEngineService._build_user_authority_sources(
+                    normalized_urls
+                )
+            )
+            if not user_authority_sources:
+                raise ValueError(
+                    "No valid authority URLs could be fetched for regeneration."
+                )
+
+        summary = dict(batch.summary or {})
+        if user_authority_sources:
+            cached_sources = GeoArticleEngineService._serialize_authority_source_cache(
+                user_authority_sources
+            )
+            existing_cache = summary.get("_authority_source_cache") or []
+            summary["_authority_source_cache"] = (
+                GeoArticleEngineService._serialize_authority_source_cache(
+                    [
+                        *(existing_cache if isinstance(existing_cache, list) else []),
+                        *cached_sources,
+                    ]
+                )
+            )
+        strategy_run_id = str(summary.get("strategy_run_id") or "").strip()
+        strategy_items = GeoArticleEngineService._extract_ai_strategy_items(
+            db,
+            audit.id,
+            strategy_run_id=strategy_run_id,
+        )
+        if article_index < 1:
+            raise ValueError(
+                f"Article index must be a positive integer, got {article_index}."
+            )
+        if len(strategy_items) < article_index:
+            raise ArticleStrategyRequiredError(
+                "ARTICLE_STRATEGY_REQUIRED: strategy run does not include this article slot."
+            )
+        ai_item = strategy_items[article_index - 1]
+
+        primary_keyword = (
+            str(ai_item.get("target_keyword") or "").strip().lower()
+            or str(target_article.get("target_keyword") or "").strip().lower()
+        )
+        brand_token = GeoArticleEngineService._extract_brand_token(audit)
+        if brand_token and brand_token not in primary_keyword.lower():
+            primary_keyword = f"{brand_token} {primary_keyword}".strip()
+
+        focus_urls = GeoArticleEngineService._build_focus_urls(audit)
+        focus_url = str(target_article.get("focus_url") or "").strip()
+        if not focus_url and focus_urls:
+            focus_url = focus_urls[(article_index - 1) % len(focus_urls)]
+
+        internal_sources = GeoArticleEngineService._build_internal_sources(
+            audit, focus_urls
+        )
+        fallback_topic_terms = GeoArticleEngineService._extract_topic_terms(audit, "")
+        fallback_external_sources = (
+            GeoArticleEngineService._build_external_sources_from_audit(
+                audit, topic_terms=fallback_topic_terms
+            )
+        )
+        audit_keywords = GeoArticleEngineService._extract_audit_keywords(audit)
+
+        data_pack = await GeoArticleEngineService._build_article_data_pack(
+            audit=audit,
+            primary_keyword=primary_keyword,
+            market=str(
+                summary.get("market") or GeoArticleEngineService._extract_market(audit)
+            ),
+            language=batch.language or "en",
+            focus_url=focus_url,
+            llm_function=article_llm_function,
+            internal_sources=internal_sources,
+            fallback_external_sources=fallback_external_sources,
+            ai_strategy_item=ai_item,
+            user_authority_sources=user_authority_sources,
+            audit_keywords=audit_keywords,
+        )
+        generated = await GeoArticleEngineService._generate_article_content(
+            llm_function=article_llm_function,
+            data_pack=data_pack,
+            tone=batch.tone or "executive",
+            include_schema=bool(batch.include_schema),
+            language=batch.language or "en",
+        )
+
+        markdown = generated.get("markdown", "")
+        sources = data_pack.get("required_sources", {}).get("all", [])
+        score = GeoArticleEngineService._citation_score(
+            markdown=markdown,
+            include_schema=bool(batch.include_schema),
+            sources_count=len(sources),
+        )
+
+        updated_article = {
+            **target_article,
+            "title": str(
+                ai_item.get("title") or target_article.get("title") or ""
+            ).strip(),
+            "slug": GeoArticleEngineService._slugify(
+                f"{str(ai_item.get('title') or target_article.get('title') or '').strip()}-{article_index}"
+            ),
+            "target_keyword": primary_keyword,
+            "focus_url": focus_url,
+            "markdown": markdown,
+            "meta_title": generated.get("meta_title"),
+            "meta_description": generated.get("meta_description"),
+            "schema_json": generated.get("schema_json"),
+            "generation_status": "completed",
+            "generation_error": None,
+            "keyword_strategy": data_pack.get("keyword_strategy", {}),
+            "search_intent": data_pack.get("keyword_strategy", {}).get("search_intent"),
+            "top_competitors_for_keyword": data_pack.get(
+                "top_competitors_for_keyword", []
+            ),
+            "competitor_to_beat": (
+                data_pack.get("top_competitors_for_keyword", [{}])[0].get("domain")
+                if data_pack.get("top_competitors_for_keyword")
+                else None
+            ),
+            "competitor_gap_map": data_pack.get("competitor_gap_map", {}),
+            "evidence_summary": generated.get("evidence_summary", []),
+            "required_sources": data_pack.get("required_sources", {}),
+            "sources": sources,
+            "audit_signals": data_pack.get("audit_signals", {}),
+            "citation_readiness_score": score,
+            "provider": data_pack.get("provider", "kimi-2.5-search"),
+            "user_authority_urls": normalized_urls,
+        }
+        articles[target_position] = updated_article
+
+        success_count = 0
+        total_score = 0.0
+        for item in articles:
+            if not isinstance(item, dict):
+                continue
+            if str(item.get("generation_status") or "") == "completed":
+                success_count += 1
+                total_score += float(item.get("citation_readiness_score") or 0)
+
+        if success_count == len(articles):
+            status = "completed"
+        elif success_count == 0:
+            status = "failed"
+        else:
+            status = "partial_failed"
+
+        GeoArticleEngineService._persist_batch_progress(
+            db,
+            batch=batch,
+            status=status,
+            requested_count=int(batch.requested_count or len(articles) or 1),
+            generated_articles=articles,
+            success_count=success_count,
+            total_score=total_score,
+            extra_summary={
+                "_authority_source_cache": summary.get("_authority_source_cache", []),
+                "pipeline_stage": "completed",
+                "completed_at": datetime.now(timezone.utc).isoformat(),
+            },
         )
         return batch
 
@@ -2520,3 +3765,7 @@ class GeoArticleEngineService:
     @staticmethod
     def serialize_batch(batch: GeoArticleBatch) -> Dict[str, Any]:
         return GeoArticleEngineService._serialize_batch(batch)
+
+    @staticmethod
+    def serialize_batch_status(batch: GeoArticleBatch) -> Dict[str, Any]:
+        return GeoArticleEngineService._serialize_batch_status(batch)

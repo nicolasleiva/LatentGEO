@@ -109,7 +109,7 @@
       }
     }
   },
-  "user_template": "Analyze the following website audit data and provide a comprehensive market intelligence assessment:\n\n```json\n{input_data}\n```\n\nRequirements:\n1. Classify YMYL status with confidence score (0-100)\n2. Identify precise business model and revenue streams\n3. Define primary category and subcategory\n4. Assess market maturity stage\n5. Use the provided market/country if present; otherwise infer from domain, language, and on-page signals\n6. Generate 2-5 strategic search queries with specific purposes; prioritize category + market queries that surface direct competitors (e.g., 'farmacia online Argentina'); avoid 'alternatives' phrasing and policy/support terms; include the market/country\n7. Ensure queries are in the site's language\n8. Do not output 'Unknown Category' unless there are no usable signals; infer from domain/content whenever possible\n9. Provide actionable strategic insights\n\nOutput must be valid JSON matching the schema exactly.",
+  "user_template": "Analyze the following website audit data and provide a comprehensive market intelligence assessment:\n\n```json\n{input_data}\n```\n\nRequirements:\n1. Classify YMYL status with confidence score (0-100)\n2. Identify precise business model and revenue streams\n3. Define primary category and subcategory\n4. Assess market maturity stage\n5. Use the provided market/country if present; otherwise infer from domain, language, and on-page signals\n6. Generate 2-5 strategic search queries with specific purposes; build them from the true subcategory or core business plus market/country by default. Category + market phrasing is only acceptable for broader transactional niches like retail/healthcare retail when it still reflects the onsite business core (e.g., 'farmacia online Argentina'). Avoid generic software/devtools phrasing, 'alternatives', and policy/support terms. Always include the market/country\n7. Ensure queries are in the site's language\n8. Do not output 'Unknown Category' unless there are no usable signals; infer from domain/content whenever possible\n9. Provide actionable strategic insights\n\nOutput must be valid JSON matching the schema exactly.",
   "examples": {
     "ecommerce": {
       "is_ymyl": false,
@@ -151,8 +151,8 @@
     "Look for specific indicators: pricing pages, product listings, contact forms, blog content",
     "Consider context: domain age, SSL certificate, about page content, team information",
     "For YMYL: Check for medical claims, financial advice, legal services, safety information",
-    "Generate queries strategically: Prefer category + market queries (e.g., 'farmacia online Argentina') that surface direct competitors; avoid policy/support terms like cuotas, políticas, envíos",
-    "Never use 'alternative(s)' in queries; avoid generic 'tienda online' without category context",
+    "Generate queries strategically: Prefer subcategory or core-business + market queries. Only use category + market phrasing for broader transactional niches (e.g., 'farmacia online Argentina') when it clearly matches the onsite business core; avoid generic software/devtools phrasing and policy/support terms like cuotas, políticas, envíos",
+    "Never use 'alternative(s)' in queries; avoid generic 'tienda online' without category context and avoid weak generic software phrasing like 'AI assistant Colombia'",
     "Do not output 'Unknown Category' unless no signals exist; infer category from domain/content",
     "Provide nuanced insights: Don't just state facts, interpret strategic implications"
   ],

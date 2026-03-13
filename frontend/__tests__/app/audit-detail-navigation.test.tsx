@@ -61,7 +61,10 @@ describe("Audit detail GEO tools navigation", () => {
       prefetch: mockPrefetch,
     });
     (fetchWithBackendAuth as jest.Mock).mockImplementation((url: string) => {
-      if (url.endsWith("/api/v1/audits/6")) {
+      if (
+        url.endsWith("/api/v1/audits/6/summary") ||
+        url.endsWith("/api/v1/audits/6/overview")
+      ) {
         return Promise.resolve({
           ok: true,
           status: 200,
@@ -167,69 +170,6 @@ describe("Audit detail GEO tools navigation", () => {
 
   it("hydrates the same dashboard from overview shell data after refresh", async () => {
     (fetchWithBackendAuth as jest.Mock).mockImplementation((url: string) => {
-      if (url.endsWith("/api/v1/audits/6")) {
-        return Promise.resolve({
-          ok: true,
-          status: 200,
-          json: async () => ({
-            id: 6,
-            url: "https://petshop.example.com",
-            status: "completed",
-            progress: 100,
-            created_at: "2026-02-18T00:00:00Z",
-            completed_at: "2026-02-18T00:10:00Z",
-            geo_score: 71,
-            competitor_count: 2,
-            fix_plan: [
-              {
-                title: "Normalize title and meta templates",
-                description: "Apply consistent metadata patterns.",
-              },
-              {
-                title: "Add FAQ schema blocks",
-                description: "Expand answer-ready metadata.",
-              },
-              {
-                title: "Refresh collection copy",
-                description: "Tighten the category messaging.",
-              },
-            ],
-            competitor_audits: [
-              {
-                domain: "leader.example.com",
-                url: "https://leader.example.com",
-                geo_score: 76,
-                schema_present: true,
-                structure_score: 72,
-                eeat_score: 81,
-                h1_present: true,
-                tone_score: 8.1,
-              },
-              {
-                domain: "runnerup.example.com",
-                url: "https://runnerup.example.com",
-                geo_score: 65,
-                schema_present: false,
-                structure_score: 63,
-                eeat_score: 70,
-                h1_present: true,
-                tone_score: 7.2,
-              },
-            ],
-            target_audit: {
-              schema: { schema_presence: { status: "absent" } },
-              structure: {
-                h1_check: { status: "warn" },
-                semantic_html: { score_percent: 17 },
-              },
-              content: { conversational_tone: { score: 0 } },
-              eeat: { author_presence: { status: "warn" } },
-            },
-            external_intelligence: { category: "E-commerce" },
-            runtime_diagnostics: [],
-          }),
-        });
-      }
       if (url.endsWith("/api/v1/audits/6/pages")) {
         return Promise.resolve({
           ok: true,
@@ -267,19 +207,16 @@ describe("Audit detail GEO tools navigation", () => {
           status: "completed",
           progress: 100,
           created_at: "2026-02-18T00:00:00Z",
-          competitor_count: 0,
-          fix_plan_count: 0,
+          completed_at: "2026-02-18T00:10:00Z",
+          geo_score: 71,
+          competitor_count: 2,
+          fix_plan_count: 3,
+          external_intelligence: { category: "E-commerce" },
           diagnostics_summary: [],
         }}
         initialAuditIsOverview
       />,
     );
-
-    await waitFor(() => {
-      expect(fetchWithBackendAuth).toHaveBeenCalledWith(
-        "http://localhost:8000/api/v1/audits/6",
-      );
-    });
 
     await waitFor(() => {
       const executionSignalsCard =
@@ -301,5 +238,10 @@ describe("Audit detail GEO tools navigation", () => {
         within(fixPlanRow as HTMLElement).getByText("3"),
       ).toBeInTheDocument();
     });
+
+    const calledUrls = (fetchWithBackendAuth as jest.Mock).mock.calls.map(
+      ([url]) => String(url),
+    );
+    expect(calledUrls).not.toContain("http://localhost:8000/api/v1/audits/6");
   });
 });

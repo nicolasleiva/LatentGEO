@@ -312,6 +312,114 @@ async def test_pdf_generation_uses_report_cache_when_signature_matches():
 
 
 @pytest.mark.asyncio
+async def test_pdf_generation_uses_prewarmed_report_signature_cache():
+    mock_db = MagicMock()
+    mock_db.commit = MagicMock()
+    cached_signatures: dict[int, str] = {}
+
+    mock_audit = MagicMock()
+    mock_audit.id = 57
+    mock_audit.url = "https://example.com"
+    mock_audit.domain = "example.com"
+    mock_audit.target_audit = {"market": "argentina", "geo_score": 70}
+    mock_audit.external_intelligence = {
+        "category": "Education",
+        "subcategory": "Bootcamp",
+        "market": "argentina",
+        "queries_to_run": ["coding bootcamp argentina"],
+    }
+    mock_audit.search_results = {}
+    mock_audit.competitor_audits = []
+    mock_audit.pagespeed_data = {
+        "mobile": {"metadata": {"fetch_time": "2099-01-01T00:00:00Z"}}
+    }
+    mock_audit.keywords = []
+    mock_audit.backlinks = []
+    mock_audit.rank_trackings = []
+    mock_audit.llm_visibilities = []
+    mock_audit.ai_content_suggestions = []
+    mock_audit.report_markdown = "Cached markdown content. " * 20
+    mock_audit.fix_plan = [{"issue": "cached"}]
+
+    cached_context = {
+        "keywords": [{"keyword": "bootcamp", "search_volume": 1000}],
+        "backlinks": {
+            "top_backlinks": [],
+            "total_backlinks": 0,
+            "referring_domains": 0,
+        },
+        "rank_tracking": [],
+        "llm_visibility": [],
+        "ai_content_suggestions": [],
+        "pagespeed": mock_audit.pagespeed_data,
+    }
+
+    with patch.dict(
+        os.environ,
+        {"PDF_FORCE_FRESH_GEO": "false", "PDF_ALWAYS_FULL_MODE": "false"},
+        clear=False,
+    ), patch(
+        "app.services.audit_service.AuditService.get_audit",
+        return_value=mock_audit,
+    ), patch(
+        "app.services.audit_service.AuditService.get_audited_pages",
+        return_value=[],
+    ), patch(
+        "app.services.audit_service.CompetitorService.get_competitors",
+        return_value=[],
+    ), patch(
+        "app.services.pdf_service.PDFService._load_complete_audit_context",
+        return_value=cached_context,
+    ), patch(
+        "app.services.pdf_service.PDFService._save_report_signature",
+        side_effect=lambda audit_id, signature, db=None: cached_signatures.__setitem__(
+            audit_id, signature
+        ),
+    ), patch(
+        "app.services.pdf_service.PDFService._load_saved_report_signature",
+        side_effect=lambda audit_id, db=None: cached_signatures.get(audit_id, ""),
+    ), patch(
+        "app.services.keyword_service.KeywordService.research_keywords",
+        new_callable=AsyncMock,
+        return_value=[],
+    ), patch(
+        "app.services.backlink_service.BacklinkService.analyze_backlinks",
+        new_callable=AsyncMock,
+        return_value=[],
+    ), patch(
+        "app.services.rank_tracker_service.RankTrackerService.track_rankings",
+        new_callable=AsyncMock,
+        return_value=[],
+    ), patch(
+        "app.services.llm_visibility_service.LLMVisibilityService.check_visibility",
+        new_callable=AsyncMock,
+        return_value=[],
+    ), patch(
+        "app.services.ai_content_service.AIContentService.generate_suggestions",
+        new_callable=AsyncMock,
+        return_value=[],
+    ), patch(
+        "app.services.pipeline_service.PipelineService.generate_report",
+        new_callable=AsyncMock,
+    ) as mock_generate_report, patch(
+        "app.services.pdf_service.PDFService.generate_comprehensive_pdf",
+        new_callable=AsyncMock,
+        return_value="dummy.pdf",
+    ):
+        signature = PDFService.prewarm_report_signature(mock_db, mock_audit.id)
+        result = await PDFService.generate_pdf_with_complete_context(
+            mock_db, mock_audit.id, return_details=True
+        )
+
+    assert signature
+    assert cached_signatures[mock_audit.id] == signature
+    assert result["pdf_path"] == "dummy.pdf"
+    assert result["report_cache_hit"] is True
+    assert result["generation_mode"] == "report_cache_hit"
+    mock_generate_report.assert_not_called()
+
+
+@pytest.mark.asyncio
 async def test_pdf_generation_uses_reloaded_canonical_context_for_signature_cache():
     mock_db = MagicMock()
     mock_db.refresh = MagicMock()

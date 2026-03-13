@@ -134,6 +134,8 @@ export interface AIContentSuggestion {
   suggestion_type: string;
   content_outline?: any;
   priority: string;
+  strategy_run_id?: string;
+  strategy_order?: number;
   created_at: string;
 }
 

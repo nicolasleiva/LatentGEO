@@ -1772,8 +1772,14 @@ class PipelineService:
             "cnn.com",
             "bbc.co",
             "theguardian.com",
+            "inc.com",
+            "techcrunch.com",
+            "venturebeat.com",
             "stackoverflow.com",
             "developers.google.com",
+            "chromewebstore.google.com",
+            "marketplace.visualstudio.com",
+            "addons.mozilla.org",
             "imdb.com",
             "warnerbros.com",
             "merriam-webster.com",
@@ -1830,6 +1836,8 @@ class PipelineService:
             "developers",
             "learn",
             "academy",
+            "marketplace",
+            "extensions",
             "science",
             "journal",
             "journals",
@@ -2065,8 +2073,26 @@ class PipelineService:
                 logger.info(f"PIPELINE: Excluyendo {url} (ruta no competitiva: {path})")
                 return None
 
+            def _domain_matches(pattern: str, host: str) -> bool:
+                raw_pattern = str(pattern or "").lower().strip()
+                normalized_host = str(host or "").lower().strip(".")
+                if not raw_pattern or not normalized_host:
+                    return False
+
+                if raw_pattern.endswith("."):
+                    segment_pattern = raw_pattern.strip(".")
+                    return bool(segment_pattern) and (
+                        segment_pattern in normalized_host.split(".")
+                    )
+
+                normalized_pattern = raw_pattern.lstrip(".")
+                return bool(normalized_pattern) and (
+                    normalized_host == normalized_pattern
+                    or normalized_host.endswith(f".{normalized_pattern}")
+                )
+
             for pattern in bad_patterns:
-                if pattern in domain_clean:
+                if _domain_matches(pattern, domain_clean):
                     logger.info(
                         f"PIPELINE: Excluyendo {url} (patrón prohibido: {pattern})"
                     )
@@ -2264,10 +2290,22 @@ class PipelineService:
             if isinstance(core_profile, dict)
             else PipelineService._build_core_business_profile(target_audit, max_terms=6)
         )
+        preferred_core_terms = (
+            effective_core_profile.get("strong_core_terms")
+            or effective_core_profile.get("core_terms")
+            or []
+        )
+        weak_profile_terms = {
+            PipelineService._normalize_token_root(term)
+            for term in (effective_core_profile.get("weak_core_terms") or [])
+            if term
+        }
         core_terms_all = [
             str(term).strip().lower()
-            for term in (effective_core_profile.get("core_terms") or [])
+            for term in preferred_core_terms
             if str(term).strip()
+            and PipelineService._normalize_token_root(str(term).strip().lower())
+            not in weak_profile_terms
         ]
         noisy_core_terms = {
             "insight",
@@ -3058,6 +3096,18 @@ class PipelineService:
 
         language = target_audit.get("language", "")
         is_spanish = str(language).lower().startswith("es")
+        effective_core_profile = (
+            core_profile
+            if isinstance(core_profile, dict)
+            else PipelineService._build_core_business_profile(target_audit, max_terms=6)
+        )
+        vertical_hint = str(
+            (effective_core_profile or {}).get("vertical_hint") or "other"
+        ).lower()
+        strict_vertical = (
+            vertical_hint in PipelineService._strict_competitor_verticals()
+        )
+        broad_vertical = vertical_hint in PipelineService._broad_competitor_verticals()
 
         market_tokens: List[str] = []
         if market_hint:
@@ -3152,15 +3202,27 @@ class PipelineService:
         }
         profile_core_terms = {
             PipelineService._normalize_token_root(term)
-            for term in (core_profile or {}).get("core_terms", [])
+            for term in (effective_core_profile or {}).get("core_terms", [])
+            if term
+        }
+        profile_strong_terms = {
+            PipelineService._normalize_token_root(term)
+            for term in (effective_core_profile or {}).get("strong_core_terms", [])
+            if term
+        }
+        profile_weak_terms = {
+            PipelineService._normalize_token_root(term)
+            for term in (effective_core_profile or {}).get("weak_core_terms", [])
             if term
         }
         profile_outlier_terms = {
             PipelineService._normalize_token_root(term)
-            for term in (core_profile or {}).get("outlier_terms", [])
+            for term in (effective_core_profile or {}).get("outlier_terms", [])
             if term
         }
         profile_core_terms = {term for term in profile_core_terms if term}
+        profile_strong_terms = {term for term in profile_strong_terms if term}
+        profile_weak_terms = {term for term in profile_weak_terms if term}
         profile_outlier_terms = {term for term in profile_outlier_terms if term}
 
         def _query_token_roots(text: str) -> set:
@@ -3354,10 +3416,12 @@ class PipelineService:
             has_industry_term = any(tok in ql for tok in industry_tokens)
             has_llm_category_term = any(tok in ql for tok in llm_category_tokens)
             has_category_term = has_industry_term or has_llm_category_term
-            has_profile_core_term = bool(
-                profile_core_terms
-                and profile_core_terms.intersection(query_token_roots)
+            match_details = PipelineService._query_core_match_details(
+                qtext, effective_core_profile
             )
+            has_profile_core_term = bool(match_details["core_matches"])
+            has_profile_strong_term = bool(match_details["strong_matches"])
+            effective_core_match_count = len(match_details["effective_matches"])
             has_profile_outlier_term = bool(
                 profile_outlier_terms
                 and profile_outlier_terms.intersection(query_token_roots)
@@ -3365,15 +3429,28 @@ class PipelineService:
             uses_only_outlier = bool(
                 has_profile_outlier_term and not has_profile_core_term
             )
+            uses_only_weak_core = PipelineService._query_uses_only_weak_core_terms(
+                qtext, effective_core_profile
+            )
+            allows_broad_transactional_outlier = bool(
+                broad_vertical
+                and has_market_term
+                and PipelineService._query_has_transactional_intent(qtext)
+            )
 
             # Verificar si tiene marca
             has_brand = bool(
                 brand_tokens and any(token in query_tokens for token in brand_tokens)
             )
 
-            if uses_only_outlier:
+            if uses_only_outlier and not allows_broad_transactional_outlier:
                 rejected_reasons.append(
                     f"Query {idx}: usa solo términos outlier - '{qtext[:60]}'"
+                )
+                continue
+            if strict_vertical and uses_only_weak_core:
+                rejected_reasons.append(
+                    f"Query {idx}: usa solo términos genéricos débiles - '{qtext[:60]}'"
                 )
                 continue
 
@@ -3394,10 +3471,47 @@ class PipelineService:
             logger.debug(
                 f"Query '{qtext[:60]}': brand={has_brand}, category={has_category_term} "
                 f"(industry={has_industry_term}, llm={has_llm_category_term}, flexible={has_flexible_category_match}), "
-                f"commerce={has_commerce_term}, competitor_marker={has_competitor_marker}"
+                f"commerce={has_commerce_term}, competitor_marker={has_competitor_marker}, "
+                f"strict_vertical={strict_vertical}, strong_core={has_profile_strong_term}, "
+                f"effective_core_matches={effective_core_match_count}"
             )
 
             # Validación profesional y flexible:
+
+            if strict_vertical:
+                if has_profile_strong_term and (
+                    has_market_term
+                    or has_commerce_term
+                    or has_competitor_marker
+                    or has_category_term
+                    or has_flexible_category_match
+                ):
+                    filtered.append(q)
+                    logger.debug("Query aceptada: vertical estricto + strong core")
+                    continue
+
+                if effective_core_match_count >= 2 and (
+                    has_market_term or has_commerce_term or has_competitor_marker
+                ):
+                    filtered.append(q)
+                    logger.debug(
+                        "Query aceptada: vertical estricto + corroboración de core"
+                    )
+                    continue
+
+                if (
+                    not market_hint
+                    and has_market_term
+                    and (has_category_term or has_flexible_category_match)
+                    and PipelineService._query_has_non_generic_business_signal(
+                        qtext, effective_core_profile
+                    )
+                ):
+                    filtered.append(q)
+                    logger.debug(
+                        "Query aceptada: vertical estricto + fallback geográfico no genérico"
+                    )
+                    continue
 
             # 1. Query usa categoría del LLM (exacta o flexible) + término de comercio
             if (
@@ -3420,21 +3534,36 @@ class PipelineService:
                 continue
 
             # 3.5 Categoría + mercado (query recomendada por prompt)
-            if has_market_term and (has_category_term or has_flexible_category_match):
+            if (
+                has_market_term
+                and (has_category_term or has_flexible_category_match)
+                and (
+                    not strict_vertical
+                    or not market_hint
+                    or has_profile_strong_term
+                    or effective_core_match_count >= 1
+                )
+            ):
                 filtered.append(q)
                 logger.debug("Query aceptada: categoría + mercado")
                 continue
 
             # 3.6 Query alineada al core real + señal de intención (sin requerir marcador rígido)
-            if has_profile_core_term and (
-                has_commerce_term or has_market_term or has_competitor_marker
-            ):
+            if (
+                has_profile_strong_term
+                or effective_core_match_count >= 1
+                or (not strict_vertical and has_profile_core_term)
+            ) and (has_commerce_term or has_market_term or has_competitor_marker):
                 filtered.append(q)
                 logger.debug("Query aceptada: core profile + intención")
                 continue
 
             # 3.7 Comercio + mercado (fallback robusto para e-commerce/local intent)
-            if has_commerce_term and has_market_term:
+            if (
+                has_commerce_term
+                and has_market_term
+                and (broad_vertical or not strict_vertical)
+            ):
                 filtered.append(q)
                 logger.debug("Query aceptada: comercio + mercado")
                 continue
@@ -3455,11 +3584,15 @@ class PipelineService:
                     has_competitor_marker,
                     has_market_term,
                     has_profile_core_term,
+                    has_profile_strong_term,
+                    effective_core_match_count >= 2,
                 ]
             )
-            if score >= 2 and not uses_only_outlier:
+            if score >= (3 if strict_vertical else 2) and not uses_only_outlier:
                 filtered.append(q)
-                logger.debug(f"Query aceptada: score-based ({score}/6)")
+                logger.debug(
+                    f"Query aceptada: score-based ({score}/{'8' if strict_vertical else '8'})"
+                )
                 continue
 
             # Query rechazada - loggear razón detallada
@@ -3468,7 +3601,8 @@ class PipelineService:
                 f"brand={has_brand}, category_exact={has_llm_category_term}, "
                 f"category_flexible={has_flexible_category_match}, "
                 f"commerce={has_commerce_term}, competitor={has_competitor_marker}, "
-                f"score={score}"
+                f"strict_vertical={strict_vertical}, strong_core={has_profile_strong_term}, "
+                f"effective_core_matches={effective_core_match_count}, score={score}"
             )
             rejected_reasons.append(rejection_reason)
             logger.debug(rejection_reason)
@@ -3932,6 +4066,170 @@ class PipelineService:
         }
 
     @staticmethod
+    def _weak_competitor_support_terms(vertical_hint: Optional[str] = None) -> set:
+        weak_terms = {
+            "ai",
+            "artificial",
+            "intelligence",
+            "assistant",
+            "assistants",
+            "tool",
+            "tools",
+            "platform",
+            "platforms",
+            "app",
+            "apps",
+            "software",
+            "code",
+            "coding",
+            "developer",
+            "developers",
+            "productivity",
+            "workflow",
+            "automation",
+            "cloud",
+            "api",
+            "apis",
+            "system",
+            "systems",
+            "service",
+            "services",
+            "solution",
+            "solutions",
+            "digital",
+            "online",
+        }
+        vertical = str(vertical_hint or "").strip().lower()
+        if vertical == "software":
+            weak_terms.update({"workspace", "suite"})
+        normalized = set()
+        for term in weak_terms.union(PipelineService._generic_business_terms()):
+            root = PipelineService._normalize_token_root(term)
+            if root:
+                normalized.add(root)
+        return normalized
+
+    @staticmethod
+    def _strict_competitor_verticals() -> set:
+        return {"software", "services"}
+
+    @staticmethod
+    def _broad_competitor_verticals() -> set:
+        return {"ecommerce", "retail", "healthcare_retail"}
+
+    @staticmethod
+    def _query_has_transactional_intent(query: str) -> bool:
+        intent_terms = {
+            "online",
+            "shop",
+            "store",
+            "tienda",
+            "buy",
+            "comprar",
+            "delivery",
+            "shipping",
+            "envio",
+            "envío",
+            "stock",
+            "precio",
+            "price",
+            "pharmacy",
+            "farmacia",
+            "retail",
+            "venta",
+            "order",
+            "pedido",
+        }
+        query_roots = {
+            PipelineService._normalize_token_root(token)
+            for token in re.findall(r"[a-z0-9áéíóúñ]{2,}", str(query or "").lower())
+            if token
+        }
+        intent_roots = {
+            PipelineService._normalize_token_root(term) for term in intent_terms if term
+        }
+        return bool(query_roots.intersection(intent_roots))
+
+    @staticmethod
+    def _query_core_match_details(
+        query: str, core_profile: Optional[Dict[str, Any]]
+    ) -> Dict[str, Any]:
+        if not query or not isinstance(core_profile, dict):
+            return {
+                "vertical_hint": "other",
+                "query_terms": set(),
+                "core_terms": set(),
+                "strong_terms": set(),
+                "weak_terms": set(),
+                "market_terms": set(),
+                "core_matches": set(),
+                "strong_matches": set(),
+                "effective_matches": set(),
+                "weak_matches": set(),
+            }
+
+        vertical_hint = str(core_profile.get("vertical_hint") or "other").lower()
+        query_terms = {
+            PipelineService._normalize_token_root(term)
+            for term in re.findall(r"[a-z0-9áéíóúñ]{2,}", str(query).lower())
+            if term
+        }
+        core_terms = {
+            PipelineService._normalize_token_root(term)
+            for term in (core_profile.get("core_terms") or [])
+            if term
+        }
+        strong_terms = {
+            PipelineService._normalize_token_root(term)
+            for term in (core_profile.get("strong_core_terms") or [])
+            if term
+        }
+        weak_terms = PipelineService._weak_competitor_support_terms(vertical_hint)
+        weak_terms.update(
+            {
+                PipelineService._normalize_token_root(term)
+                for term in (core_profile.get("weak_core_terms") or [])
+                if term
+            }
+        )
+
+        market_terms = {
+            PipelineService._normalize_token_root(term)
+            for term in (core_profile.get("market_terms") or [])
+            if term
+        }
+        core_matches = core_terms.intersection(query_terms)
+        strong_matches = strong_terms.intersection(query_terms)
+        effective_matches = {
+            match for match in core_matches if match and match not in weak_terms
+        }
+        weak_matches = query_terms.intersection(weak_terms)
+        return {
+            "vertical_hint": vertical_hint,
+            "query_terms": query_terms,
+            "core_terms": core_terms,
+            "strong_terms": strong_terms,
+            "weak_terms": weak_terms,
+            "market_terms": market_terms,
+            "core_matches": core_matches,
+            "strong_matches": strong_matches,
+            "effective_matches": effective_matches,
+            "weak_matches": weak_matches,
+        }
+
+    @staticmethod
+    def _query_has_non_generic_business_signal(
+        query: str, core_profile: Optional[Dict[str, Any]]
+    ) -> bool:
+        details = PipelineService._query_core_match_details(query, core_profile)
+        if details["strong_matches"] or details["effective_matches"]:
+            return True
+        candidate_terms = (
+            details["query_terms"] - details["weak_matches"] - details["market_terms"]
+        )
+        return bool(candidate_terms)
+
+    @staticmethod
     def _normalize_token_root(token: str) -> str:
         normalized = unicodedata.normalize("NFKD", str(token or "").lower())
         ascii_folded = "".join(ch for ch in normalized if not unicodedata.combining(ch))
@@ -3977,6 +4275,8 @@ class PipelineService:
         if not isinstance(target_audit, dict):
             return {
                 "core_terms": [],
+                "strong_core_terms": [],
+                "weak_core_terms": [],
                 "outlier_terms": [],
                 "confidence": 0.0,
                 "vertical_hint": "other",
@@ -4069,8 +4369,10 @@ class PipelineService:
             "shop",
             "store",
             "tienda",
+            "online",
             "ecommerce",
             "e-commerce",
+            "retail",
             "producto",
             "productos",
             "product",
@@ -4088,6 +4390,10 @@ class PipelineService:
             "checkout",
             "cart",
             "sku",
+            "pharmacy",
+            "farmacia",
+            "dermocosmetica",
+            "dermocosmética",
         }
         services_tokens = {
             "consulting",
@@ -4113,6 +4419,11 @@ class PipelineService:
             "cloud",
             "app",
             "dashboard",
+            "coding",
+            "code",
+            "extension",
+            "extensions",
+            "productivity",
         }
         education_tokens = {
             "bootcamp",
@@ -4138,6 +4449,26 @@ class PipelineService:
             ecommerce_score += 3
         if "retail" in category_hint.lower():
             ecommerce_score += 2
+        category_subcategory_text = " ".join(
+            value.lower() for value in [category_hint, subcategory_hint] if value
+        )
+        if any(
+            token in category_subcategory_text
+            for token in {
+                "software",
+                "developer tools",
+                "developer tool",
+                "coding",
+                "productivity",
+                "extension",
+            }
+        ):
+            software_score += 2
+        if any(
+            token in category_subcategory_text
+            for token in {"consulting", "consultoria", "consultoría", "agency"}
+        ):
+            services_score += 1
 
         vertical_hint = "other"
         vertical_score = max(
@@ -4281,6 +4612,8 @@ class PipelineService:
         if not score_by_term:
             return {
                 "core_terms": [],
+                "strong_core_terms": [],
+                "weak_core_terms": [],
                 "outlier_terms": [],
                 "confidence": 0.0,
                 "vertical_hint": vertical_hint,
@@ -4324,15 +4657,28 @@ class PipelineService:
                 : max(1, max_terms)
             ]
 
+        weak_term_roots = PipelineService._weak_competitor_support_terms(vertical_hint)
+        strong_core_terms = [
+            term
+            for term in core_terms
+            if PipelineService._normalize_token_root(term) not in weak_term_roots
+        ]
+        weak_core_terms = [
+            term
+            for term in core_terms
+            if PipelineService._normalize_token_root(term) in weak_term_roots
+        ]
+
         confidence_numerator = sum(
             1.0
-            for term in core_terms
+            for term in strong_core_terms or core_terms
             if strong_support.get(term, 0) > 0
             and len(source_support.get(term, set())) >= 2
         )
         confidence = min(
             1.0,
-            confidence_numerator / max(1.0, float(len(core_terms))),
+            confidence_numerator
+            / max(1.0, float(len(strong_core_terms or core_terms))),
         )
 
         source_support_export = {
@@ -4342,6 +4688,8 @@ class PipelineService:
 
         return {
             "core_terms": core_terms[: max(1, max_terms)],
+            "strong_core_terms": strong_core_terms[: max(1, max_terms)],
+            "weak_core_terms": weak_core_terms[: max(1, max_terms)],
             "outlier_terms": outlier_terms[: max(1, max_terms * 2)],
             "confidence": round(float(confidence), 3),
             "vertical_hint": vertical_hint,
@@ -4363,7 +4711,13 @@ class PipelineService:
             for term in (core_profile.get("core_terms") or [])
             if str(term).strip()
         ]
-        if not core_terms:
+        strong_core_terms = [
+            str(term).strip().lower()
+            for term in (core_profile.get("strong_core_terms") or [])
+            if str(term).strip()
+        ]
+        candidate_terms = strong_core_terms or core_terms
+        if not candidate_terms:
             return None
 
         generic_terms = PipelineService._generic_business_terms()
@@ -4414,7 +4768,7 @@ class PipelineService:
         }
         product_term = ""
         scored_candidates: List[Tuple[int, str]] = []
-        for term in core_terms:
+        for term in candidate_terms:
             if term in generic_terms or term in intent_terms:
                 continue
             if len(term) < 3:
@@ -4423,7 +4777,9 @@ class PipelineService:
             support_score = sum(1 for src in support if src in preferred_sources)
             scored_candidates.append((support_score, term))
         if scored_candidates:
-            scored_candidates.sort(key=lambda row: (-row[0], core_terms.index(row[1])))
+            scored_candidates.sort(
+                key=lambda row: (-row[0], candidate_terms.index(row[1]))
+            )
             product_term = scored_candidates[0][1]
         if not product_term:
             return None
@@ -4447,7 +4803,7 @@ class PipelineService:
             "programa",
         }
         education_term = next(
-            (term for term in core_terms if term in education_markers), ""
+            (term for term in candidate_terms if term in education_markers), ""
         )
 
         if vertical_hint == "ecommerce":
@@ -4483,21 +4839,23 @@ class PipelineService:
     def _query_matches_core_profile(
         query: str, core_profile: Optional[Dict[str, Any]]
     ) -> bool:
-        if not query or not isinstance(core_profile, dict):
+        details = PipelineService._query_core_match_details(query, core_profile)
+        if not details["core_terms"]:
             return False
-        core_terms = {
-            PipelineService._normalize_token_root(term)
-            for term in (core_profile.get("core_terms") or [])
-            if term
-        }
-        if not core_terms:
-            return False
-        query_terms = {
-            PipelineService._normalize_token_root(term)
-            for term in re.findall(r"[a-z0-9áéíóúñ]{2,}", str(query).lower())
-            if term
-        }
-        return bool(core_terms.intersection(query_terms))
+        vertical_hint = details["vertical_hint"]
+        strong_match_count = len(details["strong_matches"])
+        effective_match_count = len(details["effective_matches"])
+        core_match_count = len(details["core_matches"])
+
+        if vertical_hint in PipelineService._strict_competitor_verticals():
+            return strong_match_count >= 1 or effective_match_count >= 2
+        if vertical_hint in PipelineService._broad_competitor_verticals():
+            return effective_match_count >= 1 or strong_match_count >= 1
+        return (
+            strong_match_count >= 1
+            or effective_match_count >= 1
+            or core_match_count >= 2
+        )
 
     @staticmethod
     def _query_uses_only_outlier_terms(
@@ -4529,6 +4887,23 @@ class PipelineService:
         return not bool(query_terms.intersection(core_terms))
 
     @staticmethod
+    def _query_uses_only_weak_core_terms(
+        query: str, core_profile: Optional[Dict[str, Any]]
+    ) -> bool:
+        details = PipelineService._query_core_match_details(query, core_profile)
+        if not details["query_terms"]:
+            return False
+        core_matches = details["core_matches"]
+        if not core_matches:
+            return False
+        if details["strong_matches"] or details["effective_matches"]:
+            return False
+        meaningful_terms = details["query_terms"] - details["market_terms"]
+        return bool(meaningful_terms) and meaningful_terms.issubset(
+            details["weak_terms"].union(details["market_terms"])
+        )
+
+    @staticmethod
     def _recover_queries_from_core_profile(
         core_profile: Dict[str, Any],
         market_hint: Optional[str],
@@ -4553,7 +4928,16 @@ class PipelineService:
             for term in (core_profile.get("core_terms") or [])
             if str(term).strip()
         ]
-        anchor_term = core_terms[0] if core_terms else ""
+        strong_core_terms = [
+            str(term).strip().lower()
+            for term in (core_profile.get("strong_core_terms") or [])
+            if str(term).strip()
+        ]
+        anchor_term = (
+            (strong_core_terms or core_terms)[0]
+            if (strong_core_terms or core_terms)
+            else ""
+        )
         if vertical_hint == "ecommerce":
             if is_spanish:
                 product = PipelineService._pluralize_spanish(anchor_term or "productos")
@@ -6298,6 +6682,11 @@ class PipelineService:
                         f"outlier_only:'{candidate_query[:80]}'"
                     )
                     continue
+                if self._query_uses_only_weak_core_terms(candidate_query, core_profile):
+                    strict_rejection_reasons.append(
+                        f"weak_generic_only:'{candidate_query[:80]}'"
+                    )
+                    continue
                 if not self._query_matches_core_profile(candidate_query, core_profile):
                     strict_rejection_reasons.append(
                         f"no_core_match:'{candidate_query[:80]}'"
@@ -6325,8 +6714,23 @@ class PipelineService:
                         f"{strict_rejection_reasons[:5]}"
                     )
                 for item in pruned_queries_snapshot:
+                    candidate_query = str(item.get("query", "")).strip()
+                    if not candidate_query:
+                        continue
+                    if self._query_uses_only_outlier_terms(
+                        candidate_query, core_profile
+                    ):
+                        continue
+                    if self._query_uses_only_weak_core_terms(
+                        candidate_query, core_profile
+                    ):
+                        continue
+                    if not self._query_has_non_generic_business_signal(
+                        candidate_query, core_profile
+                    ):
+                        continue
                     _append_query(
-                        str(item.get("query", "")).strip(),
+                        candidate_query,
                         str(item.get("purpose", "")).strip() or "Competitor discovery",
                         query_id=str(item.get("id", "")).strip(),
                     )

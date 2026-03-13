@@ -20,6 +20,7 @@ from ..core.database import SessionLocal
 from ..core.llm_kimi import get_llm_function
 from ..core.logger import get_logger
 from ..models import Audit, Report
+from .pagespeed_freshness import is_pagespeed_stale
 
 logger = get_logger(__name__)
 
@@ -735,6 +736,48 @@ class PDFService:
             db.flush()
         except Exception as exc:
             logger.warning(f"Could not persist report signature cache in DB: {exc}")
+
+    @staticmethod
+    def prewarm_report_signature(db: Any, audit_id: int) -> str:
+        from .audit_service import AuditService
+
+        try:
+            audit = AuditService.get_audit(db, audit_id)
+            if (
+                not audit
+                or not str(getattr(audit, "report_markdown", "") or "").strip()
+            ):
+                return ""
+
+            complete_context = PDFService._load_complete_audit_context(db, audit_id)
+            signature_inputs = PDFService._build_signature_inputs_from_complete_context(
+                complete_context,
+                audit.pagespeed_data if isinstance(audit.pagespeed_data, dict) else {},
+            )
+            signature = PDFService._compute_report_context_signature(
+                audit=audit,
+                pagespeed_data=signature_inputs["pagespeed_data"],
+                keywords_data=signature_inputs["keywords_data"],
+                backlinks_data=signature_inputs["backlinks_data"],
+                rank_tracking_data=signature_inputs["rank_tracking_data"],
+                llm_visibility_data=signature_inputs["llm_visibility_data"],
+                ai_content_suggestions=signature_inputs["ai_content_suggestions"],
+            )
+            if not signature:
+                return ""
+
+            PDFService._save_report_signature(audit_id, signature, db=db)
+            if db is not None:
+                db.commit()
+            logger.info("Prewarmed report signature for audit %s", audit_id)
+            return signature
+        except Exception as exc:
+            logger.warning(
+                "Could not prewarm report signature for audit %s: %s",
+                audit_id,
+                exc,
+            )
+            return ""
 
     @staticmethod
     def _compact_report_inputs_for_retry(
@@ -2441,62 +2484,6 @@ class PDFService:
             audit.report_markdown = original_markdown
 
     @staticmethod
-    def _is_pagespeed_stale(pagespeed_data: dict, max_age_hours: int = 24) -> bool:
-        """
-        Check if PageSpeed data is stale and needs refresh.
-
-        Args:
-            pagespeed_data: Cached PageSpeed data
-            max_age_hours: Maximum age in hours before considering stale
-
-        Returns:
-            True if data is stale or invalid
-        """
-        if not pagespeed_data:
-            return True
-
-        # Check for mobile data (required)
-        mobile_data = pagespeed_data.get("mobile", {})
-        if not mobile_data or "error" in mobile_data:
-            return True
-
-        # Check timestamp
-        fetch_time = mobile_data.get("metadata", {}).get("fetch_time")
-        if not fetch_time:
-            return True
-
-        try:
-            from datetime import datetime, timedelta, timezone
-
-            # Parse ISO format timestamp
-            if not isinstance(fetch_time, str):
-                logger.warning(f"fetch_time is not a string: {type(fetch_time)}")
-                return True
-
-            if "Z" in fetch_time:
-                fetch_datetime = datetime.fromisoformat(
-                    fetch_time.replace("Z", "+00:00")
-                )
-            else:
-                fetch_datetime = datetime.fromisoformat(fetch_time)
-
-            # Make sure both datetimes are timezone-aware
-            if fetch_datetime.tzinfo is None:
-                fetch_datetime = fetch_datetime.replace(tzinfo=timezone.utc)
-
-            now = datetime.now(timezone.utc)
-            age = now - fetch_datetime
-            is_stale = age > timedelta(hours=max_age_hours)
-
-            logger.info(
-                f"PageSpeed data age: {age.total_seconds() / 3600:.1f} hours, stale: {is_stale}"
-            )
-            return is_stale
-        except Exception as e:
-            logger.warning(f"Error checking PageSpeed staleness: {e}")
-            return True
-
-    @staticmethod
     async def generate_pdf_with_complete_context(
         db,
         audit_id: int,
@@ -2676,7 +2663,7 @@ class PDFService:
         needs_refresh = allow_pagespeed_refresh and (
             force_pagespeed_refresh
             or not pagespeed_data
-            or PDFService._is_pagespeed_stale(pagespeed_data)
+            or is_pagespeed_stale(pagespeed_data)
         )
 
         # 3. Run PageSpeed if needed
@@ -2954,37 +2941,6 @@ class PDFService:
                 limit=20,
             )
 
-            async def _refresh_keywords_dataset() -> (
-                tuple[List[Dict[str, Any]], Dict[str, Any]]
-            ):
-                service_db = SessionLocal()
-                try:
-                    keyword_svc = KeywordService(service_db)
-                    logger.info("  - Performing fresh keyword research for PDF...")
-                    keywords_objs = await PDFService._run_stage_with_timeout(
-                        stage_name="Keyword research",
-                        coroutine_factory=lambda: keyword_svc.research_keywords(
-                            audit_id, domain, seed_keywords=seed_keywords
-                        ),
-                        stage_timeout_seconds=keyword_stage_timeout_seconds,
-                        started_at=started_at,
-                        total_budget_seconds=total_budget_seconds,
-                    )
-                    if keywords_objs is None:
-                        raise TimeoutError("Keyword research timed out")
-
-                    fresh_keywords = [
-                        _normalize_keyword_row(k) for k in (keywords_objs or [])
-                    ]
-                    fresh_keywords = [
-                        row for row in fresh_keywords if row.get("keyword")
-                    ][: PDFService.PDF_KEYWORDS_CONTEXT_LIMIT]
-                    return fresh_keywords, PDFService._build_keywords_payload(
-                        fresh_keywords
-                    )
-                finally:
-                    service_db.close()
-
             async def _refresh_backlinks_dataset() -> Dict[str, Any]:
                 service_db = SessionLocal()
                 try:
@@ -3013,6 +2969,44 @@ class PDFService:
                         for b in backlinks_objs
                     ]
                     return PDFService._build_backlinks_payload(backlinks_list)
+                finally:
+                    service_db.close()
+
+            async def _refresh_keywords_dataset() -> Dict[str, Any]:
+                service_db = SessionLocal()
+                try:
+                    keyword_svc = KeywordService(service_db)
+                    logger.info("  - Performing fresh keyword research for PDF...")
+                    keywords_objs = await PDFService._run_stage_with_timeout(
+                        stage_name="Keyword research",
+                        coroutine_factory=lambda: keyword_svc.research_keywords(
+                            audit_id, domain, seed_keywords
+                        ),
+                        stage_timeout_seconds=keyword_stage_timeout_seconds,
+                        started_at=started_at,
+                        total_budget_seconds=total_budget_seconds,
+                    )
+                    if keywords_objs is None:
+                        raise TimeoutError("Keyword research timed out")
+
+                    fresh_keywords = [
+                        _normalize_keyword_row(keyword)
+                        for keyword in (keywords_objs or [])
+                    ]
+                    fresh_keywords = [
+                        keyword for keyword in fresh_keywords if keyword.get("keyword")
+                    ]
+                    fresh_keywords.sort(
+                        key=_keyword_opportunity_score,
+                        reverse=True,
+                    )
+                    limited_keywords = fresh_keywords[
+                        : PDFService.PDF_KEYWORDS_CONTEXT_LIMIT
+                    ]
+                    return PDFService._build_keywords_payload(
+                        limited_keywords,
+                        total=len(fresh_keywords),
+                    )
                 finally:
                     service_db.close()
 
@@ -3085,7 +3079,12 @@ class PDFService:
                         )
                         continue
                     if dataset_name == "keywords":
-                        keywords_data_list, keywords_data = refresh_result
+                        keywords_data = refresh_result
+                        keywords_data_list = (
+                            refresh_result.get("items", [])
+                            if isinstance(refresh_result, dict)
+                            else []
+                        )
                     elif dataset_name == "backlinks":
                         backlinks_data = refresh_result
                     elif dataset_name == "rankings":
@@ -4201,18 +4200,26 @@ class PDFService:
 
             # 7. Generar PDF con create_comprehensive_pdf
             try:
-                create_comprehensive_pdf(
+                generated_pdf_path = create_comprehensive_pdf(
                     reports_dir, metadata=PDFService._build_pdf_metadata(audit)
                 )
 
-                # Buscar el PDF generado
-                import glob
+                pdf_file_path = None
+                if isinstance(generated_pdf_path, str) and generated_pdf_path.strip():
+                    candidate_path = generated_pdf_path.strip()
+                    if os.path.exists(candidate_path):
+                        pdf_file_path = candidate_path
 
-                pdf_files = glob.glob(
-                    os.path.join(reports_dir, "Reporte_Consolidado_*.pdf")
-                )
-                if pdf_files:
-                    pdf_file_path = pdf_files[0]
+                if pdf_file_path is None:
+                    import glob
+
+                    pdf_files = glob.glob(
+                        os.path.join(reports_dir, "Reporte_Consolidado_*.pdf")
+                    )
+                    if pdf_files:
+                        pdf_file_path = pdf_files[0]
+
+                if pdf_file_path:
                     logger.info(f"PDF completo generado en: {pdf_file_path}")
                     try:
                         supabase_path, pdf_size = PDFService._upload_pdf_to_supabase(
@@ -4230,9 +4237,16 @@ class PDFService:
                         raise RuntimeError(
                             "Error subiendo PDF a Supabase Storage."
                         ) from upload_err
-                else:
-                    logger.error(f"No se encontrÃ³ el PDF generado en {reports_dir}")
-                    raise FileNotFoundError("PDF file not generated")
+
+                temp_dir_listing = sorted(os.listdir(reports_dir))
+                logger.error(
+                    "No generated PDF found for audit %s in %s. returned_path=%s contents=%s",
+                    audit.id,
+                    reports_dir,
+                    generated_pdf_path,
+                    temp_dir_listing,
+                )
+                raise FileNotFoundError("PDF file not generated")
             except Exception as e:
                 logger.error(
                     f"Error generando PDF con create_comprehensive_pdf: {e}",

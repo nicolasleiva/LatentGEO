@@ -16,6 +16,7 @@ from sqlalchemy import (
     Enum,
     Float,
     ForeignKey,
+    Index,
     Integer,
     String,
     Text,
@@ -484,6 +485,14 @@ class AIContentSuggestion(Base):
     """Modelo para sugerencias de contenido IA"""
 
     __tablename__ = "ai_content_suggestions"
+    __table_args__ = (
+        Index(
+            "idx_ai_content_suggestions_audit_strategy",
+            "audit_id",
+            "strategy_run_id",
+            "strategy_order",
+        ),
+    )
 
     id = Column(Integer, primary_key=True, index=True)
     audit_id = Column(Integer, ForeignKey("audits.id"), nullable=False, index=True)
@@ -495,6 +504,8 @@ class AIContentSuggestion(Base):
     )  # new_content, optimization, faq
     content_outline = Column(JSON, nullable=True)
     priority = Column(String(20), default="medium")
+    strategy_run_id = Column(String(64), nullable=True, index=True)
+    strategy_order = Column(Integer, nullable=True)
 
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 

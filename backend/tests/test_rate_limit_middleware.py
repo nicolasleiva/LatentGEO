@@ -68,6 +68,10 @@ def _redis_app(*, with_auth: bool = False) -> FastAPI:
     async def artifacts_status():
         return {"ok": True}
 
+    @app.get("/api/v1/geo/article-engine/status/99")
+    async def article_batch_status():
+        return {"ok": True}
+
     return app
 
 
@@ -231,6 +235,7 @@ def test_redis_rate_limit_scopes_pdf_bucket_away_from_normal_traffic(monkeypatch
         status_1 = client.get("/api/v1/audits/32/pdf-status")
         pagespeed_status_1 = client.get("/api/v1/audits/32/pagespeed-status")
         artifacts_status_1 = client.get("/api/v1/audits/32/artifacts-status")
+        article_batch_status_1 = client.get("/api/v1/geo/article-engine/status/99")
 
     assert overview_1.status_code == 200
     assert overview_2.status_code == 200
@@ -244,6 +249,11 @@ def test_redis_rate_limit_scopes_pdf_bucket_away_from_normal_traffic(monkeypatch
     assert pagespeed_status_1.headers.get("X-RateLimit-Bucket") == "pagespeed_status"
     assert artifacts_status_1.status_code == 200
     assert artifacts_status_1.headers.get("X-RateLimit-Bucket") == "artifacts_status"
+    assert article_batch_status_1.status_code == 200
+    assert (
+        article_batch_status_1.headers.get("X-RateLimit-Bucket")
+        == "article_batch_status"
+    )
     audit_read_keys = [
         key
         for key in fake_redis.store
@@ -271,16 +281,24 @@ def test_redis_rate_limit_scopes_pdf_bucket_away_from_normal_traffic(monkeypatch
         if key.startswith("rate_limit:artifacts_status:ip:")
         and not key.endswith(":ttl")
     ]
+    article_batch_status_keys = [
+        key
+        for key in fake_redis.store
+        if key.startswith("rate_limit:article_batch_status:ip:")
+        and not key.endswith(":ttl")
+    ]
     assert len(audit_read_keys) == 1
     assert len(pdf_generate_keys) == 1
     assert len(pdf_status_keys) == 1
     assert len(pagespeed_status_keys) == 1
     assert len(artifacts_status_keys) == 1
+    assert len(article_batch_status_keys) == 1
     assert fake_redis.store[audit_read_keys[0]] == 2
     assert fake_redis.store[pdf_generate_keys[0]] == 1
     assert fake_redis.store[pdf_status_keys[0]] == 1
     assert fake_redis.store[pagespeed_status_keys[0]] == 1
     assert fake_redis.store[artifacts_status_keys[0]] == 1
+    assert fake_redis.store[article_batch_status_keys[0]] == 1
 
 
 def test_redis_rate_limit_scopes_authenticated_users_independently(monkeypatch):

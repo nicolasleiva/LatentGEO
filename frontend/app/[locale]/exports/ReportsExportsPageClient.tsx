@@ -54,24 +54,35 @@ function ExportAuditRow({
   locale,
   onViewMarkdown,
   onDownloadJson,
+  markdownLoading,
 }: {
   audit: ExportAudit;
   locale: string;
   onViewMarkdown: (auditId: number) => void;
   onDownloadJson: (auditId: number) => void;
+  markdownLoading: boolean;
 }) {
   const { state, generate, isBusy } = usePdfGeneration({
     auditId: audit.id,
     autoDownload: true,
   });
+  const [isDownloadingPdf, setIsDownloadingPdf] = useState(false);
 
   const handleGeneratePdf = async () => {
     try {
       if (state.status === "completed" && state.download_ready) {
-        await downloadAuditPdf(audit.id);
+        setIsDownloadingPdf(true);
+        try {
+          await downloadAuditPdf(audit.id);
+        } finally {
+          setIsDownloadingPdf(false);
+        }
         return;
       }
-      await generate();
+      const nextState = await generate();
+      if (nextState.status === "failed") {
+        throw new Error(nextState.error?.message || "PDF generation failed.");
+      }
     } catch (error) {
       console.error("Error handling PDF action:", error);
       alert(
@@ -139,11 +150,11 @@ function ExportAuditRow({
         <div className="flex gap-2">
           <Button
             onClick={handleGeneratePdf}
-            disabled={isBusy}
+            disabled={isBusy || isDownloadingPdf}
             className="glass-button-primary"
             size="sm"
           >
-            {isBusy ? (
+            {isBusy || isDownloadingPdf ? (
               <Loader2 className="h-4 w-4 mr-2 animate-spin" />
             ) : (
               <FileText className="h-4 w-4 mr-2" />
@@ -152,17 +163,20 @@ function ExportAuditRow({
               ? "Queued PDF"
               : state.status === "waiting"
                 ? "Waiting on PageSpeed"
-                : isBusy || state.status === "running"
-                  ? "Building PDF"
-                  : state.status === "completed"
-                    ? "Download PDF"
-                    : state.status === "failed"
-                      ? "Retry PDF"
-                      : "Build PDF"}
+                : isDownloadingPdf
+                  ? "Downloading PDF"
+                  : isBusy || state.status === "running"
+                    ? "Building PDF"
+                    : state.status === "completed"
+                      ? "Download PDF"
+                      : state.status === "failed"
+                        ? "Retry PDF"
+                        : "Build PDF"}
           </Button>
 
           <Button
             onClick={() => onViewMarkdown(audit.id)}
+            disabled={markdownLoading}
             variant="outline"
             className="border-border/70 bg-muted/40 hover:bg-muted/60 text-foreground"
             size="sm"
@@ -201,8 +215,15 @@ export default function ReportsExportsPageClient({
 }: ReportsExportsPageClientProps) {
   const [selectedAudit, setSelectedAudit] = useState<number | null>(null);
   const [markdownContent, setMarkdownContent] = useState("");
+  const [loadingMarkdownAuditId, setLoadingMarkdownAuditId] = useState<
+    number | null
+  >(null);
 
   const handleViewMarkdown = async (auditId: number) => {
+    if (loadingMarkdownAuditId !== null) {
+      return;
+    }
+    setLoadingMarkdownAuditId(auditId);
     try {
       const response = await fetchWithBackendAuth(
         `${API_URL}/api/v1/reports/markdown/${auditId}`,
@@ -216,6 +237,8 @@ export default function ReportsExportsPageClient({
     } catch (error) {
       console.error("Error loading markdown:", error);
       alert("Error loading markdown report");
+    } finally {
+      setLoadingMarkdownAuditId(null);
     }
   };
 
@@ -324,6 +347,7 @@ export default function ReportsExportsPageClient({
                   locale={locale}
                   onViewMarkdown={handleViewMarkdown}
                   onDownloadJson={handleDownloadJSON}
+                  markdownLoading={loadingMarkdownAuditId !== null}
                 />
               ))}
             </div>

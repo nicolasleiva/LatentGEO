@@ -20,7 +20,7 @@ export default async function OdooDeliveryPage({
   await requireServerViewer(`/${locale}/audits/${id}/odoo-delivery`);
 
   const [audit, planResult, connectionsResult] = await Promise.all([
-    serverJson(`/api/v1/audits/${id}`).catch(() => null),
+    serverJson(`/api/v1/audits/${id}/summary`).catch(() => null),
     serverJson<PlanPayload>(`/api/v1/odoo/delivery-plan/${id}`)
       .then((payload) => ({ payload, error: null }))
       .catch((error) => ({

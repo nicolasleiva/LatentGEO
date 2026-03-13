@@ -77,3 +77,47 @@ def test_geo_score_refresh_distinguishes_valid_zero_from_legacy_zero():
         CompetitorService.needs_geo_score_refresh(legacy_zero_payload, stored_score=0.0)
         is True
     )
+
+
+def test_format_competitor_data_uses_nulls_for_incomplete_signals():
+    payload = CompetitorService._format_competitor_data(
+        {"url": "https://unknown.example.com", "status": 200},
+        geo_score=0.0,
+        score_meta=CompetitorService._calculate_geo_score_with_provenance({}),
+        benchmark_available=True,
+    )
+
+    assert payload["score_status"] == "insufficient_signals"
+    assert payload["schema_present"] is None
+    assert payload["structure_score"] is None
+    assert payload["eeat_score"] is None
+    assert payload["h1_present"] is None
+    assert payload["tone_score"] is None
+
+
+def test_format_competitor_data_preserves_real_zero_signals():
+    audit_data = {
+        "url": "https://zero.example.com",
+        "schema": {"schema_presence": {"status": "missing"}},
+        "structure": {
+            "semantic_html": {"score_percent": 0},
+            "h1_check": {"status": "fail"},
+        },
+        "eeat": {"author_presence": {"status": "fail"}},
+        "content": {"conversational_tone": {"score": 0}},
+    }
+    score_meta = CompetitorService._calculate_geo_score_with_provenance(audit_data)
+
+    payload = CompetitorService._format_competitor_data(
+        audit_data,
+        geo_score=score_meta["score"],
+        score_meta=score_meta,
+        benchmark_available=True,
+    )
+
+    assert payload["score_status"] == "valid_zero"
+    assert payload["schema_present"] is False
+    assert payload["structure_score"] == 0
+    assert payload["eeat_score"] == 0
+    assert payload["h1_present"] is False
+    assert payload["tone_score"] == 0.0

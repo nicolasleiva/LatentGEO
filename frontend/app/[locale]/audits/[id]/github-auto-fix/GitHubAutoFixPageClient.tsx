@@ -190,7 +190,7 @@ export default function GitHubAutoFixPageClient({
   const fetchAudit = async () => {
     try {
       const res = await fetchWithBackendAuth(
-        `${backendUrl}/api/v1/audits/${auditId}`,
+        `${backendUrl}/api/v1/audits/${auditId}/summary`,
       );
       if (res.ok) {
         const data = await res.json();

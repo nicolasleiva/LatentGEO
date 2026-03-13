@@ -12,10 +12,12 @@ from fastapi import Request
 
 _AUDIT_READ_PATH_RE = re.compile(
     r"^/api/v1/audits/\d+"
-    r"(?:/(?:overview|pages|competitors|report|fix_plan|status|progress|diagnostics))?$"
+    r"(?:/(?:overview|summary|pages|competitors|report|fix_plan|status|progress|diagnostics))?$"
 )
 _SSE_PROGRESS_PATH_RE = re.compile(r"^/api/v1/sse/audits/\d+/progress$")
 _SSE_ARTIFACTS_PATH_RE = re.compile(r"^/api/v1/sse/audits/\d+/artifacts$")
+_SSE_ARTICLE_BATCH_PATH_RE = re.compile(r"^/api/v1/sse/article-engine/\d+/progress$")
+_ARTICLE_BATCH_STATUS_PATH_RE = re.compile(r"^/api/v1/geo/article-engine/status/\d+$")
 
 
 @dataclass(frozen=True)
@@ -76,6 +78,9 @@ def resolve_rate_limit_policy(request: Request, settings) -> RateLimitPolicy:
     if method == "GET" and _SSE_ARTIFACTS_PATH_RE.fullmatch(path):
         return RateLimitPolicy("sse_artifacts", sse_limit, 60)
 
+    if method == "GET" and _SSE_ARTICLE_BATCH_PATH_RE.fullmatch(path):
+        return RateLimitPolicy("sse_article_batch", sse_limit, 60)
+
     if path.startswith("/api/v1/webhooks"):
         return RateLimitPolicy("webhooks", 1000, 60)
 
@@ -84,6 +89,9 @@ def resolve_rate_limit_policy(request: Request, settings) -> RateLimitPolicy:
 
     if method == "GET" and _AUDIT_READ_PATH_RE.fullmatch(path):
         return RateLimitPolicy("audit_read", rate_limit_default, 60)
+
+    if method == "GET" and _ARTICLE_BATCH_STATUS_PATH_RE.fullmatch(path):
+        return RateLimitPolicy("article_batch_status", rate_limit_default, 60)
 
     return RateLimitPolicy("default", rate_limit_default, 60)
 

@@ -3,7 +3,7 @@ import json
 import pytest
 from app.core.config import settings
 from app.core.llm_kimi import KimiGenerationError
-from app.models import AIContentSuggestion, Audit, AuditStatus, Keyword
+from app.models import AIContentSuggestion, Audit, AuditStatus, GeoArticleBatch, Keyword
 from app.services.geo_article_engine_service import (
     ArticleDataPackIncompleteError,
     GeoArticleEngineService,
@@ -93,6 +93,8 @@ def _seed_audit(db_session, *, minimal_paths: bool = False) -> Audit:
                 "sections": ["Section one", "Section two"],
                 "business_context": "Sports retail",
             },
+            strategy_run_id="strategy-run-test",
+            strategy_order=0,
         )
     )
     db_session.commit()
@@ -118,6 +120,194 @@ def test_create_batch_fails_when_article_data_pack_prerequisites_missing(
             include_schema=True,
         )
     assert "ARTICLE_DATA_PACK_INCOMPLETE" in str(exc.value)
+
+
+@pytest.mark.asyncio
+async def test_resolve_batch_strategy_generates_run_when_missing(
+    db_session, monkeypatch
+):
+    audit = _seed_audit(db_session)
+    db_session.query(AIContentSuggestion).filter(
+        AIContentSuggestion.audit_id == audit.id
+    ).delete()
+    db_session.commit()
+
+    async def fake_generate_strategy_run(db, audit, *, article_count, topics=None):
+        return (
+            "strategy-run-auto",
+            [
+                {
+                    "title": "Auto generated title",
+                    "target_keyword": "auto generated keyword",
+                    "sections": ["Section one"],
+                    "priority": "high",
+                    "suggestion_type": "guide",
+                    "strategy_run_id": "strategy-run-auto",
+                    "strategy_order": 0,
+                }
+            ],
+        )
+
+    monkeypatch.setattr(
+        GeoArticleEngineService,
+        "_generate_strategy_run",
+        staticmethod(fake_generate_strategy_run),
+    )
+
+    strategy_run_id, items, strategy_source = (
+        await GeoArticleEngineService.resolve_batch_strategy(
+            db_session,
+            audit,
+            article_count=1,
+        )
+    )
+
+    assert strategy_run_id == "strategy-run-auto"
+    assert strategy_source == "generated_auto"
+    assert items[0]["title"] == "Auto generated title"
+
+
+@pytest.mark.asyncio
+async def test_resolve_batch_strategy_reuses_latest_strategy_run_only(
+    db_session, monkeypatch
+):
+    audit = _seed_audit(db_session)
+    db_session.add(
+        AIContentSuggestion(
+            audit_id=audit.id,
+            topic="Legacy suggestion should be ignored",
+            suggestion_type="guide",
+            priority="high",
+            content_outline={"target_keyword": "legacy keyword"},
+        )
+    )
+    db_session.add(
+        AIContentSuggestion(
+            audit_id=audit.id,
+            topic="Latest strategy title",
+            suggestion_type="comparison",
+            priority="high",
+            content_outline={
+                "target_keyword": "latest keyword",
+                "sections": ["Section A", "Section B"],
+            },
+            strategy_run_id="strategy-run-latest",
+            strategy_order=0,
+        )
+    )
+    db_session.commit()
+
+    strategy_run_id, items, strategy_source = (
+        await GeoArticleEngineService.resolve_batch_strategy(
+            db_session,
+            audit,
+            article_count=1,
+        )
+    )
+
+    assert strategy_run_id == "strategy-run-latest"
+    assert strategy_source == "reused_latest"
+    assert items[0]["title"] == "Latest strategy title"
+
+
+@pytest.mark.asyncio
+async def test_resolve_batch_strategy_generates_new_run_when_latest_is_insufficient(
+    db_session, monkeypatch
+):
+    audit = _seed_audit(db_session)
+
+    async def fake_generate_strategy_run(db, audit, *, article_count, topics=None):
+        return (
+            "strategy-run-auto-2",
+            [
+                {
+                    "title": "Auto title 1",
+                    "target_keyword": "auto keyword 1",
+                    "sections": ["Section one"],
+                    "priority": "high",
+                    "suggestion_type": "guide",
+                    "strategy_run_id": "strategy-run-auto-2",
+                    "strategy_order": 0,
+                },
+                {
+                    "title": "Auto title 2",
+                    "target_keyword": "auto keyword 2",
+                    "sections": ["Section two"],
+                    "priority": "high",
+                    "suggestion_type": "guide",
+                    "strategy_run_id": "strategy-run-auto-2",
+                    "strategy_order": 1,
+                },
+            ],
+        )
+
+    monkeypatch.setattr(
+        GeoArticleEngineService,
+        "_generate_strategy_run",
+        staticmethod(fake_generate_strategy_run),
+    )
+
+    strategy_run_id, items, strategy_source = (
+        await GeoArticleEngineService.resolve_batch_strategy(
+            db_session,
+            audit,
+            article_count=2,
+        )
+    )
+
+    assert strategy_run_id == "strategy-run-auto-2"
+    assert strategy_source == "generated_auto"
+    assert len(items) == 2
+
+
+@pytest.mark.asyncio
+async def test_prepare_batch_seed_data_auto_matches_global_authority_links(
+    db_session, monkeypatch
+):
+    audit = _seed_audit(db_session)
+
+    async def fake_build_user_authority_sources(_urls):
+        return [
+            {
+                "title": "Nike running shoes buying guide",
+                "url": "https://authority.example.com/nike-guide",
+                "domain": "authority.example.com",
+                "snippet": "A detailed buying guide for nike running shoes.",
+                "excerpt": "Nike running shoes buying guide for Argentina buyers.",
+                "source_type": "user_authority",
+            },
+            {
+                "title": "Generic cloud article",
+                "url": "https://authority.example.com/cloud",
+                "domain": "authority.example.com",
+                "snippet": "Cloud infrastructure notes.",
+                "excerpt": "Distributed systems, kubernetes, storage and networking.",
+                "source_type": "user_authority",
+            },
+        ]
+
+    monkeypatch.setattr(
+        GeoArticleEngineService,
+        "_build_user_authority_sources",
+        staticmethod(fake_build_user_authority_sources),
+    )
+
+    seed_data = await GeoArticleEngineService.prepare_batch_seed_data(
+        db_session,
+        audit,
+        article_count=1,
+        authority_urls=[
+            "https://authority.example.com/nike-guide",
+            "https://authority.example.com/cloud",
+        ],
+    )
+
+    assert seed_data["article_authority_assignments"][1] == [
+        "https://authority.example.com/nike-guide"
+    ]
+    assert seed_data["unmatched_authority_urls"] == [
+        "https://authority.example.com/cloud"
+    ]
 
 
 @pytest.mark.asyncio
@@ -554,17 +744,36 @@ async def test_process_batch_fails_when_repair_disabled(db_session, monkeypatch)
 
 
 @pytest.mark.asyncio
-async def test_process_batch_aborts_remaining_articles_after_first_kimi_timeout(
+async def test_process_batch_retries_once_per_article_and_continues_after_timeout(
     db_session, monkeypatch
 ):
     audit = _seed_audit(db_session)
+    db_session.add_all(
+        [
+            AIContentSuggestion(
+                audit_id=audit.id,
+                topic="Timeout Title 2",
+                suggestion_type="guide",
+                priority="high",
+                content_outline={"target_keyword": "timeout keyword 2"},
+                strategy_run_id="strategy-run-test",
+                strategy_order=1,
+            ),
+            AIContentSuggestion(
+                audit_id=audit.id,
+                topic="Timeout Title 3",
+                suggestion_type="guide",
+                priority="high",
+                content_outline={"target_keyword": "timeout keyword 3"},
+                strategy_run_id="strategy-run-test",
+                strategy_order=2,
+            ),
+        ]
+    )
+    db_session.commit()
     monkeypatch.setattr(
         "app.services.geo_article_engine_service.is_kimi_configured", lambda: True
     )
-    monkeypatch.setattr(
-        settings, "GEO_ARTICLE_ABORT_ON_FIRST_TIMEOUT", True, raising=False
-    )
-
     batch = GeoArticleEngineService.create_batch(
         db=db_session,
         audit=audit,
@@ -618,12 +827,161 @@ async def test_process_batch_aborts_remaining_articles_after_first_kimi_timeout(
 
     assert processed.status == "failed"
     assert len(processed.articles) == 3
-    assert generation_calls["count"] == 1
+    assert generation_calls["count"] == 6
     assert processed.summary["processed_count"] == 3
-    assert processed.summary["failure_reason"].startswith("KIMI_TIMEOUT_ABORTED")
     assert processed.articles[0]["generation_error"]["code"] == "KIMI_GENERATION_FAILED"
-    assert processed.articles[1]["generation_error"]["code"] == "KIMI_TIMEOUT_ABORTED"
-    assert processed.articles[2]["generation_error"]["code"] == "KIMI_TIMEOUT_ABORTED"
+    assert processed.articles[1]["generation_error"]["code"] == "KIMI_GENERATION_FAILED"
+    assert processed.articles[2]["generation_error"]["code"] == "KIMI_GENERATION_FAILED"
+
+
+@pytest.mark.asyncio
+async def test_regenerate_article_uses_user_authority_urls(db_session, monkeypatch):
+    audit = _seed_audit(db_session)
+    batch = GeoArticleBatch(
+        audit_id=audit.id,
+        requested_count=1,
+        language="es",
+        tone="growth",
+        include_schema=True,
+        status="completed",
+        summary={
+            "strategy_run_id": "strategy-run-test",
+            "generated_count": 1,
+            "failed_count": 0,
+            "generated_titles": [
+                {
+                    "index": 1,
+                    "title": "AI Strategy Suggested Title",
+                    "target_keyword": "zapatilla nike",
+                }
+            ],
+        },
+        articles=[
+            {
+                "index": 1,
+                "title": "AI Strategy Suggested Title",
+                "target_keyword": "zapatilla nike",
+                "focus_url": "https://store.example.com/",
+                "generation_status": "completed",
+                "citation_readiness_score": 90,
+                "markdown": "# Old draft",
+            }
+        ],
+    )
+    db_session.add(batch)
+    db_session.commit()
+    db_session.refresh(batch)
+
+    async def fake_llm(
+        *, system_prompt, user_prompt, max_tokens=None, timeout_seconds=None
+    ):
+        return "{}"
+
+    async def fake_user_authority_sources(_urls):
+        return [
+            {
+                "title": "Authority article",
+                "url": "https://authority.example.com/guide",
+                "domain": "authority.example.com",
+                "source_type": "user_authority",
+                "excerpt": "Authoritative excerpt",
+            }
+        ]
+
+    async def fake_build_data_pack(**kwargs):
+        assert kwargs["user_authority_sources"]
+        return {
+            "keyword_strategy": {
+                "primary_keyword": "zapatilla nike",
+                "secondary_keywords": ["kw1", "kw2"],
+                "search_intent": "commercial",
+            },
+            "focus_url": "https://store.example.com/",
+            "required_sources": {
+                "internal": [{"title": "Store", "url": "https://store.example.com/"}],
+                "external": [
+                    {
+                        "title": "Statista",
+                        "url": "https://www.statista.com/topics/123/footwear/",
+                    }
+                ],
+                "user_authority": kwargs["user_authority_sources"],
+                "all": [
+                    {"title": "Store", "url": "https://store.example.com/"},
+                    {
+                        "title": "Statista",
+                        "url": "https://www.statista.com/topics/123/footwear/",
+                    },
+                    *kwargs["user_authority_sources"],
+                ],
+            },
+            "top_competitors_for_keyword": [],
+            "competitor_gap_map": {},
+            "audit_signals": {},
+            "provider": "kimi-2.5-search",
+            "ai_content_strategy": {
+                "title": "AI Strategy Suggested Title",
+                "target_keyword": "zapatilla nike",
+            },
+            "user_authority_context": [
+                {
+                    "title": "Authority article",
+                    "url": "https://authority.example.com/guide",
+                    "excerpt": "Authoritative excerpt",
+                }
+            ],
+        }
+
+    async def fake_generate_content(**kwargs):
+        return {
+            "title": "Ignored title",
+            "markdown": (
+                "# AI Strategy Suggested Title\n\n"
+                "[Source: https://store.example.com/]\n"
+                "[Source: https://authority.example.com/guide]\n"
+            ),
+            "meta_title": "Meta title",
+            "meta_description": "Meta description",
+            "schema_json": {"@type": "Article"},
+            "evidence_summary": [
+                {
+                    "claim": "Authority-backed claim",
+                    "source_url": "https://authority.example.com/guide",
+                }
+            ],
+        }
+
+    monkeypatch.setattr(
+        "app.services.geo_article_engine_service.get_llm_function", lambda: fake_llm
+    )
+    monkeypatch.setattr(
+        GeoArticleEngineService,
+        "_build_user_authority_sources",
+        staticmethod(fake_user_authority_sources),
+    )
+    monkeypatch.setattr(
+        GeoArticleEngineService,
+        "_build_article_data_pack",
+        staticmethod(fake_build_data_pack),
+    )
+    monkeypatch.setattr(
+        GeoArticleEngineService,
+        "_generate_article_content",
+        staticmethod(fake_generate_content),
+    )
+
+    regenerated = await GeoArticleEngineService.regenerate_article(
+        db_session,
+        batch_id=batch.id,
+        article_index=1,
+        authority_urls=["https://authority.example.com/guide"],
+    )
+
+    article = regenerated.articles[0]
+    assert regenerated.status == "completed"
+    assert article["title"] == "AI Strategy Suggested Title"
+    assert article["user_authority_urls"] == ["https://authority.example.com/guide"]
+    assert "authority.example.com/guide" in article["markdown"]
 
 
 @pytest.mark.asyncio

@@ -5,15 +5,22 @@ Persistent PageSpeed job orchestration helpers.
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any, Iterable, Optional
 
 from app.core.config import settings
 from app.core.logger import get_logger
-from app.models import Audit, AuditPageSpeedJob, AuditPageSpeedJobStatus
+from app.models import (
+    Audit,
+    AuditPageSpeedJob,
+    AuditPageSpeedJobStatus,
+    AuditPdfJob,
+    Report,
+)
 from app.schemas import AuditPageSpeedStatusResponse, PDFStatusError
 from app.services.audit_service import AuditService
 from app.services.cache_service import cache
+from app.services.pagespeed_freshness import is_pagespeed_stale
 from fastapi import HTTPException
 from sqlalchemy.exc import DBAPIError, OperationalError
 from sqlalchemy.orm import Session
@@ -179,8 +186,30 @@ class PageSpeedJobService:
         )
 
     @staticmethod
+    def get_job_reconciled(db: Session, audit_id: int) -> AuditPageSpeedJob | None:
+        job = PageSpeedJobService.get_job(db, audit_id)
+        if job is None:
+            return None
+        return PageSpeedJobService._reconcile_stale_queued_job(db, job)
+
+    @staticmethod
     def has_active_job(job: AuditPageSpeedJob | None) -> bool:
         return bool(job and job.status in ACTIVE_PAGESPEED_JOB_STATUSES)
+
+    @staticmethod
+    def _queued_dispatch_grace_expired(job: AuditPageSpeedJob) -> bool:
+        if job.status != AuditPageSpeedJobStatus.QUEUED.value or job.celery_task_id:
+            return False
+        reference_time = job.updated_at or job.created_at
+        if reference_time is None:
+            return False
+        if reference_time.tzinfo is None:
+            reference_time = reference_time.replace(tzinfo=UTC)
+        grace_seconds = max(
+            1,
+            int(getattr(settings, "BROKER_DISPATCH_GRACE_SECONDS", 15) or 15),
+        )
+        return datetime.now(UTC) - reference_time > timedelta(seconds=grace_seconds)
 
     @staticmethod
     def normalize_warnings(raw_warnings: Optional[Iterable[Any]]) -> list[str]:
@@ -245,9 +274,7 @@ class PageSpeedJobService:
                 return False
 
         try:
-            from app.services.pdf_service import PDFService
-
-            return not PDFService._is_pagespeed_stale(pagespeed_data)
+            return not is_pagespeed_stale(pagespeed_data)
         except Exception:
             return True
 
@@ -373,18 +400,19 @@ class PageSpeedJobService:
         audit: Audit,
         *,
         job: AuditPageSpeedJob | None = None,
+        pdf_job: AuditPdfJob | None = None,
+        pdf_report: Report | None = None,
     ) -> None:
         from app.services.pdf_job_service import PDFJobService
 
-        pdf_job = PDFJobService.get_job(db, audit.id)
-        pdf_report = PDFJobService.get_latest_pdf_report(db, audit.id)
         AuditService.publish_artifact_event(
             audit.id,
             AuditService.build_artifact_payload(
                 audit,
                 pagespeed_job=job or PageSpeedJobService.get_job(db, audit.id),
-                pdf_job=pdf_job,
-                pdf_report=pdf_report,
+                pdf_job=pdf_job or PDFJobService.get_job(db, audit.id),
+                pdf_report=pdf_report
+                or PDFJobService.get_latest_pdf_report(db, audit.id),
             ),
         )
 
@@ -396,8 +424,11 @@ class PageSpeedJobService:
         requested_by_user_id: str | None,
         strategy: str = "both",
         force_refresh: bool = False,
+        publish_event: bool = True,
+        pdf_job: AuditPdfJob | None = None,
+        pdf_report: Report | None = None,
     ) -> AuditPageSpeedJob:
-        job = PageSpeedJobService.get_job(db, audit.id)
+        job = PageSpeedJobService.get_job_reconciled(db, audit.id)
         if job is None:
             job = AuditPageSpeedJob(audit_id=audit.id)
             db.add(job)
@@ -418,7 +449,14 @@ class PageSpeedJobService:
 
         db.commit()
         db.refresh(job)
-        PageSpeedJobService.publish_status_event(db, audit, job=job)
+        if publish_event:
+            PageSpeedJobService.publish_status_event(
+                db,
+                audit,
+                job=job,
+                pdf_job=pdf_job,
+                pdf_report=pdf_report,
+            )
         return job
 
     @staticmethod
@@ -481,6 +519,100 @@ class PageSpeedJobService:
         return job
 
     @staticmethod
+    def mark_dispatch_failed(
+        db: Session,
+        audit: Audit,
+        job: AuditPageSpeedJob,
+        *,
+        exc: Exception | None = None,
+        message: str = "PageSpeed analysis could not be dispatched to the worker queue.",
+    ) -> AuditPageSpeedJob:
+        _, classified_message = (
+            PageSpeedJobService.classify_error(exc) if exc is not None else ("", "")
+        )
+        job = PageSpeedJobService.mark_job_failed(
+            db,
+            audit,
+            job,
+            error_code="worker_unavailable",
+            error_message=(
+                classified_message
+                or "Background worker unavailable. Try again shortly."
+            ),
+        )
+        AuditService.append_runtime_diagnostic(
+            db,
+            audit.id,
+            source="pagespeed",
+            stage="run-pagespeed",
+            severity="error",
+            code="worker_unavailable",
+            message=message,
+            technical_detail=(
+                PageSpeedJobService.runtime_technical_detail(exc)
+                if exc is not None
+                else "broker_dispatch_timeout"
+            ),
+        )
+
+        from app.services.pdf_job_service import PDFJobService
+
+        PDFJobService.fail_waiting_job_for_pagespeed_failure(
+            db,
+            audit,
+            pagespeed_job=job,
+            message="PDF generation could not continue because the PageSpeed refresh was never dispatched.",
+            exc=exc,
+        )
+        return job
+
+    @staticmethod
+    def _reconcile_stale_queued_job(
+        db: Session,
+        job: AuditPageSpeedJob,
+    ) -> AuditPageSpeedJob:
+        locked_job = (
+            db.query(AuditPageSpeedJob)
+            .filter(
+                AuditPageSpeedJob.id == job.id,
+                AuditPageSpeedJob.status == AuditPageSpeedJobStatus.QUEUED.value,
+                AuditPageSpeedJob.celery_task_id.is_(None),
+            )
+            .with_for_update()
+            .first()
+        )
+        if locked_job is None:
+            refreshed_job = PageSpeedJobService.get_job(db, job.audit_id)
+            return refreshed_job or job
+        if not PageSpeedJobService._queued_dispatch_grace_expired(locked_job):
+            return locked_job
+
+        audit = AuditService.get_audit_projection(
+            db,
+            locked_job.audit_id,
+            Audit.id,
+            Audit.user_id,
+            Audit.user_email,
+            Audit.created_at,
+            Audit.pagespeed_data,
+        )
+        if audit is None:
+            return job
+
+        logger.warning(
+            "pagespeed_dispatch_stale audit_id=%s job_id=%s status=%s",
+            audit.id,
+            locked_job.id,
+            locked_job.status,
+        )
+        return PageSpeedJobService.mark_dispatch_failed(
+            db,
+            audit,
+            locked_job,
+            message="Queued PageSpeed analysis was never dispatched to a worker.",
+        )
+
+    @staticmethod
     def enqueue_job_task(
         db: Session, audit: Audit, job: AuditPageSpeedJob
     ) -> AuditPageSpeedJob:
@@ -507,7 +639,7 @@ class PageSpeedJobService:
         if not settings.ENABLE_PAGESPEED or not settings.GOOGLE_PAGESPEED_API_KEY:
             return None
 
-        existing_job = PageSpeedJobService.get_job(db, audit.id)
+        existing_job = PageSpeedJobService.get_job_reconciled(db, audit.id)
         if PageSpeedJobService.has_active_job(existing_job):
             return existing_job
 

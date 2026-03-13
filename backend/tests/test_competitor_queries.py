@@ -1,3 +1,4 @@
+import json
 import logging
 from urllib.parse import urlparse
 
@@ -125,7 +126,7 @@ def test_normalize_token_root_strips_accents_and_plural_noise():
 def test_filter_competitor_urls_matches_consultora_with_consulting_variants():
     items = [
         {
-            "link": "https://example-consulting.com/services",
+            "link": "https://consulting-example.invalid/services",
             "title": "Digital transformation consulting firm",
             "snippet": "Enterprise consulting for large-scale transformation programs.",
         }
@@ -137,7 +138,7 @@ def test_filter_competitor_urls_matches_consultora_with_consulting_variants():
         limit=5,
     )
     competitor_hosts = _host_set(competitors)
-    missing_hosts = {"example-consulting.com"} - competitor_hosts
+    missing_hosts = {"consulting-example.invalid"} - competitor_hosts
     assert not missing_hosts
 
 
@@ -234,7 +235,7 @@ def test_filter_competitor_urls_excludes_directory_sites():
             "snippet": "Compare consulting providers in Argentina.",
         },
         {
-            "link": "https://www.example-consulting.com/",
+            "link": "https://www.consulting-example.invalid/",
             "title": "Digital transformation consulting services",
             "snippet": "Consulting for enterprise modernization.",
         },
@@ -249,8 +250,97 @@ def test_filter_competitor_urls_excludes_directory_sites():
 
     assert "clutch.co" not in _host_set(competitors)
     competitor_hosts = _host_set(competitors)
-    missing_hosts = {"www.example-consulting.com"} - competitor_hosts
+    missing_hosts = {"www.consulting-example.invalid"} - competitor_hosts
     assert not missing_hosts
+
+
+def test_filter_competitor_urls_rejects_marketplaces_and_publishers_for_devtools():
+    items = [
+        {
+            "link": "https://marketplace.visualstudio.com/items?itemName=vendor.ai-tool",
+            "title": "VS Code AI extension marketplace listing",
+            "snippet": "Install an AI coding extension for VS Code.",
+        },
+        {
+            "link": "https://www.inc.com/article/ai-coding-tools.html",
+            "title": "Best AI coding tools in 2026",
+            "snippet": "Publisher roundup covering developer productivity trends.",
+        },
+        {
+            "link": "https://cursor.com/",
+            "title": "Cursor AI code editor extension workspace",
+            "snippet": "AI coding workspace for software development teams with VS Code workflows.",
+        },
+    ]
+
+    competitors = PipelineService.filter_competitor_urls(
+        items,
+        target_domain="example.dev",
+        core_terms=["extension", "workspace", "editor"],
+        anchor_terms=["extension", "workspace"],
+        vertical_hint="software",
+        limit=5,
+    )
+
+    competitor_hosts = _host_set(competitors)
+    assert "marketplace.visualstudio.com" not in competitor_hosts
+    assert "www.inc.com" not in competitor_hosts
+    missing_hosts = {"cursor.com"} - competitor_hosts
+    assert not missing_hosts
+
+
+def test_filter_competitor_urls_does_not_false_match_short_blocked_hosts():
+    items = [
+        {
+            "link": "https://www.innovationinc.com.co/erp",
+            "title": "ERP implementation in Colombia",
+            "snippet": "ERP implementation specialists in Colombia.",
+        }
+    ]
+
+    competitors = PipelineService.filter_competitor_urls(
+        items,
+        target_domain="example.dev",
+        core_terms=["erp", "implementation"],
+        anchor_terms=["erp"],
+        vertical_hint="software",
+        limit=5,
+    )
+
+    assert _host_set(competitors) == {"www.innovationinc.com.co"}
+
+
+def test_filter_competitor_urls_blocks_government_and_academic_segments():
+    items = [
+        {
+            "link": "https://www.example.gob.mx/transformacion",
+            "title": "Gobierno digital en Mexico",
+            "snippet": "Portal oficial del gobierno.",
+        },
+        {
+            "link": "https://research.example.ac.uk/consulting",
+            "title": "Academic consulting program",
+            "snippet": "University research and consulting lab.",
+        },
+        {
+            "link": "https://www.consulting-example.invalid/",
+            "title": "Digital transformation consulting services",
+            "snippet": "Consulting for enterprise modernization.",
+        },
+    ]
+
+    competitors = PipelineService.filter_competitor_urls(
+        items,
+        target_domain="ceibo.digital",
+        core_terms=["digital", "transformation", "consulting"],
+        anchor_terms=["digital", "consulting"],
+        limit=5,
+    )
+
+    competitor_hosts = _host_set(competitors)
+    assert "www.example.gob.mx" not in competitor_hosts
+    assert "research.example.ac.uk" not in competitor_hosts
+    assert "www.consulting-example.invalid" in competitor_hosts
 
 
 def test_extract_anchor_terms_requires_repeated_signal():
@@ -460,6 +550,63 @@ def test_prune_queries_keeps_ecommerce_shipping_and_market_intent():
     )
 
     assert len(pruned) == 2
+
+
+def test_prune_queries_rejects_generic_devtools_query_without_strong_core():
+    target = _make_target_audit(
+        "https://example.dev/",
+        "Example Dev | VS Code AI Extension",
+        "Bring your own key AI coding workspace for software teams in Colombia",
+        "AI-assisted software development extension",
+    )
+    target["language"] = "en"
+    target["market"] = "Colombia"
+    target["category"] = "Developer Tools"
+    target["subcategory"] = "AI-Assisted Software Development & Coding Productivity"
+    target["content"]["nav_items"] = [
+        "VS Code Extension",
+        "Bring Your Own Key",
+        "Workspace",
+    ]
+    target["content"]["text_sample"] = (
+        "Use a VS Code extension with bring your own key controls for AI-assisted "
+        "software development workflows."
+    )
+    queries = [
+        {
+            "id": "q1",
+            "query": "AI coding assistant Colombia",
+            "purpose": "competitor discovery",
+        },
+        {
+            "id": "q2",
+            "query": "VS Code AI extension Colombia",
+            "purpose": "competitor discovery",
+        },
+        {
+            "id": "q3",
+            "query": "bring your own key AI platform Colombia",
+            "purpose": "competitor discovery",
+        },
+    ]
+
+    pruned = PipelineService._prune_competitor_queries(
+        queries,
+        target,
+        llm_category="Developer Tools",
+        llm_subcategory="AI-Assisted Software Development & Coding Productivity",
+        market_hint="Colombia",
+    )
+
+    pruned_queries = [item["query"] for item in pruned]
+    assert "AI coding assistant Colombia" not in pruned_queries
+    assert any(
+        query in pruned_queries
+        for query in [
+            "VS Code AI extension Colombia",
+            "bring your own key AI platform Colombia",
+        ]
+    )
 
 
 def test_prune_queries_accepts_category_plus_geo_when_market_hint_missing():
@@ -753,6 +900,68 @@ async def test_agent1_uses_pruned_queries_when_strict_core_filter_empties(
     assert queries[0]["query"] == "consultoría transformación digital México"
     assert any("aplicando bypass permisivo" in r.message for r in caplog.records)
     assert any("bypass_used=True" in r.message for r in caplog.records)
+
+
+@pytest.mark.asyncio
+async def test_agent1_bypass_still_rejects_outlier_only_queries(monkeypatch):
+    service = PipelineService()
+    target = _make_target_audit(
+        "https://erp.example.com/",
+        "ERP implementation",
+        "ERP implementation services",
+        "ERP implementation and migration",
+    )
+    target["language"] = "es"
+    target["market"] = "Colombia"
+
+    async def fake_llm(*_args, **_kwargs):
+        return json.dumps(
+            {
+                "category": "Software",
+                "subcategory": "ERP implementation",
+                "confidence_score": 90,
+                "reasoning": "Strong software signals",
+                "competitor_queries": [
+                    "erp implementación colombia",
+                    "growth analytics colombia",
+                ],
+                "direct_competitors": [],
+                "market_position": "challenger",
+            }
+        )
+
+    def fake_build_core_profile(*_args, **_kwargs):
+        return {
+            "core_terms": ["erp", "implementación"],
+            "strong_core_terms": ["erp", "implementación"],
+            "weak_core_terms": [],
+            "anchor_terms": ["erp"],
+            "outlier_terms": ["growth", "analytics"],
+        }
+
+    def passthrough_prune(queries, *_args, **_kwargs):
+        return queries
+
+    monkeypatch.setattr(
+        PipelineService,
+        "_build_core_business_profile",
+        staticmethod(fake_build_core_profile),
+    )
+    monkeypatch.setattr(
+        PipelineService,
+        "_prune_competitor_queries",
+        staticmethod(passthrough_prune),
+    )
+
+    external_intel, queries = await service.analyze_external_intelligence(
+        target,
+        llm_function=fake_llm,
+        mode="full",
+        retry_policy={"max_retries": 0, "timeout_seconds": 10},
+    )
+
+    assert external_intel.get("status") == "ok"
+    assert [row["query"] for row in queries] == ["erp implementación colombia"]
 
 
 @pytest.mark.asyncio

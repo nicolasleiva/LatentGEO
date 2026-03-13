@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 from urllib.parse import urlparse
 
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, load_only
 
 from ...core.config import settings
 from ...core.security import is_safe_outbound_url, validate_api_key, validate_email
@@ -472,7 +472,26 @@ class OdooConnectionService:
         self, *, owner_user_id: str, owner_email: Optional[str]
     ) -> list[OdooConnection]:
         owner_email_normalized = _normalize_email(owner_email)
-        query = self.db.query(OdooConnection).filter(OdooConnection.is_active.is_(True))
+        query = (
+            self.db.query(OdooConnection)
+            .options(
+                load_only(
+                    OdooConnection.id,
+                    OdooConnection.label,
+                    OdooConnection.base_url,
+                    OdooConnection.database,
+                    OdooConnection.expected_email,
+                    OdooConnection.odoo_version,
+                    OdooConnection.capabilities,
+                    OdooConnection.warnings,
+                    OdooConnection.detected_user,
+                    OdooConnection.last_validated_at,
+                    OdooConnection.is_active,
+                    OdooConnection.updated_at,
+                )
+            )
+            .filter(OdooConnection.is_active.is_(True))
+        )
         if owner_user_id:
             query = query.filter(
                 (OdooConnection.owner_user_id == owner_user_id)

@@ -187,9 +187,17 @@ def _ensure_runtime_indexes() -> None:
         )
 
 
-def upgrade() -> None:
+def _ensure_runtime_tables() -> None:
     bind = op.get_bind()
-    Base.metadata.create_all(bind=bind)
+    table_names = _table_names(bind)
+    for table_name, table in Base.metadata.tables.items():
+        if table_name in table_names:
+            continue
+        table.create(bind=bind, checkfirst=True)
+
+
+def upgrade() -> None:
+    _ensure_runtime_tables()
     _ensure_runtime_columns()
     _ensure_owner_columns()
     _ensure_runtime_indexes()

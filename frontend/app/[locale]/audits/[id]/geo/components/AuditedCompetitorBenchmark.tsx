@@ -23,11 +23,12 @@ type AuditedCompetitor = {
   url: string;
   domain: string;
   geo_score: number;
-  schema_present?: boolean;
-  structure_score?: number;
-  eeat_score?: number;
-  h1_present?: boolean;
-  tone_score?: number;
+  score_status?: string | null;
+  schema_present?: boolean | null;
+  structure_score?: number | null;
+  eeat_score?: number | null;
+  h1_present?: boolean | null;
+  tone_score?: number | null;
 };
 
 type AuditedCompetitorBenchmarkProps = {
@@ -38,6 +39,29 @@ type AuditedCompetitorBenchmarkProps = {
 
 const formatScore = (value?: number | null) =>
   Number.isFinite(value) ? Math.round(Number(value)) : 0;
+
+const formatSchemaStatus = (value?: boolean | null) => {
+  if (value === true) return "Present";
+  if (value === false) return "Missing";
+  return "N/A";
+};
+
+const formatPercent = (value?: number | null) =>
+  Number.isFinite(value) ? `${Math.round(Number(value))}%` : "N/A";
+
+const formatPassFail = (value?: boolean | null) => {
+  if (value === true) return "Pass";
+  if (value === false) return "Fail";
+  return "N/A";
+};
+
+const formatPassFailFromScore = (value?: number | null) => {
+  if (!Number.isFinite(value)) return "N/A";
+  return Number(value) > 0 ? "Pass" : "Fail";
+};
+
+const formatTone = (value?: number | null) =>
+  Number.isFinite(value) ? `${Number(value).toFixed(1)}/10` : "N/A";
 
 export default function AuditedCompetitorBenchmark({
   auditId,
@@ -293,19 +317,19 @@ export default function AuditedCompetitorBenchmark({
                     {formatScore(competitor.geo_score)}
                   </td>
                   <td className="px-4 py-3">
-                    {competitor.schema_present ? "Present" : "Missing"}
+                    {formatSchemaStatus(competitor.schema_present)}
                   </td>
                   <td className="px-4 py-3">
-                    {formatScore(competitor.structure_score)}
+                    {formatPercent(competitor.structure_score)}
                   </td>
                   <td className="px-4 py-3">
-                    {formatScore(competitor.eeat_score)}
+                    {formatPassFailFromScore(competitor.eeat_score)}
                   </td>
                   <td className="px-4 py-3">
-                    {competitor.h1_present ? "Pass" : "Gap"}
+                    {formatPassFail(competitor.h1_present)}
                   </td>
                   <td className="rounded-r-2xl px-4 py-3">
-                    {Number(competitor.tone_score || 0).toFixed(1)}/10
+                    {formatTone(competitor.tone_score)}
                   </td>
                 </tr>
               ))}

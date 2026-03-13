@@ -9,6 +9,7 @@ import os
 from app.core.auth import get_user_from_bearer_token
 from app.core.config import _is_development_like_environment, settings
 from fastapi import HTTPException, Request
+from fastapi.concurrency import run_in_threadpool
 from starlette.middleware.base import BaseHTTPMiddleware
 
 
@@ -34,7 +35,9 @@ class AuthContextMiddleware(BaseHTTPMiddleware):
             token = authorization[7:].strip()
             if token:
                 try:
-                    request.state.auth_user = get_user_from_bearer_token(token)
+                    request.state.auth_user = await run_in_threadpool(
+                        get_user_from_bearer_token, token
+                    )
                 except HTTPException as exc:
                     request.state.auth_error = exc
         elif _legacy_user_header_enabled():
