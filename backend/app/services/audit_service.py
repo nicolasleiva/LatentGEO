@@ -3070,6 +3070,7 @@ class CompetitorService:
                 content_data.get("conversational_tone")
             )
             h1_check = cls._mapping_or_empty(structure.get("h1_check"))
+            semantic_html = cls._mapping_or_empty(structure.get("semantic_html"))
 
             schema_status = schema_presence.get("status")
             if schema_status is not None:
@@ -3080,9 +3081,7 @@ class CompetitorService:
                     30.0,
                 )
 
-            semantic_score = cls._coerce_number(
-                (structure.get("semantic_html") or {}).get("score_percent")
-            )
+            semantic_score = cls._coerce_number(semantic_html.get("score_percent"))
             structure_score_percent = cls._coerce_number(
                 site_metrics.get("structure_score_percent")
             )

@@ -1078,9 +1078,16 @@ def get_competitors(
             competitor_payload
         )
         score_meta = normalized_comp.get("benchmark")
+        geo_score_value = CompetitorService._coerce_number(
+            normalized_comp.get("geo_score")
+        )
         return CompetitorService._format_competitor_data(
             normalized_comp,
-            normalized_comp.get("geo_score", default_geo_score) or default_geo_score,
+            (
+                geo_score_value
+                if geo_score_value is not None
+                else float(default_geo_score)
+            ),
             fallback_url or normalized_comp.get("url"),
             score_meta=score_meta if isinstance(score_meta, dict) else None,
             benchmark_available=benchmark_available,

@@ -394,3 +394,33 @@ def test_audits_competitors_route_sanitizes_malformed_nested_data(client, db_ses
     assert "traceback" not in competitor_json
     assert "exception" not in competitor_json
     assert "select " not in competitor_json
+
+
+def test_audits_competitors_route_preserves_valid_zero_geo_score(client, db_session):
+    audit = _seed_audit(
+        db_session,
+        competitors=[
+            {
+                "url": "https://zero.example.com",
+                "domain": "zero.example.com",
+                "status": 200,
+                "schema": {"schema_presence": {"status": "missing"}},
+                "structure": {
+                    "semantic_html": {"score_percent": 0},
+                    "h1_check": {"status": "fail"},
+                },
+                "eeat": {"author_presence": {"status": "fail"}},
+                "content": {"conversational_tone": {"score": 0}},
+            }
+        ],
+    )
+
+    response = client.get(f"/api/v1/audits/{audit.id}/competitors")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert len(payload) == 1
+    competitor = payload[0]
+    assert competitor["score_status"] == "valid_zero"
+    assert competitor["geo_score"] == 0.0
+    assert competitor["score"] == 0.0

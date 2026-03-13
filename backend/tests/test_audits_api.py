@@ -1463,3 +1463,21 @@ def test_pagespeed_job_provider_warning_persists_runtime_warning(
         diagnostics[0]["message"] == "Desktop PageSpeed unavailable: "
         "PageSpeed request timed out before a response was received."
     )
+
+
+def test_pagespeed_job_warnings_ignore_legacy_provider_message():
+    warnings, successful_results = PageSpeedJobService.extract_provider_warnings(
+        {
+            "desktop": {
+                "error": "timeout",
+                "provider_message": "Traceback: upstream details should stay internal",
+            }
+        },
+        strategy="desktop",
+    )
+
+    assert successful_results == {}
+    assert warnings == [
+        "Desktop PageSpeed unavailable: "
+        "PageSpeed provider returned an error before any performance data was available."
+    ]
