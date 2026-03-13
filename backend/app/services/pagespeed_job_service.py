@@ -144,6 +144,8 @@ def release_pagespeed_generation_lock(
 
 
 class PageSpeedJobService:
+    _GENERIC_WARNING_MESSAGE = "PageSpeed provider returned an error before any performance data was available."
+
     @staticmethod
     def build_status_response_from_artifact_payload(
         payload: dict[str, Any],
@@ -299,11 +301,11 @@ class PageSpeedJobService:
             if not isinstance(payload, dict):
                 continue
             error_message = str(payload.get("error") or "").strip()
-            provider_message = str(payload.get("provider_message") or "").strip()
+            public_message = str(payload.get("public_message") or "").strip()
             if error_message:
                 warnings.append(
                     f"{label.capitalize()} PageSpeed unavailable: "
-                    f"{provider_message or error_message}"
+                    f"{public_message or PageSpeedJobService._GENERIC_WARNING_MESSAGE}"
                 )
                 continue
             successful_results[label] = payload

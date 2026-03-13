@@ -8,6 +8,20 @@ from ..core.config import settings
 logger = logging.getLogger(__name__)
 
 
+_PAGESPEED_TIMEOUT_MESSAGE = (
+    "PageSpeed request timed out before a response was received."
+)
+_PAGESPEED_INTERNAL_ERROR_MESSAGE = (
+    "PageSpeed analysis failed before the provider returned a usable result."
+)
+_PAGESPEED_UPSTREAM_RETRY_MESSAGE = (
+    "PageSpeed provider returned a temporary upstream error."
+)
+_PAGESPEED_UPSTREAM_ERROR_MESSAGE = (
+    "PageSpeed provider returned an unexpected error response."
+)
+
+
 def _extract_provider_message(payload: object) -> str | None:
     if isinstance(payload, dict):
         error_payload = payload.get("error")
@@ -21,6 +35,25 @@ def _extract_provider_message(payload: object) -> str | None:
     if isinstance(payload, str) and payload.strip():
         return payload.strip()
     return None
+
+
+def _build_error_payload(
+    *,
+    error: str,
+    public_message: str,
+    url: str,
+    strategy: str,
+    status_code: int | None = None,
+) -> Dict[str, object]:
+    payload: Dict[str, object] = {
+        "error": error,
+        "public_message": public_message,
+        "url": url,
+        "strategy": strategy,
+    }
+    if status_code is not None:
+        payload["status_code"] = status_code
+    return payload
 
 
 class PageSpeedService:
@@ -371,11 +404,13 @@ class PageSpeedService:
                             status_code,
                             provider_message or response_text,
                         )
-                        return {
-                            "error": f"API error: {status_code}",
-                            "status_code": status_code,
-                            "provider_message": provider_message or response_text,
-                        }
+                        return _build_error_payload(
+                            error=f"API error: {status_code}",
+                            status_code=status_code,
+                            public_message=_PAGESPEED_UPSTREAM_RETRY_MESSAGE,
+                            url=url,
+                            strategy=strategy,
+                        )
                     else:
                         response_text = (
                             payload if isinstance(payload, str) else str(payload)
@@ -386,11 +421,13 @@ class PageSpeedService:
                             status_code,
                             provider_message or response_text,
                         )
-                        return {
-                            "error": f"API error: {status_code}",
-                            "status_code": status_code,
-                            "provider_message": provider_message or response_text,
-                        }
+                        return _build_error_payload(
+                            error=f"API error: {status_code}",
+                            status_code=status_code,
+                            public_message=_PAGESPEED_UPSTREAM_ERROR_MESSAGE,
+                            url=url,
+                            strategy=strategy,
+                        )
 
             except TimeoutError as exc:
                 logger.warning(
@@ -401,23 +438,23 @@ class PageSpeedService:
                 if attempt < max_retries - 1:
                     await asyncio.sleep(retry_delay)
                     continue
-                return {
-                    "error": "timeout",
-                    "provider_message": str(exc),
-                    "url": url,
-                    "strategy": strategy,
-                }
-            except Exception as exc:
+                return _build_error_payload(
+                    error="timeout",
+                    public_message=_PAGESPEED_TIMEOUT_MESSAGE,
+                    url=url,
+                    strategy=strategy,
+                )
+            except Exception:
                 logger.exception(f"PageSpeed exception (attempt {attempt+1})")
                 if attempt < max_retries - 1:
                     await asyncio.sleep(retry_delay)
                     continue
-                return {
-                    "error": "Internal server error",
-                    "provider_message": str(exc),
-                    "url": url,
-                    "strategy": strategy,
-                }
+                return _build_error_payload(
+                    error="Internal server error",
+                    public_message=_PAGESPEED_INTERNAL_ERROR_MESSAGE,
+                    url=url,
+                    strategy=strategy,
+                )
 
     @staticmethod
     async def analyze_both_strategies(url: str, api_key: Optional[str] = None) -> Dict:

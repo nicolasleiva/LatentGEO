@@ -55,6 +55,27 @@ def test_geo_score_prefers_site_metrics_when_semantic_html_is_zero():
     assert score == 7.8
 
 
+def test_geo_score_ignores_malformed_semantic_html_and_keeps_other_signals():
+    score_meta = CompetitorService._calculate_geo_score_with_provenance(
+        {
+            "schema": {"schema_presence": {"status": "present"}},
+            "structure": {
+                "semantic_html": "not-a-dict",
+                "h1_check": {"status": "pass"},
+            },
+            "eeat": {"author_presence": {"status": "pass"}},
+        }
+    )
+
+    assert score_meta["score_status"] == "valid"
+    assert score_meta["score"] == 100.0
+    assert {signal["signal"] for signal in score_meta["signals_used"]} == {
+        "schema_presence",
+        "author_presence",
+        "h1_presence",
+    }
+
+
 def test_geo_score_refresh_distinguishes_valid_zero_from_legacy_zero():
     valid_zero_payload = {
         "benchmark": {

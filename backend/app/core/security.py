@@ -5,6 +5,7 @@ Funciones de seguridad para la aplicación
 import ipaddress
 import re
 import socket
+import string
 from typing import Optional, Set, Union
 from urllib.parse import urlparse
 
@@ -299,5 +300,45 @@ def sanitize_html_content(input_html: str, max_length: int = 50000) -> str:
 
 def validate_email(email: str) -> bool:
     """Validar email"""
-    pattern = r"^[^\s@]+@[^\s@]+\.[^\s@]+$"
-    return bool(re.match(pattern, email)) and len(email) <= 255
+    if not isinstance(email, str):
+        return False
+
+    candidate = email.strip()
+    if not candidate or len(candidate) > 255:
+        return False
+    if any(char.isspace() for char in candidate):
+        return False
+    if candidate.count("@") != 1 or ".." in candidate:
+        return False
+
+    local_part, domain = candidate.rsplit("@", 1)
+    if not local_part or not domain or "." not in domain:
+        return False
+    if len(local_part) > 64:
+        return False
+    if (
+        local_part.startswith(".")
+        or local_part.endswith(".")
+        or domain.startswith(".")
+        or domain.endswith(".")
+    ):
+        return False
+
+    allowed_local_chars = set(
+        string.ascii_letters + string.digits + "!#$%&'*+-/=?^_`{|}~."
+    )
+    if any(char not in allowed_local_chars for char in local_part):
+        return False
+
+    allowed_domain_chars = set(string.ascii_letters + string.digits + "-")
+    labels = domain.split(".")
+    if len(labels) < 2:
+        return False
+
+    for label in labels:
+        if not label or len(label) > 63 or label.startswith("-") or label.endswith("-"):
+            return False
+        if any(char not in allowed_domain_chars for char in label):
+            return False
+
+    return True

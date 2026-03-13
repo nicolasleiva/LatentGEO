@@ -106,6 +106,7 @@
   },
   "pnpm": {
     "overrides": {
+      "flatted": "3.4.0",
       "fast-xml-parser": "5.3.8",
       "rollup": "4.59.0",
       "minimatch@<3.1.5": "3.1.5",

@@ -2950,6 +2950,9 @@ class CompetitorService:
     """Servicio para gestionar competidores"""
 
     GEO_SCORE_VERSION = "geo_score_v2"
+    GEO_SCORE_PROVIDER_ERROR_REASON = (
+        "GEO score could not be computed from the available competitor signals."
+    )
 
     @staticmethod
     def _coerce_number(value: Any) -> Optional[float]:
@@ -2959,6 +2962,14 @@ class CompetitorService:
             return float(value)
         except Exception:
             return None
+
+    @staticmethod
+    def _mapping_or_empty(value: Any) -> Dict[str, Any]:
+        return value if isinstance(value, dict) else {}
+
+    @classmethod
+    def _mapping_copy(cls, value: Any) -> Dict[str, Any]:
+        return dict(cls._mapping_or_empty(value))
 
     @staticmethod
     def is_benchmark_available_competitor(audit_data: Dict[str, Any]) -> bool:
@@ -3025,6 +3036,7 @@ class CompetitorService:
     ) -> Dict[str, Any]:
         """Compute canonical GEO score plus provenance metadata."""
         try:
+            audit_payload = cls._mapping_or_empty(audit_data)
             weights = []
             signals_used: List[Dict[str, Any]] = []
 
@@ -3047,12 +3059,20 @@ class CompetitorService:
                     }
                 )
 
-            structure = audit_data.get("structure", {}) or {}
-            site_metrics = audit_data.get("site_metrics", {}) or {}
-
-            schema_status = (
-                audit_data.get("schema", {}).get("schema_presence", {}).get("status")
+            structure = cls._mapping_or_empty(audit_payload.get("structure"))
+            site_metrics = cls._mapping_or_empty(audit_payload.get("site_metrics"))
+            schema_data = cls._mapping_or_empty(audit_payload.get("schema"))
+            schema_presence = cls._mapping_or_empty(schema_data.get("schema_presence"))
+            eeat_data = cls._mapping_or_empty(audit_payload.get("eeat"))
+            author_presence = cls._mapping_or_empty(eeat_data.get("author_presence"))
+            content_data = cls._mapping_or_empty(audit_payload.get("content"))
+            conversational_tone = cls._mapping_or_empty(
+                content_data.get("conversational_tone")
             )
+            h1_check = cls._mapping_or_empty(structure.get("h1_check"))
+            semantic_html = cls._mapping_or_empty(structure.get("semantic_html"))
+
+            schema_status = schema_presence.get("status")
             if schema_status is not None:
                 _add_metric(
                     "schema_presence",
@@ -3061,9 +3081,7 @@ class CompetitorService:
                     30.0,
                 )
 
-            semantic_score = cls._coerce_number(
-                (structure.get("semantic_html") or {}).get("score_percent")
-            )
+            semantic_score = cls._coerce_number(semantic_html.get("score_percent"))
             structure_score_percent = cls._coerce_number(
                 site_metrics.get("structure_score_percent")
             )
@@ -3080,9 +3098,7 @@ class CompetitorService:
             )
             _add_metric("structure", structure_source, structure_score, 20.0)
 
-            author_status = (
-                audit_data.get("eeat", {}).get("author_presence", {}).get("status")
-            )
+            author_status = author_presence.get("status")
             if author_status is not None:
                 _add_metric(
                     "author_presence",
@@ -3091,11 +3107,7 @@ class CompetitorService:
                     20.0,
                 )
 
-            tone_score = cls._coerce_number(
-                (audit_data.get("content", {}) or {})
-                .get("conversational_tone", {})
-                .get("score")
-            )
+            tone_score = cls._coerce_number(conversational_tone.get("score"))
             if tone_score is not None:
                 _add_metric(
                     "conversational_tone",
@@ -3104,7 +3116,7 @@ class CompetitorService:
                     15.0,
                 )
 
-            h1_status = structure.get("h1_check", {}).get("status")
+            h1_status = h1_check.get("status")
             if h1_status is not None and not used_site_metrics_structure:
                 _add_metric(
                     "h1_presence",
@@ -3139,14 +3151,14 @@ class CompetitorService:
                 "signals_used": signals_used,
                 "computed_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
             }
-        except Exception as e:
-            logger.error(f"Error calculando GEO score: {e}")
+        except Exception:
+            logger.exception("Error calculando GEO score")
             return {
                 "score": 0.0,
                 "score_version": cls.GEO_SCORE_VERSION,
                 "score_status": "provider_error",
                 "score_source": "canonical_geo_score",
-                "score_reason": str(e),
+                "score_reason": cls.GEO_SCORE_PROVIDER_ERROR_REASON,
                 "signals_used": [],
                 "computed_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
             }
@@ -3161,7 +3173,7 @@ class CompetitorService:
     def normalize_competitor_audit_payload(
         cls, audit_data: Dict[str, Any]
     ) -> Dict[str, Any]:
-        normalized = dict(audit_data or {})
+        normalized = cls._mapping_copy(audit_data)
         benchmark_available = cls.is_benchmark_available_competitor(normalized)
         normalized["benchmark_available"] = benchmark_available
         if benchmark_available:
@@ -3237,10 +3249,11 @@ class CompetitorService:
         benchmark_available: Optional[bool] = None,
     ) -> Dict[str, Any]:
         """Formatear datos de competitor para el frontend con todos los campos necesarios"""
+        audit_payload = CompetitorService._mapping_or_empty(audit_data)
         try:
             score_meta = (
                 score_meta
-                or CompetitorService._calculate_geo_score_with_provenance(audit_data)
+                or CompetitorService._calculate_geo_score_with_provenance(audit_payload)
             )
             score_status = str(score_meta.get("score_status") or "").strip().lower()
             incomplete_signals = score_status in {
@@ -3248,47 +3261,60 @@ class CompetitorService:
                 "provider_error",
             }
             benchmark_available = (
-                CompetitorService.is_benchmark_available_competitor(audit_data)
+                CompetitorService.is_benchmark_available_competitor(audit_payload)
                 if benchmark_available is None
                 else bool(benchmark_available)
             )
             # Extraer URL
-            comp_url = url or audit_data.get("url", "")
+            comp_url = url or audit_payload.get("url", "")
             domain = (
                 comp_url.replace("https://", "").replace("http://", "").split("/")[0]
             )
 
             # Extraer datos individuales de schema
-            schema_data = audit_data.get("schema", {})
-            schema_status = schema_data.get("schema_presence", {}).get("status")
+            schema_data = CompetitorService._mapping_or_empty(
+                audit_payload.get("schema")
+            )
+            schema_presence = CompetitorService._mapping_or_empty(
+                schema_data.get("schema_presence")
+            )
+            schema_status = schema_presence.get("status")
             schema_present = None
             if not incomplete_signals and schema_status is not None:
                 schema_present = schema_status == "present"
 
             # Extraer semantic HTML score
-            structure_data = audit_data.get("structure", {})
-            semantic_html = structure_data.get("semantic_html", {})
+            structure_data = CompetitorService._mapping_or_empty(
+                audit_payload.get("structure")
+            )
+            semantic_html = CompetitorService._mapping_or_empty(
+                structure_data.get("semantic_html")
+            )
             semantic_score = CompetitorService._coerce_number(
                 semantic_html.get("score_percent")
             )
 
             # H1 status + header hierarchy health
-            h1_status = structure_data.get("h1_check", {}).get("status")
+            h1_check = CompetitorService._mapping_or_empty(
+                structure_data.get("h1_check")
+            )
+            h1_status = h1_check.get("status")
             h1_coverage = None
             if h1_status is not None:
                 h1_coverage = 100.0 if h1_status == "pass" else 0.0
             header_issues = (
-                structure_data.get("header_hierarchy", {}).get("issues") or []
+                CompetitorService._mapping_or_empty(
+                    structure_data.get("header_hierarchy")
+                ).get("issues")
+                or []
             )
             header_hierarchy_coverage = None
             if "header_hierarchy" in structure_data:
                 header_hierarchy_coverage = 100.0 if not header_issues else 0.0
 
             # Prefer site_metrics if present (aggregate)
-            site_metrics = (
-                audit_data.get("site_metrics", {})
-                if isinstance(audit_data.get("site_metrics"), dict)
-                else {}
+            site_metrics = CompetitorService._mapping_or_empty(
+                audit_payload.get("site_metrics")
             )
             structure_score = CompetitorService._coerce_number(
                 site_metrics.get("structure_score_percent")
@@ -3311,8 +3337,10 @@ class CompetitorService:
                     )
 
             # Extraer E-E-A-T
-            eeat_data = audit_data.get("eeat", {})
-            author_status = eeat_data.get("author_presence", {}).get("status")
+            eeat_data = CompetitorService._mapping_or_empty(audit_payload.get("eeat"))
+            author_status = CompetitorService._mapping_or_empty(
+                eeat_data.get("author_presence")
+            ).get("status")
             eeat_score = None
             if not incomplete_signals and author_status is not None:
                 eeat_score = 100.0 if author_status == "pass" else 0.0
@@ -3323,8 +3351,12 @@ class CompetitorService:
                 h1_present = h1_status == "pass"
 
             # Extraer conversational tone
-            content_data = audit_data.get("content", {})
-            conversational_tone = content_data.get("conversational_tone", {})
+            content_data = CompetitorService._mapping_or_empty(
+                audit_payload.get("content")
+            )
+            conversational_tone = CompetitorService._mapping_or_empty(
+                content_data.get("conversational_tone")
+            )
             tone_score = CompetitorService._coerce_number(
                 conversational_tone.get("score")
             )
@@ -3357,10 +3389,10 @@ class CompetitorService:
                 "h1_status": h1_status,
                 "tone_score": tone_score,
             }
-        except Exception as e:
-            logger.error(f"Error formateando datos de competidor: {e}")
+        except Exception:
+            logger.exception("Error formateando datos de competidor")
             return {
-                "url": url or audit_data.get("url", ""),
+                "url": url or audit_payload.get("url", ""),
                 "domain": "",
                 "geo_score": geo_score,
                 "score": geo_score,

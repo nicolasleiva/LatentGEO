@@ -134,6 +134,9 @@ class TestEmailInputValidator:
             "@missing-local",
             "missing-at.com",
             "spaces in@email.com",
+            "user@\texample.com",
+            "user..name@example.com",
+            "user@-example.com",
         ]
 
         for email in invalid_emails:
@@ -153,6 +156,13 @@ class TestEmailInputValidator:
                 EmailInput(email=email)
 
             assert "desechable" in str(exc_info.value).lower()
+
+    def test_pathological_email_pattern_is_rejected(self):
+        """Test that adversarial email-like input is rejected safely"""
+        pathological_email = "!@!." + "!." * 100 + "invalid"
+
+        with pytest.raises(ValidationError):
+            EmailInput(email=pathological_email)
 
 
 class TestPasswordInputValidator:

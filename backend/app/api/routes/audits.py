@@ -1067,6 +1067,32 @@ def get_competitors(
         domain = normalize_domain(url_or_domain)
         return bool(domain) and is_valid_competitor_domain(domain, vertical_hint)
 
+    def _build_competitor_response(
+        competitor_payload: dict[str, object],
+        *,
+        fallback_url: str | None = None,
+        default_geo_score: float = 0.0,
+        benchmark_available: bool | None = None,
+    ) -> dict[str, object]:
+        normalized_comp = CompetitorService.normalize_competitor_audit_payload(
+            competitor_payload
+        )
+        score_meta = normalized_comp.get("benchmark")
+        geo_score_value = CompetitorService._coerce_number(
+            normalized_comp.get("geo_score")
+        )
+        return CompetitorService._format_competitor_data(
+            normalized_comp,
+            (
+                geo_score_value
+                if geo_score_value is not None
+                else float(default_geo_score)
+            ),
+            fallback_url or normalized_comp.get("url"),
+            score_meta=score_meta if isinstance(score_meta, dict) else None,
+            benchmark_available=benchmark_available,
+        )
+
     # Obtener competidores de la base de datos (con límite)
     competitors_db = (
         db.query(Competitor)
@@ -1084,19 +1110,10 @@ def get_competitors(
             audit_data = comp.audit_data or {}
             if not CompetitorService.is_benchmark_available_competitor(audit_data):
                 continue
-            normalized_comp = CompetitorService.normalize_competitor_audit_payload(
-                audit_data
-            )
-            geo_score = normalized_comp.get("geo_score", comp.geo_score or 0)
-            formatted = CompetitorService._format_competitor_data(
-                normalized_comp,
-                geo_score,
-                comp.url,
-                score_meta=(
-                    normalized_comp.get("benchmark")
-                    if isinstance(normalized_comp.get("benchmark"), dict)
-                    else None
-                ),
+            formatted = _build_competitor_response(
+                audit_data,
+                fallback_url=comp.url,
+                default_geo_score=comp.geo_score or 0,
                 benchmark_available=True,
             )
             result.append(formatted)
@@ -1114,16 +1131,8 @@ def get_competitors(
                 continue
             if not CompetitorService.is_benchmark_available_competitor(comp):
                 continue
-            normalized_comp = CompetitorService.normalize_competitor_audit_payload(comp)
-            geo_score = normalized_comp.get("geo_score", 0) or 0
-            formatted = CompetitorService._format_competitor_data(
-                normalized_comp,
-                geo_score,
-                score_meta=(
-                    normalized_comp.get("benchmark")
-                    if isinstance(normalized_comp.get("benchmark"), dict)
-                    else None
-                ),
+            formatted = _build_competitor_response(
+                comp,
                 benchmark_available=True,
             )
             result.append(formatted)
@@ -1171,9 +1180,11 @@ def get_competitors(
             result.append(formatted)
             if len(result) >= safe_limit:
                 break
-    except Exception as e:
+    except Exception:
         logger.warning(
-            f"Could not derive competitors from search_results for audit {audit_id}: {e}"
+            "Could not derive competitors from search_results for audit %s",
+            audit_id,
+            exc_info=True,
         )
 
     return result
