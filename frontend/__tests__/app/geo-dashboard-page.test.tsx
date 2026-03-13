@@ -94,6 +94,17 @@ const auditedCompetitorsPayload = [
     h1_present: false,
     tone_score: 3.8,
   },
+  {
+    domain: "incomplete.example.com",
+    url: "https://incomplete.example.com",
+    geo_score: 0,
+    score_status: "insufficient_signals",
+    schema_present: null,
+    structure_score: null,
+    eeat_score: null,
+    h1_present: null,
+    tone_score: null,
+  },
 ];
 
 describe("GEO dashboard page", () => {
@@ -185,6 +196,7 @@ describe("GEO dashboard page", () => {
     expect(screen.getAllByText("leader.example.com").length).toBeGreaterThan(0);
     expect(screen.getByText("Schema faltante: FAQPage")).toBeInTheDocument();
     expect(screen.getByText("Ad Hoc Benchmark")).toBeInTheDocument();
+    expect(screen.getAllByText("N/A").length).toBeGreaterThan(0);
 
     await waitFor(() => {
       expect(fetchWithBackendAuth).toHaveBeenCalledWith(

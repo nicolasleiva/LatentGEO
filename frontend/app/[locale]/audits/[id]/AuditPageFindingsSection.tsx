@@ -33,37 +33,57 @@ export default function AuditPageFindingsSection({
         ) : (
           visiblePages.map((page: any) => {
             const issues = [];
-            const semanticHtmlScore =
-              page.audit_data?.structure?.semantic_html?.score_percent;
-            if (page.audit_data?.structure?.h1_check?.status !== "pass") {
+            if (page.audit_data) {
+              const semanticHtmlScore =
+                page.audit_data?.structure?.semantic_html?.score_percent;
+              if (page.audit_data?.structure?.h1_check?.status !== "pass") {
+                issues.push({
+                  severity: "critical",
+                  msg: "Missing or multiple H1",
+                });
+              }
+              if (
+                !page.audit_data?.schema?.schema_presence?.status ||
+                page.audit_data?.schema?.schema_presence?.status !== "present"
+              ) {
+                issues.push({
+                  severity: "high",
+                  msg: "Missing schema markup",
+                });
+              }
+              if (page.audit_data?.eeat?.author_presence?.status !== "pass") {
+                issues.push({
+                  severity: "high",
+                  msg: "Author not identified",
+                });
+              }
+              if (
+                semanticHtmlScore === null ||
+                semanticHtmlScore === undefined ||
+                semanticHtmlScore < 50
+              ) {
+                issues.push({
+                  severity: "medium",
+                  msg: "Low semantic HTML score",
+                });
+              }
+            }
+            if (issues.length === 0 && Number(page.critical_issues || 0) > 0) {
               issues.push({
                 severity: "critical",
-                msg: "Missing or multiple H1",
+                msg: `${page.critical_issues} critical issue${page.critical_issues === 1 ? "" : "s"} detected`,
               });
             }
-            if (
-              !page.audit_data?.schema?.schema_presence?.status ||
-              page.audit_data?.schema?.schema_presence?.status !== "present"
-            ) {
+            if (issues.length < 2 && Number(page.high_issues || 0) > 0) {
               issues.push({
                 severity: "high",
-                msg: "Missing schema markup",
+                msg: `${page.high_issues} high-priority issue${page.high_issues === 1 ? "" : "s"} detected`,
               });
             }
-            if (page.audit_data?.eeat?.author_presence?.status !== "pass") {
-              issues.push({
-                severity: "high",
-                msg: "Author not identified",
-              });
-            }
-            if (
-              semanticHtmlScore === null ||
-              semanticHtmlScore === undefined ||
-              semanticHtmlScore < 50
-            ) {
+            if (issues.length < 3 && Number(page.medium_issues || 0) > 0) {
               issues.push({
                 severity: "medium",
-                msg: "Low semantic HTML score",
+                msg: `${page.medium_issues} medium-priority issue${page.medium_issues === 1 ? "" : "s"} detected`,
               });
             }
 

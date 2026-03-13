@@ -253,6 +253,41 @@ def test_filter_competitor_urls_excludes_directory_sites():
     assert not missing_hosts
 
 
+def test_filter_competitor_urls_rejects_marketplaces_and_publishers_for_devtools():
+    items = [
+        {
+            "link": "https://marketplace.visualstudio.com/items?itemName=vendor.ai-tool",
+            "title": "VS Code AI extension marketplace listing",
+            "snippet": "Install an AI coding extension for VS Code.",
+        },
+        {
+            "link": "https://www.inc.com/article/ai-coding-tools.html",
+            "title": "Best AI coding tools in 2026",
+            "snippet": "Publisher roundup covering developer productivity trends.",
+        },
+        {
+            "link": "https://cursor.com/",
+            "title": "Cursor AI code editor extension workspace",
+            "snippet": "AI coding workspace for software development teams with VS Code workflows.",
+        },
+    ]
+
+    competitors = PipelineService.filter_competitor_urls(
+        items,
+        target_domain="example.dev",
+        core_terms=["extension", "workspace", "editor"],
+        anchor_terms=["extension", "workspace"],
+        vertical_hint="software",
+        limit=5,
+    )
+
+    competitor_hosts = _host_set(competitors)
+    assert "marketplace.visualstudio.com" not in competitor_hosts
+    assert "www.inc.com" not in competitor_hosts
+    missing_hosts = {"cursor.com"} - competitor_hosts
+    assert not missing_hosts
+
+
 def test_extract_anchor_terms_requires_repeated_signal():
     queries = [
         {"query": "agile coaching fintech latam"},
@@ -460,6 +495,65 @@ def test_prune_queries_keeps_ecommerce_shipping_and_market_intent():
     )
 
     assert len(pruned) == 2
+
+
+def test_prune_queries_rejects_generic_devtools_query_without_strong_core():
+    target = _make_target_audit(
+        "https://example.dev/",
+        "Example Dev | VS Code AI Extension",
+        "Bring your own key AI coding workspace for software teams in Colombia",
+        "AI-assisted software development extension",
+    )
+    target["language"] = "en"
+    target["market"] = "Colombia"
+    target["category"] = "Developer Tools"
+    target["subcategory"] = (
+        "AI-Assisted Software Development & Coding Productivity"
+    )
+    target["content"]["nav_items"] = [
+        "VS Code Extension",
+        "Bring Your Own Key",
+        "Workspace",
+    ]
+    target["content"]["text_sample"] = (
+        "Use a VS Code extension with bring your own key controls for AI-assisted "
+        "software development workflows."
+    )
+    queries = [
+        {
+            "id": "q1",
+            "query": "AI coding assistant Colombia",
+            "purpose": "competitor discovery",
+        },
+        {
+            "id": "q2",
+            "query": "VS Code AI extension Colombia",
+            "purpose": "competitor discovery",
+        },
+        {
+            "id": "q3",
+            "query": "bring your own key AI platform Colombia",
+            "purpose": "competitor discovery",
+        },
+    ]
+
+    pruned = PipelineService._prune_competitor_queries(
+        queries,
+        target,
+        llm_category="Developer Tools",
+        llm_subcategory="AI-Assisted Software Development & Coding Productivity",
+        market_hint="Colombia",
+    )
+
+    pruned_queries = [item["query"] for item in pruned]
+    assert "AI coding assistant Colombia" not in pruned_queries
+    assert any(
+        query in pruned_queries
+        for query in [
+            "VS Code AI extension Colombia",
+            "bring your own key AI platform Colombia",
+        ]
+    )
 
 
 def test_prune_queries_accepts_category_plus_geo_when_market_hint_missing():

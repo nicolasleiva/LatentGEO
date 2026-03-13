@@ -110,6 +110,36 @@ async def get_competitor_analysis(
         audit = _get_owned_audit(db, audit_id, current_user)
 
         competitors = CompetitorService.get_competitors(db, audit_id)
+        normalized_competitors = []
+        for competitor in competitors:
+            audit_data = competitor.audit_data or {}
+            if not CompetitorService.is_benchmark_available_competitor(audit_data):
+                continue
+            normalized_audit = CompetitorService.normalize_competitor_audit_payload(
+                audit_data
+            )
+            benchmark = (
+                normalized_audit.get("benchmark")
+                if isinstance(normalized_audit.get("benchmark"), dict)
+                else {}
+            )
+            score_status = str(benchmark.get("score_status") or "").strip().lower()
+            normalized_competitors.append(
+                {
+                    "domain": competitor.domain,
+                    "url": competitor.url,
+                    "geo_score": normalized_audit.get(
+                        "geo_score", competitor.geo_score or 0
+                    ),
+                    "score_status": score_status,
+                    "audit_data": normalized_audit,
+                }
+            )
+        eligible_competitors = [
+            competitor
+            for competitor in normalized_competitors
+            if competitor["score_status"] in {"valid", "valid_zero"}
+        ]
 
         # Calcular GEO score del cliente (basado en fix_plan)
         client_geo_score = 0
@@ -125,29 +155,35 @@ async def get_competitor_analysis(
                 1, 10 - ((critical * 2 + high * 1) / max(1, total_issues))
             )
 
-        competitor_scores = [c.geo_score for c in competitors]
+        competitor_scores = [c["geo_score"] for c in eligible_competitors]
         avg_competitor_score = (
             sum(competitor_scores) / len(competitor_scores) if competitor_scores else 0
         )
 
         # Identificar gaps
         gaps = []
-        if competitors:
-            for comp in competitors[:3]:  # Top 3 competidores
-                if comp.audit_data and comp.audit_data.get("schema_types"):
+        if eligible_competitors:
+            ranked_for_gaps = sorted(
+                eligible_competitors,
+                key=lambda item: item["geo_score"],
+                reverse=True,
+            )
+            for comp in ranked_for_gaps[:3]:  # Top 3 competidores benchmarkeables
+                audit_payload = comp["audit_data"]
+                if audit_payload and audit_payload.get("schema_types"):
                     client_schemas = (
                         audit.target_audit.get("schema", {}).get("schema_types", [])
                         if audit.target_audit
                         else []
                     )
-                    comp_schemas = comp.audit_data.get("schema_types", [])
+                    comp_schemas = audit_payload.get("schema_types", [])
                     missing_schemas = set(comp_schemas) - set(client_schemas)
                     if missing_schemas:
                         gaps.append(f"Schema faltante: {', '.join(missing_schemas)}")
 
         return {
             "audit_id": audit_id,
-            "total_competitors": len(competitors),
+            "total_competitors": len(eligible_competitors),
             "your_geo_score": round(client_geo_score, 2),
             "average_competitor_score": round(avg_competitor_score, 2),
             "position": (
@@ -156,8 +192,16 @@ async def get_competitor_analysis(
                 else "Por debajo del promedio"
             ),
             "competitors": [
-                {"domain": c.domain, "url": c.url, "geo_score": c.geo_score}
-                for c in sorted(competitors, key=lambda x: x.geo_score, reverse=True)
+                {
+                    "domain": c["domain"],
+                    "url": c["url"],
+                    "geo_score": c["geo_score"],
+                }
+                for c in sorted(
+                    eligible_competitors,
+                    key=lambda item: item["geo_score"],
+                    reverse=True,
+                )
             ],
             "identified_gaps": gaps[:5],  # Top 5 gaps
         }

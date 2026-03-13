@@ -162,7 +162,7 @@ export const api = {
   },
 
   async getAudit(auditId: string): Promise<any> {
-    return requestJson(`${API_URL}/api/v1/audits/${auditId}`);
+    return requestJson(`${API_URL}/api/v1/audits/${auditId}/summary`);
   },
 
   async getAuditStatus(auditId: string): Promise<any> {

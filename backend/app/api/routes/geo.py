@@ -26,8 +26,10 @@ from app.services.competitor_citation_service import CompetitorCitationService
 from app.services.content_template_service import ContentTemplateService
 from app.services.geo_article_engine_service import (
     ArticleDataPackIncompleteError,
+    ArticleStrategyRequiredError,
     GeoArticleEngineService,
     InsufficientAuthoritySourcesError,
+    LegacyBatchReadOnlyError,
 )
 from app.services.geo_commerce_service import GeoCommerceService
 from app.services.query_discovery_service import QueryDiscoveryService
@@ -69,7 +71,9 @@ _SAFE_HTTP_ERROR_MESSAGES = {
     "KIMI_UNAVAILABLE": "Service temporarily unavailable.",
     "KIMI_GENERATION_FAILED": "Upstream generation dependency failed.",
     "ARTICLE_DATA_PACK_INCOMPLETE": "Required article data pack is incomplete.",
+    "ARTICLE_STRATEGY_REQUIRED": "This batch is missing title-run data. Create a new batch to continue.",
     "INSUFFICIENT_AUTHORITY_SOURCES": "Insufficient authority sources.",
+    "LEGACY_BATCH_READ_ONLY": "This batch is read-only. Create a new batch to regenerate articles.",
     "INVALID_INPUT": "Invalid request payload.",
 }
 
@@ -229,6 +233,7 @@ def _reconcile_article_batch_runtime_state(
         batch.summary = summary
         db.commit()
         db.refresh(batch)
+        GeoArticleEngineService.publish_batch_status_for_batch(batch)
 
     return batch
 
@@ -314,7 +319,13 @@ class ArticleEngineRequest(BaseModel):
     tone: str = "executive"
     include_schema: bool = True
     market: Optional[str] = None
+    target_topics: Optional[List[str]] = None
+    authority_urls: Optional[List[str]] = None
     run_async: bool = True
+
+
+class ArticleRegenerateRequest(BaseModel):
+    authority_urls: List[str] = Field(default_factory=list)
 
 
 # ============= Citation Tracking Endpoints =============
@@ -1241,6 +1252,13 @@ async def generate_article_batch(
     """Create and process article-engine batch with strict GEO/SEO data-pack rules."""
     try:
         audit = _get_owned_audit(db, request.audit_id, current_user)
+        seed_data = await GeoArticleEngineService.prepare_batch_seed_data(
+            db,
+            audit,
+            article_count=request.article_count,
+            target_topics=request.target_topics,
+            authority_urls=request.authority_urls,
+        )
         batch = GeoArticleEngineService.create_batch(
             db=db,
             audit=audit,
@@ -1249,6 +1267,13 @@ async def generate_article_batch(
             tone=request.tone,
             include_schema=request.include_schema,
             market=request.market,
+            strategy_run_id=seed_data["strategy_run_id"],
+            strategy_items=seed_data["strategy_items"],
+            strategy_source=seed_data["strategy_source"],
+            article_authority_assignments=seed_data["article_authority_assignments"],
+            global_authority_urls=seed_data["global_authority_urls"],
+            unmatched_authority_urls=seed_data["unmatched_authority_urls"],
+            authority_source_cache=seed_data["authority_source_cache"],
         )
         if request.run_async:
             from app.workers.tasks import generate_article_batch_task
@@ -1315,6 +1340,11 @@ async def generate_article_batch(
             status_code=422,
             detail=_safe_http_error_detail(code),
         )
+    except ArticleStrategyRequiredError:
+        raise HTTPException(
+            status_code=422,
+            detail=_safe_http_error_detail("ARTICLE_STRATEGY_REQUIRED"),
+        )
     except (KimiGenerationError, KimiSearchError):
         raise HTTPException(
             status_code=502,
@@ -1338,14 +1368,26 @@ def get_article_batch_status(
 ):
     """Fetch processing/completion status for an article batch."""
     try:
+        batch_meta = GeoArticleEngineService.get_batch_status_projection(db, batch_id)
+        if not batch_meta:
+            raise HTTPException(status_code=404, detail="Article batch not found")
+        _get_owned_audit(db, batch_meta.audit_id, current_user)
+
+        cached_payload = GeoArticleEngineService.get_cached_batch_status_payload(batch_id)
+        if cached_payload and not GeoArticleEngineService.batch_status_payload_requires_refresh(
+            cached_payload
+        ):
+            return {"has_data": True, **cached_payload}
+
         batch = GeoArticleEngineService.get_batch(db, batch_id)
         if not batch:
             raise HTTPException(status_code=404, detail="Article batch not found")
-        _get_owned_audit(db, batch.audit_id, current_user)
         batch = _reconcile_article_batch_runtime_state(db, batch)
+        payload = GeoArticleEngineService.serialize_batch_status(batch)
+        GeoArticleEngineService.cache_batch_status_payload(payload)
         return {
             "has_data": True,
-            **GeoArticleEngineService.serialize_batch(batch),
+            **payload,
         }
     except HTTPException:
         raise
@@ -1369,6 +1411,64 @@ def get_latest_article_batch(
         return {"has_data": True, **GeoArticleEngineService.serialize_batch(batch)}
     except Exception as e:
         logger.error(f"Error fetching latest article batch: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@router.post("/article-engine/{batch_id}/articles/{article_index}/regenerate")
+async def regenerate_article(
+    batch_id: int,
+    article_index: int,
+    request: ArticleRegenerateRequest,
+    db: Session = Depends(get_db),
+    current_user: AuthUser = Depends(get_current_user),
+):
+    """Regenerate a single article slot using optional authority URLs."""
+    try:
+        batch = GeoArticleEngineService.get_batch(db, batch_id)
+        if not batch:
+            raise HTTPException(status_code=404, detail="Article batch not found")
+        _get_owned_audit(db, batch.audit_id, current_user)
+        regenerated = await GeoArticleEngineService.regenerate_article(
+            db,
+            batch_id=batch_id,
+            article_index=article_index,
+            authority_urls=request.authority_urls,
+        )
+        return GeoArticleEngineService.serialize_batch(regenerated)
+    except HTTPException:
+        raise
+    except LegacyBatchReadOnlyError:
+        raise HTTPException(
+            status_code=422,
+            detail=_safe_http_error_detail("LEGACY_BATCH_READ_ONLY"),
+        )
+    except ArticleStrategyRequiredError:
+        raise HTTPException(
+            status_code=422,
+            detail=_safe_http_error_detail("ARTICLE_STRATEGY_REQUIRED"),
+        )
+    except (ArticleDataPackIncompleteError, InsufficientAuthoritySourcesError):
+        raise HTTPException(
+            status_code=422,
+            detail=_safe_http_error_detail("ARTICLE_DATA_PACK_INCOMPLETE"),
+        )
+    except KimiUnavailableError:
+        raise HTTPException(
+            status_code=503,
+            detail=_safe_http_error_detail("KIMI_UNAVAILABLE"),
+        )
+    except (KimiGenerationError, KimiSearchError):
+        raise HTTPException(
+            status_code=502,
+            detail=_safe_http_error_detail("KIMI_GENERATION_FAILED"),
+        )
+    except ValueError:
+        raise HTTPException(
+            status_code=400,
+            detail=_safe_http_error_detail("INVALID_INPUT"),
+        )
+    except Exception as e:
+        logger.error(f"Error regenerating article batch={batch_id} idx={article_index}: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
 

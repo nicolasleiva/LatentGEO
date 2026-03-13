@@ -14,7 +14,9 @@ vi.mock("@/lib/backend-auth", () => ({
     fetchWithBackendAuthMock(...args),
 }));
 
+const downloadAuditPdfMock = vi.fn();
 vi.mock("@/lib/pdf-download", () => ({
+  downloadAuditPdf: (...args: unknown[]) => downloadAuditPdfMock(...args),
   triggerFileDownload: vi.fn(),
 }));
 
@@ -159,5 +161,113 @@ describe("artifact hook wrappers", () => {
     expect(pdfHook.result.current.state.waiting_on).toBe("pagespeed");
     expect(pageSpeedHook.result.current.state.status).toBe("running");
     expect(pageSpeedHook.result.current.state.job_id).toBe(9);
+  });
+
+  it("keeps SSE reconnectable after errors and auto-downloads completed PDFs", async () => {
+    fetchWithBackendAuthMock.mockImplementation(() =>
+      Promise.resolve(
+        new Response(
+          JSON.stringify({
+            audit_id: 42,
+            pagespeed_status: "idle",
+            pagespeed_job_id: null,
+            pagespeed_available: false,
+            pagespeed_warnings: [],
+            pagespeed_error: null,
+            pagespeed_started_at: null,
+            pagespeed_completed_at: null,
+            pagespeed_retry_after_seconds: 0,
+            pagespeed_message: null,
+            pdf_status: "idle",
+            pdf_job_id: null,
+            pdf_available: false,
+            pdf_report_id: null,
+            pdf_waiting_on: null,
+            pdf_dependency_job_id: null,
+            pdf_warnings: [],
+            pdf_error: null,
+            pdf_started_at: null,
+            pdf_completed_at: null,
+            pdf_retry_after_seconds: 0,
+            pdf_message: null,
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        ),
+      ),
+    );
+    downloadAuditPdfMock.mockResolvedValue(undefined);
+
+    const pdfHook = renderHook(() =>
+      usePdfGeneration({ auditId: 42, autoDownload: true }),
+    );
+
+    await waitFor(() => expect(MockEventSource.instances.length).toBe(1));
+
+    fetchWithBackendAuthMock.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          audit_id: 42,
+          status: "queued",
+          download_ready: false,
+          report_id: null,
+          warnings: [],
+          error: null,
+          started_at: null,
+          completed_at: null,
+          retry_after_seconds: 3,
+          message: null,
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      ),
+    );
+
+    await act(async () => {
+      await pdfHook.result.current.generate();
+    });
+
+    act(() => {
+      MockEventSource.instances[0].onerror?.(new Event("error"));
+    });
+
+    expect(MockEventSource.instances[0].close).not.toHaveBeenCalled();
+
+    act(() => {
+      MockEventSource.instances[0].onmessage?.(
+        new MessageEvent("message", {
+          data: JSON.stringify({
+            audit_id: 42,
+            pagespeed_status: "idle",
+            pagespeed_job_id: null,
+            pagespeed_available: false,
+            pagespeed_warnings: [],
+            pagespeed_error: null,
+            pagespeed_started_at: null,
+            pagespeed_completed_at: null,
+            pagespeed_retry_after_seconds: 0,
+            pagespeed_message: null,
+            pdf_status: "completed",
+            pdf_job_id: 7,
+            pdf_available: true,
+            pdf_report_id: 99,
+            pdf_waiting_on: null,
+            pdf_dependency_job_id: null,
+            pdf_warnings: [],
+            pdf_error: null,
+            pdf_started_at: "2026-03-11T13:20:00Z",
+            pdf_completed_at: "2026-03-11T13:21:00Z",
+            pdf_retry_after_seconds: 0,
+            pdf_message: null,
+          }),
+        }),
+      );
+    });
+
+    await waitFor(() => expect(downloadAuditPdfMock).toHaveBeenCalledWith(42));
   });
 });

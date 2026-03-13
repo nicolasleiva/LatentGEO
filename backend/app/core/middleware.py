@@ -99,17 +99,15 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         entries = self.rate_limits[key]
         valid_entries = [(ts, count) for ts, count in entries if ts > window_start]
         request_count = sum(count for _, count in valid_entries)
-
-        # Update entries
-        self.rate_limits[key] = valid_entries + [(current_time, 1)]
-
         remaining = max(0, limit - request_count - 1)
         oldest_timestamp = valid_entries[0][0] if valid_entries else current_time
         reset_time = int(oldest_timestamp + window)
 
         if request_count >= limit:
+            self.rate_limits[key] = valid_entries
             return (False, 0, reset_time)
 
+        self.rate_limits[key] = valid_entries + [(current_time, 1)]
         return (True, remaining, reset_time)
 
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
@@ -144,6 +142,8 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             canonical_limit_path = "/api/v1/audits/pagespeed-status"
         elif policy.bucket == "artifacts_status":
             canonical_limit_path = "/api/v1/audits/artifacts-status"
+        elif policy.bucket == "article_batch_status":
+            canonical_limit_path = "/api/v1/geo/article-engine/status"
         elif policy.bucket == "webhooks":
             canonical_limit_path = "/api/v1/webhooks"
         elif policy.bucket == "github_webhook":
@@ -332,6 +332,7 @@ def configure_security_middleware(app, settings, enable_rate_limiting: bool = Tr
         "/api/v1/audits/pdf-status": (120, 60),  # polling-safe
         "/api/v1/audits/pagespeed-status": (120, 60),  # polling-safe
         "/api/v1/audits/artifacts-status": (120, 60),  # polling-safe
+        "/api/v1/geo/article-engine/status": (120, 60),  # polling-safe
         # Search endpoints - moderate limits
         "/api/v1/search": (30, 60),  # 30 per minute
         # Webhooks - unlimited (internal use)

@@ -5,6 +5,7 @@ Genera recomendaciones de contenido basadas en keywords y gaps.
 
 import json
 import logging
+import uuid
 from datetime import datetime
 from typing import Any, Dict, List
 
@@ -29,7 +30,11 @@ class AIContentService:
         self.llm_function = get_llm_function()
 
     async def generate_suggestions(
-        self, audit_id: int, domain: str, topics: List[str]
+        self,
+        audit_id: int,
+        domain: str,
+        topics: List[str],
+        count: int = 5,
     ) -> List[AIContentSuggestion]:
         """
         Genera sugerencias de contenido usando IA basándose en el contexto real del negocio.
@@ -80,7 +85,7 @@ class AIContentService:
             **TOPICS ADICIONALES A INCLUIR:** {', '.join(topics) if topics else 'Ninguno especificado'}
             
             **TU TAREA:**
-            Genera 5 ideas de contenido que:
+            Genera exactamente {count} ideas de contenido que:
             1. Sean RELEVANTES para el negocio real ({business_context['category']})
             2. Combinen el core del negocio con los topics adicionales si los hay
             3. Ayuden a posicionar la marca como autoridad en su nicho
@@ -122,7 +127,29 @@ class AIContentService:
                     "Kimi returned invalid JSON payload for AI content suggestions."
                 )
 
-            for idx, sugg in enumerate(ai_suggestions[:5]):
+            strategy_run_id = uuid.uuid4().hex
+            normalized_suggestions = []
+            seen_titles = set()
+            for sugg in ai_suggestions:
+                if not isinstance(sugg, dict):
+                    continue
+                title = str(sugg.get("title") or "").strip()
+                if not title:
+                    continue
+                title_key = title.lower()
+                if title_key in seen_titles:
+                    continue
+                seen_titles.add(title_key)
+                normalized_suggestions.append(sugg)
+                if len(normalized_suggestions) >= count:
+                    break
+
+            if len(normalized_suggestions) < count:
+                raise KimiGenerationError(
+                    f"Kimi returned {len(normalized_suggestions)} content suggestions; expected {count}."
+                )
+
+            for idx, sugg in enumerate(normalized_suggestions[:count]):
                 suggestion = AIContentSuggestion(
                     audit_id=audit_id,
                     topic=sugg.get("title", f"Content Idea {idx+1}"),
@@ -133,6 +160,8 @@ class AIContentService:
                         "business_context": business_context["category"],
                     },
                     priority=sugg.get("priority", "medium"),
+                    strategy_run_id=strategy_run_id,
+                    strategy_order=idx,
                 )
                 self.db.add(suggestion)
                 suggestions.append(suggestion)

@@ -140,6 +140,31 @@ async def test_generate_comprehensive_pdf_uploads_to_supabase(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_generate_comprehensive_pdf_reraises_renderer_failure(monkeypatch):
+    audit = SimpleNamespace(
+        id=77,
+        report_markdown="# Report",
+        fix_plan=[],
+        target_audit={"url": "https://example.com"},
+    )
+
+    def _fail_create_pdf(*args, **kwargs):
+        raise RuntimeError("renderer exploded")
+
+    monkeypatch.setattr(
+        "app.services.pdf_service.create_comprehensive_pdf",
+        _fail_create_pdf,
+    )
+
+    with pytest.raises(RuntimeError, match="renderer exploded"):
+        await PDFService.generate_comprehensive_pdf(
+            audit=audit,
+            pages=[_build_page(1)],
+            competitors=[],
+        )
+
+
+@pytest.mark.asyncio
 async def test_pdf_generation_with_kimi_failure_errors_when_fallbacks_disabled(
     tmp_path,
 ):

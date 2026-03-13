@@ -2,7 +2,8 @@
 Tests para el API de Auditorías
 """
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+import time
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -15,6 +16,7 @@ from app.services.pagespeed_job_service import PageSpeedJobService
 from app.services.pdf_job_service import PDFJobService
 from fastapi.testclient import TestClient
 from sqlalchemy.exc import OperationalError
+from sqlalchemy.orm import sessionmaker
 
 
 def test_create_audit_dispatches_task(client: TestClient):
@@ -145,7 +147,7 @@ def test_configure_chat_updates_language_when_provided(client: TestClient):
             json={"audit_id": audit_id, "language": "pt"},
         )
 
-    assert config_response.status_code == 200
+    assert config_response.status_code == 202
     detail_response = client.get(f"/api/v1/audits/{audit_id}")
     assert detail_response.status_code == 200
     assert detail_response.json()["language"] == "pt"
@@ -170,7 +172,7 @@ def test_configure_chat_preserves_language_when_omitted(client: TestClient):
             json={"audit_id": audit_id, "market": "ar"},
         )
 
-    assert config_response.status_code == 200
+    assert config_response.status_code == 202
     detail_response = client.get(f"/api/v1/audits/{audit_id}")
     assert detail_response.status_code == 200
     assert detail_response.json()["language"] == "es"
@@ -209,7 +211,7 @@ def test_configure_chat_ignores_odoo_delivery_preferences_but_keeps_existing_pro
             },
         )
 
-    assert config_response.status_code == 200
+    assert config_response.status_code == 202
     detail_response = client.get(f"/api/v1/audits/{audit_id}")
     assert detail_response.status_code == 200
     assert detail_response.json()["intake_profile"] == {
@@ -217,6 +219,58 @@ def test_configure_chat_ignores_odoo_delivery_preferences_but_keeps_existing_pro
         "article_count": 5,
         "improve_ecommerce_fixes": True,
     }
+
+
+def test_configure_chat_dispatch_failure_marks_audit_failed_but_keeps_config(
+    setup_test_db, monkeypatch
+):
+    TestingSessionLocal = sessionmaker(
+        autocommit=False, autoflush=False, bind=setup_test_db
+    )
+    session = TestingSessionLocal()
+    try:
+        audit = Audit(
+            url="https://example-chat-dispatch-failure.com",
+            domain="example-chat-dispatch-failure.com",
+            status=AuditStatus.PENDING,
+            user_id="test-user",
+            user_email="test@example.com",
+            language="pt",
+            market="ar",
+        )
+        session.add(audit)
+        session.commit()
+        session.refresh(audit)
+
+        from app.api.routes.audits import (
+            _dispatch_audit_after_chat_config,
+            run_audit_task,
+        )
+
+        monkeypatch.setattr(
+            run_audit_task,
+            "delay",
+            lambda *_args, **_kwargs: (_ for _ in ()).throw(
+                RuntimeError("broker unavailable")
+            ),
+        )
+
+        _dispatch_audit_after_chat_config(session, audit.id)
+
+        session.expire_all()
+        stored_audit = session.query(Audit).filter(Audit.id == audit.id).first()
+        assert stored_audit is not None
+        assert stored_audit.language == "pt"
+        assert stored_audit.market == "ar"
+        assert stored_audit.status == AuditStatus.FAILED
+        assert (
+            stored_audit.error_message
+            == "Background worker unavailable. Try again shortly."
+        )
+        diagnostics = stored_audit.runtime_diagnostics or []
+        assert any(item.get("code") == "worker_unavailable" for item in diagnostics)
+    finally:
+        session.close()
 
 
 def test_download_pdf_url_rejects_non_completed_audit(client: TestClient):
@@ -302,6 +356,147 @@ def test_generate_pdf_returns_202_and_exposes_pdf_status(
     status_payload = status_response.json()
     assert status_payload["status"] == "queued"
     assert status_payload["job_id"] == payload["job_id"]
+
+
+def test_generate_pdf_dispatch_failure_marks_job_failed_after_response(
+    setup_test_db, monkeypatch
+):
+    TestingSessionLocal = sessionmaker(
+        autocommit=False, autoflush=False, bind=setup_test_db
+    )
+    session = TestingSessionLocal()
+    try:
+        audit = Audit(
+            url="https://example-pdf-dispatch-failure.com",
+            domain="example-pdf-dispatch-failure.com",
+            status=AuditStatus.COMPLETED,
+            user_id="test-user",
+            user_email="test@example.com",
+        )
+        session.add(audit)
+        session.commit()
+        session.refresh(audit)
+        monkeypatch.setattr(settings, "ENABLE_PAGESPEED", False, raising=False)
+        monkeypatch.setattr(settings, "GOOGLE_PAGESPEED_API_KEY", None, raising=False)
+
+        job = PDFJobService.queue_job(
+            session,
+            audit_id=audit.id,
+            requested_by_user_id="test-user",
+            force_pagespeed_refresh=False,
+            force_report_refresh=False,
+            force_external_intel_refresh=False,
+        )
+        job_id = job.id
+
+        from app.api.routes.audits import _dispatch_pdf_job_after_response
+        from app.workers.tasks import run_pdf_generation_job_task
+
+        calls = {"count": 0}
+
+        def _fail_pdf_delay(*_args, **_kwargs):
+            calls["count"] += 1
+            raise RuntimeError("broker unavailable")
+
+        monkeypatch.setattr(run_pdf_generation_job_task, "delay", _fail_pdf_delay)
+
+        _dispatch_pdf_job_after_response(session, audit.id, job.id)
+
+        session.expire_all()
+        job = session.query(AuditPdfJob).filter(AuditPdfJob.audit_id == audit.id).first()
+        assert calls["count"] >= 1
+        assert job is not None
+        assert job.status == "failed"
+        assert job.error_code == "worker_unavailable"
+    finally:
+        session.close()
+
+
+def test_generate_pdf_pagespeed_dispatch_failure_fails_waiting_pdf_job(
+    setup_test_db, monkeypatch
+):
+    TestingSessionLocal = sessionmaker(
+        autocommit=False, autoflush=False, bind=setup_test_db
+    )
+    session = TestingSessionLocal()
+    try:
+        audit = Audit(
+            url="https://example-pagespeed-dispatch-failure.com",
+            domain="example-pagespeed-dispatch-failure.com",
+            status=AuditStatus.COMPLETED,
+            user_id="test-user",
+            user_email="test@example.com",
+        )
+        session.add(audit)
+        session.commit()
+        session.refresh(audit)
+        monkeypatch.setattr(settings, "ENABLE_PAGESPEED", True, raising=False)
+        monkeypatch.setattr(
+            settings, "GOOGLE_PAGESPEED_API_KEY", "test-pagespeed-key", raising=False
+        )
+
+        pagespeed_job = PageSpeedJobService.queue_job(
+            session,
+            audit=audit,
+            requested_by_user_id="test-user",
+            strategy="both",
+            force_refresh=False,
+        )
+        pdf_job = PDFJobService.queue_job(
+            session,
+            audit_id=audit.id,
+            requested_by_user_id="test-user",
+            force_pagespeed_refresh=True,
+            force_report_refresh=False,
+            force_external_intel_refresh=False,
+        )
+        pdf_job = PDFJobService.mark_job_waiting(
+            session,
+            pdf_job,
+            waiting_on="pagespeed",
+            dependency_job_id=pagespeed_job.id,
+        )
+
+        from app.api.routes.audits import _dispatch_pagespeed_job_after_response
+        from app.workers.tasks import (
+            run_pagespeed_generation_job_task,
+            run_pdf_generation_job_task,
+        )
+
+        calls = {"pagespeed": 0, "pdf": 0}
+
+        def _fail_pagespeed_delay(*_args, **_kwargs):
+            calls["pagespeed"] += 1
+            raise RuntimeError("broker unavailable")
+
+        def _record_pdf_delay(*_args, **_kwargs):
+            calls["pdf"] += 1
+            return SimpleNamespace(id="unexpected-pdf-dispatch")
+
+        monkeypatch.setattr(
+            run_pagespeed_generation_job_task, "delay", _fail_pagespeed_delay
+        )
+        monkeypatch.setattr(run_pdf_generation_job_task, "delay", _record_pdf_delay)
+
+        _dispatch_pagespeed_job_after_response(session, audit.id, pagespeed_job.id)
+
+        session.expire_all()
+        pagespeed_job = (
+            session.query(AuditPageSpeedJob)
+            .filter(AuditPageSpeedJob.audit_id == audit.id)
+            .first()
+        )
+        pdf_job = session.query(AuditPdfJob).filter(AuditPdfJob.audit_id == audit.id).first()
+        assert calls["pagespeed"] >= 1
+        assert pagespeed_job is not None
+        assert pagespeed_job.status == "failed"
+        assert pagespeed_job.error_code == "worker_unavailable"
+        assert pdf_job is not None
+        assert pdf_job.status == "failed"
+        assert pdf_job.error_code == "worker_unavailable"
+        assert calls["pdf"] == 0
+    finally:
+        session.close()
 
 
 def test_artifact_status_endpoints_use_cached_snapshot_without_touching_db(
@@ -516,6 +711,53 @@ def test_artifact_status_authorizes_from_cached_snapshot(
     assert response.status_code == 403
 
 
+def test_artifact_status_keeps_running_snapshot_in_cache(
+    client: TestClient, db_session, monkeypatch
+):
+    monkeypatch.setattr(settings, "BROKER_DISPATCH_GRACE_SECONDS", 1, raising=False)
+    snapshot = {
+        "audit_id": 89,
+        "owner_user_id": "test-user",
+        "owner_email": "test@example.com",
+        "pagespeed_status": "running",
+        "pagespeed_job_id": 14,
+        "pagespeed_available": False,
+        "pagespeed_warnings": [],
+        "pagespeed_error": None,
+        "pagespeed_started_at": "2026-03-11T00:00:00Z",
+        "pagespeed_completed_at": None,
+        "pagespeed_retry_after_seconds": 3,
+        "pagespeed_message": None,
+        "pdf_status": "waiting",
+        "pdf_job_id": 9,
+        "pdf_available": False,
+        "pdf_report_id": None,
+        "pdf_waiting_on": "pagespeed",
+        "pdf_dependency_job_id": 14,
+        "pdf_warnings": [],
+        "pdf_error": None,
+        "pdf_started_at": None,
+        "pdf_completed_at": None,
+        "pdf_retry_after_seconds": 3,
+        "pdf_message": None,
+        "updated_at": "2026-03-11T00:00:00Z",
+    }
+
+    monkeypatch.setattr(cache, "enabled", True, raising=False)
+    monkeypatch.setattr(cache, "get", lambda key: snapshot, raising=False)
+
+    def _fail_query(*args, **kwargs):
+        raise AssertionError("db.query should not run when the active snapshot is cached")
+
+    monkeypatch.setattr(db_session, "query", _fail_query)
+
+    response = client.get("/api/v1/audits/89/artifacts-status")
+
+    assert response.status_code == 200
+    assert response.json()["pagespeed_status"] == "running"
+    assert response.json()["pdf_status"] == "waiting"
+
+
 def test_generate_pdf_waits_for_active_pagespeed_without_duplicating_provider_work(
     client: TestClient, db_session, monkeypatch
 ):
@@ -694,6 +936,188 @@ def test_pdf_job_execution_persists_runtime_warnings_in_overview_and_diagnostics
     assert diagnostics[0]["code"] == "pdf_generation_warning_1"
 
 
+def test_get_audit_and_summary_return_slim_shell_and_keep_heavy_aliases(
+    client: TestClient, db_session, monkeypatch
+):
+    monkeypatch.setattr(cache, "enabled", False, raising=False)
+    audit = Audit(
+        url="https://example-audit-shell.com",
+        domain="example-audit-shell.com",
+        status=AuditStatus.COMPLETED,
+        user_id="test-user",
+        user_email="test@example.com",
+        target_audit={"content": {"h1": "Hidden from shell"}},
+        external_intelligence={
+            "status": "ok",
+            "category": "Education",
+            "market": "AR",
+            "warning_code": "AGENT1_CORE_FILTER_DEGRADED",
+            "warning_message": "Used fallback query selection.",
+        },
+        competitor_audits=[{"url": "https://competitor.example.com"}],
+        fix_plan=[{"issue_code": "TITLE_MISSING", "priority": "HIGH"}],
+        report_markdown="# Report",
+        pagespeed_data={"desktop": {"score": 0.91}},
+        category="Education",
+        market="AR",
+    )
+    db_session.add(audit)
+    db_session.commit()
+    db_session.refresh(audit)
+
+    shell_response = client.get(f"/api/v1/audits/{audit.id}")
+    summary_response = client.get(f"/api/v1/audits/{audit.id}/summary")
+    issues_response = client.get(f"/api/v1/audits/{audit.id}/issues")
+    fix_plan_response = client.get(f"/api/v1/audits/{audit.id}/fix_plan")
+    report_response = client.get(f"/api/v1/audits/{audit.id}/report")
+
+    assert shell_response.status_code == 200
+    assert summary_response.status_code == 200
+    assert issues_response.status_code == 200
+    assert fix_plan_response.status_code == 200
+    assert report_response.status_code == 200
+
+    for payload in (shell_response.json(), summary_response.json()):
+        assert "target_audit" not in payload
+        assert "competitor_audits" not in payload
+        assert "fix_plan" not in payload
+        assert "report_markdown" not in payload
+        assert "pagespeed_data" not in payload
+        assert payload["category"] == "Education"
+        assert payload["market"] == "AR"
+        assert payload["fix_plan_count"] == 1
+        assert payload["report_ready"] is True
+        assert payload["pagespeed_available"] is True
+        assert payload["external_intelligence"]["status"] == "ok"
+        assert payload["external_intelligence"]["warning_code"] == (
+            "AGENT1_CORE_FILTER_DEGRADED"
+        )
+        assert "category" not in payload["external_intelligence"]
+
+    assert issues_response.json()["fix_plan"][0]["issue_code"] == "TITLE_MISSING"
+    assert fix_plan_response.json() == issues_response.json()
+    assert report_response.json()["report_markdown"] == "# Report"
+
+
+def test_summary_and_overview_use_cached_overview_snapshot(
+    client: TestClient, db_session, monkeypatch
+):
+    snapshot = {
+        "id": 144,
+        "url": "https://example-overview-cache.com",
+        "domain": "example-overview-cache.com",
+        "status": "completed",
+        "progress": 100,
+        "created_at": "2026-03-11T00:00:00Z",
+        "started_at": "2026-03-11T00:00:10Z",
+        "completed_at": "2026-03-11T00:03:10Z",
+        "geo_score": 87.5,
+        "total_pages": 12,
+        "critical_issues": 1,
+        "high_issues": 2,
+        "medium_issues": 3,
+        "source": "manual",
+        "language": "en",
+        "category": "Software",
+        "market": "US",
+        "intake_profile": {"add_articles": True, "article_count": 3},
+        "diagnostics_summary": [],
+        "odoo_connection_id": None,
+        "error_message": None,
+        "competitor_count": 2,
+        "fix_plan_count": 4,
+        "report_ready": True,
+        "pagespeed_available": True,
+        "pagespeed_status": "completed",
+        "pagespeed_warnings": [],
+        "pdf_available": True,
+        "pdf_status": "completed",
+        "pdf_warnings": [],
+        "external_intelligence": {"status": "ok", "warning_code": None},
+        "owner_user_id": "test-user",
+        "owner_email": "test@example.com",
+    }
+
+    monkeypatch.setattr(cache, "enabled", True, raising=False)
+    monkeypatch.setattr(cache, "get", lambda _key: snapshot, raising=False)
+
+    def _fail_query(*_args, **_kwargs):
+        raise AssertionError("db.query should not run on overview snapshot cache hit")
+
+    monkeypatch.setattr(db_session, "query", _fail_query)
+
+    summary_response = client.get("/api/v1/audits/144/summary")
+    overview_response = client.get("/api/v1/audits/144/overview")
+
+    assert summary_response.status_code == 200
+    assert summary_response.json()["id"] == 144
+    assert summary_response.json()["fix_plan_count"] == 4
+    assert overview_response.status_code == 200
+    assert overview_response.json()["domain"] == "example-overview-cache.com"
+
+
+def test_pdf_job_failure_persists_original_exception_detail(
+    setup_test_db, monkeypatch
+):
+    testing_session_local = sessionmaker(
+        autocommit=False,
+        autoflush=False,
+        bind=setup_test_db,
+    )
+    session = testing_session_local()
+    try:
+        audit = Audit(
+            url="https://example-pdf-failure.com",
+            domain="example-pdf-failure.com",
+            status=AuditStatus.COMPLETED,
+            user_id="test-user",
+            user_email="test@example.com",
+        )
+        session.add(audit)
+        session.commit()
+        session.refresh(audit)
+        audit_id = audit.id
+
+        job = PDFJobService.queue_job(
+            session,
+            audit_id=audit_id,
+            requested_by_user_id="test-user",
+            force_pagespeed_refresh=False,
+            force_report_refresh=False,
+            force_external_intel_refresh=False,
+        )
+        job_id = job.id
+
+        async def _raise_renderer_failure(*args, **kwargs):
+            raise RuntimeError("renderer exploded")
+
+        monkeypatch.setattr(settings, "DEBUG", True, raising=False)
+        monkeypatch.setattr(cache, "enabled", False, raising=False)
+        monkeypatch.setattr(cache, "redis_client", None, raising=False)
+
+        with patch("app.workers.tasks.get_db_session") as mock_get_db, patch(
+            "app.services.pdf_service.PDFService.generate_pdf_with_complete_context",
+            side_effect=_raise_renderer_failure,
+        ):
+            mock_get_db.return_value.__enter__.return_value = session
+            from app.workers.tasks import run_pdf_generation_job_task
+
+            result = run_pdf_generation_job_task.run(job_id)
+
+        assert result["job_id"] == job_id
+        session.expire_all()
+        stored_job = session.query(AuditPdfJob).filter(AuditPdfJob.id == job_id).first()
+        assert stored_job is not None
+        assert stored_job.status == "failed"
+        stored_audit = session.query(Audit).filter(Audit.id == audit_id).first()
+        assert stored_audit is not None
+        diagnostics = stored_audit.runtime_diagnostics or []
+        assert diagnostics
+        assert diagnostics[-1]["technical_detail"] == "RuntimeError: renderer exploded"
+    finally:
+        session.close()
+
+
 def test_run_pagespeed_returns_202_and_exposes_status(client: TestClient, db_session):
     audit = Audit(
         url="https://example-pagespeed-status.com",
@@ -725,6 +1149,80 @@ def test_run_pagespeed_returns_202_and_exposes_status(client: TestClient, db_ses
     status_payload = status_response.json()
     assert status_payload["status"] == "queued"
     assert status_payload["job_id"] == payload["job_id"]
+
+
+def test_stale_queued_pdf_job_is_reconciled_on_status_lookup(
+    client: TestClient, db_session, monkeypatch
+):
+    audit = Audit(
+        url="https://example-stale-pdf-job.com",
+        domain="example-stale-pdf-job.com",
+        status=AuditStatus.COMPLETED,
+        user_id="test-user",
+        user_email="test@example.com",
+    )
+    db_session.add(audit)
+    db_session.commit()
+    db_session.refresh(audit)
+    monkeypatch.setattr(settings, "BROKER_DISPATCH_GRACE_SECONDS", 1, raising=False)
+
+    stale_job = AuditPdfJob(
+        audit_id=audit.id,
+        status="queued",
+        celery_task_id=None,
+        updated_at=datetime.now(timezone.utc) - timedelta(seconds=30),
+    )
+    db_session.add(stale_job)
+    db_session.commit()
+
+    response = client.get(f"/api/v1/audits/{audit.id}/pdf-status")
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "failed"
+    reconciled_job = (
+        db_session.query(AuditPdfJob).filter(AuditPdfJob.audit_id == audit.id).first()
+    )
+    assert reconciled_job is not None
+    assert reconciled_job.status == "failed"
+    assert reconciled_job.error_code == "worker_unavailable"
+
+
+def test_stale_queued_pagespeed_job_is_reconciled_on_status_lookup(
+    client: TestClient, db_session, monkeypatch
+):
+    audit = Audit(
+        url="https://example-stale-pagespeed-job.com",
+        domain="example-stale-pagespeed-job.com",
+        status=AuditStatus.COMPLETED,
+        user_id="test-user",
+        user_email="test@example.com",
+    )
+    db_session.add(audit)
+    db_session.commit()
+    db_session.refresh(audit)
+    monkeypatch.setattr(settings, "BROKER_DISPATCH_GRACE_SECONDS", 1, raising=False)
+
+    stale_job = AuditPageSpeedJob(
+        audit_id=audit.id,
+        status="queued",
+        celery_task_id=None,
+        updated_at=datetime.now(timezone.utc) - timedelta(seconds=30),
+    )
+    db_session.add(stale_job)
+    db_session.commit()
+
+    response = client.get(f"/api/v1/audits/{audit.id}/pagespeed-status")
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "failed"
+    reconciled_job = (
+        db_session.query(AuditPageSpeedJob)
+        .filter(AuditPageSpeedJob.audit_id == audit.id)
+        .first()
+    )
+    assert reconciled_job is not None
+    assert reconciled_job.status == "failed"
+    assert reconciled_job.error_code == "worker_unavailable"
 
 
 def test_pagespeed_job_provider_warning_persists_runtime_warning(

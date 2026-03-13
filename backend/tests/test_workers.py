@@ -178,10 +178,9 @@ def test_generate_pdf_task_overwrites_supplied_markdown(
     assert audit.report_markdown == "# Fresh PDF Report"
 
 
-@patch("app.workers.tasks.run_pagespeed_generation_job_task.run")
 @patch("app.workers.tasks.PageSpeedJobService.queue_if_needed")
 def test_run_pagespeed_task_delegates_to_canonical_job(
-    mock_queue_job, mock_run_job, db_session: Session
+    mock_queue_job, db_session: Session
 ):
     audit = Audit(
         url="https://pagespeed-task-test.com",
@@ -192,16 +191,14 @@ def test_run_pagespeed_task_delegates_to_canonical_job(
     db_session.commit()
     db_session.refresh(audit)
 
-    mock_queue_job.return_value = type("Job", (), {"id": 654})()
-    mock_run_job.return_value = {"job_id": 654, "status": "completed"}
+    mock_queue_job.return_value = SimpleNamespace(id=654, status="queued")
 
     with patch("app.workers.tasks.get_db_session") as mock_get_db:
         mock_get_db.return_value.__enter__.return_value = db_session
         result = run_pagespeed_task.run(audit.id)
 
     mock_queue_job.assert_called_once()
-    mock_run_job.assert_called_once_with(654)
-    assert result == {"job_id": 654, "status": "completed"}
+    assert result == {"audit_id": audit.id, "job_id": 654, "status": "queued"}
 
 
 def test_worker_async_runtime_reuses_same_loop_for_multiple_coroutines():

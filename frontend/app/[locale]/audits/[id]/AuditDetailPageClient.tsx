@@ -247,6 +247,7 @@ export default function AuditDetailPageClient({
   );
   const [keywordGapData, setKeywordGapData] = useState<any>(null);
   const [hasChatCompleted, setHasChatCompleted] = useState(false);
+  const [isDownloadingPdf, setIsDownloadingPdf] = useState(false);
 
   const backendUrl = API_URL;
   const {
@@ -287,10 +288,7 @@ export default function AuditDetailPageClient({
   }, [competitors]);
   const deferredCompetitors = useDeferredValue(competitors);
   const categoryDisplay = useMemo(
-    () =>
-      normalizeCategory(
-        audit?.external_intelligence?.category || audit?.category,
-      ),
+    () => normalizeCategory(audit?.category),
     [audit],
   );
   const languageDisplay = audit?.language || "en";
@@ -327,7 +325,8 @@ export default function AuditDetailPageClient({
       pageSpeedState.status === "completed" &&
       (pageSpeedState.pagespeed_available ||
         pageSpeedData ||
-        audit?.pagespeed_data)
+        audit?.pagespeed_data ||
+        audit?.pagespeed_available)
     ) {
       return "PageSpeed ready.";
     }
@@ -488,7 +487,7 @@ export default function AuditDetailPageClient({
     setFixPlanMessage(null);
     try {
       const res = await fetchWithBackendAuth(
-        `${backendUrl}/api/v1/audits/${auditId}/fix_plan`,
+        `${backendUrl}/api/v1/audits/${auditId}/issues`,
       );
       if (!res.ok) {
         setFixPlan([]);
@@ -588,11 +587,77 @@ export default function AuditDetailPageClient({
 
   const MAX_RETRIES = 4;
 
-  const fetchData = useCallback(
+  const applyAuditData = useCallback(
+    (
+      auditData: any,
+      options?: {
+        allowDetailFields?: boolean;
+      },
+    ) => {
+      const allowDetailFields = options?.allowDetailFields ?? true;
+
+      setAudit((prev: any) => ({
+        ...(prev ?? {}),
+        ...(auditData ?? {}),
+      }));
+
+      if (
+        Array.isArray(auditData?.competitor_audits) &&
+        auditData.competitor_audits.length > 0
+      ) {
+        setCompetitors(auditData.competitor_audits);
+      }
+
+      if (allowDetailFields && Array.isArray(auditData?.fix_plan)) {
+        setFixPlan(auditData.fix_plan);
+        setFixPlanMessage(
+          auditData.fix_plan.length > 0 ? null : FIX_PLAN_NOT_READY_MESSAGE,
+        );
+      }
+
+      if (
+        allowDetailFields &&
+        typeof auditData?.report_markdown === "string"
+      ) {
+        setReportMarkdown(auditData.report_markdown);
+        setReportMessage(
+          auditData.report_markdown.trim() ? null : REPORT_NOT_READY_MESSAGE,
+        );
+      }
+
+      if (allowDetailFields && auditData?.pagespeed_data) {
+        setPageSpeedData(auditData.pagespeed_data);
+      }
+
+      setLoading(false);
+    },
+    [],
+  );
+
+  const fetchOverview = useCallback(async () => {
+    try {
+      const auditRes = await fetchWithBackendAuth(
+        `${backendUrl}/api/v1/audits/${auditId}/overview`,
+      );
+      if (!auditRes.ok) {
+        throw new Error(`Failed to fetch audit overview: ${auditRes.status}`);
+      }
+      const auditData = await auditRes.json();
+      applyAuditData(auditData, { allowDetailFields: false });
+      if (auditData?.status === "completed") {
+        void loadSupplementalData(auditData);
+      }
+    } catch (err) {
+      console.error(err);
+      setLoading(false);
+    }
+  }, [applyAuditData, auditId, backendUrl, loadSupplementalData]);
+
+  const fetchAuditDetail = useCallback(
     async (attempt = 0) => {
       try {
         const auditRes = await fetchWithBackendAuth(
-          `${backendUrl}/api/v1/audits/${auditId}`,
+          `${backendUrl}/api/v1/audits/${auditId}/summary`,
         );
         if (!auditRes.ok) {
           if (auditRes.status === 429) {
@@ -604,37 +669,12 @@ export default function AuditDetailPageClient({
               `Rate limited, retrying in ${backoffMs}ms... (attempt ${attempt + 1}/${MAX_RETRIES + 1})`,
             );
             await new Promise((resolve) => setTimeout(resolve, backoffMs));
-            return fetchData(attempt + 1);
+            return fetchAuditDetail(attempt + 1);
           }
           throw new Error(`Failed to fetch audit: ${auditRes.status}`);
         }
         const auditData = await auditRes.json();
-        setAudit(auditData);
-        if (
-          Array.isArray(auditData?.competitor_audits) &&
-          auditData.competitor_audits.length > 0
-        ) {
-          setCompetitors(auditData.competitor_audits);
-        }
-        if (
-          Array.isArray(auditData?.fix_plan) &&
-          auditData.fix_plan.length > 0
-        ) {
-          setFixPlan(auditData.fix_plan);
-          setFixPlanMessage(null);
-        }
-        if (typeof auditData?.report_markdown === "string") {
-          setReportMarkdown(auditData.report_markdown);
-          setReportMessage(
-            auditData.report_markdown.trim() ? null : REPORT_NOT_READY_MESSAGE,
-          );
-        }
-
-        setLoading(false);
-
-        if (auditData.pagespeed_data) {
-          setPageSpeedData(auditData.pagespeed_data);
-        }
+        applyAuditData(auditData, { allowDetailFields: false });
 
         if (typeof window !== "undefined") {
           globalThis.setTimeout(() => {
@@ -646,21 +686,19 @@ export default function AuditDetailPageClient({
         setLoading(false);
       }
     },
-    [auditId, backendUrl, MAX_RETRIES, loadSupplementalData],
+    [MAX_RETRIES, applyAuditData, auditId, backendUrl, loadSupplementalData],
   );
 
   useEffect(() => {
-    if (initialAuditIsOverview) {
-      void fetchData();
-      return undefined;
-    }
     if (initialAudit) {
+      applyAuditData(initialAudit, { allowDetailFields: !initialAuditIsOverview });
       return scheduleSupplementalLoad(initialAudit);
     }
-    fetchData();
+    void fetchAuditDetail();
     return undefined;
   }, [
-    fetchData,
+    applyAuditData,
+    fetchAuditDetail,
     initialAudit,
     initialAuditIsOverview,
     scheduleSupplementalLoad,
@@ -682,13 +720,14 @@ export default function AuditDetailPageClient({
   }, [audit?.status]);
 
   useEffect(() => {
-    if (
-      pageSpeedState.status === "completed" ||
-      pageSpeedState.status === "failed"
-    ) {
-      void fetchData();
+    if (pageSpeedState.status === "completed") {
+      void fetchAuditDetail();
+      return;
     }
-  }, [fetchData, pageSpeedState.status]);
+    if (pageSpeedState.status === "failed") {
+      void fetchOverview();
+    }
+  }, [fetchAuditDetail, fetchOverview, pageSpeedState.status]);
 
   // SSE for real-time status updates (replaces polling)
   const shouldSubscribeSSE =
@@ -702,7 +741,7 @@ export default function AuditDetailPageClient({
       }));
     },
     onComplete: (statusData) => {
-      fetchData();
+      void fetchOverview();
     },
     onError: (error) => {
       console.error("SSE error:", error);
@@ -774,10 +813,15 @@ export default function AuditDetailPageClient({
       ? audit.total_pages
       : pages.length;
   const coverageBadges = [
-    { label: "PageSpeed", ok: Boolean(pageSpeedData || audit?.pagespeed_data) },
+    {
+      label: "PageSpeed",
+      ok: Boolean(
+        pageSpeedData || audit?.pagespeed_data || audit?.pagespeed_available,
+      ),
+    },
     { label: "Competitors", ok: competitorCount > 0 },
     { label: "Fix Plan", ok: fixPlanCount > 0 },
-    { label: "Report", ok: Boolean(audit?.report_markdown) },
+    { label: "Report", ok: Boolean(audit?.report_markdown || audit?.report_ready) },
   ];
 
   if (loading) {
@@ -805,7 +849,12 @@ export default function AuditDetailPageClient({
   const generatePDF = async () => {
     try {
       if (pdfState.status === "completed" && pdfState.download_ready) {
-        await downloadAuditPdf(auditId);
+        setIsDownloadingPdf(true);
+        try {
+          await downloadAuditPdf(auditId);
+        } finally {
+          setIsDownloadingPdf(false);
+        }
         return;
       }
       await generatePdfJob();
@@ -848,7 +897,7 @@ export default function AuditDetailPageClient({
                   status: "running",
                   progress: 1,
                 }));
-                fetchData();
+                void fetchOverview();
               }}
             />
           </div>
@@ -891,16 +940,16 @@ export default function AuditDetailPageClient({
                   Progress {progressValue}%
                 </span>
                 <span className="px-3 py-1 rounded-full border border-border bg-muted/40">
-                  Created {formatStableDate(audit?.created_at)}
+                  Created {formatStableDate(audit?.created_at, { locale })}
                 </span>
                 {audit?.started_at && (
                   <span className="px-3 py-1 rounded-full border border-border bg-muted/40">
-                    Started {formatStableDate(audit?.started_at)}
+                    Started {formatStableDate(audit?.started_at, { locale })}
                   </span>
                 )}
                 {audit?.completed_at && (
                   <span className="px-3 py-1 rounded-full border border-border bg-muted/40">
-                    Completed {formatStableDate(audit?.completed_at)}
+                    Completed {formatStableDate(audit?.completed_at, { locale })}
                   </span>
                 )}
               </div>
@@ -989,16 +1038,20 @@ export default function AuditDetailPageClient({
                           pageSpeedState.status === "running"
                         ? "Running PageSpeed"
                         : pageSpeedState.pagespeed_available ||
-                            Boolean(pageSpeedData || audit?.pagespeed_data)
+                            Boolean(
+                              pageSpeedData ||
+                                audit?.pagespeed_data ||
+                                audit?.pagespeed_available,
+                            )
                           ? "Refresh PageSpeed"
                           : "Run PageSpeed"}
                   </Button>
                   <Button
                     onClick={generatePDF}
-                    disabled={pdfGenerating}
+                    disabled={pdfGenerating || isDownloadingPdf}
                     className="glass-button px-6"
                   >
-                    {pdfGenerating ? (
+                    {pdfGenerating || isDownloadingPdf ? (
                       <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
                     ) : (
                       <Download className="h-4 w-4 mr-2" />
@@ -1007,7 +1060,9 @@ export default function AuditDetailPageClient({
                       ? "Queued for PDF"
                       : pdfState.status === "waiting"
                         ? "Waiting on PageSpeed"
-                        : pdfGenerating || pdfState.status === "running"
+                        : isDownloadingPdf
+                          ? "Downloading PDF..."
+                          : pdfGenerating || pdfState.status === "running"
                           ? "Building PDF..."
                           : pdfState.status === "completed"
                             ? "Download PDF"
@@ -1080,8 +1135,7 @@ export default function AuditDetailPageClient({
               </div>
               <div className="text-sm text-muted-foreground mt-1">
                 Market:{" "}
-                {audit?.external_intelligence?.market || audit?.market || "—"} ·
-                Language: {languageDisplay}
+                {audit?.market || "—"} · Language: {languageDisplay}
               </div>
             </div>
             <div className="glass-panel p-5 rounded-2xl">

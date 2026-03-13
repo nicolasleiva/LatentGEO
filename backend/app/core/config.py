@@ -249,6 +249,9 @@ class Settings(BaseSettings):
     ARTIFACT_STATUS_DEGRADED_RETRY_AFTER_SECONDS: int = int(
         os.getenv("ARTIFACT_STATUS_DEGRADED_RETRY_AFTER_SECONDS", "10")
     )
+    BROKER_DISPATCH_GRACE_SECONDS: int = int(
+        os.getenv("BROKER_DISPATCH_GRACE_SECONDS", "15")
+    )
 
     # LLM output limits (report generation)
     NV_MAX_TOKENS_REPORT: int = int(os.getenv("NV_MAX_TOKENS_REPORT", "8192"))
@@ -327,6 +330,9 @@ class Settings(BaseSettings):
     RATE_LIMIT_HEAVY: int = 5  # heavy operations per minute
     RATE_LIMIT_REDIS_RETRY_COOLDOWN_SECONDS: int = int(
         os.getenv("RATE_LIMIT_REDIS_RETRY_COOLDOWN_SECONDS", "30")
+    )
+    RATE_LIMIT_REDIS_SOCKET_TIMEOUT_SECONDS: float = float(
+        os.getenv("RATE_LIMIT_REDIS_SOCKET_TIMEOUT_SECONDS", "0.5")
     )
 
     # ===== SUPABASE INTEGRATION =====
@@ -545,6 +551,8 @@ def validate_environment():
             errors.append("AUTH0_ISSUER_BASE_URL or AUTH0_DOMAIN is missing!")
         if settings.AUTH0_JWKS_FETCH_TIMEOUT_MS <= 0:
             errors.append("AUTH0_JWKS_FETCH_TIMEOUT_MS must be > 0.")
+        if settings.RATE_LIMIT_REDIS_SOCKET_TIMEOUT_SECONDS <= 0:
+            errors.append("RATE_LIMIT_REDIS_SOCKET_TIMEOUT_SECONDS must be > 0.")
         if settings.AUTH0_JWKS_CACHE_TTL_SECONDS <= 0:
             errors.append("AUTH0_JWKS_CACHE_TTL_SECONDS must be > 0.")
         if settings.DB_POOL_SIZE <= 0:

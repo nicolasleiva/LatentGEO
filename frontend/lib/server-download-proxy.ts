@@ -1,18 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { auth0 } from "@/lib/auth0";
 import { resolveApiBaseUrl } from "@/lib/env";
+import { getServerProxyAccessToken } from "@/lib/server-proxy-auth";
 
 const API_BASE_URL = resolveApiBaseUrl();
 const API_BASE_ORIGIN = new URL(API_BASE_URL).origin;
-const AUTH0_API_AUDIENCE =
-  process.env.AUTH0_API_AUDIENCE?.trim() ||
-  process.env.NEXT_PUBLIC_AUTH0_API_AUDIENCE?.trim() ||
-  "";
-const AUTH0_API_SCOPE =
-  process.env.AUTH0_API_SCOPES?.trim() ||
-  process.env.NEXT_PUBLIC_AUTH0_API_SCOPES?.trim() ||
-  "read:app";
 
 const PDF_ACCEPT_HEADER =
   "application/pdf, application/octet-stream;q=0.9, application/json;q=0.8, */*;q=0.7";
@@ -30,33 +22,6 @@ async function fetchWithTimeout(
   } finally {
     clearTimeout(timeoutId);
   }
-}
-
-async function getBackendAccessToken(request: NextRequest): Promise<string> {
-  const session = await auth0.getSession(request);
-  if (!session?.user) {
-    throw new Error("unauthorized");
-  }
-
-  if (!AUTH0_API_AUDIENCE) {
-    throw new Error("missing_audience");
-  }
-
-  const tokenResponse = await auth0.getAccessToken({
-    refresh: false,
-    audience: AUTH0_API_AUDIENCE,
-    scope: AUTH0_API_SCOPE,
-    authorizationParameters: {
-      audience: AUTH0_API_AUDIENCE,
-      scope: AUTH0_API_SCOPE,
-    },
-  });
-
-  if (!tokenResponse?.token) {
-    throw new Error("missing_token");
-  }
-
-  return tokenResponse.token;
 }
 
 async function readErrorMessage(response: Response): Promise<string> {
@@ -144,7 +109,7 @@ export async function proxyProtectedPdfDownload(
 ): Promise<NextResponse> {
   let token: string;
   try {
-    token = await getBackendAccessToken(request);
+    token = await getServerProxyAccessToken(request);
   } catch (error) {
     const code = error instanceof Error ? error.message : "unauthorized";
     if (code === "missing_audience") {

@@ -5,7 +5,8 @@ export type PdfDownloadUrlPayload = {
 };
 
 const FALLBACK_CONTENT_DISPOSITION_NAME =
-  /filename\*=UTF-8''([^;]+)|filename="?([^"]+)"?/i;
+  /filename\*=UTF-8''([^;]+)|filename=(?:"([^"]+)"|([^;]+))/i;
+const inFlightAuditDownloads = new Map<number, Promise<void>>();
 
 export const getPdfDownloadUrlFromPayload = (payload: unknown): string => {
   if (!payload || typeof payload !== "object") {
@@ -60,10 +61,10 @@ const extractDownloadFileName = (
 
   const match = disposition.match(FALLBACK_CONTENT_DISPOSITION_NAME);
   const encodedFileName = match?.[1];
-  const plainFileName = match?.[2];
+  const plainFileName = match?.[2] ?? match?.[3];
   const candidate = encodedFileName
     ? decodeURIComponent(encodedFileName)
-    : plainFileName;
+    : plainFileName?.trim();
 
   return candidate?.trim() || fallbackFileName;
 };
@@ -111,33 +112,51 @@ export const downloadAuditPdf = async (
     throw new Error("Audit ID is invalid.");
   }
 
-  const response = await fetch(
-    `/api/audits/${normalizedAuditId}/download-pdf`,
-    {
+  const existingDownload = inFlightAuditDownloads.get(normalizedAuditId);
+  if (existingDownload) {
+    return existingDownload;
+  }
+
+  const downloadPromise = (async () => {
+    const response = await fetch(`/api/audits/${normalizedAuditId}/download-pdf`, {
       method: "GET",
       cache: "no-store",
       credentials: "same-origin",
-    },
-  );
+    });
 
-  if (!response.ok) {
-    throw new Error(
-      await readDownloadErrorMessage(response, "Failed to download PDF."),
+    if (!response.ok) {
+      throw new Error(
+        await readDownloadErrorMessage(response, "Failed to download PDF."),
+      );
+    }
+
+    const blob = await response.blob();
+    const objectUrl = URL.createObjectURL(blob);
+    const fileName = extractDownloadFileName(
+      response.headers.get("content-disposition"),
+      `audit_${normalizedAuditId}_report.pdf`,
     );
-  }
 
-  const blob = await response.blob();
-  const objectUrl = URL.createObjectURL(blob);
-  const fileName = extractDownloadFileName(
-    response.headers.get("content-disposition"),
-    `audit_${normalizedAuditId}_report.pdf`,
-  );
+    try {
+      triggerFileDownload(objectUrl, fileName);
+    } finally {
+      window.setTimeout(() => {
+        URL.revokeObjectURL(objectUrl);
+      }, 0);
+    }
+  })();
+
+  inFlightAuditDownloads.set(normalizedAuditId, downloadPromise);
 
   try {
-    triggerFileDownload(objectUrl, fileName);
+    await downloadPromise;
   } finally {
-    window.setTimeout(() => {
-      URL.revokeObjectURL(objectUrl);
-    }, 0);
+    if (inFlightAuditDownloads.get(normalizedAuditId) === downloadPromise) {
+      inFlightAuditDownloads.delete(normalizedAuditId);
+    }
   }
+};
+
+export const __resetPdfDownloadStateForTests = (): void => {
+  inFlightAuditDownloads.clear();
 };

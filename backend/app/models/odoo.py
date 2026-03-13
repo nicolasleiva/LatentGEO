@@ -124,13 +124,13 @@ class OdooDraftAction(Base):
     sync_run_id = Column(
         String(36), ForeignKey("odoo_sync_runs.id"), nullable=True, index=True
     )
-    action_key = Column(String(255), nullable=False, index=True)
+    action_key = Column(String(500), nullable=False, index=True)
     draft_type = Column(String(50), nullable=False)
     status = Column(String(50), default="draft", index=True)
     title = Column(String(500), nullable=True)
     target_model = Column(String(120), nullable=True)
     target_record_id = Column(String(120), nullable=True)
-    target_path = Column(String(500), nullable=True)
+    target_path = Column(String(2048), nullable=True)
     external_record_id = Column(String(120), nullable=True)
     draft_payload = Column(JSON, nullable=True)
     evidence = Column(JSON, nullable=True)

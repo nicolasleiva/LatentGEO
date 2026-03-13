@@ -1046,7 +1046,7 @@ def create_comprehensive_pdf(report_folder_path, metadata=None):
     try:
         if not os.path.isdir(report_folder_path):
             logger.error("La carpeta no existe: %s", report_folder_path)
-            return
+            raise FileNotFoundError(f"Report folder not found: {report_folder_path}")
 
         # Definir rutas
         pdf_file_name = (
@@ -2083,12 +2083,14 @@ def create_comprehensive_pdf(report_folder_path, metadata=None):
         try:
             pdf.output(pdf_file_path)
             logger.info("¡Éxito! PDF consolidado guardado en: %s", pdf_file_path)
+            return pdf_file_path
         except Exception as e:
             logger.exception("Error al guardar PDF: %s", e)
+            raise
 
     except Exception as e:
-        logger.error("Falló la creación del PDF: %s", e)
-        traceback.print_exc()
+        logger.exception("Falló la creación del PDF: %s", e)
+        raise
 
 
 if __name__ == "__main__":

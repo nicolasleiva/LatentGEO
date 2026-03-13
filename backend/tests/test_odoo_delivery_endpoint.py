@@ -12,7 +12,12 @@ from app.models import (
     GeoArticleBatch,
     GeoCommerceCampaign,
 )
-from app.models.odoo import OdooConnection, OdooRecordSnapshot
+from app.models.odoo import (
+    OdooConnection,
+    OdooDraftAction,
+    OdooRecordSnapshot,
+    OdooSyncRun,
+)
 from app.services.audit_service import AuditService
 from cryptography.fernet import Fernet
 
@@ -594,6 +599,138 @@ def test_odoo_draft_service_blocks_template_backed_surfaces(db_session, monkeypa
     row = grouped["manual_review"][0]
     assert row["target_model"] == "website.website"
     assert "manual" in (row["acceptance_criteria"] or "").lower()
+
+
+def test_prepare_odoo_drafts_truncates_long_action_keys_and_paths(
+    client, db_session, monkeypatch
+):
+    _configure_test_encryption_key(monkeypatch)
+
+    async def _fake_build_plan(*args, **kwargs):
+        return {
+            "delivery_summary": {
+                "fix_count": 1,
+                "article_count": 0,
+                "ecommerce_fix_count": 0,
+            },
+            "article_deliverables": [],
+            "ecommerce_fixes": [],
+        }
+
+    monkeypatch.setattr(
+        "app.integrations.odoo.drafts.OdooDeliveryService.build_plan",
+        _fake_build_plan,
+    )
+
+    long_page_path = "/" + ("very-long-segment-" * 140)
+    audit = Audit(
+        url="https://overflow.example.com",
+        domain="overflow.example.com",
+        status=AuditStatus.COMPLETED,
+        user_id="test-user",
+        user_email="test@example.com",
+        fix_plan=[
+            {
+                "issue_code": "TITLE_MISSING",
+                "priority": "HIGH",
+                "page_path": long_page_path,
+                "issue": "Title missing on long page path",
+            }
+        ],
+    )
+    connection = OdooConnection(
+        owner_user_id="test-user",
+        owner_email="test@example.com",
+        base_url="https://odoo.example.com",
+        database="prod-db",
+        expected_email="ops@client.com",
+        api_key=OdooAuth.encrypt_api_key("odoo_test_key_000000000001"),
+        capabilities={"website": True},
+        is_active=True,
+    )
+    db_session.add_all([audit, connection])
+    db_session.commit()
+    db_session.refresh(audit)
+    db_session.refresh(connection)
+
+    audit.odoo_connection_id = connection.id
+    db_session.commit()
+
+    response = client.post(
+        f"/api/v1/odoo/drafts/{audit.id}/prepare",
+        headers={"X-User-ID": "odoo-delivery-test"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["summary"]["manual_review_count"] == 1
+
+    action = (
+        db_session.query(OdooDraftAction)
+        .filter(OdooDraftAction.audit_id == audit.id)
+        .first()
+    )
+    assert action is not None
+    assert len(action.action_key) == OdooDraftService.ACTION_KEY_MAX_LENGTH
+    assert len(action.target_path) == OdooDraftService.TARGET_PATH_MAX_LENGTH
+    assert action.draft_payload["source_target_path"] == long_page_path
+    assert action.draft_payload["source_action_key"].startswith("fix:TITLE_MISSING:")
+
+
+def test_get_odoo_sync_status_reads_latest_sync_summary_without_build_plan(
+    client, db_session, monkeypatch
+):
+    _configure_test_encryption_key(monkeypatch)
+
+    async def _unexpected_build_plan(*args, **kwargs):
+        raise AssertionError("build_plan should not be called for sync status")
+
+    monkeypatch.setattr(
+        odoo_routes.OdooDeliveryService,
+        "build_plan",
+        _unexpected_build_plan,
+    )
+
+    audit = Audit(
+        url="https://sync-status.example.com",
+        domain="sync-status.example.com",
+        status=AuditStatus.COMPLETED,
+        user_id="test-user",
+        user_email="test@example.com",
+    )
+    connection = OdooConnection(
+        owner_user_id="test-user",
+        owner_email="test@example.com",
+        base_url="https://odoo.example.com",
+        database="prod-db",
+        expected_email="ops@client.com",
+        api_key=OdooAuth.encrypt_api_key("odoo_test_key_000000000001"),
+        capabilities={"website": True},
+        is_active=True,
+    )
+    db_session.add_all([audit, connection])
+    db_session.commit()
+    db_session.refresh(audit)
+    db_session.refresh(connection)
+
+    audit.odoo_connection_id = connection.id
+    db_session.add(
+        OdooSyncRun(
+            connection_id=connection.id,
+            audit_id=audit.id,
+            status="completed",
+            summary={"mapped_count": 3, "counts_by_model": {"website.page": 3}},
+        )
+    )
+    db_session.commit()
+
+    response = client.get(
+        f"/api/v1/odoo/sync/{audit.id}",
+        headers={"X-User-ID": "odoo-delivery-test"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["summary"]["mapped_count"] == 3
 
 
 def test_odoo_auth_decrypt_invalid_payload_returns_empty(monkeypatch):

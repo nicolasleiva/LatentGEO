@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import html
 import re
+from hashlib import sha256
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, load_only
 
 from ...core.security import sanitize_html_content
 from ...models import Audit, GeoArticleBatch
@@ -23,6 +24,11 @@ from .service import OdooConnectionService
 
 class OdooDraftService:
     SAFE_TEMPLATE_BLOCKED_MODELS = {"website.website"}
+    ACTION_KEY_MAX_LENGTH = 500
+    TITLE_MAX_LENGTH = 500
+    TARGET_MODEL_MAX_LENGTH = 120
+    TARGET_RECORD_ID_MAX_LENGTH = 120
+    TARGET_PATH_MAX_LENGTH = 2048
 
     def __init__(self, db: Session):
         self.db = db
@@ -36,6 +42,85 @@ class OdooDraftService:
     @staticmethod
     def _normalize_text(value: Any) -> str:
         return " ".join(str(value or "").split()).strip()
+
+    @classmethod
+    def _normalize_optional_text(
+        cls,
+        value: Any,
+        *,
+        max_length: int,
+        collapse_whitespace: bool = True,
+    ) -> Optional[str]:
+        if value is None:
+            return None
+        rendered = str(value)
+        normalized = (
+            cls._normalize_text(rendered)
+            if collapse_whitespace
+            else rendered.strip()
+        )
+        if not normalized:
+            return None
+        return normalized[:max_length]
+
+    @classmethod
+    def _normalize_action_key(cls, value: Any) -> str:
+        normalized = cls._normalize_optional_text(
+            value,
+            max_length=cls.ACTION_KEY_MAX_LENGTH * 2,
+        ) or "odoo-draft"
+        if len(normalized) <= cls.ACTION_KEY_MAX_LENGTH:
+            return normalized
+
+        digest = sha256(normalized.encode("utf-8")).hexdigest()[:16]
+        prefix_length = max(1, cls.ACTION_KEY_MAX_LENGTH - len(digest) - 1)
+        return f"{normalized[:prefix_length]}:{digest}"
+
+    @classmethod
+    def _normalize_action_fields(
+        cls,
+        *,
+        action_key: str,
+        title: str,
+        target_model: Optional[str],
+        target_record_id: Optional[str],
+        target_path: Optional[str],
+        draft_payload: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        normalized_payload = dict(draft_payload or {})
+
+        raw_action_key = cls._normalize_text(action_key)
+        normalized_action_key = cls._normalize_action_key(raw_action_key)
+        if raw_action_key and normalized_action_key != raw_action_key:
+            normalized_payload["source_action_key"] = raw_action_key
+
+        raw_target_path = cls._normalize_optional_text(
+            target_path,
+            max_length=cls.TARGET_PATH_MAX_LENGTH * 2,
+            collapse_whitespace=False,
+        )
+        normalized_target_path = raw_target_path
+        if normalized_target_path and len(normalized_target_path) > cls.TARGET_PATH_MAX_LENGTH:
+            normalized_payload["source_target_path"] = normalized_target_path
+            normalized_target_path = normalized_target_path[: cls.TARGET_PATH_MAX_LENGTH]
+
+        return {
+            "action_key": normalized_action_key,
+            "title": cls._normalize_optional_text(
+                title,
+                max_length=cls.TITLE_MAX_LENGTH,
+            ),
+            "target_model": cls._normalize_optional_text(
+                target_model,
+                max_length=cls.TARGET_MODEL_MAX_LENGTH,
+            ),
+            "target_record_id": cls._normalize_optional_text(
+                target_record_id,
+                max_length=cls.TARGET_RECORD_ID_MAX_LENGTH,
+            ),
+            "target_path": normalized_target_path,
+            "draft_payload": normalized_payload,
+        }
 
     @staticmethod
     def _markdown_to_html(markdown: str) -> str:
@@ -92,6 +177,15 @@ class OdooDraftService:
         external_record_id: Optional[str] = None,
         error_message: Optional[str] = None,
     ) -> OdooDraftAction:
+        normalized_fields = OdooDraftService._normalize_action_fields(
+            action_key=action_key,
+            title=title,
+            target_model=target_model,
+            target_record_id=target_record_id,
+            target_path=target_path,
+            draft_payload=draft_payload,
+        )
+        action_key = normalized_fields["action_key"]
         action = (
             db.query(OdooDraftAction)
             .filter(
@@ -113,11 +207,11 @@ class OdooDraftService:
         action.sync_run_id = sync_run.id if sync_run else None
         action.draft_type = draft_type
         action.status = status
-        action.title = title
-        action.target_model = target_model
-        action.target_record_id = target_record_id
-        action.target_path = target_path
-        action.draft_payload = draft_payload
+        action.title = normalized_fields["title"]
+        action.target_model = normalized_fields["target_model"]
+        action.target_record_id = normalized_fields["target_record_id"]
+        action.target_path = normalized_fields["target_path"]
+        action.draft_payload = normalized_fields["draft_payload"]
         action.evidence = evidence
         action.acceptance_criteria = acceptance_criteria
         action.external_record_id = external_record_id
@@ -577,6 +671,24 @@ class OdooDraftService:
     def grouped_drafts(self, *, audit_id: int, connection_id: str) -> Dict[str, Any]:
         actions = (
             self.db.query(OdooDraftAction)
+            .options(
+                load_only(
+                    OdooDraftAction.id,
+                    OdooDraftAction.action_key,
+                    OdooDraftAction.draft_type,
+                    OdooDraftAction.status,
+                    OdooDraftAction.title,
+                    OdooDraftAction.target_model,
+                    OdooDraftAction.target_record_id,
+                    OdooDraftAction.target_path,
+                    OdooDraftAction.external_record_id,
+                    OdooDraftAction.draft_payload,
+                    OdooDraftAction.evidence,
+                    OdooDraftAction.acceptance_criteria,
+                    OdooDraftAction.error_message,
+                    OdooDraftAction.updated_at,
+                )
+            )
             .filter(
                 OdooDraftAction.audit_id == audit_id,
                 OdooDraftAction.connection_id == connection_id,

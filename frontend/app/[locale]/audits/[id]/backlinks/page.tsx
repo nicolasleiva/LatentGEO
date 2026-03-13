@@ -103,7 +103,9 @@ export default async function BacklinksPage({
 
   const [backlinks, audit] = await Promise.all([
     serverJson<Backlink[]>(`/api/v1/backlinks/${auditId}`).catch(() => []),
-    serverJson<{ url?: string }>(`/api/v1/audits/${auditId}`).catch(() => ({})),
+    serverJson<{ url?: string }>(`/api/v1/audits/${auditId}/summary`).catch(
+      () => ({}),
+    ),
   ]);
 
   const auditUrl =

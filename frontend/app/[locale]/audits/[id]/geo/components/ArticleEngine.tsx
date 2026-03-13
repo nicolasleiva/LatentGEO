@@ -64,6 +64,7 @@ interface ArticleItem {
   evidence_summary?: EvidenceSummaryItem[];
   generation_status?: "completed" | "failed" | string;
   generation_error?: ArticleError | null;
+  user_authority_urls?: string[];
 }
 
 interface BatchSummary {
@@ -73,6 +74,16 @@ interface BatchSummary {
   language?: string;
   tone?: string;
   include_schema?: boolean;
+  pipeline_stage?: string;
+  strategy_source?: string;
+  global_authority_urls?: string[];
+  unmatched_authority_urls?: string[];
+  generated_titles?: Array<{
+    index: number;
+    title: string;
+    target_keyword?: string;
+    suggestion_type?: string;
+  }>;
 }
 
 interface BatchResponse {
@@ -80,6 +91,8 @@ interface BatchResponse {
   status: string;
   summary: BatchSummary;
   articles: ArticleItem[];
+  is_legacy: boolean;
+  can_regenerate: boolean;
 }
 
 interface ArticleEngineProps {
@@ -94,13 +107,15 @@ const TERMINAL_BATCH_STATUSES = new Set([
   "failed",
   "partial_failed",
 ]);
+const POLL_BACKOFF_STEPS_MS = [3000, 6000, 12000, 24000];
+const POLL_BACKOFF_CAP_MS = 30000;
 
 const safeText = (value: unknown, fallback = ""): string => {
   if (typeof value === "string" && value.trim()) return value.trim();
   return fallback;
 };
 
-const normalizeArticle = (item: any): ArticleItem => ({
+const normalizeArticle = (item: any, compact = false): ArticleItem => ({
   index: Number(item?.index) || 0,
   title: safeText(item?.title, "Untitled article"),
   slug: safeText(item?.slug),
@@ -108,10 +123,10 @@ const normalizeArticle = (item: any): ArticleItem => ({
   focus_url: safeText(item?.focus_url),
   competitor_to_beat: safeText(item?.competitor_to_beat),
   citation_readiness_score: Number(item?.citation_readiness_score) || 0,
-  markdown: safeText(item?.markdown),
-  meta_title: safeText(item?.meta_title),
-  meta_description: safeText(item?.meta_description),
-  sources: Array.isArray(item?.sources)
+  markdown: compact ? "" : safeText(item?.markdown),
+  meta_title: compact ? "" : safeText(item?.meta_title),
+  meta_description: compact ? "" : safeText(item?.meta_description),
+  sources: !compact && Array.isArray(item?.sources)
     ? item.sources
         .map((src: any) => ({
           title: safeText(src?.title, safeText(src?.url, "Source")),
@@ -120,7 +135,7 @@ const normalizeArticle = (item: any): ArticleItem => ({
         .filter((src: SourceItem) => Boolean(src.url))
     : [],
   keyword_strategy:
-    item?.keyword_strategy && typeof item.keyword_strategy === "object"
+    !compact && item?.keyword_strategy && typeof item.keyword_strategy === "object"
       ? {
           primary_keyword: safeText(item.keyword_strategy.primary_keyword),
           secondary_keywords: Array.isArray(
@@ -135,10 +150,12 @@ const normalizeArticle = (item: any): ArticleItem => ({
         }
       : undefined,
   competitor_gap_map:
-    item?.competitor_gap_map && typeof item.competitor_gap_map === "object"
+    !compact &&
+    item?.competitor_gap_map &&
+    typeof item.competitor_gap_map === "object"
       ? item.competitor_gap_map
       : undefined,
-  evidence_summary: Array.isArray(item?.evidence_summary)
+  evidence_summary: !compact && Array.isArray(item?.evidence_summary)
     ? item.evidence_summary
         .map((entry: any) => ({
           claim: safeText(entry?.claim),
@@ -157,12 +174,19 @@ const normalizeArticle = (item: any): ArticleItem => ({
           message: safeText(item.generation_error.message),
         }
       : null,
+  user_authority_urls: Array.isArray(item?.user_authority_urls)
+    ? item.user_authority_urls.map((url: any) => safeText(url)).filter(Boolean)
+    : [],
 });
 
-const normalizeBatch = (payload: any): BatchResponse | null => {
+const normalizeBatch = (
+  payload: any,
+  options: { compact?: boolean } = {},
+): BatchResponse | null => {
   if (!payload || typeof payload !== "object") return null;
   const batchId = Number(payload.batch_id);
   if (!batchId) return null;
+  const compact = Boolean(options.compact);
   return {
     batch_id: batchId,
     status: safeText(payload.status, "processing"),
@@ -170,9 +194,41 @@ const normalizeBatch = (payload: any): BatchResponse | null => {
       ? payload.summary
       : {}) as BatchSummary,
     articles: Array.isArray(payload.articles)
-      ? payload.articles.map(normalizeArticle)
+      ? payload.articles.map((item: any) => normalizeArticle(item, compact))
       : [],
+    is_legacy: Boolean(payload.is_legacy),
+    can_regenerate: Boolean(payload.can_regenerate),
   };
+};
+
+const batchStatusSignature = (payload: BatchResponse | null): string => {
+  if (!payload) return "";
+  return JSON.stringify({
+    batch_id: payload.batch_id,
+    status: payload.status,
+    pipeline_stage: safeText(payload.summary?.pipeline_stage),
+    generated_count: Number(payload.summary?.generated_count) || 0,
+    failed_count: Number(payload.summary?.failed_count) || 0,
+    last_progress_at: safeText((payload.summary as { last_progress_at?: string })?.last_progress_at),
+    articles: payload.articles.map((article) => ({
+      index: article.index,
+      title: article.title,
+      generation_status: article.generation_status,
+      generation_error_code: article.generation_error?.code || "",
+      generation_error_message: article.generation_error?.message || "",
+      citation_readiness_score: article.citation_readiness_score || 0,
+      user_authority_urls: article.user_authority_urls || [],
+    })),
+  });
+};
+
+const nextPollDelay = (attempt: number): number => {
+  const baseDelay =
+    POLL_BACKOFF_STEPS_MS[
+      Math.min(Math.max(attempt, 0), POLL_BACKOFF_STEPS_MS.length - 1)
+    ] ?? POLL_BACKOFF_CAP_MS;
+  const jitter = Math.round(baseDelay * 0.1 * Math.random());
+  return Math.min(baseDelay + jitter, POLL_BACKOFF_CAP_MS);
 };
 
 const parseErrorMessage = async (res: Response): Promise<string> => {
@@ -206,68 +262,211 @@ export default function ArticleEngine({
   const [language, setLanguage] = useState(initialLanguage ?? "en");
   const [tone, setTone] = useState("executive");
   const [includeSchema, setIncludeSchema] = useState(true);
+  const [targetTopics, setTargetTopics] = useState("");
+  const [batchAuthorityLinks, setBatchAuthorityLinks] = useState("");
   const [loading, setLoading] = useState(false);
   const [loadingLatest, setLoadingLatest] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<BatchResponse | null>(null);
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
-  const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [regeneratingIndex, setRegeneratingIndex] = useState<number | null>(null);
+  const [authorityLinks, setAuthorityLinks] = useState<Record<number, string>>({});
+  const [regenerateErrors, setRegenerateErrors] = useState<
+    Record<number, string | null>
+  >({});
+  const pollingRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const eventSourceRef = useRef<EventSource | null>(null);
+  const pollAttemptRef = useRef(0);
+  const inFlightStatusRef = useRef(false);
+  const statusSignatureRef = useRef("");
+  const activeBatchIdRef = useRef<number | null>(null);
+  const hydratingLatestRef = useRef(false);
 
   const stopPolling = useCallback(() => {
     if (pollingRef.current) {
-      clearInterval(pollingRef.current);
+      clearTimeout(pollingRef.current);
       pollingRef.current = null;
     }
   }, []);
 
-  const fetchBatchStatus = useCallback(
-    async (batchId: number) => {
+  const stopStreaming = useCallback(() => {
+    if (eventSourceRef.current) {
+      eventSourceRef.current.close();
+      eventSourceRef.current = null;
+    }
+  }, []);
+
+  const applyBatchResult = useCallback((payload: BatchResponse) => {
+    const signature = batchStatusSignature(payload);
+    const changed = signature !== statusSignatureRef.current;
+    statusSignatureRef.current = signature;
+    setResult(payload);
+    return changed;
+  }, []);
+
+  const hydrateLatestBatch = useCallback(async () => {
+    if (hydratingLatestRef.current) return null;
+    hydratingLatestRef.current = true;
+    try {
       const res = await fetchWithBackendAuth(
-        `${backendUrl}/api/v1/geo/article-engine/status/${batchId}`,
+        `${backendUrl}/api/v1/geo/article-engine/latest/${auditId}`,
       );
       if (res.status === 401) {
-        stopPolling();
-        // Redirect to unified sign-in if session expired
         window.location.href = "/auth/login";
         return null;
       }
       if (!res.ok) {
         throw new Error(await parseErrorMessage(res));
       }
-      const payload = normalizeBatch(await res.json());
-      if (!payload) {
-        throw new Error("Invalid article batch payload");
-      }
-      setResult(payload);
-      if (TERMINAL_BATCH_STATUSES.has(payload.status)) {
+      const raw = await res.json();
+      if (!raw?.has_data) {
         stopPolling();
+        stopStreaming();
+        activeBatchIdRef.current = null;
+        statusSignatureRef.current = "";
+        setResult(null);
+        return null;
       }
+      const payload = normalizeBatch(raw);
+      if (!payload) {
+        throw new Error("Invalid article batch response");
+      }
+      applyBatchResult(payload);
       return payload;
+    } finally {
+      hydratingLatestRef.current = false;
+    }
+  }, [applyBatchResult, auditId, backendUrl, stopPolling, stopStreaming]);
+
+  const fetchBatchStatus = useCallback(
+    async (
+      batchId: number,
+    ): Promise<{ payload: BatchResponse; changed: boolean } | null> => {
+      if (inFlightStatusRef.current) {
+        return null;
+      }
+      inFlightStatusRef.current = true;
+      try {
+        const res = await fetchWithBackendAuth(
+          `${backendUrl}/api/v1/geo/article-engine/status/${batchId}`,
+        );
+        if (res.status === 401) {
+          stopPolling();
+          stopStreaming();
+          activeBatchIdRef.current = null;
+          window.location.href = "/auth/login";
+          return null;
+        }
+        if (!res.ok) {
+          throw new Error(await parseErrorMessage(res));
+        }
+        const payload = normalizeBatch(await res.json(), { compact: true });
+        if (!payload) {
+          throw new Error("Invalid article batch payload");
+        }
+        const changed = applyBatchResult(payload);
+        if (changed) {
+          pollAttemptRef.current = 0;
+        }
+        if (TERMINAL_BATCH_STATUSES.has(payload.status)) {
+          stopPolling();
+          stopStreaming();
+          activeBatchIdRef.current = null;
+          await hydrateLatestBatch();
+        }
+        return { payload, changed };
+      } finally {
+        inFlightStatusRef.current = false;
+      }
     },
-    [backendUrl, stopPolling],
+    [applyBatchResult, backendUrl, hydrateLatestBatch, stopPolling, stopStreaming],
   );
 
-  const startPolling = useCallback(
+  const schedulePolling = useCallback(
     (batchId: number) => {
       stopPolling();
-      pollingRef.current = setInterval(() => {
-        fetchBatchStatus(batchId).catch((pollError) => {
-          // If pollError is null (from 401 redirect), do nothing
-          if (!pollError) return;
-
+      pollingRef.current = setTimeout(async () => {
+        try {
+          const statusResult = await fetchBatchStatus(batchId);
+          if (!statusResult) {
+            return;
+          }
+          if (TERMINAL_BATCH_STATUSES.has(statusResult.payload.status)) {
+            return;
+          }
+          pollAttemptRef.current = statusResult.changed
+            ? 0
+            : pollAttemptRef.current + 1;
+          schedulePolling(batchId);
+        } catch (pollError) {
           setError(
             pollError instanceof Error ? pollError.message : String(pollError),
           );
-          stopPolling();
-        });
-      }, 3000);
+          pollAttemptRef.current += 1;
+          schedulePolling(batchId);
+        }
+      }, nextPollDelay(pollAttemptRef.current));
     },
     [fetchBatchStatus, stopPolling],
+  );
+
+  const startBatchTransport = useCallback(
+    (batchId: number) => {
+      activeBatchIdRef.current = batchId;
+      pollAttemptRef.current = 0;
+      stopPolling();
+      stopStreaming();
+
+      if (typeof EventSource === "undefined") {
+        schedulePolling(batchId);
+        return;
+      }
+
+      const source = new EventSource(`/api/sse/article-engine/${batchId}/progress`);
+      eventSourceRef.current = source;
+
+      source.onmessage = (event) => {
+        try {
+          const raw = JSON.parse(event.data);
+          const payload = normalizeBatch(raw, { compact: true });
+          if (!payload || payload.batch_id !== batchId) {
+            return;
+          }
+          const changed = applyBatchResult(payload);
+          if (changed) {
+            pollAttemptRef.current = 0;
+          }
+          if (TERMINAL_BATCH_STATUSES.has(payload.status)) {
+            stopStreaming();
+            stopPolling();
+            activeBatchIdRef.current = null;
+            void hydrateLatestBatch();
+          }
+        } catch (streamError) {
+          console.error("[ArticleEngine] SSE parse failed", streamError);
+        }
+      };
+
+      source.onerror = () => {
+        stopStreaming();
+        if (activeBatchIdRef.current === batchId) {
+          schedulePolling(batchId);
+        }
+      };
+    },
+    [
+      applyBatchResult,
+      hydrateLatestBatch,
+      schedulePolling,
+      stopPolling,
+      stopStreaming,
+    ],
   );
 
   useEffect(() => {
     const fetchLatest = async () => {
       setLoadingLatest(true);
+      setError(null);
       try {
         const res = await fetchWithBackendAuth(
           `${backendUrl}/api/v1/geo/article-engine/latest/${auditId}`,
@@ -278,14 +477,24 @@ export default function ArticleEngine({
         }
         if (!res.ok) throw new Error(await parseErrorMessage(res));
         const raw = await res.json();
-        if (raw?.has_data) {
-          const payload = normalizeBatch(raw);
-          if (payload) {
-            setResult(payload);
-            if (!TERMINAL_BATCH_STATUSES.has(payload.status)) {
-              startPolling(payload.batch_id);
-            }
-          }
+        if (!raw?.has_data) {
+          stopPolling();
+          stopStreaming();
+          activeBatchIdRef.current = null;
+          statusSignatureRef.current = "";
+          setResult(null);
+          return;
+        }
+        const statusValue = safeText(raw?.status, "processing");
+        const payload = normalizeBatch(raw, {
+          compact: !TERMINAL_BATCH_STATUSES.has(statusValue),
+        });
+        if (!payload) {
+          throw new Error("Invalid article batch response");
+        }
+        applyBatchResult(payload);
+        if (!TERMINAL_BATCH_STATUSES.has(payload.status)) {
+          startBatchTransport(payload.batch_id);
         }
       } catch (err: any) {
         setError(err?.message || "Failed to fetch latest article batch");
@@ -293,14 +502,72 @@ export default function ArticleEngine({
         setLoadingLatest(false);
       }
     };
-    fetchLatest();
-    return () => stopPolling();
-  }, [auditId, backendUrl, startPolling, stopPolling]);
+    void fetchLatest();
+    return () => {
+      stopPolling();
+      stopStreaming();
+      activeBatchIdRef.current = null;
+    };
+  }, [
+    applyBatchResult,
+    auditId,
+    backendUrl,
+    startBatchTransport,
+    stopPolling,
+    stopStreaming,
+  ]);
+
+  useEffect(() => {
+    if (!result?.articles?.length) return;
+    setAuthorityLinks((previous) => {
+      const next = { ...previous };
+      for (const article of result.articles) {
+        if (previous[article.index]) continue;
+        next[article.index] = (article.user_authority_urls || []).join("\n");
+      }
+      return next;
+    });
+  }, [result]);
+
+  useEffect(() => {
+    if (!result?.summary) return;
+    const globalLinks = Array.isArray(result.summary.global_authority_urls)
+      ? result.summary.global_authority_urls.filter(Boolean)
+      : [];
+    if (!globalLinks.length) return;
+    setBatchAuthorityLinks((previous) =>
+      previous.trim() ? previous : globalLinks.join("\n"),
+    );
+  }, [result]);
+
+  const formatStrategySource = (value?: string) => {
+    switch ((value || "").trim()) {
+      case "generated_from_topics":
+        return "Generated from topics";
+      case "generated_auto":
+        return "Generated automatically";
+      case "reused_latest":
+        return "Reused latest title run";
+      default:
+        return "Unknown";
+    }
+  };
 
   const generateArticles = async () => {
     setLoading(true);
     setError(null);
+    stopPolling();
+    stopStreaming();
+    activeBatchIdRef.current = null;
     try {
+      const topicList = targetTopics
+        .split(",")
+        .map((topic) => topic.trim())
+        .filter(Boolean);
+      const globalAuthorityUrls = batchAuthorityLinks
+        .split(/[\n,]+/)
+        .map((value) => value.trim())
+        .filter(Boolean);
       const res = await fetchWithBackendAuth(
         `${backendUrl}/api/v1/geo/article-engine/generate`,
         {
@@ -312,8 +579,53 @@ export default function ArticleEngine({
             language,
             tone,
             include_schema: includeSchema,
+            target_topics: topicList.length ? topicList : undefined,
+            authority_urls: globalAuthorityUrls.length
+              ? globalAuthorityUrls
+              : undefined,
             run_async: true,
           }),
+        },
+      );
+      if (res.status === 401) {
+        window.location.href = "/auth/login";
+        return;
+      }
+      if (!res.ok) throw new Error(await parseErrorMessage(res));
+      const raw = await res.json();
+      const payload = normalizeBatch(raw, {
+        compact: !TERMINAL_BATCH_STATUSES.has(safeText(raw?.status, "processing")),
+      });
+      if (!payload) throw new Error("Invalid article batch response");
+      applyBatchResult(payload);
+      if (!TERMINAL_BATCH_STATUSES.has(payload.status)) {
+        startBatchTransport(payload.batch_id);
+      }
+    } catch (err: any) {
+      setError(err?.message || "Failed to generate articles");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const regenerateArticle = async (article: ArticleItem) => {
+    if (!result?.can_regenerate) return;
+    setRegeneratingIndex(article.index);
+    setRegenerateErrors((previous) => ({
+      ...previous,
+      [article.index]: null,
+    }));
+    try {
+      const authorityUrls = (authorityLinks[article.index] || "")
+        .split(/[\n,]+/)
+        .map((value) => value.trim())
+        .filter(Boolean);
+      const res = await fetchWithBackendAuth(
+        `${backendUrl}/api/v1/geo/article-engine/${result.batch_id}/articles/${article.index}/regenerate`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ authority_urls: authorityUrls }),
         },
       );
       if (res.status === 401) {
@@ -324,13 +636,13 @@ export default function ArticleEngine({
       const payload = normalizeBatch(await res.json());
       if (!payload) throw new Error("Invalid article batch response");
       setResult(payload);
-      if (!TERMINAL_BATCH_STATUSES.has(payload.status)) {
-        startPolling(payload.batch_id);
-      }
     } catch (err: any) {
-      setError(err?.message || "Failed to generate articles");
+      setRegenerateErrors((previous) => ({
+        ...previous,
+        [article.index]: err?.message || "Failed to regenerate article",
+      }));
     } finally {
-      setLoading(false);
+      setRegeneratingIndex(null);
     }
   };
 
@@ -423,6 +735,43 @@ export default function ArticleEngine({
           </div>
         </div>
 
+        <div className="space-y-2">
+          <Label htmlFor="article-engine-target-topics" className="text-muted-foreground">
+            Target Topics (comma separated)
+          </Label>
+          <Textarea
+            id="article-engine-target-topics"
+            value={targetTopics}
+            onChange={(event) => setTargetTopics(event.target.value)}
+            placeholder="e.g. implementadores odoo certificados colombia, odoo vs sap business one costo colombia"
+            className="bg-muted/30 border-border/70 text-foreground min-h-[88px]"
+          />
+          <p className="text-xs text-muted-foreground">
+            Titles are generated automatically from your audit. Optional topics
+            steer a fresh title run before article generation.
+          </p>
+        </div>
+
+        <div className="space-y-2">
+          <Label
+            htmlFor="article-engine-citation-links"
+            className="text-muted-foreground"
+          >
+            Citation Links (optional)
+          </Label>
+          <Textarea
+            id="article-engine-citation-links"
+            value={batchAuthorityLinks}
+            onChange={(event) => setBatchAuthorityLinks(event.target.value)}
+            placeholder="One URL per line or comma separated"
+            className="bg-muted/30 border-border/70 text-foreground min-h-[88px]"
+          />
+          <p className="text-xs text-muted-foreground">
+            Optional citation links are read once and auto-matched to the most
+            relevant article. You can still override them per article later.
+          </p>
+        </div>
+
         <Button
           onClick={generateArticles}
           disabled={loading}
@@ -483,6 +832,73 @@ export default function ArticleEngine({
                 {result.status}
               </p>
             </div>
+          </div>
+
+          <div className="bg-muted/30 border border-border rounded-xl p-4 space-y-2">
+            <p className="text-sm text-muted-foreground">
+              Pipeline Stage:{" "}
+              <span className="text-foreground">
+                {result.summary.pipeline_stage || "legacy"}
+              </span>
+            </p>
+            {!result.is_legacy ? (
+              <p className="text-sm text-muted-foreground">
+                Title Source:{" "}
+                <span className="text-foreground">
+                  {formatStrategySource(result.summary.strategy_source)}
+                </span>
+              </p>
+            ) : null}
+            {result.is_legacy ? (
+              <p className="text-sm text-amber-300">
+                This batch was generated before the new title-run system.
+                Regeneration is disabled. Create a new batch to use authority
+                links.
+              </p>
+            ) : null}
+            {!!result.summary.generated_titles?.length ? (
+              <div className="space-y-1">
+                <p className="text-sm text-muted-foreground">Generated Titles</p>
+                {result.summary.generated_titles.map((item) => (
+                  <p
+                    key={`generated-title-${item.index}`}
+                    className="text-sm text-foreground"
+                  >
+                    {item.index}. {item.title}
+                  </p>
+                ))}
+              </div>
+            ) : null}
+            {!!result.summary.global_authority_urls?.length ? (
+              <div className="space-y-1">
+                <p className="text-sm text-muted-foreground">
+                  Batch Citation Links
+                </p>
+                {result.summary.global_authority_urls.map((url) => (
+                  <p
+                    key={`batch-authority-${url}`}
+                    className="text-sm text-foreground break-all"
+                  >
+                    {url}
+                  </p>
+                ))}
+              </div>
+            ) : null}
+            {!!result.summary.unmatched_authority_urls?.length ? (
+              <div className="space-y-1">
+                <p className="text-sm text-muted-foreground">
+                  Unmatched Citation Links
+                </p>
+                {result.summary.unmatched_authority_urls.map((url) => (
+                  <p
+                    key={`unmatched-authority-${url}`}
+                    className="text-sm text-amber-300 break-all"
+                  >
+                    {url}
+                  </p>
+                ))}
+              </div>
+            ) : null}
           </div>
 
           {(Array.isArray(result.articles) ? result.articles : []).map(
@@ -591,6 +1007,34 @@ export default function ArticleEngine({
                   </div>
                 ) : null}
 
+                <div className="bg-muted/40 border border-border rounded-lg p-4 space-y-2">
+                  <p className="text-sm font-medium text-foreground">
+                    Article Citation Links
+                  </p>
+                  <Textarea
+                    value={authorityLinks[article.index] || ""}
+                    onChange={(event) =>
+                      setAuthorityLinks((previous) => ({
+                        ...previous,
+                        [article.index]: event.target.value,
+                      }))
+                    }
+                    placeholder="One URL per line or comma separated"
+                    className="bg-muted/50 border-border text-foreground min-h-[88px]"
+                    disabled={!result.can_regenerate}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    These are the links currently assigned to this article.
+                    Regeneration uses this list as an override and requires at
+                    least one valid link to be cited when provided.
+                  </p>
+                  {regenerateErrors[article.index] ? (
+                    <p className="text-sm text-red-300">
+                      {regenerateErrors[article.index]}
+                    </p>
+                  ) : null}
+                </div>
+
                 <div className="flex gap-2">
                   <Button
                     variant="outline"
@@ -609,10 +1053,34 @@ export default function ArticleEngine({
                       </>
                     )}
                   </Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => regenerateArticle(article)}
+                    className="border-border/70 text-foreground"
+                    disabled={
+                      !result.can_regenerate ||
+                      !TERMINAL_BATCH_STATUSES.has(result.status) ||
+                      regeneratingIndex === article.index
+                    }
+                    title={
+                      result.can_regenerate
+                        ? "Regenerate this article with the provided authority links."
+                        : "This batch was generated before the new system. Create a new batch to regenerate with authority links."
+                    }
+                  >
+                    {regeneratingIndex === article.index
+                      ? "Regenerating..."
+                      : "Regenerate Article"}
+                  </Button>
                 </div>
 
                 <Textarea
-                  value={article.markdown || ""}
+                  value={
+                    article.markdown ||
+                    (article.generation_status === "queued"
+                      ? "# Titles ready\n\nGenerating article..."
+                      : "")
+                  }
                   readOnly
                   className="bg-muted/50 border-border text-foreground min-h-[240px]"
                 />

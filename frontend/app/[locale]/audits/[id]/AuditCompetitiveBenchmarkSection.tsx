@@ -29,6 +29,35 @@ function resolveDomain(competitor: any) {
   }
 }
 
+function formatGeoScore(value?: number | null) {
+  return typeof value === "number" ? `${value.toFixed(1)}%` : "N/A";
+}
+
+function formatSchemaStatus(value?: boolean | null) {
+  if (value === true) return "Present";
+  if (value === false) return "Missing";
+  return "N/A";
+}
+
+function formatPercent(value?: number | null) {
+  return typeof value === "number" ? `${value.toFixed(0)}%` : "N/A";
+}
+
+function formatPassFail(value?: boolean | null) {
+  if (value === true) return "Pass";
+  if (value === false) return "Fail";
+  return "N/A";
+}
+
+function formatPassFailFromScore(value?: number | null) {
+  if (typeof value !== "number") return "N/A";
+  return value > 0 ? "Pass" : "Fail";
+}
+
+function formatTone(value?: number | null) {
+  return typeof value === "number" ? `${value.toFixed(1)}/10` : "N/A";
+}
+
 export default function AuditCompetitiveBenchmarkSection({
   audit,
   competitors,
@@ -78,10 +107,7 @@ export default function AuditCompetitiveBenchmarkSection({
             reliable matches.
           </div>
           <div className="text-xs">
-            Category:{" "}
-            {audit?.external_intelligence?.category ||
-              audit?.category ||
-              "Unclassified"}
+            Category: {audit?.category || "Unclassified"}
           </div>
         </div>
       ) : (
@@ -148,50 +174,46 @@ export default function AuditCompetitiveBenchmarkSection({
                     </div>
                   </td>
                   <td className="p-4 text-center font-bold text-brand">
-                    {audit.geo_score !== undefined && audit.geo_score !== null
-                      ? `${audit.geo_score.toFixed(1)}%`
-                      : `${comparisonSites[0]?.score?.toFixed(1) ?? "0.0"}%`}
+                    {formatGeoScore(
+                      audit.geo_score ?? comparisonSites[0]?.score ?? null,
+                    )}
                   </td>
                   <td className="p-4 text-center text-foreground/70">
-                    {audit.target_audit?.schema?.schema_presence?.status ===
-                    "present"
-                      ? "Present"
-                      : "Missing"}
+                    {formatSchemaStatus(
+                      audit.target_audit?.schema?.schema_presence?.status != null
+                        ? audit.target_audit?.schema?.schema_presence?.status ===
+                            "present"
+                        : null,
+                    )}
                   </td>
                   <td className="p-4 text-center text-foreground/70">
-                    {typeof audit.target_audit?.structure?.semantic_html
-                      ?.score_percent === "number"
-                      ? `${audit.target_audit.structure.semantic_html.score_percent.toFixed(0)}%`
-                      : "N/A"}
+                    {formatPercent(
+                      audit.target_audit?.structure?.semantic_html?.score_percent,
+                    )}
                   </td>
                   <td className="p-4 text-center text-foreground/70">
-                    {audit.target_audit?.eeat?.author_presence?.status ===
-                    "pass"
-                      ? "Pass"
-                      : "Fail"}
+                    {formatPassFail(
+                      audit.target_audit?.eeat?.author_presence?.status != null
+                        ? audit.target_audit?.eeat?.author_presence?.status ===
+                            "pass"
+                        : null,
+                    )}
                   </td>
                   <td className="p-4 text-center text-foreground/70">
-                    {audit.target_audit?.structure?.h1_check?.status === "pass"
-                      ? "Pass"
-                      : "Fail"}
+                    {formatPassFail(
+                      audit.target_audit?.structure?.h1_check?.status != null
+                        ? audit.target_audit?.structure?.h1_check?.status === "pass"
+                        : null,
+                    )}
                   </td>
                   <td className="p-4 text-center text-foreground/70">
-                    {typeof audit.target_audit?.content?.conversational_tone
-                      ?.score === "number"
-                      ? audit.target_audit.content.conversational_tone.score.toFixed(
-                          1,
-                        )
-                      : "0.0"}
-                    /10
+                    {formatTone(
+                      audit.target_audit?.content?.conversational_tone?.score,
+                    )}
                   </td>
                 </tr>
 
                 {visibleCompetitors.map((competitor: any) => {
-                  const toneScore =
-                    typeof competitor.tone_score === "number"
-                      ? competitor.tone_score
-                      : 0;
-
                   return (
                     <tr
                       key={
@@ -215,29 +237,22 @@ export default function AuditCompetitiveBenchmarkSection({
                         </div>
                       </td>
                       <td className="p-4 text-center font-bold text-foreground/90">
-                        {competitor.geo_score !== undefined &&
-                        competitor.geo_score !== null
-                          ? `${competitor.geo_score.toFixed(1)}%`
-                          : "0.0%"}
+                        {formatGeoScore(competitor.geo_score)}
                       </td>
                       <td className="p-4 text-center text-muted-foreground">
-                        {competitor.schema_present ? "Present" : "Missing"}
+                        {formatSchemaStatus(competitor.schema_present)}
                       </td>
                       <td className="p-4 text-center text-muted-foreground">
-                        {typeof competitor.structure_score === "number"
-                          ? `${competitor.structure_score.toFixed(0)}%`
-                          : "N/A"}
+                        {formatPercent(competitor.structure_score)}
                       </td>
                       <td className="p-4 text-center text-muted-foreground">
-                        {typeof competitor.eeat_score === "number"
-                          ? competitor.eeat_score.toFixed(0)
-                          : "N/A"}
+                        {formatPassFailFromScore(competitor.eeat_score)}
                       </td>
                       <td className="p-4 text-center text-muted-foreground">
-                        {competitor.h1_present ? "Pass" : "Fail"}
+                        {formatPassFail(competitor.h1_present)}
                       </td>
                       <td className="p-4 text-center text-muted-foreground">
-                        {toneScore.toFixed(1)}/10
+                        {formatTone(competitor.tone_score)}
                       </td>
                     </tr>
                   );

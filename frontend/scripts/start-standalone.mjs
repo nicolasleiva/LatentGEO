@@ -59,15 +59,18 @@ const parseEnvFile = (source) => {
     let value = normalized.slice(separatorIndex + 1).trim();
     const quotedMatch = value.match(quotedValuePattern);
     if (quotedMatch?.groups?.value !== undefined) {
+      const quote = quotedMatch[1];
       value = quotedMatch.groups.value;
+      if (quote === '"') {
+        value = value.replace(/\\n/g, "\n");
+      }
     } else {
       const inlineCommentIndex = value.indexOf(" #");
       if (inlineCommentIndex >= 0) {
         value = value.slice(0, inlineCommentIndex).trim();
       }
     }
-
-    entries[key] = value.replace(/\\n/g, "\n");
+    entries[key] = value;
   }
 
   return entries;

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Loader2, MapPin, Monitor, TrendingUp } from "lucide-react";
 
 import { Header } from "@/components/header";
@@ -90,6 +90,20 @@ const sortRankings = (items: RankTracking[]): RankTrackingWithTopResults[] => {
   });
 };
 
+const mergeRankings = (
+  current: RankTrackingWithTopResults[],
+  incoming: RankTracking[],
+) => {
+  const merged = new Map<number, RankTrackingWithTopResults>();
+  for (const ranking of current) {
+    merged.set(ranking.id, ranking);
+  }
+  for (const ranking of incoming.map(normalizeRanking)) {
+    merged.set(ranking.id, ranking);
+  }
+  return sortRankings(Array.from(merged.values()));
+};
+
 export default function RankTrackingPageClient({
   auditId,
   initialDomain = "",
@@ -105,6 +119,7 @@ export default function RankTrackingPageClient({
     sortRankings(initialRankings),
   );
   const [expandedRows, setExpandedRows] = useState<Set<number>>(new Set());
+  const formDirtyRef = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -132,18 +147,15 @@ export default function RankTrackingPageClient({
         if (typeof audit?.category === "string" && audit.category.trim()) {
           suggestedKeywords.push(audit.category.toLowerCase());
         }
-        const h1 = audit?.target_audit?.content?.h1;
-        if (typeof h1 === "string" && h1.trim()) {
-          suggestedKeywords.push(h1.toLowerCase());
+        if (!formDirtyRef.current) {
+          setForm({
+            domain: hostname,
+            keywords: Array.from(new Set(suggestedKeywords))
+              .slice(0, 5)
+              .join(", "),
+          });
         }
-
-        setForm({
-          domain: hostname,
-          keywords: Array.from(new Set(suggestedKeywords))
-            .slice(0, 5)
-            .join(", "),
-        });
-        setRankings(sortRankings(nextRankings));
+        setRankings((current) => mergeRankings(current, nextRankings));
       } catch {
         if (cancelled) return;
       }
@@ -239,12 +251,13 @@ export default function RankTrackingPageClient({
                   className="glass-input"
                   placeholder="example.com"
                   value={form.domain}
-                  onChange={(event) =>
+                  onChange={(event) => {
+                    formDirtyRef.current = true;
                     setForm((previous) => ({
                       ...previous,
                       domain: event.target.value,
-                    }))
-                  }
+                    }));
+                  }}
                 />
               </div>
               <div className="space-y-2">
@@ -259,12 +272,13 @@ export default function RankTrackingPageClient({
                   className="glass-input"
                   placeholder="e.g. brand name, main product"
                   value={form.keywords}
-                  onChange={(event) =>
+                  onChange={(event) => {
+                    formDirtyRef.current = true;
                     setForm((previous) => ({
                       ...previous,
                       keywords: event.target.value,
-                    }))
-                  }
+                    }));
+                  }}
                 />
                 <p className="text-xs text-muted-foreground">
                   Edit the detected keyword set before launching a fresh live

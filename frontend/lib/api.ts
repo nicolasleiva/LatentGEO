@@ -100,7 +100,7 @@ class APIService {
 
   async getAudit(id: string): Promise<AuditSummary> {
     const res = await fetchWithBackendAuth(
-      `${this.baseUrl}/api/v1/audits/${id}`,
+      `${this.baseUrl}/api/v1/audits/${id}/summary`,
     );
     if (!res.ok) throw new Error(`API error: ${res.status}`);
     return res.json();
@@ -158,7 +158,7 @@ class APIService {
 
   async getFixPlan(auditId: number): Promise<any> {
     const res = await fetchWithBackendAuth(
-      `${this.baseUrl}/api/v1/audits/${auditId}/fix_plan`,
+      `${this.baseUrl}/api/v1/audits/${auditId}/issues`,
     );
     if (!res.ok) throw new Error(`API error: ${res.status}`);
     return res.json();

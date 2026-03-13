@@ -760,7 +760,7 @@ def run_pagespeed_task(self, audit_id: int):
         if job is None:
             return {"audit_id": audit_id, "status": "skipped"}
 
-    return run_pagespeed_generation_job_task.run(job.id)
+    return {"audit_id": audit_id, "job_id": job.id, "status": job.status}
 
 
 def _set_article_batch_task_state(
@@ -772,6 +772,8 @@ def _set_article_batch_task_state(
     failure_reason: str | None = None,
     mark_failed: bool = False,
 ) -> None:
+    from app.services.geo_article_engine_service import GeoArticleEngineService
+
     batch = db.query(GeoArticleBatch).filter(GeoArticleBatch.id == batch_id).first()
     if not batch:
         return
@@ -791,6 +793,8 @@ def _set_article_batch_task_state(
 
     batch.summary = summary
     db.commit()
+    db.refresh(batch)
+    GeoArticleEngineService.publish_batch_status_for_batch(batch)
 
 
 @celery_app.task(

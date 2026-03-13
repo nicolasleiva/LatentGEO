@@ -50,7 +50,10 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
     def _connect_redis(self) -> None:
         try:
             self.redis_client = redis.from_url(
-                settings.REDIS_URL, decode_responses=True
+                settings.REDIS_URL,
+                decode_responses=True,
+                socket_connect_timeout=settings.RATE_LIMIT_REDIS_SOCKET_TIMEOUT_SECONDS,
+                socket_timeout=settings.RATE_LIMIT_REDIS_SOCKET_TIMEOUT_SECONDS,
             )
             self.redis_client.ping()
             self.use_redis = True

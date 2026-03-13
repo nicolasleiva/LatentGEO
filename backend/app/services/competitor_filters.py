@@ -22,6 +22,27 @@ BLOCKED_COMPETITOR_DOMAINS = {
     "linkedin.com",
     "wikipedia.org",
     "medium.com",
+    "inc.com",
+    "techcrunch.com",
+    "venturebeat.com",
+    "forbes.com",
+    "capterra.com",
+    "g2.com",
+    "getapp.com",
+    "softwareadvice.com",
+    "trustradius.com",
+    "alternativeto.net",
+    "clutch.co",
+    "themanifest.com",
+    "sourceforge.net",
+    "producthunt.com",
+    "appsumo.com",
+    "softonic.com",
+    "softpedia.com",
+    "uptodown.com",
+    "marketplace.visualstudio.com",
+    "chromewebstore.google.com",
+    "addons.mozilla.org",
 }
 
 INSTITUTIONAL_TLDS = {
@@ -32,6 +53,22 @@ INSTITUTIONAL_TLDS = {
 }
 
 ECOMMERCE_ORG_ALLOWLIST = set()
+SOFTWARE_NOISE_SUBDOMAINS = {
+    "blog",
+    "blogs",
+    "community",
+    "dev",
+    "developer",
+    "developers",
+    "docs",
+    "help",
+    "learn",
+    "marketplace",
+    "news",
+    "press",
+    "status",
+    "support",
+}
 
 
 def normalize_domain(url_or_domain: str) -> str:
@@ -78,8 +115,13 @@ def is_valid_competitor_domain(
         return False
 
     vertical = str(vertical_hint or "").strip().lower()
-    if vertical in {"ecommerce", "retail"}:
+    if vertical in {"ecommerce", "retail", "healthcare_retail"}:
         if normalized.endswith(".org") and normalized not in ECOMMERCE_ORG_ALLOWLIST:
+            return False
+    if vertical in {"software", "services"}:
+        labels = normalized.split(".")
+        subdomain = labels[0] if len(labels) >= 3 else ""
+        if subdomain in SOFTWARE_NOISE_SUBDOMAINS:
             return False
 
     return True
@@ -97,10 +139,46 @@ def infer_vertical_hint(*labels: Optional[str]) -> Optional[str]:
         "retail",
         "shop",
         "pharmacy",
+        "farmacia",
+        "drugstore",
         "marketplace",
         "producto",
         "product",
     }
+    software_tokens = {
+        "developer",
+        "developers",
+        "developer tools",
+        "developer tool",
+        "software",
+        "saas",
+        "app",
+        "apps",
+        "platform",
+        "platforms",
+        "api",
+        "coding",
+        "code",
+        "extension",
+        "extensions",
+        "productivity",
+        "workspace",
+    }
+    services_tokens = {
+        "service",
+        "services",
+        "consulting",
+        "consultoria",
+        "consultoría",
+        "agency",
+        "agencia",
+        "transformation",
+        "transformación",
+    }
     if any(token in text for token in ecommerce_tokens):
         return "ecommerce"
+    if any(token in text for token in software_tokens):
+        return "software"
+    if any(token in text for token in services_tokens):
+        return "services"
     return "other"

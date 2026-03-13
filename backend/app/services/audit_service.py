@@ -5,14 +5,14 @@ Servicio de AuditorÃ­a - LÃ³gica principal
 import json
 import os
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from hashlib import sha256
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 from urllib.parse import urlparse
 
 from sqlalchemy import desc, or_
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, load_only
 
 from ..core.config import settings
 from ..core.database import Base
@@ -61,6 +61,42 @@ _PUBLIC_ARTIFACT_PAYLOAD_KEYS = frozenset(
     }
 )
 
+_PUBLIC_OVERVIEW_PAYLOAD_KEYS = frozenset(
+    {
+        "id",
+        "url",
+        "domain",
+        "status",
+        "progress",
+        "created_at",
+        "started_at",
+        "completed_at",
+        "geo_score",
+        "total_pages",
+        "critical_issues",
+        "high_issues",
+        "medium_issues",
+        "source",
+        "language",
+        "category",
+        "market",
+        "intake_profile",
+        "diagnostics_summary",
+        "odoo_connection_id",
+        "error_message",
+        "competitor_count",
+        "fix_plan_count",
+        "report_ready",
+        "pagespeed_available",
+        "pagespeed_status",
+        "pagespeed_warnings",
+        "pdf_available",
+        "pdf_status",
+        "pdf_warnings",
+        "external_intelligence",
+    }
+)
+
 
 class AuditService:
     MAX_RUNTIME_DIAGNOSTICS = 12
@@ -81,6 +117,47 @@ class AuditService:
         if not owner_clauses:
             return None
         return or_(*owner_clauses)
+
+    @staticmethod
+    def get_audit_projection(
+        db: Session,
+        audit_id: int,
+        *fields,
+    ) -> Optional[Audit]:
+        query = db.query(Audit)
+        if fields:
+            query = query.options(load_only(*fields))
+        return query.filter(Audit.id == audit_id).first()
+
+    @staticmethod
+    def get_audited_pages_projection(
+        db: Session,
+        audit_id: int,
+        *fields,
+    ) -> List[AuditedPage]:
+        query = db.query(AuditedPage)
+        if fields:
+            query = query.options(load_only(*fields))
+        return (
+            query.filter(AuditedPage.audit_id == audit_id)
+            .order_by(AuditedPage.id.asc())
+            .all()
+        )
+
+    @staticmethod
+    def get_audited_page_projection(
+        db: Session,
+        audit_id: int,
+        page_id: int,
+        *fields,
+    ) -> Optional[AuditedPage]:
+        query = db.query(AuditedPage)
+        if fields:
+            query = query.options(load_only(*fields))
+        return (
+            query.filter(AuditedPage.audit_id == audit_id, AuditedPage.id == page_id)
+            .first()
+        )
 
     @staticmethod
     def _normalize_intake_profile(
@@ -240,6 +317,7 @@ class AuditService:
         if commit:
             db.commit()
             db.refresh(audit)
+        AuditService.invalidate_overview_payload(audit_id)
         return audit
 
     @staticmethod
@@ -305,28 +383,7 @@ class AuditService:
         # Level 2 Caching: Use CacheService for frequent reads
 
         # We can't easily cache SQLAlchemy models, so we only cache if COMPLETED/FAILED
-        audit = db.query(Audit).filter(Audit.id == audit_id).first()
-
-        if audit:
-            try:
-                CompetitorService.ensure_target_geo_score(db, audit, commit=False)
-            except Exception as geo_err:
-                db.rollback()
-                logger.warning(
-                    "No se pudo normalizar GEO score para audit %s: %s",
-                    audit_id,
-                    geo_err,
-                )
-            # Check if we should enrich with PDF path
-            pdf_report = (
-                db.query(Report)
-                .filter(Report.audit_id == audit_id, Report.report_type == "PDF")
-                .order_by(desc(Report.created_at))
-                .first()
-            )
-            audit.report_pdf_path = pdf_report.file_path if pdf_report else None
-
-        return audit
+        return db.query(Audit).filter(Audit.id == audit_id).first()
 
     @staticmethod
     def get_audits(
@@ -337,35 +394,65 @@ class AuditService:
         user_id: Optional[str] = None,
     ) -> List[Audit]:
         """Obtener lista de auditorÃ­as con paginaciÃ³n y filtro opcional por usuario"""
-        query = db.query(Audit)
+        query = db.query(Audit).options(
+            load_only(
+                Audit.id,
+                Audit.url,
+                Audit.domain,
+                Audit.status,
+                Audit.progress,
+                Audit.created_at,
+                Audit.geo_score,
+                Audit.total_pages,
+                Audit.user_id,
+                Audit.user_email,
+            )
+        )
 
-        # Filtrar por usuario si se proporciona
-        owner_filter = AuditService._build_owner_filter(user_id, user_email)
-        if owner_filter is not None:
-            query = query.filter(owner_filter)
+        safe_skip = max(0, int(skip or 0))
+        safe_limit = max(1, int(limit or 20))
 
-        audits = query.order_by(desc(Audit.created_at)).offset(skip).limit(limit).all()
-
-        # OptimizaciÃ³n: Cargar PDFs en una sola query
-        if audits:
-            audit_ids = [a.id for a in audits]
-            pdf_reports = (
-                db.query(Report)
-                .filter(Report.audit_id.in_(audit_ids), Report.report_type == "PDF")
-                .order_by(desc(Report.created_at))
+        if user_id and user_email:
+            fetch_window = max(safe_skip + safe_limit, safe_limit)
+            primary = (
+                query.filter(Audit.user_id == user_id)
+                .order_by(desc(Audit.created_at))
+                .limit(fetch_window)
                 .all()
             )
+            legacy = (
+                query.filter(Audit.user_id.is_(None), Audit.user_email == user_email)
+                .order_by(desc(Audit.created_at))
+                .limit(fetch_window)
+                .all()
+            )
+            merged: List[Audit] = []
+            seen_ids: set[int] = set()
+            for audit in sorted(
+                [*primary, *legacy],
+                key=lambda row: AuditService._coerce_artifact_datetime(
+                    getattr(row, "created_at", None)
+                )
+                or datetime.min.replace(tzinfo=timezone.utc),
+                reverse=True,
+            ):
+                if audit.id in seen_ids:
+                    continue
+                seen_ids.add(audit.id)
+                merged.append(audit)
+            return merged[safe_skip : safe_skip + safe_limit]
 
-            # Mapear PDFs a audits
-            pdf_map = {}
-            for pdf in pdf_reports:
-                if pdf.audit_id not in pdf_map:
-                    pdf_map[pdf.audit_id] = pdf.file_path
+        if user_id:
+            query = query.filter(Audit.user_id == user_id)
+        elif user_email:
+            query = query.filter(Audit.user_email == user_email)
 
-            for audit in audits:
-                audit.report_pdf_path = pdf_map.get(audit.id)
-
-        return audits
+        return (
+            query.order_by(desc(Audit.created_at))
+            .offset(safe_skip)
+            .limit(safe_limit)
+            .all()
+        )
 
     @staticmethod
     def get_audits_count(db: Session) -> int:
@@ -397,6 +484,113 @@ class AuditService:
     @staticmethod
     def artifact_snapshot_key(audit_id: int) -> str:
         return f"audit:artifacts:{int(audit_id)}"
+
+    @staticmethod
+    def overview_snapshot_key(audit_id: int) -> str:
+        return f"audit:overview:{int(audit_id)}"
+
+    @staticmethod
+    def _summarize_external_intelligence(
+        payload: Dict[str, Any] | None,
+    ) -> Dict[str, str] | None:
+        if not isinstance(payload, dict):
+            return None
+
+        summary = {
+            "status": str(payload.get("status") or "").strip() or None,
+            "error_code": str(payload.get("error_code") or "").strip() or None,
+            "error_message": str(payload.get("error_message") or "").strip() or None,
+            "warning_code": str(payload.get("warning_code") or "").strip() or None,
+            "warning_message": str(payload.get("warning_message") or "").strip()
+            or None,
+        }
+        return summary if any(summary.values()) else None
+
+    @staticmethod
+    def build_overview_payload(
+        audit: Audit,
+        *,
+        artifact_payload: Dict[str, Any] | None = None,
+        competitor_count: int = 0,
+        fix_plan_count: int = 0,
+        report_ready: bool = False,
+        external_intelligence_summary: Dict[str, str] | None = None,
+    ) -> Dict[str, Any]:
+        public_artifact_payload = AuditService.public_artifact_payload(
+            artifact_payload or {}
+        ) or {
+            "pagespeed_status": None,
+            "pagespeed_available": False,
+            "pagespeed_warnings": [],
+            "pdf_status": None,
+            "pdf_available": False,
+            "pdf_warnings": [],
+        }
+        status_value = (
+            audit.status.value if hasattr(audit.status, "value") else str(audit.status)
+        )
+        return {
+            "id": int(audit.id),
+            "owner_user_id": (getattr(audit, "user_id", None) or "").strip() or None,
+            "owner_email": (
+                str(getattr(audit, "user_email", None)).strip().lower()
+                if getattr(audit, "user_email", None)
+                else None
+            ),
+            "url": audit.url,
+            "domain": audit.domain,
+            "status": status_value,
+            "progress": int(round(audit.progress or 0)),
+            "created_at": audit.created_at,
+            "started_at": audit.started_at,
+            "completed_at": audit.completed_at,
+            "geo_score": audit.geo_score,
+            "total_pages": audit.total_pages,
+            "critical_issues": audit.critical_issues,
+            "high_issues": audit.high_issues,
+            "medium_issues": audit.medium_issues,
+            "source": audit.source,
+            "language": audit.language,
+            "category": audit.category,
+            "market": audit.market,
+            "intake_profile": audit.intake_profile,
+            "diagnostics_summary": AuditService.summarize_runtime_diagnostics(
+                audit.runtime_diagnostics, limit=4
+            ),
+            "odoo_connection_id": getattr(audit, "odoo_connection_id", None),
+            "error_message": audit.error_message,
+            "competitor_count": int(competitor_count or 0),
+            "fix_plan_count": int(fix_plan_count or 0),
+            "report_ready": bool(report_ready),
+            "pagespeed_available": bool(
+                public_artifact_payload.get("pagespeed_available")
+            ),
+            "pagespeed_status": public_artifact_payload.get("pagespeed_status"),
+            "pagespeed_warnings": list(
+                public_artifact_payload.get("pagespeed_warnings") or []
+            ),
+            "pdf_available": bool(public_artifact_payload.get("pdf_available")),
+            "pdf_status": public_artifact_payload.get("pdf_status"),
+            "pdf_warnings": list(public_artifact_payload.get("pdf_warnings") or []),
+            "external_intelligence": external_intelligence_summary,
+        }
+
+    @staticmethod
+    def public_overview_payload(
+        payload: Dict[str, Any] | None,
+    ) -> Dict[str, Any] | None:
+        if not isinstance(payload, dict):
+            return None
+        public_payload = {
+            key: payload.get(key) for key in _PUBLIC_OVERVIEW_PAYLOAD_KEYS if key in payload
+        }
+        audit_id = payload.get("id")
+        if audit_id is not None:
+            try:
+                public_payload["id"] = int(audit_id)
+            except (TypeError, ValueError):
+                return None
+        return public_payload
 
     @staticmethod
     def build_progress_payload(audit: Audit) -> Dict[str, Any]:
@@ -582,6 +776,31 @@ class AuditService:
         return public_payload
 
     @staticmethod
+    def _artifact_payload_requires_db_refresh(payload: Dict[str, Any]) -> bool:
+        updated_at = AuditService._coerce_artifact_datetime(payload.get("updated_at"))
+        if updated_at is None:
+            return False
+
+        pagespeed_status = str(payload.get("pagespeed_status") or "").strip()
+        pdf_status = str(payload.get("pdf_status") or "").strip()
+
+        # Running and waiting jobs can legitimately outlive the broker-dispatch grace
+        # window. Keep serving the cached snapshot instead of forcing a DB rebuild.
+        if pagespeed_status == "running" or pdf_status in {"running", "waiting"}:
+            return False
+
+        if pagespeed_status != "queued" and pdf_status != "queued":
+            return False
+
+        dispatch_grace = max(
+            1,
+            int(getattr(settings, "BROKER_DISPATCH_GRACE_SECONDS", 15) or 15),
+        )
+        return datetime.now(timezone.utc) - updated_at > timedelta(
+            seconds=dispatch_grace
+        )
+
+    @staticmethod
     def get_cached_artifact_payload(audit_id: int) -> Optional[Dict[str, Any]]:
         from .cache_service import cache
 
@@ -593,6 +812,25 @@ class AuditService:
             return None
         try:
             if int(payload.get("audit_id")) != int(audit_id):
+                return None
+        except (TypeError, ValueError):
+            return None
+        if AuditService._artifact_payload_requires_db_refresh(payload):
+            return None
+        return payload
+
+    @staticmethod
+    def get_cached_overview_payload(audit_id: int) -> Optional[Dict[str, Any]]:
+        from .cache_service import cache
+
+        if not cache.enabled:
+            return None
+
+        payload = cache.get(AuditService.overview_snapshot_key(audit_id))
+        if not isinstance(payload, dict):
+            return None
+        try:
+            if int(payload.get("id")) != int(audit_id):
                 return None
         except (TypeError, ValueError):
             return None
@@ -618,20 +856,61 @@ class AuditService:
         )
 
     @staticmethod
+    def cache_overview_payload(payload: Dict[str, Any] | None) -> None:
+        from .cache_service import cache
+
+        if not isinstance(payload, dict) or not cache.enabled:
+            return
+
+        audit_id = payload.get("id")
+        try:
+            normalized_audit_id = int(audit_id)
+        except (TypeError, ValueError):
+            return
+
+        cache.set(
+            AuditService.overview_snapshot_key(normalized_audit_id),
+            payload,
+            ttl=max(60, int(getattr(settings, "AUDIT_OVERVIEW_SNAPSHOT_TTL_SECONDS", 86400))),
+        )
+
+    @staticmethod
+    def invalidate_overview_payload(audit_id: int) -> None:
+        from .cache_service import cache
+
+        if not cache.enabled:
+            return
+        try:
+            cache.delete(AuditService.overview_snapshot_key(audit_id))
+        except Exception as exc:  # nosec B110
+            logger.warning(
+                "Unable to invalidate overview snapshot for audit %s: %s",
+                audit_id,
+                exc,
+            )
+
+    @staticmethod
     def rebuild_artifact_payload(
         db: Session,
         audit_id: int,
     ) -> Optional[Dict[str, Any]]:
-        audit = db.query(Audit).filter(Audit.id == audit_id).first()
+        from .pagespeed_job_service import PageSpeedJobService
+        from .pdf_job_service import PDFJobService
+
+        audit = AuditService.get_audit_projection(
+            db,
+            audit_id,
+            Audit.id,
+            Audit.user_id,
+            Audit.user_email,
+            Audit.created_at,
+            Audit.pagespeed_data,
+        )
         if audit is None:
             return None
 
-        pagespeed_job = (
-            db.query(AuditPageSpeedJob)
-            .filter(AuditPageSpeedJob.audit_id == audit_id)
-            .first()
-        )
-        pdf_job = db.query(AuditPdfJob).filter(AuditPdfJob.audit_id == audit_id).first()
+        pagespeed_job = PageSpeedJobService.get_job(db, audit_id)
+        pdf_job = PDFJobService.get_job(db, audit_id)
         pdf_report = (
             db.query(Report)
             .filter(Report.audit_id == audit_id, Report.report_type == "PDF")
@@ -648,10 +927,99 @@ class AuditService:
         return payload
 
     @staticmethod
+    def rebuild_overview_payload(
+        db: Session,
+        audit_id: int,
+        *,
+        audit: Audit | None = None,
+    ) -> Optional[Dict[str, Any]]:
+        projected_audit = audit or AuditService.get_audit_projection(
+            db,
+            audit_id,
+            Audit.id,
+            Audit.user_id,
+            Audit.user_email,
+            Audit.url,
+            Audit.domain,
+            Audit.status,
+            Audit.progress,
+            Audit.created_at,
+            Audit.started_at,
+            Audit.completed_at,
+            Audit.geo_score,
+            Audit.total_pages,
+            Audit.critical_issues,
+            Audit.high_issues,
+            Audit.medium_issues,
+            Audit.source,
+            Audit.language,
+            Audit.category,
+            Audit.market,
+            Audit._intake_profile_raw,
+            Audit._runtime_diagnostics_raw,
+            Audit.odoo_connection_id,
+            Audit.error_message,
+        )
+        if projected_audit is None:
+            return None
+
+        artifact_payload = AuditService.get_cached_artifact_payload(audit_id)
+        if artifact_payload is None:
+            artifact_payload = AuditService.rebuild_artifact_payload(db, audit_id)
+
+        competitor_count = (
+            db.query(Competitor).filter(Competitor.audit_id == audit_id).count()
+        )
+        meta_row = (
+            db.query(
+                Audit.fix_plan,
+                Audit.external_intelligence,
+                Audit.report_markdown.isnot(None),
+                Audit.pagespeed_data,
+            )
+            .filter(Audit.id == audit_id)
+            .first()
+        )
+        fix_plan_payload: List[Dict[str, Any]] | Any = []
+        external_intelligence: Dict[str, Any] | Any = {}
+        report_ready = False
+        pagespeed_data: Dict[str, Any] | Any = {}
+        if meta_row is not None:
+            fix_plan_payload = meta_row[0]
+            external_intelligence = meta_row[1]
+            report_ready = bool(meta_row[2])
+            pagespeed_data = meta_row[3]
+
+        if isinstance(pagespeed_data, dict) and pagespeed_data:
+            artifact_payload = dict(artifact_payload or {})
+            if not artifact_payload.get("pagespeed_available"):
+                artifact_payload["pagespeed_available"] = True
+            if not artifact_payload.get("pagespeed_status") or str(
+                artifact_payload.get("pagespeed_status")
+            ).lower() == "idle":
+                artifact_payload["pagespeed_status"] = "completed"
+
+        payload = AuditService.build_overview_payload(
+            projected_audit,
+            artifact_payload=artifact_payload,
+            competitor_count=competitor_count,
+            fix_plan_count=(
+                len(fix_plan_payload) if isinstance(fix_plan_payload, list) else 0
+            ),
+            report_ready=report_ready,
+            external_intelligence_summary=AuditService._summarize_external_intelligence(
+                external_intelligence if isinstance(external_intelligence, dict) else None
+            ),
+        )
+        AuditService.cache_overview_payload(payload)
+        return payload
+
+    @staticmethod
     def publish_progress_event(audit_id: int, payload: Dict[str, Any]) -> None:
         try:
             from .cache_service import cache
 
+            AuditService.invalidate_overview_payload(audit_id)
             if not cache.enabled or not cache.redis_client:
                 return
 
@@ -667,6 +1035,7 @@ class AuditService:
         try:
             from .cache_service import cache
 
+            AuditService.invalidate_overview_payload(audit_id)
             AuditService.cache_artifact_payload(payload)
 
             if not cache.enabled or not cache.redis_client:
@@ -723,6 +1092,7 @@ class AuditService:
         db.commit()
         db.refresh(audit)
 
+        AuditService.invalidate_overview_payload(audit_id)
         AuditService.publish_progress_event(
             audit_id=audit_id,
             payload=AuditService.build_progress_payload(audit),
@@ -1062,6 +1432,17 @@ class AuditService:
 
         db.commit()
         db.refresh(audit)
+        AuditService.invalidate_overview_payload(audit_id)
+        try:
+            from .pdf_service import PDFService
+
+            PDFService.prewarm_report_signature(db, audit_id)
+        except Exception as exc:
+            logger.warning(
+                "Could not prewarm report signature after audit completion for audit %s: %s",
+                audit_id,
+                exc,
+            )
         logger.info(f"Resultados guardados para auditorÃ­a {audit_id}")
         return audit
 
@@ -1617,6 +1998,16 @@ class AuditService:
             audit.pagespeed_data = pagespeed_data
             db.commit()
             db.refresh(audit)
+            try:
+                from .pdf_service import PDFService
+
+                PDFService.prewarm_report_signature(db, audit_id)
+            except Exception as exc:
+                logger.warning(
+                    "Could not prewarm report signature after PageSpeed update for audit %s: %s",
+                    audit_id,
+                    exc,
+                )
             logger.info(f"PageSpeed data stored for audit {audit_id}")
         else:
             logger.warning(f"Audit {audit_id} not found for PageSpeed data storage")
@@ -2787,6 +3178,11 @@ class CompetitorService:
                 score_meta
                 or CompetitorService._calculate_geo_score_with_provenance(audit_data)
             )
+            score_status = str(score_meta.get("score_status") or "").strip().lower()
+            incomplete_signals = score_status in {
+                "insufficient_signals",
+                "provider_error",
+            }
             benchmark_available = (
                 CompetitorService.is_benchmark_available_competitor(audit_data)
                 if benchmark_available is None
@@ -2801,22 +3197,28 @@ class CompetitorService:
             # Extraer datos individuales de schema
             schema_data = audit_data.get("schema", {})
             schema_status = schema_data.get("schema_presence", {}).get("status")
-            schema_present = schema_status == "present"
+            schema_present = None
+            if not incomplete_signals and schema_status is not None:
+                schema_present = schema_status == "present"
 
             # Extraer semantic HTML score
             structure_data = audit_data.get("structure", {})
             semantic_html = structure_data.get("semantic_html", {})
-            semantic_score = semantic_html.get("score_percent", 0)
-            if not isinstance(semantic_score, (int, float)):
-                semantic_score = 0
+            semantic_score = CompetitorService._coerce_number(
+                semantic_html.get("score_percent")
+            )
 
             # H1 status + header hierarchy health
             h1_status = structure_data.get("h1_check", {}).get("status")
-            h1_coverage = 100 if h1_status == "pass" else 0
+            h1_coverage = None
+            if h1_status is not None:
+                h1_coverage = 100.0 if h1_status == "pass" else 0.0
             header_issues = (
                 structure_data.get("header_hierarchy", {}).get("issues") or []
             )
-            header_hierarchy_coverage = 100 if not header_issues else 0
+            header_hierarchy_coverage = None
+            if "header_hierarchy" in structure_data:
+                header_hierarchy_coverage = 100.0 if not header_issues else 0.0
 
             # Prefer site_metrics if present (aggregate)
             site_metrics = (
@@ -2824,27 +3226,53 @@ class CompetitorService:
                 if isinstance(audit_data.get("site_metrics"), dict)
                 else {}
             )
-            structure_score = site_metrics.get("structure_score_percent")
-            if not isinstance(structure_score, (int, float)):
-                structure_score = round(
-                    (semantic_score + h1_coverage + header_hierarchy_coverage) / 3, 1
-                )
+            structure_score = CompetitorService._coerce_number(
+                site_metrics.get("structure_score_percent")
+            )
+            if structure_score is None and not incomplete_signals:
+                structure_components = [
+                    component
+                    for component in [
+                        semantic_score,
+                        h1_coverage,
+                        header_hierarchy_coverage,
+                    ]
+                    if isinstance(component, (int, float))
+                ]
+                if structure_components:
+                    structure_score = round(
+                        sum(float(component) for component in structure_components)
+                        / len(structure_components),
+                        1,
+                    )
 
             # Extraer E-E-A-T
             eeat_data = audit_data.get("eeat", {})
             author_status = eeat_data.get("author_presence", {}).get("status")
-            eeat_score = 100 if author_status == "pass" else 0
+            eeat_score = None
+            if not incomplete_signals and author_status is not None:
+                eeat_score = 100.0 if author_status == "pass" else 0.0
 
             # Extraer H1
-            h1_present = h1_status == "pass"
+            h1_present = None
+            if not incomplete_signals and h1_status is not None:
+                h1_present = h1_status == "pass"
 
             # Extraer conversational tone
             content_data = audit_data.get("content", {})
             conversational_tone = content_data.get("conversational_tone", {})
-            tone_score = conversational_tone.get("score", 0)
-            if not isinstance(tone_score, (int, float)):
-                tone_score = 0
-            tone_score = max(0.0, min(10.0, float(tone_score)))
+            tone_score = CompetitorService._coerce_number(
+                conversational_tone.get("score")
+            )
+            if tone_score is not None:
+                tone_score = max(0.0, min(10.0, float(tone_score)))
+
+            if incomplete_signals:
+                schema_present = None
+                structure_score = None
+                eeat_score = None
+                h1_present = None
+                tone_score = None
 
             return {
                 "url": comp_url,
@@ -2903,11 +3331,11 @@ class CompetitorService:
                     else None
                 ),
                 "benchmark_available": bool(benchmark_available),
-                "schema_present": False,
-                "structure_score": 0,
-                "eeat_score": 0,
-                "h1_present": False,
-                "tone_score": 0,
+                "schema_present": None,
+                "structure_score": None,
+                "eeat_score": None,
+                "h1_present": None,
+                "tone_score": None,
             }
 
     @staticmethod

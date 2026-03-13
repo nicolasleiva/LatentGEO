@@ -4,6 +4,7 @@ import { useMemo, useSyncExternalStore } from "react";
 
 import { API_URL } from "@/lib/api-client";
 import { fetchWithBackendAuth } from "@/lib/backend-auth";
+import { downloadAuditPdf } from "@/lib/pdf-download";
 
 export type PdfJobStatus =
   | "idle"
@@ -374,6 +375,8 @@ class AuditArtifactsStore {
   private refreshPromise: Promise<AuditArtifactsStoreState> | null = null;
   private pollFailureCount = 0;
   private stateEpoch = 0;
+  private pendingPdfAutoDownload = false;
+  private pdfDownloadPromise: Promise<void> | null = null;
 
   constructor(auditId: number) {
     this.auditId = auditId;
@@ -445,7 +448,37 @@ class AuditArtifactsStore {
       this.eventSource.close();
       this.eventSource = null;
     }
+    this.pendingPdfAutoDownload = false;
+    this.pdfDownloadPromise = null;
     this.pollFailureCount = 0;
+  }
+
+  private maybeAutoDownloadPdf(state = this.state) {
+    if (
+      !this.pendingPdfAutoDownload ||
+      !state.pdf.download_ready ||
+      state.pdf.status !== "completed"
+    ) {
+      return;
+    }
+    if (this.pdfDownloadPromise) {
+      return;
+    }
+
+    this.pdfDownloadPromise = downloadAuditPdf(this.auditId)
+      .catch((error) => {
+        this.setState((current) => ({
+          ...current,
+          lastError:
+            error instanceof Error
+              ? error.message
+              : "Failed to download the generated PDF.",
+        }));
+      })
+      .finally(() => {
+        this.pendingPdfAutoDownload = false;
+        this.pdfDownloadPromise = null;
+      });
   }
 
   private applyArtifactPayload(payload: AuditArtifactsPayload) {
@@ -456,6 +489,7 @@ class AuditArtifactsStore {
       pagespeed: next.pagespeed,
       lastError: null,
     }));
+    this.maybeAutoDownloadPdf();
 
     if (!this.state.sseConnected && this.hasActiveArtifacts()) {
       this.schedulePolling();
@@ -514,10 +548,6 @@ class AuditArtifactsStore {
     };
 
     source.onerror = () => {
-      if (this.eventSource) {
-        this.eventSource.close();
-        this.eventSource = null;
-      }
       this.setState((current) => ({
         ...current,
         transportMode: this.hasActiveArtifacts(current) ? "polling" : "idle",
@@ -629,7 +659,7 @@ class AuditArtifactsStore {
       }
       return this.state.pdf;
     }
-    void autoDownload;
+    this.pendingPdfAutoDownload = autoDownload;
 
     this.setState((current) => ({ ...current, pdfSubmitting: true }));
     try {
@@ -650,12 +680,16 @@ class AuditArtifactsStore {
         pdf,
         lastError: null,
       }));
+      this.maybeAutoDownloadPdf();
 
       if (!this.state.sseConnected && isPdfActive(pdf)) {
         this.schedulePolling();
       }
 
       return pdf;
+    } catch (error) {
+      this.pendingPdfAutoDownload = false;
+      throw error;
     } finally {
       this.setState((current) => ({ ...current, pdfSubmitting: false }));
     }

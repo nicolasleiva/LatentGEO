@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import re
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any, Iterable, Optional
 
 from app.core.config import settings
@@ -16,6 +16,7 @@ from app.schemas import AuditPDFStatusResponse, PDFStatusError
 from app.services.audit_service import AuditService
 from app.services.cache_service import cache
 from fastapi import HTTPException
+from sqlalchemy import inspect as sa_inspect
 from sqlalchemy.exc import DBAPIError, OperationalError
 from sqlalchemy.orm import Session
 
@@ -169,7 +170,10 @@ class PDFJobService:
 
     @staticmethod
     def get_job(db: Session, audit_id: int) -> AuditPdfJob | None:
-        return db.query(AuditPdfJob).filter(AuditPdfJob.audit_id == audit_id).first()
+        job = db.query(AuditPdfJob).filter(AuditPdfJob.audit_id == audit_id).first()
+        if job is None:
+            return None
+        return PDFJobService._reconcile_stale_queued_job(db, job)
 
     @staticmethod
     def get_latest_pdf_report(db: Session, audit_id: int) -> Report | None:
@@ -183,6 +187,21 @@ class PDFJobService:
     @staticmethod
     def has_active_job(job: AuditPdfJob | None) -> bool:
         return bool(job and job.status in ACTIVE_PDF_JOB_STATUSES)
+
+    @staticmethod
+    def _queued_dispatch_grace_expired(job: AuditPdfJob) -> bool:
+        if job.status != AuditPdfJobStatus.QUEUED.value or job.celery_task_id:
+            return False
+        reference_time = job.updated_at or job.created_at
+        if reference_time is None:
+            return False
+        if reference_time.tzinfo is None:
+            reference_time = reference_time.replace(tzinfo=UTC)
+        grace_seconds = max(
+            1,
+            int(getattr(settings, "BROKER_DISPATCH_GRACE_SECONDS", 15) or 15),
+        )
+        return datetime.now(UTC) - reference_time > timedelta(seconds=grace_seconds)
 
     @staticmethod
     def normalize_warnings(raw_warnings: Optional[Iterable[Any]]) -> list[str]:
@@ -201,6 +220,9 @@ class PDFJobService:
                 if error_code:
                     return f"HTTPException:{error_code}"
             return f"HTTPException:{exc.status_code}"
+        detail = " ".join(str(exc or "").split()).strip()
+        if detail:
+            return f"{type(exc).__name__}: {detail}"
         return type(exc).__name__
 
     @staticmethod
@@ -342,6 +364,105 @@ class PDFJobService:
         )
 
     @staticmethod
+    def mark_dispatch_failed(
+        db: Session,
+        audit: Audit,
+        job: AuditPdfJob,
+        *,
+        exc: Exception | None = None,
+        message: str = "PDF generation could not be dispatched to the worker queue.",
+    ) -> AuditPdfJob:
+        _, classified_message = (
+            PDFJobService.classify_error(exc) if exc is not None else ("", "")
+        )
+        job = PDFJobService.mark_job_failed(
+            db,
+            job,
+            error_code="worker_unavailable",
+            error_message=(
+                classified_message or "Background worker unavailable. Try again shortly."
+            ),
+        )
+        PDFJobService.persist_runtime_diagnostic_safely(
+            db,
+            audit.id,
+            source="pdf",
+            stage="generate-pdf",
+            severity="error",
+            code="worker_unavailable",
+            message=message,
+            technical_detail=(
+                PDFJobService.runtime_technical_detail(exc)
+                if exc is not None
+                else "broker_dispatch_timeout"
+            ),
+        )
+        PDFJobService.publish_status_event(db, audit, job=job)
+        return job
+
+    @staticmethod
+    def fail_waiting_job_for_pagespeed_failure(
+        db: Session,
+        audit: Audit,
+        *,
+        pagespeed_job: AuditPageSpeedJob | None,
+        message: str,
+        exc: Exception | None = None,
+    ) -> AuditPdfJob | None:
+        job = db.query(AuditPdfJob).filter(AuditPdfJob.audit_id == audit.id).first()
+        if job is None:
+            return None
+        if job.status != AuditPdfJobStatus.WAITING.value or job.waiting_on != "pagespeed":
+            return job
+        if (
+            pagespeed_job is not None
+            and pagespeed_job.id is not None
+            and job.dependency_job_id is not None
+            and job.dependency_job_id != pagespeed_job.id
+        ):
+            return job
+        return PDFJobService.mark_dispatch_failed(
+            db,
+            audit,
+            job,
+            exc=exc,
+            message=message,
+        )
+
+    @staticmethod
+    def _reconcile_stale_queued_job(
+        db: Session,
+        job: AuditPdfJob,
+    ) -> AuditPdfJob:
+        if not PDFJobService._queued_dispatch_grace_expired(job):
+            return job
+
+        audit = AuditService.get_audit_projection(
+            db,
+            job.audit_id,
+            Audit.id,
+            Audit.user_id,
+            Audit.user_email,
+            Audit.created_at,
+            Audit.pagespeed_data,
+        )
+        if audit is None:
+            return job
+
+        logger.warning(
+            "pdf_dispatch_stale audit_id=%s job_id=%s status=%s",
+            audit.id,
+            job.id,
+            job.status,
+        )
+        return PDFJobService.mark_dispatch_failed(
+            db,
+            audit,
+            job,
+            message="Queued PDF generation was never dispatched to a worker.",
+        )
+
+    @staticmethod
     def queue_job(
         db: Session,
         *,
@@ -443,6 +564,31 @@ class PDFJobService:
         warnings: Optional[list[str]] = None,
     ) -> AuditPdfJob:
         now = datetime.now(UTC)
+        try:
+            identity = sa_inspect(job).identity
+            job_id = identity[0] if identity else None
+        except Exception:
+            job_id = None
+        if job_id is not None:
+            db.query(AuditPdfJob).filter(AuditPdfJob.id == job_id).update(
+                {
+                    AuditPdfJob.status: AuditPdfJobStatus.FAILED.value,
+                    AuditPdfJob.error_code: error_code,
+                    AuditPdfJob.error_message: error_message[:500],
+                    AuditPdfJob.warnings: warnings or [],
+                    AuditPdfJob.waiting_on: None,
+                    AuditPdfJob.completed_at: now,
+                    AuditPdfJob.updated_at: now,
+                },
+                synchronize_session=False,
+            )
+            db.commit()
+            refreshed_job = (
+                db.query(AuditPdfJob).filter(AuditPdfJob.id == job_id).first()
+            )
+            if refreshed_job is not None:
+                return refreshed_job
+
         job.status = AuditPdfJobStatus.FAILED.value
         job.error_code = error_code
         job.error_message = error_message[:500]
@@ -454,6 +600,37 @@ class PDFJobService:
         db.commit()
         db.refresh(job)
         return job
+
+    @staticmethod
+    def mark_job_failed_by_id(
+        db: Session,
+        job_id: int,
+        *,
+        error_code: str,
+        error_message: str,
+        warnings: Optional[list[str]] = None,
+    ) -> AuditPdfJob | None:
+        now = datetime.now(UTC)
+        updated = (
+            db.query(AuditPdfJob)
+            .filter(AuditPdfJob.id == job_id)
+            .update(
+                {
+                    AuditPdfJob.status: AuditPdfJobStatus.FAILED.value,
+                    AuditPdfJob.error_code: error_code,
+                    AuditPdfJob.error_message: error_message[:500],
+                    AuditPdfJob.warnings: warnings or [],
+                    AuditPdfJob.waiting_on: None,
+                    AuditPdfJob.completed_at: now,
+                    AuditPdfJob.updated_at: now,
+                },
+                synchronize_session=False,
+            )
+        )
+        if updated <= 0:
+            return None
+        db.commit()
+        return db.query(AuditPdfJob).filter(AuditPdfJob.id == job_id).first()
 
     @staticmethod
     async def _notify_pdf_ready_if_configured(
@@ -497,15 +674,15 @@ class PDFJobService:
         *,
         job: AuditPdfJob | None = None,
         report: Report | None = None,
+        pagespeed_job: AuditPageSpeedJob | None = None,
     ) -> None:
         from app.services.pagespeed_job_service import PageSpeedJobService
 
-        pagespeed_job = PageSpeedJobService.get_job(db, audit.id)
         AuditService.publish_artifact_event(
             audit.id,
             AuditService.build_artifact_payload(
                 audit,
-                pagespeed_job=pagespeed_job,
+                pagespeed_job=pagespeed_job or PageSpeedJobService.get_job(db, audit.id),
                 pdf_job=job or PDFJobService.get_job(db, audit.id),
                 pdf_report=report or PDFJobService.get_latest_pdf_report(db, audit.id),
             ),
@@ -604,7 +781,7 @@ class PDFJobService:
                 error_message = (
                     "Distributed PDF lock backend is unavailable. Redis is required."
                 )
-                PDFJobService.mark_job_failed(
+                job = PDFJobService.mark_job_failed(
                     db,
                     job,
                     error_code=error_code,
@@ -619,6 +796,7 @@ class PDFJobService:
                     code=error_code,
                     message=error_message,
                 )
+                PDFJobService.publish_status_event(db, audit, job=job)
                 return job
 
             logger.info(
@@ -728,19 +906,34 @@ class PDFJobService:
             )
             return job
         except Exception as exc:
-            logger.error("PDF job failed for audit %s", audit.id, exc_info=True)
+            logger.error("PDF job failed for audit %s", audit_id_for_lock, exc_info=True)
             db.rollback()
-            job = db.query(AuditPdfJob).filter(AuditPdfJob.id == job_id).first() or job
+            try:
+                db.expunge_all()
+            except Exception:
+                pass
+            audit = db.query(Audit).filter(Audit.id == audit_id_for_lock).first()
             error_code, error_message = PDFJobService.classify_error(exc)
-            job = PDFJobService.mark_job_failed(
+            job = PDFJobService.mark_job_failed_by_id(
                 db,
-                job,
+                job_id,
                 error_code=error_code,
                 error_message=error_message,
             )
+            if job is None:
+                original_job = (
+                    db.query(AuditPdfJob).filter(AuditPdfJob.id == job_id).first() or job
+                )
+                if original_job is not None:
+                    job = PDFJobService.mark_job_failed(
+                        db,
+                        original_job,
+                        error_code=error_code,
+                        error_message=error_message,
+                    )
             PDFJobService.persist_runtime_diagnostic_safely(
                 db,
-                audit.id,
+                audit_id_for_lock,
                 source="pdf",
                 stage="generate-pdf",
                 severity="error",
@@ -748,7 +941,8 @@ class PDFJobService:
                 message="PDF generation failed before the report could be delivered.",
                 technical_detail=PDFJobService.runtime_technical_detail(exc),
             )
-            PDFJobService.publish_status_event(db, audit, job=job)
+            if audit is not None:
+                PDFJobService.publish_status_event(db, audit, job=job)
             return job
         finally:
             release_pdf_generation_lock(audit_id_for_lock, lock_token, lock_mode)

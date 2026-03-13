@@ -495,6 +495,8 @@ class AIContentSuggestion(Base):
     )  # new_content, optimization, faq
     content_outline = Column(JSON, nullable=True)
     priority = Column(String(20), default="medium")
+    strategy_run_id = Column(String(64), nullable=True, index=True)
+    strategy_order = Column(Integer, nullable=True)
 
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 

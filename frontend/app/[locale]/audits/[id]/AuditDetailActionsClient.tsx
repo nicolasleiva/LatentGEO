@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { Download, RefreshCw } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -30,6 +30,7 @@ export default function AuditDetailActionsClient({
     auditId,
     autoDownload: true,
   });
+  const [isDownloadingPdf, setIsDownloadingPdf] = useState(false);
   const {
     state: pageSpeedState,
     generate: generatePageSpeed,
@@ -60,7 +61,12 @@ export default function AuditDetailActionsClient({
   const handleGeneratePdf = async () => {
     try {
       if (state.status === "completed" && state.download_ready) {
-        await downloadAuditPdf(auditId);
+        setIsDownloadingPdf(true);
+        try {
+          await downloadAuditPdf(auditId);
+        } finally {
+          setIsDownloadingPdf(false);
+        }
         return;
       }
       await generate();
@@ -107,6 +113,7 @@ export default function AuditDetailActionsClient({
     }
     return null;
   }, [hasPageSpeed, pageSpeedState]);
+  const isPdfActionBusy = isBusy || isDownloadingPdf;
 
   return (
     <div className="space-y-3">
@@ -129,15 +136,17 @@ export default function AuditDetailActionsClient({
         </Button>
         <Button
           onClick={handleGeneratePdf}
-          disabled={isBusy}
+          disabled={isPdfActionBusy}
           className="glass-button-primary px-6"
         >
-          {isBusy ? (
+          {isPdfActionBusy ? (
             <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
           ) : (
             <Download className="mr-2 h-4 w-4" />
           )}
-          {getPdfButtonLabel(state.status, isBusy)}
+          {isDownloadingPdf
+            ? "Downloading PDF..."
+            : getPdfButtonLabel(state.status, isPdfActionBusy)}
         </Button>
       </div>
 

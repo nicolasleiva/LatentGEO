@@ -108,6 +108,50 @@ def _build_sse_test_app(monkeypatch) -> FastAPI:
     return app
 
 
+def _build_article_batch_sse_test_app(monkeypatch) -> FastAPI:
+    import app.core.database as database_module
+
+    async def _fake_stream(*_args, **_kwargs):
+        event = sse_route.ServerSentEvent(
+            raw_data='{"batch_id":8,"audit_id":123,"status":"processing","summary":{"pipeline_stage":"generating_articles"},"articles":[{"index":1,"title":"Queued title","target_keyword":"queued keyword","focus_url":"https://store.example.com/","generation_status":"queued","generation_error":null,"citation_readiness_score":0,"user_authority_urls":[]}],"is_legacy":false,"can_regenerate":true}',
+            retry=5000,
+        )
+        yield sse_route._serialize_sse_event(event)
+
+    monkeypatch.setattr(
+        sse_route,
+        "_load_owned_article_batch_payload",
+        lambda _batch_id, _current_user: {
+            "batch_id": 8,
+            "audit_id": 123,
+            "status": "processing",
+            "summary": {"pipeline_stage": "generating_articles"},
+            "articles": [
+                {
+                    "index": 1,
+                    "title": "Queued title",
+                    "target_keyword": "queued keyword",
+                    "focus_url": "https://store.example.com/",
+                    "generation_status": "queued",
+                    "generation_error": None,
+                    "citation_readiness_score": 0,
+                    "user_authority_urls": [],
+                }
+            ],
+            "is_legacy": False,
+            "can_regenerate": True,
+        },
+    )
+    monkeypatch.setattr(sse_route, "article_batch_progress_stream", _fake_stream)
+    monkeypatch.setattr(
+        database_module, "SessionLocal", lambda: _DummySession(), raising=False
+    )
+
+    app = FastAPI()
+    app.include_router(sse_route.router)
+    return app
+
+
 def test_sse_rejects_query_token_without_authorization(monkeypatch):
     monkeypatch.setenv(
         "BACKEND_INTERNAL_JWT_SECRET", "test-sse-secret-with-minimum-32-bytes"
@@ -138,6 +182,24 @@ def test_sse_accepts_authorization_header(monkeypatch):
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("text/event-stream")
     assert "data:" in response.text
+
+
+def test_article_batch_sse_accepts_authorization_header(monkeypatch):
+    monkeypatch.setenv(
+        "BACKEND_INTERNAL_JWT_SECRET", "test-sse-secret-with-minimum-32-bytes"
+    )
+    app = _build_article_batch_sse_test_app(monkeypatch)
+    token = create_access_token({"sub": "test-user", "email": "test@example.com"})
+
+    with TestClient(app) as client:
+        response = client.get(
+            "/sse/article-engine/8/progress",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/event-stream")
+    assert "Queued title" in response.text
 
 
 @pytest.mark.asyncio
@@ -363,6 +425,93 @@ async def test_artifact_sse_closes_after_active_job_reaches_terminal_state(monke
 
     assert first_payload["pagespeed_status"] == "running"
     assert second_payload["pagespeed_status"] == "completed"
+
+    with pytest.raises(StopAsyncIteration):
+        await _next_sse_chunk(generator)
+
+
+@pytest.mark.asyncio
+async def test_article_batch_sse_fallback_db_emits_compact_terminal_payload(
+    monkeypatch,
+):
+    monkeypatch.setattr(sse_route.settings, "SSE_RETRY_MS", 5000, raising=False)
+    monkeypatch.setattr(sse_route.settings, "SSE_SOURCE", "db", raising=False)
+    monkeypatch.setattr(
+        sse_route.settings, "SSE_FALLBACK_DB_INTERVAL_SECONDS", 1, raising=False
+    )
+    monkeypatch.setattr(sse_route.settings, "SSE_MAX_DURATION", 60, raising=False)
+
+    payloads = [
+        {
+            "batch_id": 8,
+            "audit_id": 123,
+            "status": "completed",
+            "summary": {
+                "pipeline_stage": "completed",
+                "generated_count": 1,
+                "failed_count": 0,
+            },
+            "articles": [
+                {
+                    "index": 1,
+                    "title": "Queued title",
+                    "target_keyword": "queued keyword",
+                    "focus_url": "https://store.example.com/",
+                    "generation_status": "completed",
+                    "generation_error": None,
+                    "citation_readiness_score": 100,
+                    "user_authority_urls": [
+                        "https://authority.example.com/guide"
+                    ],
+                }
+            ],
+            "is_legacy": False,
+            "can_regenerate": True,
+        }
+    ]
+
+    def _fake_load(_batch_id, _current_user):
+        return payloads.pop(0)
+
+    monkeypatch.setattr(sse_route, "_load_owned_article_batch_payload", _fake_load)
+    request = _NeverDisconnectRequest()
+
+    generator = sse_route.article_batch_progress_stream(
+        batch_id=8,
+        current_user=object(),
+        request=request,
+        initial_payload={
+            "batch_id": 8,
+            "audit_id": 123,
+            "status": "processing",
+            "summary": {"pipeline_stage": "generating_articles"},
+            "articles": [
+                {
+                    "index": 1,
+                    "title": "Queued title",
+                    "target_keyword": "queued keyword",
+                    "focus_url": "https://store.example.com/",
+                    "generation_status": "queued",
+                    "generation_error": None,
+                    "citation_readiness_score": 0,
+                    "user_authority_urls": [],
+                }
+            ],
+            "is_legacy": False,
+            "can_regenerate": True,
+        },
+    )
+
+    first_chunk = await asyncio.wait_for(_next_sse_chunk(generator), timeout=1.0)
+    second_chunk = await asyncio.wait_for(_next_sse_chunk(generator), timeout=3.0)
+    first_payload, _ = _decode_sse_chunk(first_chunk)
+    second_payload, _ = _decode_sse_chunk(second_chunk)
+
+    assert first_payload["status"] == "processing"
+    assert second_payload["status"] == "completed"
+    assert second_payload["articles"][0]["title"] == "Queued title"
+    assert "markdown" not in second_payload["articles"][0]
+    assert "sources" not in second_payload["articles"][0]
 
     with pytest.raises(StopAsyncIteration):
         await _next_sse_chunk(generator)

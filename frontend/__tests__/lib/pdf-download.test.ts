@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  __resetPdfDownloadStateForTests,
   downloadAuditPdf,
   getPdfDownloadUrlFromPayload,
   triggerFileDownload,
@@ -8,6 +9,7 @@ import {
 
 describe("pdf-download helpers", () => {
   afterEach(() => {
+    __resetPdfDownloadStateForTests();
     vi.restoreAllMocks();
   });
 
@@ -92,5 +94,40 @@ describe("pdf-download helpers", () => {
     );
 
     await expect(downloadAuditPdf(42)).rejects.toThrow("Signed URL expired");
+  });
+
+  it("deduplicates concurrent downloads for the same audit", async () => {
+    let releaseDownload: (() => void) | null = null;
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(
+      () =>
+        new Promise<Response>((resolve) => {
+          releaseDownload = () =>
+            resolve(
+              new Response(new Blob(["pdf-data"], { type: "application/pdf" }), {
+                status: 200,
+                headers: {
+                  "Content-Type": "application/pdf",
+                  "Content-Disposition":
+                    'attachment; filename="audit_42_report.pdf"',
+                },
+              }),
+            );
+        }),
+    );
+    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+    vi.spyOn(document.body, "appendChild");
+    vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:https://app.test/report");
+    vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
+
+    const firstDownload = downloadAuditPdf(42);
+    const secondDownload = downloadAuditPdf(42);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    if (!releaseDownload) {
+      throw new Error("Expected the download promise to be pending.");
+    }
+    releaseDownload();
+    await Promise.all([firstDownload, secondDownload]);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });

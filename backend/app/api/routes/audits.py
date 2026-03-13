@@ -1,12 +1,13 @@
+from time import perf_counter
 from typing import List
 from urllib.parse import urlparse
 
 from app.core.access_control import ensure_artifact_snapshot_access, ensure_audit_access
 from app.core.auth import AuthUser, get_current_user
 from app.core.config import settings
-from app.core.database import get_db
+from app.core.database import SessionLocal, get_db
 from app.core.logger import get_logger
-from app.models import Audit, AuditPageSpeedJob, AuditStatus, Competitor
+from app.models import AuditedPage, Audit, AuditPageSpeedJob, AuditStatus, Competitor
 from app.schemas import (
     AuditArtifactsStatusResponse,
     AuditConfigRequest,
@@ -56,9 +57,115 @@ router = APIRouter(
     responses={404: {"description": "No encontrado"}},
 )
 
+_AUDIT_ACCESS_FIELDS = (
+    Audit.id,
+    Audit.user_id,
+    Audit.user_email,
+)
+_AUDIT_STATUS_FIELDS = _AUDIT_ACCESS_FIELDS + (
+    Audit.url,
+    Audit.domain,
+    Audit.status,
+    Audit.progress,
+    Audit.geo_score,
+    Audit.total_pages,
+)
+_AUDIT_OVERVIEW_FIELDS = _AUDIT_ACCESS_FIELDS + (
+    Audit.url,
+    Audit.domain,
+    Audit.status,
+    Audit.progress,
+    Audit.created_at,
+    Audit.started_at,
+    Audit.completed_at,
+    Audit.geo_score,
+    Audit.total_pages,
+    Audit.critical_issues,
+    Audit.high_issues,
+    Audit.medium_issues,
+    Audit.source,
+    Audit.language,
+    Audit.category,
+    Audit.market,
+    Audit._intake_profile_raw,
+    Audit._runtime_diagnostics_raw,
+    Audit.odoo_connection_id,
+    Audit.error_message,
+)
+_AUDIT_RESPONSE_FIELDS = _AUDIT_ACCESS_FIELDS + (
+    Audit.url,
+    Audit.domain,
+    Audit.status,
+    Audit.progress,
+    Audit.created_at,
+    Audit.started_at,
+    Audit.completed_at,
+    Audit.error_message,
+    Audit.target_audit,
+    Audit.external_intelligence,
+    Audit.competitor_audits,
+    Audit.fix_plan,
+    Audit.report_markdown,
+    Audit.total_pages,
+    Audit.critical_issues,
+    Audit.high_issues,
+    Audit.medium_issues,
+    Audit.pagespeed_data,
+    Audit.language,
+    Audit.category,
+    Audit.competitors,
+    Audit.market,
+    Audit._intake_profile_raw,
+    Audit._runtime_diagnostics_raw,
+    Audit.odoo_connection_id,
+    Audit.geo_score,
+)
+_AUDIT_PDF_FIELDS = _AUDIT_ACCESS_FIELDS + (
+    Audit.url,
+    Audit.domain,
+    Audit.status,
+    Audit.created_at,
+    Audit.pagespeed_data,
+)
+_AUDIT_CHAT_CONFIG_FIELDS = _AUDIT_ACCESS_FIELDS + (
+    Audit.status,
+    Audit.language,
+    Audit.competitors,
+    Audit.market,
+    Audit.progress,
+)
+_AUDITED_PAGE_COMPACT_FIELDS = (
+    AuditedPage.id,
+    AuditedPage.url,
+    AuditedPage.path,
+    AuditedPage.overall_score,
+    AuditedPage.h1_score,
+    AuditedPage.structure_score,
+    AuditedPage.content_score,
+    AuditedPage.eeat_score,
+    AuditedPage.schema_score,
+    AuditedPage.critical_issues,
+    AuditedPage.high_issues,
+    AuditedPage.medium_issues,
+    AuditedPage.low_issues,
+)
+_AUDITED_PAGE_DETAIL_FIELDS = _AUDITED_PAGE_COMPACT_FIELDS + (
+    AuditedPage.audit_data,
+)
+
 
 def _get_owned_audit(db: Session, audit_id: int, current_user: AuthUser) -> Audit:
     audit = AuditService.get_audit(db, audit_id)
+    return ensure_audit_access(audit, current_user)
+
+
+def _get_owned_projected_audit(
+    db: Session,
+    audit_id: int,
+    current_user: AuthUser,
+    *fields,
+) -> Audit:
+    audit = AuditService.get_audit_projection(db, audit_id, *fields)
     return ensure_audit_access(audit, current_user)
 
 
@@ -150,8 +257,85 @@ def _persist_generation_warnings(
     PDFJobService.persist_generation_warnings(db, audit_id, warnings)
 
 
+def _summarize_external_intelligence(
+    payload: dict[str, object] | None,
+) -> dict[str, str] | None:
+    return AuditService._summarize_external_intelligence(payload)
+
+
 def _runtime_technical_detail(exc: Exception) -> str | None:
     return PDFJobService.runtime_technical_detail(exc)
+
+
+def _build_audit_shell_response(
+    db: Session,
+    audit: Audit,
+) -> AuditOverview:
+    payload = AuditService.rebuild_overview_payload(db, audit.id, audit=audit)
+    if payload is None:
+        raise HTTPException(status_code=404, detail="Auditoría no encontrada")
+    public_payload = AuditService.public_overview_payload(payload) or {}
+    return AuditOverview(**public_payload)
+
+
+def _get_owned_overview_payload(
+    db: Session,
+    audit_id: int,
+    current_user: AuthUser,
+) -> AuditOverview:
+    cached_payload = AuditService.get_cached_overview_payload(audit_id)
+    if cached_payload is not None:
+        ensure_artifact_snapshot_access(cached_payload, current_user)
+        public_payload = AuditService.public_overview_payload(cached_payload) or {}
+        return AuditOverview(**public_payload)
+
+    audit = _get_owned_projected_audit(
+        db,
+        audit_id,
+        current_user,
+        *_AUDIT_OVERVIEW_FIELDS,
+    )
+    return _build_audit_shell_response(db, audit)
+
+
+def _log_generate_pdf_timing(
+    *,
+    audit_id: int,
+    path: str,
+    started_at: float,
+    precheck_ms: int,
+    job_lookup_ms: int,
+    dependency_ms: int,
+    queue_ms: int,
+) -> None:
+    logger.info(
+        "generate_pdf_timing audit_id=%s path=%s precheck_ms=%s job_lookup_ms=%s dependency_ms=%s queue_ms=%s total_ms=%s",
+        audit_id,
+        path,
+        precheck_ms,
+        job_lookup_ms,
+        dependency_ms,
+        queue_ms,
+        int((perf_counter() - started_at) * 1000),
+    )
+
+
+def _publish_artifact_snapshot(
+    audit: Audit,
+    *,
+    pagespeed_job: AuditPageSpeedJob | None = None,
+    pdf_job=None,
+    pdf_report=None,
+) -> None:
+    AuditService.publish_artifact_event(
+        audit.id,
+        AuditService.build_artifact_payload(
+            audit,
+            pagespeed_job=pagespeed_job,
+            pdf_job=pdf_job,
+            pdf_report=pdf_report,
+        ),
+    )
 
 
 def _pdf_requires_pagespeed_refresh(
@@ -356,6 +540,125 @@ async def run_audit_sync(audit_id: int):
         db.close()
 
 
+def _dispatch_pdf_job_after_response(db: Session, audit_id: int, job_id: int) -> None:
+    try:
+        audit = AuditService.get_audit_projection(db, audit_id, *_AUDIT_PDF_FIELDS)
+        if audit is None:
+            logger.warning(
+                "pdf_dispatch_skipped_missing_audit audit_id=%s job_id=%s",
+                audit_id,
+                job_id,
+            )
+            return
+        job = PDFJobService.get_job(db, audit_id)
+        if job is None or job.id != job_id or job.status != "queued":
+            return
+        PDFJobService.enqueue_job_task(db, audit, job)
+    except Exception as exc:
+        logger.error(
+            "pdf_dispatch_after_response_failed audit_id=%s job_id=%s error=%s",
+            audit_id,
+            job_id,
+            exc,
+        )
+        db.rollback()
+        audit = AuditService.get_audit_projection(db, audit_id, *_AUDIT_PDF_FIELDS)
+        job = PDFJobService.get_job(db, audit_id)
+        if audit is None or job is None or job.id != job_id:
+            return
+        PDFJobService.mark_dispatch_failed(
+            db,
+            audit,
+            job,
+            exc=exc,
+            message="PDF generation could not be dispatched after the request was accepted.",
+        )
+
+
+def _dispatch_pagespeed_job_after_response(
+    db: Session,
+    audit_id: int,
+    job_id: int,
+) -> None:
+    try:
+        audit = AuditService.get_audit_projection(db, audit_id, *_AUDIT_PDF_FIELDS)
+        if audit is None:
+            logger.warning(
+                "pagespeed_dispatch_skipped_missing_audit audit_id=%s job_id=%s",
+                audit_id,
+                job_id,
+            )
+            return
+        job = PageSpeedJobService.get_job(db, audit_id)
+        if job is None or job.id != job_id or job.status != "queued":
+            return
+        PageSpeedJobService.enqueue_job_task(db, audit, job)
+    except Exception as exc:
+        logger.error(
+            "pagespeed_dispatch_after_response_failed audit_id=%s job_id=%s error=%s",
+            audit_id,
+            job_id,
+            exc,
+        )
+        db.rollback()
+        audit = AuditService.get_audit_projection(db, audit_id, *_AUDIT_PDF_FIELDS)
+        job = PageSpeedJobService.get_job(db, audit_id)
+        if audit is None or job is None or job.id != job_id:
+            return
+        PageSpeedJobService.mark_dispatch_failed(
+            db,
+            audit,
+            job,
+            exc=exc,
+            message="PageSpeed analysis could not be dispatched after the request was accepted.",
+        )
+
+
+def _dispatch_audit_after_chat_config(db: Session, audit_id: int) -> None:
+    try:
+        audit = AuditService.get_audit_projection(
+            db,
+            audit_id,
+            *_AUDIT_CHAT_CONFIG_FIELDS,
+        )
+        if audit is None:
+            logger.warning("chat_config_dispatch_missing_audit audit_id=%s", audit_id)
+            return
+        task = run_audit_task.delay(audit.id)
+        AuditService.set_audit_task_id(db, audit.id, task.id)
+        logger.info("Audit %s pipeline started after chat config", audit.id)
+    except Exception as exc:
+        logger.error(
+            "chat_config_dispatch_failed audit_id=%s error=%s",
+            audit_id,
+            exc,
+        )
+        db.rollback()
+        audit = AuditService.get_audit(db, audit_id)
+        if audit is None:
+            return
+        audit.status = AuditStatus.FAILED
+        audit.error_message = "Background worker unavailable. Try again shortly."
+        audit.task_id = None
+        db.add(audit)
+        db.commit()
+        db.refresh(audit)
+        AuditService.publish_progress_event(
+            audit_id=audit.id,
+            payload=AuditService.build_progress_payload(audit),
+        )
+        AuditService.append_runtime_diagnostic(
+            db,
+            audit.id,
+            source="pipeline",
+            stage="chat-config-dispatch",
+            severity="error",
+            code="worker_unavailable",
+            message="Audit configuration was saved, but the pipeline could not be dispatched.",
+            technical_detail=type(exc).__name__,
+        )
+
+
 async def _create_audit_internal(
     audit_create: AuditCreate,
     response: Response,
@@ -462,10 +765,16 @@ def get_audit_status(
     Get lightweight audit status for polling.
     Only returns id, url, status, progress, geo_score, and total_pages.
     """
-    audit = _get_owned_audit(db, audit_id, current_user)
+    audit = _get_owned_projected_audit(
+        db,
+        audit_id,
+        current_user,
+        *_AUDIT_STATUS_FIELDS,
+    )
     return audit
 
 
+@router.get("/{audit_id}/summary", response_model=AuditOverview)
 @router.get("/{audit_id}/overview", response_model=AuditOverview)
 def get_audit_overview(
     audit_id: int,
@@ -476,69 +785,7 @@ def get_audit_overview(
     Get a production-friendly overview payload for the audit detail shell.
     Excludes heavy JSON blobs such as target_audit, report_markdown, and fix_plan.
     """
-    from app.services.audit_service import CompetitorService
-
-    audit = _get_owned_audit(db, audit_id, current_user)
-
-    fix_plan = audit.fix_plan if isinstance(audit.fix_plan, list) else []
-    external_intelligence = (
-        audit.external_intelligence
-        if isinstance(audit.external_intelligence, dict)
-        else None
-    )
-    pagespeed_job = PageSpeedJobService.get_job(db, audit_id)
-    pdf_job = PDFJobService.get_job(db, audit_id)
-    latest_pdf_report = PDFJobService.get_latest_pdf_report(db, audit_id)
-    competitor_count = (
-        db.query(Competitor).filter(Competitor.audit_id == audit_id).count()
-    )
-    if competitor_count <= 0:
-        competitor_count = len(
-            [
-                comp
-                for comp in (audit.competitor_audits or [])
-                if CompetitorService.is_benchmark_available_competitor(comp)
-            ]
-        )
-    return AuditOverview(
-        id=audit.id,
-        url=audit.url,
-        domain=audit.domain,
-        status=(
-            audit.status.value if hasattr(audit.status, "value") else str(audit.status)
-        ),
-        progress=int(round(audit.progress or 0)),
-        created_at=audit.created_at,
-        started_at=audit.started_at,
-        completed_at=audit.completed_at,
-        geo_score=audit.geo_score,
-        total_pages=audit.total_pages,
-        critical_issues=audit.critical_issues,
-        high_issues=audit.high_issues,
-        medium_issues=audit.medium_issues,
-        source=audit.source,
-        language=audit.language,
-        category=audit.category,
-        market=audit.market,
-        intake_profile=audit.intake_profile,
-        diagnostics_summary=AuditService.summarize_runtime_diagnostics(
-            audit.runtime_diagnostics, limit=4
-        ),
-        odoo_connection_id=getattr(audit, "odoo_connection_id", None),
-        error_message=audit.error_message,
-        competitor_count=competitor_count,
-        fix_plan_count=len(fix_plan),
-        report_ready=bool(audit.report_markdown),
-        pagespeed_available=bool(audit.pagespeed_data),
-        pagespeed_status=(pagespeed_job.status if pagespeed_job else None),
-        pagespeed_warnings=PageSpeedJobService.normalize_warnings(
-            getattr(pagespeed_job, "warnings", [])
-        ),
-        pdf_available=bool(latest_pdf_report and latest_pdf_report.file_path),
-        pdf_status=(pdf_job.status if pdf_job else None),
-        pdf_warnings=PDFJobService.normalize_warnings(getattr(pdf_job, "warnings", [])),
-        external_intelligence=external_intelligence,
-    )
+    return _get_owned_overview_payload(db, audit_id, current_user)
 
 
 @router.get("/{audit_id}/diagnostics", response_model=dict)
@@ -558,20 +805,16 @@ def get_audit_diagnostics(
     }
 
 
-@router.get("/{audit_id}", response_model=AuditResponse)
+@router.get("/{audit_id}", response_model=AuditOverview)
 def get_audit(
     audit_id: int,
     db: Session = Depends(get_db),
     current_user: AuthUser = Depends(get_current_user),
 ):
     """
-    Get audit details WITHOUT triggering PageSpeed or GEO tools.
-
-    This endpoint loads quickly and returns basic audit information and fix plan.
-    Frontend should display "Generate PDF" for full analysis.
+    Get the slim audit shell payload without loading heavy report blobs.
     """
-    audit = _get_owned_audit(db, audit_id, current_user)
-    return audit
+    return _get_owned_overview_payload(db, audit_id, current_user)
 
 
 @router.get("/{audit_id}/report", response_model=dict)
@@ -600,8 +843,9 @@ def get_audit_report(
     return {"report_markdown": audit.report_markdown}
 
 
+@router.get("/{audit_id}/issues", response_model=dict)
 @router.get("/{audit_id}/fix_plan", response_model=dict)
-def get_audit_fix_plan(
+def get_audit_issues(
     audit_id: int,
     db: Session = Depends(get_db),
     current_user: AuthUser = Depends(get_current_user),
@@ -685,9 +929,18 @@ def get_audit_pages(
     """
     Obtiene todas las páginas auditadas de una auditoría.
     """
-    _get_owned_audit(db, audit_id, current_user)
+    _get_owned_projected_audit(
+        db,
+        audit_id,
+        current_user,
+        *_AUDIT_ACCESS_FIELDS,
+    )
 
-    pages = AuditService.get_audited_pages(db, audit_id)
+    pages = AuditService.get_audited_pages_projection(
+        db,
+        audit_id,
+        *_AUDITED_PAGE_COMPACT_FIELDS,
+    )
     return [
         {
             "id": p.id,
@@ -703,7 +956,6 @@ def get_audit_pages(
             "high_issues": p.high_issues,
             "medium_issues": p.medium_issues,
             "low_issues": p.low_issues,
-            "audit_data": p.audit_data,
         }
         for p in pages
     ]
@@ -719,10 +971,19 @@ def get_page_details(
     """
     Obtiene detalles de una página específica.
     """
-    _get_owned_audit(db, audit_id, current_user)
+    _get_owned_projected_audit(
+        db,
+        audit_id,
+        current_user,
+        *_AUDIT_ACCESS_FIELDS,
+    )
 
-    pages = AuditService.get_audited_pages(db, audit_id)
-    page = next((p for p in pages if p.id == page_id), None)
+    page = AuditService.get_audited_page_projection(
+        db,
+        audit_id,
+        page_id,
+        *_AUDITED_PAGE_DETAIL_FIELDS,
+    )
 
     if not page:
         raise HTTPException(status_code=404, detail="Página no encontrada")
@@ -899,6 +1160,7 @@ def get_competitors(
 @router.post("/{audit_id}/pagespeed")
 async def run_pagespeed_analysis(
     audit_id: int,
+    background_tasks: BackgroundTasks,
     strategy: str = "both",
     force_refresh: bool = False,
     db: Session = Depends(get_db),
@@ -907,12 +1169,23 @@ async def run_pagespeed_analysis(
     """
     Queue or reuse the canonical PageSpeed job for an audit.
     """
-    audit = _get_owned_audit(db, audit_id, current_user)
+    audit = _get_owned_projected_audit(
+        db,
+        audit_id,
+        current_user,
+        *_AUDIT_PDF_FIELDS,
+    )
     if audit.status != AuditStatus.COMPLETED:
         raise HTTPException(
             status_code=400,
             detail=f"La auditoría debe estar completada. Estado actual: {audit.status.value}",
         )
+
+    normalized_strategy = (
+        strategy.strip().lower() if isinstance(strategy, str) else "both"
+    )
+    if normalized_strategy not in {"mobile", "desktop", "both"}:
+        normalized_strategy = "both"
 
     try:
         existing_job = PageSpeedJobService.get_job(db, audit.id)
@@ -924,12 +1197,14 @@ async def run_pagespeed_analysis(
                 message="PageSpeed analysis is already in progress for this audit.",
             )
             return JSONResponse(
-                status_code=202, content=response.model_dump(mode="json")
+                status_code=202,
+                content=response.model_dump(mode="json"),
+                background=background_tasks,
             )
 
         if not force_refresh and PageSpeedJobService.has_usable_pagespeed_data(
             audit,
-            require_complete=(strategy == "both"),
+            require_complete=(normalized_strategy == "both"),
         ):
             response = PageSpeedJobService.build_status_response(
                 audit=audit,
@@ -941,40 +1216,24 @@ async def run_pagespeed_analysis(
                 message="Existing PageSpeed data is already available.",
             )
             return JSONResponse(
-                status_code=200, content=response.model_dump(mode="json")
+                status_code=200,
+                content=response.model_dump(mode="json"),
+                background=background_tasks,
             )
 
         job = PageSpeedJobService.queue_job(
             db,
             audit=audit,
             requested_by_user_id=current_user.user_id,
-            strategy=strategy,
+            strategy=normalized_strategy,
             force_refresh=force_refresh,
         )
-        try:
-            job = PageSpeedJobService.enqueue_job_task(db, audit, job)
-        except Exception as exc:
-            logger.error(
-                "pagespeed_queue_failed audit_id=%s job_id=%s error=%s",
-                audit.id,
-                job.id,
-                exc,
-            )
-            error_code, error_message = PageSpeedJobService.classify_error(exc)
-            PageSpeedJobService.mark_job_failed(
-                db,
-                audit,
-                job,
-                error_code="worker_unavailable",
-                error_message=error_message or error_code,
-            )
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail={
-                    "error_code": "worker_unavailable",
-                    "message": "Background worker unavailable. Try again shortly.",
-                },
-            ) from exc
+        background_tasks.add_task(
+            _dispatch_pagespeed_job_after_response,
+            db,
+            audit.id,
+            job.id,
+        )
 
         response = PageSpeedJobService.build_status_response(
             audit=audit,
@@ -982,7 +1241,11 @@ async def run_pagespeed_analysis(
             retry_after_seconds=DEFAULT_PAGESPEED_RETRY_AFTER_SECONDS,
             message="PageSpeed analysis queued successfully.",
         )
-        return JSONResponse(status_code=202, content=response.model_dump(mode="json"))
+        return JSONResponse(
+            status_code=202,
+            content=response.model_dump(mode="json"),
+            background=background_tasks,
+        )
     except HTTPException:
         raise
     except Exception as exc:
@@ -1082,6 +1345,7 @@ async def get_audit_artifacts_status(
 )
 async def generate_audit_pdf(
     audit_id: int,
+    background_tasks: BackgroundTasks,
     force_pagespeed_refresh: bool = False,
     force_report_refresh: bool = False,
     force_external_intel_refresh: bool = False,
@@ -1106,13 +1370,24 @@ async def generate_audit_pdf(
     - LLM visibility
     - AI content suggestions
     """
+    request_started_at = perf_counter()
+    precheck_ms = 0
+    job_lookup_ms = 0
+    dependency_ms = 0
+    queue_ms = 0
     try:
-        audit = _get_owned_audit(db, audit_id, current_user)
+        audit = _get_owned_projected_audit(
+            db,
+            audit_id,
+            current_user,
+            *_AUDIT_PDF_FIELDS,
+        )
         if audit.status != AuditStatus.COMPLETED:
             raise HTTPException(
                 status_code=400,
                 detail=f"La auditoría debe estar completada. Estado actual: {audit.status.value}",
             )
+        precheck_ms = int((perf_counter() - request_started_at) * 1000)
     except HTTPException:
         raise
     except (OperationalError, DBAPIError) as db_err:
@@ -1122,14 +1397,16 @@ async def generate_audit_pdf(
         raise _db_unavailable_http_exception("generate_pdf_precheck") from db_err
 
     try:
+        lookup_started_at = perf_counter()
         existing_report = PDFJobService.get_latest_pdf_report(db, audit.id)
         existing_job = PDFJobService.get_job(db, audit.id)
-        existing_pagespeed_job = PageSpeedJobService.get_job(db, audit.id)
+        current_pagespeed_job = PageSpeedJobService.get_job(db, audit.id)
         needs_pagespeed = _pdf_requires_pagespeed_refresh(
             audit,
             force_pagespeed_refresh=force_pagespeed_refresh,
-            pagespeed_job=existing_pagespeed_job,
+            pagespeed_job=current_pagespeed_job,
         )
+        job_lookup_ms = int((perf_counter() - lookup_started_at) * 1000)
 
         if (
             existing_report
@@ -1146,8 +1423,19 @@ async def generate_audit_pdf(
                 report=existing_report,
                 message="Existing PDF is already available.",
             )
+            _log_generate_pdf_timing(
+                audit_id=audit.id,
+                path="existing_report",
+                started_at=request_started_at,
+                precheck_ms=precheck_ms,
+                job_lookup_ms=job_lookup_ms,
+                dependency_ms=dependency_ms,
+                queue_ms=queue_ms,
+            )
             return JSONResponse(
-                status_code=200, content=response.model_dump(mode="json")
+                status_code=200,
+                content=response.model_dump(mode="json"),
+                background=background_tasks,
             )
 
         if PDFJobService.has_active_job(existing_job):
@@ -1158,22 +1446,43 @@ async def generate_audit_pdf(
                 retry_after_seconds=DEFAULT_PDF_RETRY_AFTER_SECONDS,
                 message="PDF generation is already in progress for this audit.",
             )
+            _log_generate_pdf_timing(
+                audit_id=audit.id,
+                path="active_job",
+                started_at=request_started_at,
+                precheck_ms=precheck_ms,
+                job_lookup_ms=job_lookup_ms,
+                dependency_ms=dependency_ms,
+                queue_ms=queue_ms,
+            )
             return JSONResponse(
-                status_code=202, content=response.model_dump(mode="json")
+                status_code=202,
+                content=response.model_dump(mode="json"),
+                background=background_tasks,
             )
 
         if needs_pagespeed:
-            queued_pagespeed_job = PageSpeedJobService.queue_if_needed(
-                db,
-                audit=audit,
-                requested_by_user_id=current_user.user_id,
-                strategy="both",
-                force_refresh=force_pagespeed_refresh,
-            )
-            current_pagespeed_job = PageSpeedJobService.get_job(db, audit.id)
+            dependency_started_at = perf_counter()
+            if not PageSpeedJobService.has_active_job(current_pagespeed_job):
+                current_pagespeed_job = PageSpeedJobService.queue_job(
+                    db,
+                    audit=audit,
+                    requested_by_user_id=current_user.user_id,
+                    strategy="both",
+                    force_refresh=force_pagespeed_refresh,
+                    publish_event=False,
+                )
+                background_tasks.add_task(
+                    _dispatch_pagespeed_job_after_response,
+                    db,
+                    audit.id,
+                    current_pagespeed_job.id,
+                )
+            dependency_ms = int((perf_counter() - dependency_started_at) * 1000)
             if current_pagespeed_job and PageSpeedJobService.has_active_job(
                 current_pagespeed_job
             ):
+                queue_started_at = perf_counter()
                 job = PDFJobService.queue_job(
                     db,
                     audit_id=audit.id,
@@ -1188,19 +1497,13 @@ async def generate_audit_pdf(
                     waiting_on="pagespeed",
                     dependency_job_id=current_pagespeed_job.id,
                 )
-                PDFJobService.publish_status_event(db, audit, job=job)
-                refreshed_pagespeed_job = PageSpeedJobService.get_job(db, audit.id)
-                if (
-                    refreshed_pagespeed_job is None
-                    or not PageSpeedJobService.has_active_job(refreshed_pagespeed_job)
-                ):
-                    resumed_job = PDFJobService.resume_waiting_job_after_pagespeed(
-                        db,
-                        audit=audit,
-                        pagespeed_job=refreshed_pagespeed_job,
-                    )
-                    if resumed_job is not None:
-                        job = resumed_job
+                queue_ms = int((perf_counter() - queue_started_at) * 1000)
+                _publish_artifact_snapshot(
+                    audit,
+                    pagespeed_job=current_pagespeed_job,
+                    pdf_job=job,
+                    pdf_report=existing_report,
+                )
                 response = PDFJobService.build_status_response(
                     audit_id=audit.id,
                     job=job,
@@ -1210,14 +1513,22 @@ async def generate_audit_pdf(
                         "PDF generation is waiting for the active PageSpeed refresh to finish."
                     ),
                 )
+                _log_generate_pdf_timing(
+                    audit_id=audit.id,
+                    path="waiting_on_pagespeed",
+                    started_at=request_started_at,
+                    precheck_ms=precheck_ms,
+                    job_lookup_ms=job_lookup_ms,
+                    dependency_ms=dependency_ms,
+                    queue_ms=queue_ms,
+                )
                 return JSONResponse(
                     status_code=202,
                     content=response.model_dump(mode="json"),
+                    background=background_tasks,
                 )
 
-            if queued_pagespeed_job is None and existing_pagespeed_job is not None:
-                db.refresh(audit)
-
+        queue_started_at = perf_counter()
         job = PDFJobService.queue_job(
             db,
             audit_id=audit.id,
@@ -1226,30 +1537,19 @@ async def generate_audit_pdf(
             force_report_refresh=force_report_refresh,
             force_external_intel_refresh=force_external_intel_refresh,
         )
-
-        try:
-            job = PDFJobService.enqueue_job_task(db, audit, job)
-        except Exception as exc:
-            logger.error(
-                "generate_pdf_queue_failed audit_id=%s job_id=%s error=%s",
-                audit.id,
-                job.id,
-                exc,
-            )
-            error_code, error_message = PDFJobService.classify_error(exc)
-            PDFJobService.mark_job_failed(
-                db,
-                job,
-                error_code="worker_unavailable",
-                error_message=error_message,
-            )
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail={
-                    "error_code": "worker_unavailable",
-                    "message": "Background worker unavailable. Try again shortly.",
-                },
-            ) from exc
+        queue_ms = int((perf_counter() - queue_started_at) * 1000)
+        _publish_artifact_snapshot(
+            audit,
+            pagespeed_job=current_pagespeed_job,
+            pdf_job=job,
+            pdf_report=existing_report,
+        )
+        background_tasks.add_task(
+            _dispatch_pdf_job_after_response,
+            db,
+            audit.id,
+            job.id,
+        )
 
         response = PDFJobService.build_status_response(
             audit_id=audit.id,
@@ -1258,7 +1558,20 @@ async def generate_audit_pdf(
             retry_after_seconds=DEFAULT_PDF_RETRY_AFTER_SECONDS,
             message="PDF generation queued successfully.",
         )
-        return JSONResponse(status_code=202, content=response.model_dump(mode="json"))
+        _log_generate_pdf_timing(
+            audit_id=audit.id,
+            path="queued",
+            started_at=request_started_at,
+            precheck_ms=precheck_ms,
+            job_lookup_ms=job_lookup_ms,
+            dependency_ms=dependency_ms,
+            queue_ms=queue_ms,
+        )
+        return JSONResponse(
+            status_code=202,
+            content=response.model_dump(mode="json"),
+            background=background_tasks,
+        )
     except HTTPException:
         raise
     except (OperationalError, DBAPIError) as db_err:
@@ -1359,7 +1672,11 @@ async def get_audit_pdf_download_url(
     )
 
 
-@router.post("/chat/config", response_model=ChatMessage)
+@router.post(
+    "/chat/config",
+    response_model=ChatMessage,
+    status_code=status.HTTP_202_ACCEPTED,
+)
 async def configure_audit_chat(
     config: AuditConfigRequest,
     background_tasks: BackgroundTasks,
@@ -1369,7 +1686,12 @@ async def configure_audit_chat(
     """
     Configura auditoría y lanza pipeline.
     """
-    audit = _get_owned_audit(db, config.audit_id, current_user)
+    audit = _get_owned_projected_audit(
+        db,
+        config.audit_id,
+        current_user,
+        *_AUDIT_CHAT_CONFIG_FIELDS,
+    )
 
     # Prevenir doble ejecución si ya está en curso
     if audit.status in [AuditStatus.RUNNING, AuditStatus.COMPLETED]:
@@ -1390,24 +1712,14 @@ async def configure_audit_chat(
     try:
         db.commit()
         db.refresh(audit)
-
-        # Iniciar pipeline ahora que tenemos configuración
-        try:
-            task = run_audit_task.delay(audit.id)
-            AuditService.set_audit_task_id(db, audit.id, task.id)
-            logger.info(f"Audit {audit.id} pipeline started after chat config")
-        except Exception as e:
-            logger.warning(f"Celery unavailable: {e}")
-            if settings.DEBUG:
-                background_tasks.add_task(run_audit_sync, audit.id)
-            else:
-                raise HTTPException(
-                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                    detail="Background worker unavailable. Try again shortly.",
-                )
+        background_tasks.add_task(
+            _dispatch_audit_after_chat_config,
+            db,
+            audit.id,
+        )
 
         return ChatMessage(
-            role="assistant", content="Configuration saved. Starting audit..."
+            role="assistant", content="Configuration saved. Audit queued."
         )
     except Exception:
         db.rollback()
