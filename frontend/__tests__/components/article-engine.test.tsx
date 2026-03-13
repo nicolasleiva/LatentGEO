@@ -94,9 +94,9 @@ describe("ArticleEngine component", () => {
     expect(screen.getByText(/zapatilla nike ofertas ar/i)).toBeInTheDocument();
     expect(screen.getByText(/missing product schema/i)).toBeInTheDocument();
     expect(screen.getByText(/evidence summary/i)).toBeInTheDocument();
-    expect(screen.getAllByText(/generated automatically/i).length).toBeGreaterThan(
-      0,
-    );
+    expect(
+      screen.getAllByText(/generated automatically/i).length,
+    ).toBeGreaterThan(0);
     expect(
       screen.getByText(/authority\.example\.com\/unmatched/i),
     ).toBeInTheDocument();
@@ -182,7 +182,9 @@ describe("ArticleEngine component", () => {
     );
 
     const lastCall = (fetchWithBackendAuth as jest.Mock).mock.calls[1];
-    expect(lastCall[0]).toBe("http://localhost:8000/api/v1/geo/article-engine/generate");
+    expect(lastCall[0]).toBe(
+      "http://localhost:8000/api/v1/geo/article-engine/generate",
+    );
     const payload = JSON.parse(lastCall[1].body);
     expect(payload.audit_id).toBe(3);
     expect(payload.target_topics).toBeUndefined();
@@ -394,7 +396,9 @@ describe("ArticleEngine component", () => {
       );
     });
 
-    expect(await screen.findByDisplayValue("# Final article")).toBeInTheDocument();
+    expect(
+      await screen.findByDisplayValue("# Final article"),
+    ).toBeInTheDocument();
     expect(source.close).toHaveBeenCalled();
     expect(fetchWithBackendAuth).toHaveBeenCalledWith(
       "http://localhost:8000/api/v1/geo/article-engine/latest/3",

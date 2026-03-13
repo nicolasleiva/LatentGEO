@@ -180,15 +180,17 @@ export default function AuditCompetitiveBenchmarkSection({
                   </td>
                   <td className="p-4 text-center text-foreground/70">
                     {formatSchemaStatus(
-                      audit.target_audit?.schema?.schema_presence?.status != null
-                        ? audit.target_audit?.schema?.schema_presence?.status ===
-                            "present"
+                      audit.target_audit?.schema?.schema_presence?.status !=
+                        null
+                        ? audit.target_audit?.schema?.schema_presence
+                            ?.status === "present"
                         : null,
                     )}
                   </td>
                   <td className="p-4 text-center text-foreground/70">
                     {formatPercent(
-                      audit.target_audit?.structure?.semantic_html?.score_percent,
+                      audit.target_audit?.structure?.semantic_html
+                        ?.score_percent,
                     )}
                   </td>
                   <td className="p-4 text-center text-foreground/70">
@@ -202,7 +204,8 @@ export default function AuditCompetitiveBenchmarkSection({
                   <td className="p-4 text-center text-foreground/70">
                     {formatPassFail(
                       audit.target_audit?.structure?.h1_check?.status != null
-                        ? audit.target_audit?.structure?.h1_check?.status === "pass"
+                        ? audit.target_audit?.structure?.h1_check?.status ===
+                            "pass"
                         : null,
                     )}
                   </td>

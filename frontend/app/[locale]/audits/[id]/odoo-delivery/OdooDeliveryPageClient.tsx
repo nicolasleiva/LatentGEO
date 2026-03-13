@@ -698,7 +698,9 @@ export default function OdooDeliveryPageClient({
     try {
       const [auditResponse, planResponse, connectionsResponse] =
         await Promise.all([
-          fetchWithBackendAuth(`${backendUrl}/api/v1/audits/${auditId}/summary`),
+          fetchWithBackendAuth(
+            `${backendUrl}/api/v1/audits/${auditId}/summary`,
+          ),
           fetchWithBackendAuth(
             `${backendUrl}/api/v1/odoo/delivery-plan/${auditId}`,
           ),

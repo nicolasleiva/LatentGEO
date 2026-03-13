@@ -338,7 +338,12 @@ export default function AuditDetailPageClient({
       );
     }
     return null;
-  }, [audit?.pagespeed_data, pageSpeedData, pageSpeedState]);
+  }, [
+    audit?.pagespeed_available,
+    audit?.pagespeed_data,
+    pageSpeedData,
+    pageSpeedState,
+  ]);
   const externalIntelBanner = useMemo(
     () => getExternalIntelligenceBanner(audit?.external_intelligence),
     [audit?.external_intelligence],
@@ -615,10 +620,7 @@ export default function AuditDetailPageClient({
         );
       }
 
-      if (
-        allowDetailFields &&
-        typeof auditData?.report_markdown === "string"
-      ) {
+      if (allowDetailFields && typeof auditData?.report_markdown === "string") {
         setReportMarkdown(auditData.report_markdown);
         setReportMessage(
           auditData.report_markdown.trim() ? null : REPORT_NOT_READY_MESSAGE,
@@ -691,7 +693,9 @@ export default function AuditDetailPageClient({
 
   useEffect(() => {
     if (initialAudit) {
-      applyAuditData(initialAudit, { allowDetailFields: !initialAuditIsOverview });
+      applyAuditData(initialAudit, {
+        allowDetailFields: !initialAuditIsOverview,
+      });
       return scheduleSupplementalLoad(initialAudit);
     }
     void fetchAuditDetail();
@@ -821,7 +825,10 @@ export default function AuditDetailPageClient({
     },
     { label: "Competitors", ok: competitorCount > 0 },
     { label: "Fix Plan", ok: fixPlanCount > 0 },
-    { label: "Report", ok: Boolean(audit?.report_markdown || audit?.report_ready) },
+    {
+      label: "Report",
+      ok: Boolean(audit?.report_markdown || audit?.report_ready),
+    },
   ];
 
   if (loading) {
@@ -949,7 +956,8 @@ export default function AuditDetailPageClient({
                 )}
                 {audit?.completed_at && (
                   <span className="px-3 py-1 rounded-full border border-border bg-muted/40">
-                    Completed {formatStableDate(audit?.completed_at, { locale })}
+                    Completed{" "}
+                    {formatStableDate(audit?.completed_at, { locale })}
                   </span>
                 )}
               </div>
@@ -1040,8 +1048,8 @@ export default function AuditDetailPageClient({
                         : pageSpeedState.pagespeed_available ||
                             Boolean(
                               pageSpeedData ||
-                                audit?.pagespeed_data ||
-                                audit?.pagespeed_available,
+                              audit?.pagespeed_data ||
+                              audit?.pagespeed_available,
                             )
                           ? "Refresh PageSpeed"
                           : "Run PageSpeed"}
@@ -1063,12 +1071,12 @@ export default function AuditDetailPageClient({
                         : isDownloadingPdf
                           ? "Downloading PDF..."
                           : pdfGenerating || pdfState.status === "running"
-                          ? "Building PDF..."
-                          : pdfState.status === "completed"
-                            ? "Download PDF"
-                            : pdfState.status === "failed"
-                              ? "Retry PDF"
-                              : "Export PDF"}
+                            ? "Building PDF..."
+                            : pdfState.status === "completed"
+                              ? "Download PDF"
+                              : pdfState.status === "failed"
+                                ? "Retry PDF"
+                                : "Export PDF"}
                   </Button>
                   <Button
                     data-testid="open-geo-dashboard-button"
@@ -1134,8 +1142,7 @@ export default function AuditDetailPageClient({
                 {categoryDisplay}
               </div>
               <div className="text-sm text-muted-foreground mt-1">
-                Market:{" "}
-                {audit?.market || "—"} · Language: {languageDisplay}
+                Market: {audit?.market || "—"} · Language: {languageDisplay}
               </div>
             </div>
             <div className="glass-panel p-5 rounded-2xl">

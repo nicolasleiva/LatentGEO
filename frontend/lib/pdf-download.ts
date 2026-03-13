@@ -118,11 +118,14 @@ export const downloadAuditPdf = async (
   }
 
   const downloadPromise = (async () => {
-    const response = await fetch(`/api/audits/${normalizedAuditId}/download-pdf`, {
-      method: "GET",
-      cache: "no-store",
-      credentials: "same-origin",
-    });
+    const response = await fetch(
+      `/api/audits/${normalizedAuditId}/download-pdf`,
+      {
+        method: "GET",
+        cache: "no-store",
+        credentials: "same-origin",
+      },
+    );
 
     if (!response.ok) {
       throw new Error(

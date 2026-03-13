@@ -126,16 +126,19 @@ const normalizeArticle = (item: any, compact = false): ArticleItem => ({
   markdown: compact ? "" : safeText(item?.markdown),
   meta_title: compact ? "" : safeText(item?.meta_title),
   meta_description: compact ? "" : safeText(item?.meta_description),
-  sources: !compact && Array.isArray(item?.sources)
-    ? item.sources
-        .map((src: any) => ({
-          title: safeText(src?.title, safeText(src?.url, "Source")),
-          url: safeText(src?.url),
-        }))
-        .filter((src: SourceItem) => Boolean(src.url))
-    : [],
+  sources:
+    !compact && Array.isArray(item?.sources)
+      ? item.sources
+          .map((src: any) => ({
+            title: safeText(src?.title, safeText(src?.url, "Source")),
+            url: safeText(src?.url),
+          }))
+          .filter((src: SourceItem) => Boolean(src.url))
+      : [],
   keyword_strategy:
-    !compact && item?.keyword_strategy && typeof item.keyword_strategy === "object"
+    !compact &&
+    item?.keyword_strategy &&
+    typeof item.keyword_strategy === "object"
       ? {
           primary_keyword: safeText(item.keyword_strategy.primary_keyword),
           secondary_keywords: Array.isArray(
@@ -155,17 +158,18 @@ const normalizeArticle = (item: any, compact = false): ArticleItem => ({
     typeof item.competitor_gap_map === "object"
       ? item.competitor_gap_map
       : undefined,
-  evidence_summary: !compact && Array.isArray(item?.evidence_summary)
-    ? item.evidence_summary
-        .map((entry: any) => ({
-          claim: safeText(entry?.claim),
-          source_url: safeText(entry?.source_url),
-        }))
-        .filter(
-          (entry: EvidenceSummaryItem) =>
-            Boolean(entry.claim) || Boolean(entry.source_url),
-        )
-    : [],
+  evidence_summary:
+    !compact && Array.isArray(item?.evidence_summary)
+      ? item.evidence_summary
+          .map((entry: any) => ({
+            claim: safeText(entry?.claim),
+            source_url: safeText(entry?.source_url),
+          }))
+          .filter(
+            (entry: EvidenceSummaryItem) =>
+              Boolean(entry.claim) || Boolean(entry.source_url),
+          )
+      : [],
   generation_status: safeText(item?.generation_status),
   generation_error:
     item?.generation_error && typeof item.generation_error === "object"
@@ -209,7 +213,9 @@ const batchStatusSignature = (payload: BatchResponse | null): string => {
     pipeline_stage: safeText(payload.summary?.pipeline_stage),
     generated_count: Number(payload.summary?.generated_count) || 0,
     failed_count: Number(payload.summary?.failed_count) || 0,
-    last_progress_at: safeText((payload.summary as { last_progress_at?: string })?.last_progress_at),
+    last_progress_at: safeText(
+      (payload.summary as { last_progress_at?: string })?.last_progress_at,
+    ),
     articles: payload.articles.map((article) => ({
       index: article.index,
       title: article.title,
@@ -269,8 +275,12 @@ export default function ArticleEngine({
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<BatchResponse | null>(null);
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
-  const [regeneratingIndex, setRegeneratingIndex] = useState<number | null>(null);
-  const [authorityLinks, setAuthorityLinks] = useState<Record<number, string>>({});
+  const [regeneratingIndex, setRegeneratingIndex] = useState<number | null>(
+    null,
+  );
+  const [authorityLinks, setAuthorityLinks] = useState<Record<number, string>>(
+    {},
+  );
   const [regenerateErrors, setRegenerateErrors] = useState<
     Record<number, string | null>
   >({});
@@ -379,7 +389,13 @@ export default function ArticleEngine({
         inFlightStatusRef.current = false;
       }
     },
-    [applyBatchResult, backendUrl, hydrateLatestBatch, stopPolling, stopStreaming],
+    [
+      applyBatchResult,
+      backendUrl,
+      hydrateLatestBatch,
+      stopPolling,
+      stopStreaming,
+    ],
   );
 
   const schedulePolling = useCallback(
@@ -422,7 +438,9 @@ export default function ArticleEngine({
         return;
       }
 
-      const source = new EventSource(`/api/sse/article-engine/${batchId}/progress`);
+      const source = new EventSource(
+        `/api/sse/article-engine/${batchId}/progress`,
+      );
       eventSourceRef.current = source;
 
       source.onmessage = (event) => {
@@ -594,7 +612,9 @@ export default function ArticleEngine({
       if (!res.ok) throw new Error(await parseErrorMessage(res));
       const raw = await res.json();
       const payload = normalizeBatch(raw, {
-        compact: !TERMINAL_BATCH_STATUSES.has(safeText(raw?.status, "processing")),
+        compact: !TERMINAL_BATCH_STATUSES.has(
+          safeText(raw?.status, "processing"),
+        ),
       });
       if (!payload) throw new Error("Invalid article batch response");
       applyBatchResult(payload);
@@ -736,7 +756,10 @@ export default function ArticleEngine({
         </div>
 
         <div className="space-y-2">
-          <Label htmlFor="article-engine-target-topics" className="text-muted-foreground">
+          <Label
+            htmlFor="article-engine-target-topics"
+            className="text-muted-foreground"
+          >
             Target Topics (comma separated)
           </Label>
           <Textarea
@@ -858,7 +881,9 @@ export default function ArticleEngine({
             ) : null}
             {!!result.summary.generated_titles?.length ? (
               <div className="space-y-1">
-                <p className="text-sm text-muted-foreground">Generated Titles</p>
+                <p className="text-sm text-muted-foreground">
+                  Generated Titles
+                </p>
                 {result.summary.generated_titles.map((item) => (
                   <p
                     key={`generated-title-${item.index}`}

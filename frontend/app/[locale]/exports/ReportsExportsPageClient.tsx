@@ -166,12 +166,12 @@ function ExportAuditRow({
                 : isDownloadingPdf
                   ? "Downloading PDF"
                   : isBusy || state.status === "running"
-                  ? "Building PDF"
-                  : state.status === "completed"
-                    ? "Download PDF"
-                    : state.status === "failed"
-                      ? "Retry PDF"
-                      : "Build PDF"}
+                    ? "Building PDF"
+                    : state.status === "completed"
+                      ? "Download PDF"
+                      : state.status === "failed"
+                        ? "Retry PDF"
+                        : "Build PDF"}
           </Button>
 
           <Button

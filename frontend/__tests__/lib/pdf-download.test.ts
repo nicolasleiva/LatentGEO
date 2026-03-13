@@ -103,20 +103,25 @@ describe("pdf-download helpers", () => {
         new Promise<Response>((resolve) => {
           releaseDownload = () =>
             resolve(
-              new Response(new Blob(["pdf-data"], { type: "application/pdf" }), {
-                status: 200,
-                headers: {
-                  "Content-Type": "application/pdf",
-                  "Content-Disposition":
-                    'attachment; filename="audit_42_report.pdf"',
+              new Response(
+                new Blob(["pdf-data"], { type: "application/pdf" }),
+                {
+                  status: 200,
+                  headers: {
+                    "Content-Type": "application/pdf",
+                    "Content-Disposition":
+                      'attachment; filename="audit_42_report.pdf"',
+                  },
                 },
-              }),
+              ),
             );
         }),
     );
     vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
     vi.spyOn(document.body, "appendChild");
-    vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:https://app.test/report");
+    vi.spyOn(URL, "createObjectURL").mockReturnValue(
+      "blob:https://app.test/report",
+    );
     vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
 
     const firstDownload = downloadAuditPdf(42);
