@@ -70,7 +70,7 @@ def is_pagespeed_stale(
             return True
 
         now = datetime.now(timezone.utc)
-        age = now - max(fetch_datetimes)
+        age = now - min(fetch_datetimes)
         is_stale = age > timedelta(hours=max_age_hours)
         logger.info(
             "PageSpeed data age: %.1f hours, stale: %s",

@@ -30,3 +30,20 @@ def test_is_pagespeed_stale_ignores_malformed_strategy_payloads():
     }
 
     assert is_pagespeed_stale(payload, max_age_hours=24) is False
+
+
+def test_is_pagespeed_stale_uses_oldest_valid_strategy_timestamp():
+    payload = {
+        "mobile": {
+            "metadata": {
+                "fetch_time": _fetch_time(2),
+            }
+        },
+        "desktop": {
+            "metadata": {
+                "fetch_time": _fetch_time(30),
+            }
+        },
+    }
+
+    assert is_pagespeed_stale(payload, max_age_hours=24) is True

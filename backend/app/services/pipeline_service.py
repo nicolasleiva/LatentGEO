@@ -2074,8 +2074,18 @@ class PipelineService:
                 return None
 
             def _domain_matches(pattern: str, host: str) -> bool:
-                normalized_pattern = str(pattern or "").lower().lstrip(".")
+                raw_pattern = str(pattern or "").lower().strip()
                 normalized_host = str(host or "").lower().strip(".")
+                if not raw_pattern or not normalized_host:
+                    return False
+
+                if raw_pattern.endswith("."):
+                    segment_pattern = raw_pattern.strip(".")
+                    return bool(segment_pattern) and (
+                        segment_pattern in normalized_host.split(".")
+                    )
+
+                normalized_pattern = raw_pattern.lstrip(".")
                 return bool(normalized_pattern) and (
                     normalized_host == normalized_pattern
                     or normalized_host.endswith(f".{normalized_pattern}")

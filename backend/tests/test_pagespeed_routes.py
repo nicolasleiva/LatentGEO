@@ -96,3 +96,24 @@ def test_pagespeed_compare_maps_timeout_payload_to_504(client, monkeypatch):
     assert response.json() == {
         "detail": "PageSpeed request timed out before a response was received."
     }
+
+
+def test_pagespeed_analyze_masks_unknown_error_payloads(client):
+    with patch(
+        "app.api.routes.pagespeed.PageSpeedService.analyze_url",
+        new=AsyncMock(
+            return_value={
+                "error": "internal provider stack trace",
+                "provider_message": "token=secret upstream crash",
+            }
+        ),
+    ):
+        response = client.get(
+            "/api/v1/pagespeed/analyze",
+            params={"url": "https://example.com", "strategy": "mobile"},
+        )
+
+    assert response.status_code == 502
+    assert response.json() == {
+        "detail": "PageSpeed analysis failed due to an upstream provider error."
+    }

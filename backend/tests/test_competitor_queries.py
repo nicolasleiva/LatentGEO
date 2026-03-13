@@ -310,6 +310,39 @@ def test_filter_competitor_urls_does_not_false_match_short_blocked_hosts():
     assert _host_set(competitors) == {"www.innovationinc.com.co"}
 
 
+def test_filter_competitor_urls_blocks_government_and_academic_segments():
+    items = [
+        {
+            "link": "https://www.example.gob.mx/transformacion",
+            "title": "Gobierno digital en Mexico",
+            "snippet": "Portal oficial del gobierno.",
+        },
+        {
+            "link": "https://research.example.ac.uk/consulting",
+            "title": "Academic consulting program",
+            "snippet": "University research and consulting lab.",
+        },
+        {
+            "link": "https://www.example-consulting.com/",
+            "title": "Digital transformation consulting services",
+            "snippet": "Consulting for enterprise modernization.",
+        },
+    ]
+
+    competitors = PipelineService.filter_competitor_urls(
+        items,
+        target_domain="ceibo.digital",
+        core_terms=["digital", "transformation", "consulting"],
+        anchor_terms=["digital", "consulting"],
+        limit=5,
+    )
+
+    competitor_hosts = _host_set(competitors)
+    assert "www.example.gob.mx" not in competitor_hosts
+    assert "research.example.ac.uk" not in competitor_hosts
+    assert "www.example-consulting.com" in competitor_hosts
+
+
 def test_extract_anchor_terms_requires_repeated_signal():
     queries = [
         {"query": "agile coaching fintech latam"},

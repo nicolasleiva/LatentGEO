@@ -61,7 +61,10 @@ def _raise_for_pagespeed_payload(payload: object) -> None:
             ),
             detail=detail,
         )
-    raise HTTPException(status_code=502, detail=detail)
+    raise HTTPException(
+        status_code=502,
+        detail="PageSpeed analysis failed due to an upstream provider error.",
+    )
 
 
 @router.get("/analyze")
