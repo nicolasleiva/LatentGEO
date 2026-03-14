@@ -949,3 +949,106 @@ def test_odoo_delivery_fix_chat_sanitizes_untrusted_inputs(
     assert "<script>" not in captured_prompt["user_prompt"]
     assert "onerror" not in captured_prompt["user_prompt"]
     assert response.json()["suggested_value"] == "Sanitized title"
+
+
+def test_odoo_social_channels_endpoint(client, db_session, monkeypatch):
+    _configure_test_encryption_key(monkeypatch)
+
+    audit = Audit(
+        url="https://social.example.com",
+        domain="social.example.com",
+        status=AuditStatus.COMPLETED,
+        user_id="test-user",
+        user_email="test@example.com",
+    )
+    connection = OdooConnection(
+        owner_user_id="test-user",
+        owner_email="test@example.com",
+        base_url="https://odoo.example.com",
+        database="prod-db",
+        expected_email="ops@client.com",
+        api_key=OdooAuth.encrypt_api_key("odoo_test_key_000000000001"),
+        capabilities={"social_marketing": True},
+        is_active=True,
+    )
+    db_session.add_all([audit, connection])
+    db_session.commit()
+    db_session.refresh(audit)
+    db_session.refresh(connection)
+
+    audit.odoo_connection_id = connection.id
+    db_session.commit()
+
+    async def _fake_get_social_channels(self, *, connection):
+        return [
+            {"id": 1, "name": "LinkedIn Page", "media_type": "linkedin", "is_linkedin": True},
+            {"id": 2, "name": "Facebook", "media_type": "facebook", "is_linkedin": False},
+        ]
+
+    monkeypatch.setattr(
+        odoo_routes.OdooDraftService,
+        "get_social_channels",
+        _fake_get_social_channels,
+    )
+
+    response = client.get(
+        f"/api/v1/odoo/social-channels/{audit.id}",
+        headers={"X-User-ID": "test-user"},
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["social_marketing_installed"] is True
+    assert data["linkedin_linked"] is True
+    assert len(data["channels"]) == 2
+
+
+def test_odoo_create_linkedin_post_endpoint(client, db_session, monkeypatch):
+    _configure_test_encryption_key(monkeypatch)
+
+    audit = Audit(
+        url="https://linkedin.example.com",
+        domain="linkedin.example.com",
+        status=AuditStatus.COMPLETED,
+        user_id="test-user",
+        user_email="test@example.com",
+    )
+    connection = OdooConnection(
+        owner_user_id="test-user",
+        owner_email="test@example.com",
+        base_url="https://odoo.example.com",
+        database="prod-db",
+        expected_email="ops@client.com",
+        api_key=OdooAuth.encrypt_api_key("odoo_test_key_000000000001"),
+        capabilities={"social_marketing": True, "website_blog": True},
+        is_active=True,
+    )
+    db_session.add_all([audit, connection])
+    db_session.commit()
+    db_session.refresh(audit)
+    db_session.refresh(connection)
+
+    audit.odoo_connection_id = connection.id
+    db_session.commit()
+
+    async def _fake_create_linkedin_and_blog_drafts(self, *, audit, connection, article_slugs):
+        assert "test-slug" in article_slugs
+        return {
+            "created": [
+                {"title": "LinkedIn: Test", "type": "linkedin_post", "status": "draft"}
+            ],
+            "errors": []
+        }
+
+    monkeypatch.setattr(
+        odoo_routes.OdooDraftService,
+        "create_linkedin_and_blog_drafts",
+        _fake_create_linkedin_and_blog_drafts,
+    )
+
+    response = client.post(
+        f"/api/v1/odoo/linkedin-post/{audit.id}",
+        headers={"X-User-ID": "test-user"},
+        json={"slug": "test-slug"},
+    )
+    assert response.status_code == 200
+    assert response.json()["created"][0]["type"] == "linkedin_post"

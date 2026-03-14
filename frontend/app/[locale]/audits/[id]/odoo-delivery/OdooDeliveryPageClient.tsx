@@ -24,6 +24,7 @@ import {
   SendHorizontal,
   ShoppingBag,
   UserRound,
+  Linkedin,
 } from "lucide-react";
 
 import { Header } from "@/components/header";
@@ -196,6 +197,20 @@ export type OdooDraftsPayload = {
   manual_review: OdooDraftRow[];
   failed: OdooDraftRow[];
   summary?: OdooDraftSummary;
+};
+
+export type SocialChannelItem = {
+  id: number;
+  name: string;
+  media_type: string;
+  is_linkedin?: boolean;
+};
+
+export type SocialChannelsResponse = {
+  channels: SocialChannelItem[];
+  linkedin_linked: boolean;
+  social_marketing_installed: boolean;
+  link_url?: string;
 };
 
 export type PlanPayload = {
@@ -618,6 +633,12 @@ export default function OdooDeliveryPageClient({
   >(null);
   const [syncing, setSyncing] = useState(false);
   const [preparingDrafts, setPreparingDrafts] = useState(false);
+
+  // Social Channels & LinkedIn Post state
+  const [socialChannels, setSocialChannels] = useState<SocialChannelsResponse | null>(null);
+  const [socialChannelsLoading, setSocialChannelsLoading] = useState(false);
+  const [generatingPosts, setGeneratingPosts] = useState<Record<string, boolean>>({});
+  const [generatingAllPosts, setGeneratingAllPosts] = useState(false);
 
   const [briefDraft, setBriefDraft] = useState<BriefDraft>(() =>
     deriveBriefDraft(initialAudit, initialPlan),
@@ -1132,6 +1153,81 @@ export default function OdooDeliveryPageClient({
     }
   };
 
+  const loadSocialChannels = useCallback(async () => {
+    if (!hasSelectedConnection) return;
+    setSocialChannelsLoading(true);
+    try {
+      const response = await fetchWithBackendAuth(
+        `${backendUrl}/api/v1/odoo/social-channels/${auditId}`,
+        { method: "GET" }
+      );
+      if (response.ok) {
+         const data = parseJson<SocialChannelsResponse>(await response.text());
+         setSocialChannels(data);
+      }
+    } catch (e) {
+      console.error("Failed to load social channels", e);
+    } finally {
+      setSocialChannelsLoading(false);
+    }
+  }, [auditId, backendUrl, hasSelectedConnection]);
+
+  useEffect(() => {
+    if (hasSelectedConnection) {
+      void loadSocialChannels();
+    }
+  }, [hasSelectedConnection, loadSocialChannels]);
+
+  const handleGenerateLinkedInPost = async (slug: string) => {
+    setGeneratingPosts((prev) => ({ ...prev, [slug]: true }));
+    setConnectionError(null);
+    setConnectionSuccess(null);
+    try {
+      const response = await fetchWithBackendAuth(
+        `${backendUrl}/api/v1/odoo/linkedin-post/${auditId}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ slug }),
+        }
+      );
+      const data = parseJson<any>(await response.text());
+      if (!response.ok) {
+        throw new Error(extractErrorMessage(data, "Error al generar el post de LinkedIn"));
+      }
+      setConnectionSuccess("Publicación y borrador creados con éxito. Revisá las Publicaciones generadas en Draft Pack.");
+      await loadPlan();
+      await prepareDraftPack(); // refresh drafts to show the new ones
+    } catch (err: any) {
+      setConnectionError(err?.message || "Error al crear la publicación en LinkedIn.");
+    } finally {
+      setGeneratingPosts((prev) => ({ ...prev, [slug]: false }));
+    }
+  };
+
+  const handleGenerateAllLinkedInPosts = async () => {
+    setGeneratingAllPosts(true);
+    setConnectionError(null);
+    setConnectionSuccess(null);
+    try {
+      const response = await fetchWithBackendAuth(
+        `${backendUrl}/api/v1/odoo/linkedin-post-all/${auditId}`,
+        { method: "POST" }
+      );
+      const data = parseJson<any>(await response.text());
+      if (!response.ok) {
+        throw new Error(extractErrorMessage(data, "Error al generar los posts de LinkedIn"));
+      }
+      setConnectionSuccess("Todas las publicaciones creadas con éxito. Revisá las Publicaciones generadas en Draft Pack.");
+      await loadPlan();
+      await prepareDraftPack();
+    } catch (err: any) {
+      setConnectionError(err?.message || "Error al crear las publicaciones en LinkedIn.");
+    } finally {
+      setGeneratingAllPosts(false);
+    }
+  };
+
   const updateInputValue = (
     groupId: string,
     fieldKey: string,
@@ -1482,12 +1578,121 @@ export default function OdooDeliveryPageClient({
                       />
                     </div>
                   </div>
-                  <div className="flex flex-wrap gap-3">
-                    <Button
-                      variant="outline"
-                      onClick={() => void testConnection()}
-                      disabled={connectionTesting}
-                    >
+                  <div className="flex flex-wrap gap-3 mt-4">
+                <Button variant="outline" onClick={copyConnection}>
+                  <Clipboard className="mr-2 h-4 w-4" />
+                  Copy configuration
+                </Button>
+                {connections.length > 0 ? (
+                  <Button variant="outline" onClick={() => setConnections([])}>
+                    Clear history
+                  </Button>
+                ) : null}
+              </div>
+
+              {socialChannelsLoading ? (
+                <div className="mt-8 pt-6 border-t border-border/70 flex items-center text-sm text-muted-foreground">
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Verificando canales sociales...
+                </div>
+              ) : socialChannels ? (
+                <div className="mt-8 pt-6 border-t border-border/70 space-y-4">
+                  <h4 className="text-sm font-semibold tracking-tight uppercase text-muted-foreground">
+                    Canales Sociales
+                  </h4>
+                  {!socialChannels.social_marketing_installed ? (
+                    <div className="rounded-2xl border border-border/70 bg-muted/30 p-4 text-sm text-muted-foreground">
+                      El módulo Social Marketing no está instalado en este entorno de Odoo.
+                    </div>
+                  ) : socialChannels.linkedin_linked ? (
+                    <div className="flex items-center gap-3 rounded-2xl border border-emerald-500/20 bg-emerald-500/5 p-4 text-sm">
+                      <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+                      <span>LinkedIn configurado y listo para publicar.</span>
+                    </div>
+                  ) : (
+                    <div className="flex flex-col gap-3 rounded-2xl border border-amber-500/30 bg-amber-500/5 p-4 text-sm">
+                      <div className="flex items-start gap-3">
+                        <AlertCircle className="mt-0.5 h-4 w-4 text-amber-500" />
+                        <div>
+                          <p className="font-medium text-amber-500">LinkedIn no vinculado</p>
+                          <p className="mt-1 text-muted-foreground">
+                            Para publicar automáticamente, tenés que conectar tu perfil de LinkedIn en Odoo.
+                          </p>
+                        </div>
+                      </div>
+                      {socialChannels.link_url ? (
+                        <div className="pl-7">
+                          <Link href={socialChannels.link_url} target="_blank" className="font-medium hover:underline text-primary flex items-center gap-2">
+                            <Linkedin className="h-4 w-4" />
+                            Ir a configurar en Odoo Social Marketing →
+                          </Link>
+                        </div>
+                      ) : null}
+                    </div>
+                  )}
+                </div>
+              ) : null}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Authentication</CardTitle>
+              <CardDescription>
+                Provide the connection details to link Odoo.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Base URL</label>
+                  <Input
+                    value={connectionDraft.base_url}
+                    onChange={(event) =>
+                      updateConnectionField("base_url", event.target.value)
+                    }
+                    placeholder="https://client-instance.odoo.com"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Database Name</label>
+                  <Input
+                    value={connectionDraft.database}
+                    onChange={(event) =>
+                      updateConnectionField("database", event.target.value)
+                    }
+                    placeholder="production-db"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">User Email</label>
+                  <Input
+                    type="email"
+                    value={connectionDraft.email}
+                    onChange={(event) =>
+                      updateConnectionField("email", event.target.value)
+                    }
+                    placeholder="hello@example.com"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">API Key / Token</label>
+                  <Input
+                    type="password"
+                    value={connectionDraft.api_key}
+                    onChange={(event) =>
+                      updateConnectionField("api_key", event.target.value)
+                    }
+                    placeholder="Paste Odoo API key"
+                  />
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-3 mt-4">
+                <Button
+                  variant="outline"
+                  onClick={() => void testConnection()}
+                  disabled={connectionTesting}
+                >
                       {connectionTesting ? (
                         <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                       ) : (
@@ -2141,15 +2346,47 @@ export default function OdooDeliveryPageClient({
                                 {item.focus_url || "/"}
                               </p>
                             </div>
-                            <Badge variant="outline">
-                              {item.source === "article_engine_batch"
-                                ? "Generated"
-                                : "Suggested"}
-                            </Badge>
+                            <div className="flex items-center gap-3">
+                              <Badge variant="outline">
+                                {item.source === "article_engine_batch"
+                                  ? "Generated"
+                                  : "Suggested"}
+                              </Badge>
+                              {socialChannels?.linkedin_linked ? (
+                                <Button
+                                  variant="secondary"
+                                  size="sm"
+                                  onClick={() => handleGenerateLinkedInPost(item.slug || "")}
+                                  disabled={generatingPosts[item.slug || ""] || !item.slug}
+                                >
+                                  {generatingPosts[item.slug || ""] ? (
+                                    <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
+                                  ) : (
+                                    <Linkedin className="mr-2 h-3.5 w-3.5" />
+                                  )}
+                                  Enviar a Odoo
+                                </Button>
+                              ) : null}
+                            </div>
                           </div>
                           <p className="mt-3 text-sm">{item.delivery_brief}</p>
                         </div>
                       ))}
+                      {socialChannels?.linkedin_linked && (plan.article_deliverables || []).length > 1 ? (
+                        <div className="pt-4 mt-2 flex justify-end border-t border-border/70">
+                          <Button
+                            onClick={() => handleGenerateAllLinkedInPosts()}
+                            disabled={generatingAllPosts}
+                          >
+                            {generatingAllPosts ? (
+                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            ) : (
+                              <SendHorizontal className="mr-2 h-4 w-4" />
+                            )}
+                            Enviar todos a Odoo
+                          </Button>
+                        </div>
+                      ) : null}
                     </CardContent>
                   </Card>
                 ) : null}
@@ -2342,63 +2579,111 @@ export default function OdooDeliveryPageClient({
                         </div>
                       </div>
 
-                      {drafts.native_created.map((item) => (
-                        <div
-                          key={item.id}
-                          className="rounded-2xl border border-emerald-500/20 bg-emerald-500/5 p-4"
-                        >
-                          <p className="font-medium">
-                            {item.title || "Native Odoo draft"}
-                          </p>
-                          <p className="mt-2 text-sm text-muted-foreground">
-                            {item.target_model}{" "}
-                            {item.external_record_id
-                              ? `· record ${item.external_record_id}`
-                              : ""}
-                          </p>
+                      <div className="mt-8 space-y-4 border-t border-border/70 pt-6">
+                        <h4 className="font-semibold text-sm">Odoo Delivery Fixes</h4>
+                        
+                        {drafts.native_created.filter((i) => i.target_model !== 'social.post' && i.target_model !== 'blog.post').map((item) => (
+                          <div
+                            key={item.id}
+                            className="rounded-2xl border border-emerald-500/20 bg-emerald-500/5 p-4"
+                          >
+                            <p className="font-medium">
+                              {item.title || "Native Odoo draft"}
+                            </p>
+                            <p className="mt-2 text-sm text-muted-foreground">
+                              {item.target_model}{" "}
+                              {item.external_record_id
+                                ? `· record ${item.external_record_id}`
+                                : ""}
+                            </p>
+                          </div>
+                        ))}
+                        {drafts.draft.filter((i) => i.target_model !== 'social.post' && i.target_model !== 'blog.post').map((item) => (
+                          <div
+                            key={item.id}
+                            className="rounded-2xl border border-border/70 bg-muted/30 p-4"
+                          >
+                            <p className="font-medium">
+                              {item.title || "Draft action"}
+                            </p>
+                            <p className="mt-2 text-sm text-muted-foreground">
+                              {item.target_model || "Draft"} ·{" "}
+                              {item.target_path || "/"}
+                            </p>
+                          </div>
+                        ))}
+                        {drafts.manual_review.filter((i) => i.target_model !== 'social.post' && i.target_model !== 'blog.post').map((item) => (
+                          <div
+                            key={item.id}
+                            className="rounded-2xl border border-amber-500/30 bg-amber-500/5 p-4"
+                          >
+                            <p className="font-medium">
+                              {item.title || "Manual review"}
+                            </p>
+                            <p className="mt-2 text-sm text-muted-foreground">
+                              {item.acceptance_criteria ||
+                                "Review manually inside Odoo."}
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+
+                      <div className="mt-8 space-y-4 border-t border-border/70 pt-6">
+                        <h4 className="font-semibold text-sm">Publicaciones generadas</h4>
+                        {drafts.native_created.filter((i) => i.target_model === 'social.post' || i.target_model === 'blog.post').length === 0 ? (
+                           <div className="text-sm text-muted-foreground">No hay publicaciones generadas aún.</div>
+                        ) : (
+                          drafts.native_created.filter((i) => i.target_model === 'social.post' || i.target_model === 'blog.post').map((item) => {
+                            const isLinkedIn = item.target_model === 'social.post';
+                            const url = item.target_model === 'social.post' 
+                               ? `${selectedConnection?.base_url}/web#id=${item.external_record_id}&model=social.post&view_type=form`
+                               : `${selectedConnection?.base_url}/web#id=${item.external_record_id}&model=blog.post&view_type=form`;
+                               
+                            return (
+                              <div
+                                key={item.id}
+                                className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-emerald-500/20 bg-emerald-500/5 p-4"
+                              >
+                                <div>
+                                  <p className="font-medium flex items-center gap-2">
+                                    {isLinkedIn ? <Linkedin className="h-4 w-4 text-[#0A66C2]" /> : <FileText className="h-4 w-4 text-emerald-600" />}
+                                    {item.title || "Publicación"}
+                                  </p>
+                                  <div className="mt-2 flex items-center gap-3 text-sm text-muted-foreground">
+                                    <span>{isLinkedIn ? "LinkedIn post" : "Blog post"}</span>
+                                    <span>·</span>
+                                    <Badge variant="outline" className="text-[10px] uppercase">Draft</Badge>
+                                  </div>
+                                </div>
+                                <Button variant="outline" size="sm" asChild>
+                                  <Link href={url} target="_blank">
+                                    Ver en Odoo
+                                  </Link>
+                                </Button>
+                              </div>
+                            );
+                          })
+                        )}
+                      </div>
+
+                      {drafts.failed.length > 0 && (
+                        <div className="mt-8 space-y-4 border-t border-border/70 pt-6">
+                          <h4 className="font-semibold text-sm text-destructive">Errores de generación</h4>
+                          {drafts.failed.map((item) => (
+                            <div
+                              key={item.id}
+                              className="rounded-2xl border border-destructive/30 bg-destructive/5 p-4"
+                            >
+                              <p className="font-medium">
+                                {item.title || "Failed draft"}
+                              </p>
+                              <p className="mt-2 text-sm text-muted-foreground">
+                                {item.error_message || "Draft generation failed."}
+                              </p>
+                            </div>
+                          ))}
                         </div>
-                      ))}
-                      {drafts.draft.map((item) => (
-                        <div
-                          key={item.id}
-                          className="rounded-2xl border border-border/70 bg-muted/30 p-4"
-                        >
-                          <p className="font-medium">
-                            {item.title || "Draft action"}
-                          </p>
-                          <p className="mt-2 text-sm text-muted-foreground">
-                            {item.target_model || "Draft"} ·{" "}
-                            {item.target_path || "/"}
-                          </p>
-                        </div>
-                      ))}
-                      {drafts.manual_review.map((item) => (
-                        <div
-                          key={item.id}
-                          className="rounded-2xl border border-amber-500/30 bg-amber-500/5 p-4"
-                        >
-                          <p className="font-medium">
-                            {item.title || "Manual review"}
-                          </p>
-                          <p className="mt-2 text-sm text-muted-foreground">
-                            {item.acceptance_criteria ||
-                              "Review manually inside Odoo."}
-                          </p>
-                        </div>
-                      ))}
-                      {drafts.failed.map((item) => (
-                        <div
-                          key={item.id}
-                          className="rounded-2xl border border-destructive/30 bg-destructive/5 p-4"
-                        >
-                          <p className="font-medium">
-                            {item.title || "Failed draft"}
-                          </p>
-                          <p className="mt-2 text-sm text-muted-foreground">
-                            {item.error_message || "Draft generation failed."}
-                          </p>
-                        </div>
-                      ))}
+                      )}
 
                       {drafts.native_created.length === 0 &&
                       drafts.draft.length === 0 &&

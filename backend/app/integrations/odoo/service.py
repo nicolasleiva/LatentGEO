@@ -119,6 +119,14 @@ class OdooConnectionService:
                 "write_date",
             ],
         },
+        "social.media": {
+            "label": "social_media",
+            "sample_fields": ["id", "name", "media_type"],
+        },
+        "social.post": {
+            "label": "social_post",
+            "sample_fields": ["id", "message", "state"],
+        },
     }
 
     def __init__(self, db: Session):
@@ -336,6 +344,9 @@ class OdooConnectionService:
             capabilities["website_sale"] = bool(
                 model_state.get("product.template", {}).get("available")
                 or model_state.get("product.public.category", {}).get("available")
+            )
+            capabilities["social_marketing"] = bool(
+                model_state.get("social.media", {}).get("available")
             )
 
             if not capabilities["website"]:

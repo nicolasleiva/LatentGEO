@@ -833,3 +833,132 @@ async def get_odoo_pagespeed_plan(
     current_user: AuthUser = Depends(get_current_user),
 ):
     return await _build_delivery_plan(audit_id, db, current_user)
+
+
+# ---------------------------------------------------------------------------
+# LinkedIn / Social integration endpoints
+# ---------------------------------------------------------------------------
+
+
+@router.get("/social-channels/{audit_id}")
+async def get_social_channels(
+    audit_id: int,
+    db: Session = Depends(get_db),
+    current_user: AuthUser = Depends(get_current_user),
+):
+    """Return available social media channels from the connected Odoo instance."""
+    audit = (
+        db.query(Audit)
+        .filter(Audit.id == audit_id, Audit.status == AuditStatus.COMPLETED)
+        .first()
+    )
+    if not audit:
+        raise HTTPException(status_code=404, detail="Audit not found or not completed")
+    ensure_audit_access(audit, current_user)
+
+    connection = _resolve_connection(db, audit)
+    if connection is None:
+        return {
+            "channels": [],
+            "linkedin_linked": False,
+            "social_marketing_installed": False,
+        }
+
+    capabilities = connection.capabilities or {}
+    if not capabilities.get("social_marketing"):
+        return {
+            "channels": [],
+            "linkedin_linked": False,
+            "social_marketing_installed": False,
+            "link_url": None,
+        }
+
+    draft_service = OdooDraftService(db)
+    channels = await draft_service.get_social_channels(connection=connection)
+    linkedin_linked = any(ch.get("is_linkedin") for ch in channels)
+    social_config_url = f"{connection.base_url}/web#action=social.action_social_media"
+
+    return {
+        "channels": channels,
+        "linkedin_linked": linkedin_linked,
+        "social_marketing_installed": True,
+        "link_url": social_config_url if not linkedin_linked else None,
+    }
+
+
+class LinkedInPostRequest(BaseModel):
+    slug: str = Field(..., min_length=1, max_length=500)
+
+
+@router.post("/linkedin-post/{audit_id}")
+async def create_linkedin_post(
+    audit_id: int,
+    payload: LinkedInPostRequest,
+    db: Session = Depends(get_db),
+    current_user: AuthUser = Depends(get_current_user),
+):
+    """Create LinkedIn social.post draft + blog.post draft for a single article."""
+    audit = (
+        db.query(Audit)
+        .filter(Audit.id == audit_id, Audit.status == AuditStatus.COMPLETED)
+        .first()
+    )
+    if not audit:
+        raise HTTPException(status_code=404, detail="Audit not found or not completed")
+    ensure_audit_access(audit, current_user)
+
+    connection = _resolve_connection(db, audit)
+    if connection is None:
+        raise HTTPException(status_code=400, detail="No Odoo connection assigned to this audit")
+
+    draft_service = OdooDraftService(db)
+    result = await draft_service.create_linkedin_and_blog_drafts(
+        audit=audit,
+        connection=connection,
+        article_slugs=[payload.slug],
+    )
+    return result
+
+
+@router.post("/linkedin-post-all/{audit_id}")
+async def create_linkedin_post_all(
+    audit_id: int,
+    db: Session = Depends(get_db),
+    current_user: AuthUser = Depends(get_current_user),
+):
+    """Create LinkedIn social.post draft + blog.post draft for ALL article deliverables."""
+    audit = (
+        db.query(Audit)
+        .filter(Audit.id == audit_id, Audit.status == AuditStatus.COMPLETED)
+        .first()
+    )
+    if not audit:
+        raise HTTPException(status_code=404, detail="Audit not found or not completed")
+    ensure_audit_access(audit, current_user)
+
+    connection = _resolve_connection(db, audit)
+    if connection is None:
+        raise HTTPException(status_code=400, detail="No Odoo connection assigned to this audit")
+
+    draft_service = OdooDraftService(db)
+    result = await draft_service.create_linkedin_and_blog_drafts(
+        audit=audit,
+        connection=connection,
+        article_slugs=None,  # process all
+    )
+    return result
+
+
+def _resolve_connection(db: Session, audit: Audit) -> Optional[OdooConnection]:
+    """Resolve the Odoo connection assigned to the given audit."""
+    if not audit.odoo_connection_id:
+        return None
+    return (
+        db.query(OdooConnection)
+        .filter(
+            OdooConnection.id == audit.odoo_connection_id,
+            OdooConnection.is_active.is_(True),
+        )
+        .first()
+    )
+

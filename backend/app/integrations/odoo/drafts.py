@@ -735,3 +735,265 @@ class OdooDraftService:
             "last_prepared_at": datetime.now(timezone.utc).isoformat(),
         }
         return grouped
+
+    async def get_social_channels(
+        self, *, connection: OdooConnection
+    ) -> list[Dict[str, Any]]:
+        """Query social.media records from Odoo to detect linked social channels."""
+        capabilities = connection.capabilities or {}
+        if not capabilities.get("social_marketing"):
+            return []
+
+        async with await self.connection_service.build_client(connection) as client:
+            try:
+                channels = await client.search_read(
+                    "social.media",
+                    fields=["id", "name", "media_type"],
+                    limit=20,
+                )
+            except OdooAPIError:
+                return []
+
+        result = []
+        for ch in channels:
+            if not isinstance(ch, dict):
+                continue
+            media_type = str(ch.get("media_type") or ch.get("name") or "").lower()
+            result.append({
+                "id": ch.get("id"),
+                "name": ch.get("name") or media_type,
+                "media_type": media_type,
+                "is_linkedin": "linkedin" in media_type,
+            })
+        return result
+
+    async def create_linkedin_and_blog_drafts(
+        self,
+        *,
+        audit: Audit,
+        connection: OdooConnection,
+        article_slugs: list[str] | None = None,
+    ) -> Dict[str, Any]:
+        """Create LinkedIn social.post (draft) + blog.post (unpublished) for articles.
+
+        If article_slugs is None, processes all article deliverables.
+        Calls KIMI to adapt the article markdown to LinkedIn format.
+        """
+        from ...core.llm_kimi import get_llm_function, KimiGenerationError, KimiUnavailableError
+
+        plan = await OdooDeliveryService.build_plan(self.db, audit)
+        article_deliverables = list(plan.get("article_deliverables") or [])
+        if not article_deliverables:
+            return {"created": [], "errors": []}
+
+        # Filter by slugs if specified
+        if article_slugs is not None:
+            slug_set = set(article_slugs)
+            article_deliverables = [
+                a for a in article_deliverables
+                if a.get("slug") in slug_set or a.get("title") in slug_set
+            ]
+
+        latest_batch = GeoArticleEngineService.get_latest_batch(self.db, audit.id)
+
+        # Detect LinkedIn channel
+        social_channels = await self.get_social_channels(connection=connection)
+        linkedin_channel = next(
+            (ch for ch in social_channels if ch.get("is_linkedin")), None
+        )
+
+        sync_run = self._latest_sync_run(
+            self.db, audit_id=audit.id, connection_id=connection.id
+        )
+
+        created_items: list[Dict[str, Any]] = []
+        error_items: list[Dict[str, Any]] = []
+
+        async with await self.connection_service.build_client(connection) as client:
+            # Check blog capabilities
+            try:
+                blog_post_fields = await client.fields_get(
+                    "blog.post",
+                    attributes=("type", "readonly", "required"),
+                )
+            except OdooAPIError:
+                blog_post_fields = {}
+
+            try:
+                blogs = await client.search_read(
+                    "blog.blog",
+                    fields=["id", "name"],
+                    limit=1,
+                    order="id asc",
+                )
+            except OdooAPIError:
+                blogs = []
+
+            writable_fields = OdooConnectionService._writable_fields(blog_post_fields)
+            blog_id = blogs[0].get("id") if blogs else None
+
+            # Check social.post capabilities
+            try:
+                social_post_fields = await client.fields_get(
+                    "social.post",
+                    attributes=("type", "readonly", "required"),
+                )
+            except OdooAPIError:
+                social_post_fields = {}
+
+            social_writable = OdooConnectionService._writable_fields(social_post_fields)
+
+            for deliverable in article_deliverables:
+                title = str(deliverable.get("title") or "Odoo article draft").strip()
+                slug = str(deliverable.get("slug") or self._slugify(title)).strip()
+                focus_url = deliverable.get("focus_url") or ""
+                company_name = audit.domain or ""
+
+                raw_article = self._article_body_from_batch(latest_batch, slug, title)
+                article_markdown = str(
+                    (raw_article or {}).get("markdown") or ""
+                )
+
+                # 1. Create blog.post (full article, unpublished)
+                blog_record_id = None
+                if blog_post_fields and blog_id and raw_article:
+                    values: Dict[str, Any] = {}
+                    if "name" in writable_fields:
+                        values["name"] = title
+                    if "blog_id" in blog_post_fields:
+                        values["blog_id"] = int(blog_id)
+                    if "website_published" in writable_fields:
+                        values["website_published"] = False
+                    if "is_published" in writable_fields:
+                        values["is_published"] = False
+                    body_html = self._markdown_to_html(article_markdown)
+                    for candidate in ("content", "content_html"):
+                        if candidate in writable_fields and body_html:
+                            values[candidate] = body_html
+                            break
+                    if "subtitle" in writable_fields and raw_article.get("meta_description"):
+                        values["subtitle"] = str(raw_article.get("meta_description"))[:255]
+
+                    try:
+                        blog_record_id = await client.create("blog.post", vals=values)
+                        self._upsert_action(
+                            self.db,
+                            connection=connection,
+                            audit=audit,
+                            action_key=f"linkedin-blog:{slug}",
+                            draft_type="blog_post",
+                            status="native_created",
+                            title=title,
+                            target_model="blog.post",
+                            target_record_id=str(blog_record_id),
+                            target_path=focus_url,
+                            draft_payload={"vals": values},
+                            evidence={"source": "linkedin_flow"},
+                            acceptance_criteria="Review the unpublished blog.post draft in Odoo before publishing.",
+                            sync_run=sync_run,
+                            external_record_id=str(blog_record_id),
+                        )
+                        created_items.append({
+                            "title": title,
+                            "type": "blog_post",
+                            "status": "draft",
+                            "external_record_id": str(blog_record_id),
+                            "odoo_url": f"{connection.base_url}/web#id={blog_record_id}&model=blog.post&view_type=form",
+                        })
+                    except OdooAPIError as exc:
+                        error_items.append({
+                            "title": title,
+                            "type": "blog_post",
+                            "error": str(exc),
+                        })
+
+                # 2. Create social.post (LinkedIn adapted via KIMI)
+                if linkedin_channel and social_post_fields and article_markdown:
+                    linkedin_message = None
+                    try:
+                        llm_function = get_llm_function()
+                        if llm_function is not None:
+                            linkedin_prompt = (
+                                f"Sos el equipo de marketing de {company_name}, una empresa B2B.\n"
+                                "Transformá el siguiente artículo en un post nativo de LinkedIn siguiendo estas reglas estrictamente:\n\n"
+                                "REGLAS DE FORMATO:\n"
+                                "- Las primeras 2 líneas son el hook: máximo 140 caracteres, debe generar curiosidad o mostrar un dato impactante. Es lo más importante.\n"
+                                "- Longitud total: 800 a 1500 caracteres\n"
+                                "- Párrafos de máximo 3 líneas separados por línea en blanco\n"
+                                "- Usá símbolos para listas: ✅ → • (nunca markdown ## ni tablas)\n"
+                                '- Voz de empresa en primera persona plural ("nosotros", "nuestros clientes")\n'
+                                "- Incluí datos concretos y números del artículo original\n"
+                                f"- Terminá con un CTA claro con link a {focus_url}\n"
+                                "- 3 a 5 hashtags al final, separados del cuerpo por una línea en blanco\n"
+                                "- Sin asteriscos, sin negritas markdown, sin headers\n\n"
+                                f"ARTÍCULO ORIGINAL:\n{article_markdown[:6000]}\n\n"
+                                "Devolvé únicamente el post listo para publicar, sin explicaciones ni metadata."
+                            )
+                            linkedin_message = await llm_function(
+                                system_prompt="You are a LinkedIn content specialist. Return only the post text, nothing else.",
+                                user_prompt=linkedin_prompt,
+                                max_tokens=2048,
+                            )
+                    except (KimiUnavailableError, KimiGenerationError) as exc:
+                        error_items.append({
+                            "title": title,
+                            "type": "linkedin_post",
+                            "error": f"KIMI adaptation failed: {exc}",
+                        })
+                        linkedin_message = None
+
+                    if linkedin_message and linkedin_message.strip():
+                        social_values: Dict[str, Any] = {}
+                        if "message" in social_writable:
+                            social_values["message"] = linkedin_message.strip()
+                        if "state" in social_post_fields:
+                            social_values["state"] = "draft"
+                        # Link to LinkedIn account if the field exists
+                        if "social_media_id" in social_post_fields:
+                            social_values["social_media_id"] = linkedin_channel["id"]
+
+                        try:
+                            social_record_id = await client.create(
+                                "social.post", vals=social_values
+                            )
+                            self._upsert_action(
+                                self.db,
+                                connection=connection,
+                                audit=audit,
+                                action_key=f"linkedin-social:{slug}",
+                                draft_type="linkedin_post",
+                                status="native_created",
+                                title=f"LinkedIn: {title}",
+                                target_model="social.post",
+                                target_record_id=str(social_record_id),
+                                target_path=focus_url,
+                                draft_payload={"message": linkedin_message.strip()[:500]},
+                                evidence={"source": "linkedin_flow", "linkedin_channel_id": linkedin_channel["id"]},
+                                acceptance_criteria="Review the LinkedIn draft post in Odoo Social before publishing.",
+                                sync_run=sync_run,
+                                external_record_id=str(social_record_id),
+                            )
+                            created_items.append({
+                                "title": f"LinkedIn: {title}",
+                                "type": "linkedin_post",
+                                "status": "draft",
+                                "external_record_id": str(social_record_id),
+                                "odoo_url": f"{connection.base_url}/web#id={social_record_id}&model=social.post&view_type=form",
+                            })
+                        except OdooAPIError as exc:
+                            error_items.append({
+                                "title": title,
+                                "type": "linkedin_post",
+                                "error": str(exc),
+                            })
+                elif not linkedin_channel and social_post_fields and article_markdown:
+                    # LinkedIn not linked: just note it
+                    error_items.append({
+                        "title": title,
+                        "type": "linkedin_post",
+                        "error": "LinkedIn no está vinculado en Odoo Social. Vinculá LinkedIn desde la sección de conexión.",
+                    })
+
+        self.db.commit()
+        return {"created": created_items, "errors": error_items}
+

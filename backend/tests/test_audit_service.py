@@ -182,3 +182,78 @@ async def test_set_audit_results_skips_failed_competitors_from_benchmark_and_per
         f"competitor_{AuditService._safe_fs_name('good.example.com')}.json"
     )
     assert competitor_files[0].name == expected_filename
+
+
+def test_sanitize_json_value_strips_null_bytes():
+    """_sanitize_json_value must remove \\x00 from strings at every nesting level."""
+    payload = {
+        "title": "Hello\x00World",
+        "nested": {"desc": "A\x00B", "ok": 42},
+        "items": ["foo\x00bar", {"inner": "x\x00y"}],
+        "clean": "no nulls here",
+    }
+    result = AuditService._sanitize_json_value(payload)
+
+    assert result["title"] == "HelloWorld"
+    assert result["nested"]["desc"] == "AB"
+    assert result["nested"]["ok"] == 42
+    assert result["items"][0] == "foobar"
+    assert result["items"][1]["inner"] == "xy"
+    assert result["clean"] == "no nulls here"
+    # Ensure the result is JSON-serializable without \x00
+    serialized = json.dumps(result)
+    assert "\x00" not in serialized
+    assert "\\u0000" not in serialized
+
+
+@pytest.mark.asyncio
+async def test_set_audit_results_with_null_bytes_succeeds(
+    db_session, monkeypatch, tmp_path
+):
+    """set_audit_results must not crash when scraped data contains \\x00."""
+    monkeypatch.setattr(settings, "REPORTS_DIR", str(tmp_path), raising=False)
+    monkeypatch.setattr(settings, "AUDIT_LOCAL_ARTIFACTS_ENABLED", True, raising=False)
+
+    audit = Audit(
+        url="https://example.com",
+        domain="example.com",
+        status=AuditStatus.PENDING,
+        user_id="test-user",
+        user_email="test@example.com",
+    )
+    db_session.add(audit)
+    db_session.commit()
+    db_session.refresh(audit)
+
+    # Data that mimics the real error: \x00 embedded in strings
+    contaminated_target = {
+        "url": "https://example.com",
+        "content": {"title": "Réseau en tant que service / SD-WAN", "desc": "S\x00ome text"},
+        "site_metrics": {"structure_score_percent": 40},
+    }
+    contaminated_external = {"category": "Cloud\x00Infra"}
+    contaminated_search = {"query\x00key": {"items": [{"title": "R\x00esult"}]}}
+    contaminated_competitors = [
+        {"url": "https://comp.example.com", "domain": "comp.example.com", "status": 200, "note": "N\x00ote"}
+    ]
+
+    await AuditService.set_audit_results(
+        db=db_session,
+        audit_id=audit.id,
+        target_audit=contaminated_target,
+        external_intelligence=contaminated_external,
+        search_results=contaminated_search,
+        competitor_audits=contaminated_competitors,
+        report_markdown="# Report with \x00 null byte",
+        fix_plan=[],
+        pagespeed_data={},
+    )
+
+    db_session.refresh(audit)
+    # Verify no \x00 survives in any persisted field
+    assert "\x00" not in json.dumps(audit.target_audit)
+    assert "\x00" not in json.dumps(audit.external_intelligence)
+    assert "\x00" not in json.dumps(audit.search_results)
+    assert "\x00" not in json.dumps(audit.competitor_audits)
+    assert "\x00" not in (audit.report_markdown or "")
+

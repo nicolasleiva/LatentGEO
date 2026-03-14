@@ -1,4 +1,4 @@
-﻿"""
+"""
 Servicio de AuditorÃ­a - LÃ³gica principal
 """
 
@@ -1181,8 +1181,11 @@ class AuditService:
         if _stack is None:
             _stack = set()
 
-        if value is None or isinstance(value, (str, int, float, bool)):
+        if value is None or isinstance(value, (int, float, bool)):
             return value
+
+        if isinstance(value, str):
+            return value.replace('\x00', '')
 
         if isinstance(value, datetime):
             return value.isoformat()
@@ -1343,7 +1346,7 @@ class AuditService:
         audit.external_intelligence = safe_external_intelligence
         audit.search_results = safe_search_results
         audit.competitor_audits = normalized_competitor_audits
-        audit.report_markdown = report_markdown
+        audit.report_markdown = (report_markdown or "").replace('\x00', '')
         audit.fix_plan = safe_fix_plan
         audit.pagespeed_data = safe_pagespeed_data
 
