@@ -15,7 +15,6 @@ from sqlalchemy import delete, desc, or_
 from sqlalchemy.orm import Session, load_only
 
 from ..core.config import settings
-from ..core.database import Base
 from ..core.logger import get_logger
 from ..models import (
     Audit,
@@ -1775,10 +1774,9 @@ class AuditService:
             return []
         try:
             batch_items = []
-            for i, item in enumerate(pages_data):
+            for item in pages_data:
                 page_url = item.get("url")
                 page_data = item.get("data", {})
-                page_index = item.get("index", i)
 
                 if not page_url:
                     continue

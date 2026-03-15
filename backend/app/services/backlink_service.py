@@ -244,9 +244,6 @@ class BacklinkService:
         Crawls the site concurrently to build an internal link graph.
         Returns: {url: {set of outgoing links}}
         """
-        from urllib.parse import urljoin, urlparse
-        from bs4 import BeautifulSoup
-        
         base_url = f"https://{domain}"
         graph = {}  # url -> set(outgoing_links)
         visited = {base_url}
@@ -320,7 +317,8 @@ class BacklinkService:
         workers = [asyncio.create_task(worker()) for _ in range(num_workers)]
         
         await queue.join()
-        for w in workers: w.cancel()
+        for w in workers:
+            w.cancel()
         
         return graph
 

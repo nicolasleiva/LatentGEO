@@ -83,7 +83,6 @@ class KeywordService:
 
             content = response.choices[0].message.content.strip()
             
-            parse_start = time.perf_counter()
             # Limpiar respuesta si viene con markdown
             if "```" in content:
                 content = content.replace("```json", "").replace("```", "")

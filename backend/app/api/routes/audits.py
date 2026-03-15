@@ -1,4 +1,3 @@
-import asyncio
 from time import perf_counter
 from typing import List
 from urllib.parse import urlparse

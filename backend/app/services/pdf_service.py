@@ -2767,7 +2767,8 @@ class PDFService:
         async def _payload_has_observed_rows_async(dataset_name: str, payload: Any) -> bool:
             if dataset_name in {"llm_visibility", "ai_content_suggestions"}:
                 return isinstance(payload, list) and len(payload) > 0
-            if not isinstance(payload, dict): return False
+            if not isinstance(payload, dict):
+                return False
             if dataset_name == "keywords":
                 rows = payload.get("items") or payload.get("keywords") or []
                 total = payload.get("total_keywords", payload.get("total"))
@@ -2777,10 +2778,15 @@ class PDFService:
             elif dataset_name == "rankings":
                 rows = payload.get("items") or payload.get("rankings") or []
                 total = payload.get("total_keywords", payload.get("total"))
-            else: rows = []; total = 0
-            if isinstance(rows, list) and rows: return True
-            try: return int(total or 0) > 0
-            except: return False
+            else:
+                rows = []
+                total = 0
+            if isinstance(rows, list) and rows:
+                return True
+            try:
+                return int(total or 0) > 0
+            except (TypeError, ValueError):
+                return False
 
         should_refresh_keywords = force_fresh_geo or not await _payload_has_observed_rows_async("keywords", keywords_data)
         should_refresh_backlinks = force_fresh_geo or not await _payload_has_observed_rows_async("backlinks", backlinks_data)
@@ -3365,9 +3371,11 @@ class PDFService:
                         logger.error(f"Error refreshing {name}: {result}")
                         continue
                     if name == "llm_visibility":
-                        if result: llm_visibility_data = result
+                        if result:
+                            llm_visibility_data = result
                     elif name == "ai_suggestions":
-                        if result: ai_content_suggestions_list = result
+                        if result:
+                            ai_content_suggestions_list = result
 
             # Double check LLM Visibility fallback to DB if still empty
             if not llm_visibility_data:
