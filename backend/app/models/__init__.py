@@ -261,9 +261,7 @@ class AuditPdfJob(Base):
     """Persistent PDF generation job per audit."""
 
     __tablename__ = "audit_pdf_jobs"
-    __table_args__ = (
-        Index("idx_audit_pdf_jobs_audit_status", "audit_id", "status"),
-    )
+    __table_args__ = (Index("idx_audit_pdf_jobs_audit_status", "audit_id", "status"),)
     __mapper_args__ = {"confirm_deleted_rows": False}
 
     id = Column(Integer, primary_key=True, index=True)

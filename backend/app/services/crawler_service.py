@@ -548,7 +548,7 @@ class CrawlerService:
             tasks = []
             pages_count = 0
             lock = asyncio.Lock()
-            
+
             # Risk 1: Adaptive Throttling
             is_throttled = False
             throttled_sem = asyncio.Semaphore(3)
@@ -574,14 +574,20 @@ class CrawlerService:
                                     # Si estamos ralentizados, usamos el semáforo restrictivo
                                     if is_throttled:
                                         async with throttled_sem:
-                                            await asyncio.sleep(1.0) # Delay extra
-                                            return await session.get(current_url, allow_redirects=True)
+                                            await asyncio.sleep(1.0)  # Delay extra
+                                            return await session.get(
+                                                current_url, allow_redirects=True
+                                            )
                                     else:
-                                        return await session.get(current_url, allow_redirects=True)
+                                        return await session.get(
+                                            current_url, allow_redirects=True
+                                        )
 
                                 async with await perform_request(url) as resp:
                                     if resp.status in {429, 503}:
-                                        logger.warning(f"Rate limit detectado (status {resp.status}) para {url}. Reduciendo concurrencia.")
+                                        logger.warning(
+                                            f"Rate limit detectado (status {resp.status}) para {url}. Reduciendo concurrencia."
+                                        )
                                         is_throttled = True
                                         if callback:
                                             callback(url, "throttled")

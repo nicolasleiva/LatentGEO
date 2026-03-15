@@ -604,23 +604,27 @@ def _save_individual_pages(db: Session, audit_id: int, pipeline_result: dict):
 
         # Obtener páginas auditadas del resultado agregado
         audited_page_paths = target_audit.get("audited_page_paths", [])
-        
+
         # NUEVO: Verificar si hay datos individuales de páginas
         individual_page_audits = target_audit.get("_individual_page_audits", [])
 
         pages_to_save = []
 
         if individual_page_audits:
-            logger.info(f"Encontrados {len(individual_page_audits)} reportes individuales de páginas")
+            logger.info(
+                f"Encontrados {len(individual_page_audits)} reportes individuales de páginas"
+            )
             for page_audit in individual_page_audits:
                 page_url = page_audit.get("url")
                 page_data = page_audit.get("data", {})
                 if page_url and page_data:
-                    pages_to_save.append({
-                        "url": page_url,
-                        "data": page_data,
-                        "index": page_audit.get("index", 0)
-                    })
+                    pages_to_save.append(
+                        {
+                            "url": page_url,
+                            "data": page_data,
+                            "index": page_audit.get("index", 0),
+                        }
+                    )
         elif audited_page_paths:
             # FALLBACK: Usar el método anterior (datos agregados)
             audit = AuditService.get_audit(db, audit_id)
@@ -632,39 +636,44 @@ def _save_individual_pages(db: Session, audit_id: int, pipeline_result: dict):
                     page_url = page_path
                 else:
                     page_url = f"{base_url}/{page_path.lstrip('/')}"
-                
-                pages_to_save.append({
-                    "url": page_url,
-                    "data": {
+
+                pages_to_save.append(
+                    {
                         "url": page_url,
-                        "path": page_path,
-                        "status": 200,
-                        "generated_at": target_audit.get("generated_at"),
-                        "structure": target_audit.get("structure", {}),
-                        "content": target_audit.get("content", {}),
-                        "eeat": target_audit.get("eeat", {}),
-                        "schema": target_audit.get("schema", {}),
-                    },
-                    "index": i
-                })
+                        "data": {
+                            "url": page_url,
+                            "path": page_path,
+                            "status": 200,
+                            "generated_at": target_audit.get("generated_at"),
+                            "structure": target_audit.get("structure", {}),
+                            "content": target_audit.get("content", {}),
+                            "eeat": target_audit.get("eeat", {}),
+                            "schema": target_audit.get("schema", {}),
+                        },
+                        "index": i,
+                    }
+                )
         else:
             # Si no hay páginas múltiples, guardar solo la principal
             page_url = target_audit.get("url")
             if page_url and target_audit.get("status") == 200:
-                pages_to_save.append({
-                    "url": page_url,
-                    "data": target_audit,
-                    "index": 0
-                })
+                pages_to_save.append(
+                    {"url": page_url, "data": target_audit, "index": 0}
+                )
 
         if pages_to_save:
             AuditService.save_page_audits_batch(db, audit_id, pages_to_save)
-            logger.info(f"Guardadas {len(pages_to_save)} páginas auditadas en batch para audit {audit_id}")
+            logger.info(
+                f"Guardadas {len(pages_to_save)} páginas auditadas en batch para audit {audit_id}"
+            )
         else:
             logger.info(f"Guardadas 0 páginas auditadas para audit {audit_id}")
 
     except Exception as e:
-        logger.error(f"Error guardando páginas individuales para audit {audit_id}: {e}", exc_info=True)
+        logger.error(
+            f"Error guardando páginas individuales para audit {audit_id}: {e}",
+            exc_info=True,
+        )
 
 
 @celery_app.task(name="generate_pdf_task")

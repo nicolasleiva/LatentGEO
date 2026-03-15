@@ -145,7 +145,9 @@ class OdooSyncService:
         snapshot.record_url = (
             path_value
             if isinstance(path_value, str) and path_value.startswith("http")
-            else f"{base_url.rstrip('/')}{record_path or ''}" if record_path else None
+            else f"{base_url.rstrip('/')}{record_path or ''}"
+            if record_path
+            else None
         )
         snapshot.record_name = str(
             self._pick_first(record, config.get("name_fields") or ()) or odoo_record_id

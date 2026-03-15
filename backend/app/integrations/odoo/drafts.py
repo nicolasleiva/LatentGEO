@@ -759,12 +759,14 @@ class OdooDraftService:
             if not isinstance(ch, dict):
                 continue
             media_type = str(ch.get("media_type") or ch.get("name") or "").lower()
-            result.append({
-                "id": ch.get("id"),
-                "name": ch.get("name") or media_type,
-                "media_type": media_type,
-                "is_linkedin": "linkedin" in media_type,
-            })
+            result.append(
+                {
+                    "id": ch.get("id"),
+                    "name": ch.get("name") or media_type,
+                    "media_type": media_type,
+                    "is_linkedin": "linkedin" in media_type,
+                }
+            )
         return result
 
     async def create_linkedin_and_blog_drafts(
@@ -779,7 +781,11 @@ class OdooDraftService:
         If article_slugs is None, processes all article deliverables.
         Calls KIMI to adapt the article markdown to LinkedIn format.
         """
-        from ...core.llm_kimi import get_llm_function, KimiGenerationError, KimiUnavailableError
+        from ...core.llm_kimi import (
+            get_llm_function,
+            KimiGenerationError,
+            KimiUnavailableError,
+        )
 
         plan = await OdooDeliveryService.build_plan(self.db, audit)
         article_deliverables = list(plan.get("article_deliverables") or [])
@@ -790,7 +796,8 @@ class OdooDraftService:
         if article_slugs is not None:
             slug_set = set(article_slugs)
             article_deliverables = [
-                a for a in article_deliverables
+                a
+                for a in article_deliverables
                 if a.get("slug") in slug_set or a.get("title") in slug_set
             ]
 
@@ -850,9 +857,7 @@ class OdooDraftService:
                 company_name = audit.domain or ""
 
                 raw_article = self._article_body_from_batch(latest_batch, slug, title)
-                article_markdown = str(
-                    (raw_article or {}).get("markdown") or ""
-                )
+                article_markdown = str((raw_article or {}).get("markdown") or "")
 
                 # 1. Create blog.post (full article, unpublished)
                 blog_record_id = None
@@ -871,8 +876,12 @@ class OdooDraftService:
                         if candidate in writable_fields and body_html:
                             values[candidate] = body_html
                             break
-                    if "subtitle" in writable_fields and raw_article.get("meta_description"):
-                        values["subtitle"] = str(raw_article.get("meta_description"))[:255]
+                    if "subtitle" in writable_fields and raw_article.get(
+                        "meta_description"
+                    ):
+                        values["subtitle"] = str(raw_article.get("meta_description"))[
+                            :255
+                        ]
 
                     try:
                         blog_record_id = await client.create("blog.post", vals=values)
@@ -893,19 +902,23 @@ class OdooDraftService:
                             sync_run=sync_run,
                             external_record_id=str(blog_record_id),
                         )
-                        created_items.append({
-                            "title": title,
-                            "type": "blog_post",
-                            "status": "draft",
-                            "external_record_id": str(blog_record_id),
-                            "odoo_url": f"{connection.base_url}/web#id={blog_record_id}&model=blog.post&view_type=form",
-                        })
+                        created_items.append(
+                            {
+                                "title": title,
+                                "type": "blog_post",
+                                "status": "draft",
+                                "external_record_id": str(blog_record_id),
+                                "odoo_url": f"{connection.base_url}/web#id={blog_record_id}&model=blog.post&view_type=form",
+                            }
+                        )
                     except OdooAPIError as exc:
-                        error_items.append({
-                            "title": title,
-                            "type": "blog_post",
-                            "error": str(exc),
-                        })
+                        error_items.append(
+                            {
+                                "title": title,
+                                "type": "blog_post",
+                                "error": str(exc),
+                            }
+                        )
 
                 # 2. Create social.post (LinkedIn adapted via KIMI)
                 if linkedin_channel and social_post_fields and article_markdown:
@@ -935,11 +948,13 @@ class OdooDraftService:
                                 max_tokens=2048,
                             )
                     except (KimiUnavailableError, KimiGenerationError) as exc:
-                        error_items.append({
-                            "title": title,
-                            "type": "linkedin_post",
-                            "error": f"KIMI adaptation failed: {exc}",
-                        })
+                        error_items.append(
+                            {
+                                "title": title,
+                                "type": "linkedin_post",
+                                "error": f"KIMI adaptation failed: {exc}",
+                            }
+                        )
                         linkedin_message = None
 
                     if linkedin_message and linkedin_message.strip():
@@ -967,33 +982,43 @@ class OdooDraftService:
                                 target_model="social.post",
                                 target_record_id=str(social_record_id),
                                 target_path=focus_url,
-                                draft_payload={"message": linkedin_message.strip()[:500]},
-                                evidence={"source": "linkedin_flow", "linkedin_channel_id": linkedin_channel["id"]},
+                                draft_payload={
+                                    "message": linkedin_message.strip()[:500]
+                                },
+                                evidence={
+                                    "source": "linkedin_flow",
+                                    "linkedin_channel_id": linkedin_channel["id"],
+                                },
                                 acceptance_criteria="Review the LinkedIn draft post in Odoo Social before publishing.",
                                 sync_run=sync_run,
                                 external_record_id=str(social_record_id),
                             )
-                            created_items.append({
-                                "title": f"LinkedIn: {title}",
-                                "type": "linkedin_post",
-                                "status": "draft",
-                                "external_record_id": str(social_record_id),
-                                "odoo_url": f"{connection.base_url}/web#id={social_record_id}&model=social.post&view_type=form",
-                            })
+                            created_items.append(
+                                {
+                                    "title": f"LinkedIn: {title}",
+                                    "type": "linkedin_post",
+                                    "status": "draft",
+                                    "external_record_id": str(social_record_id),
+                                    "odoo_url": f"{connection.base_url}/web#id={social_record_id}&model=social.post&view_type=form",
+                                }
+                            )
                         except OdooAPIError as exc:
-                            error_items.append({
-                                "title": title,
-                                "type": "linkedin_post",
-                                "error": str(exc),
-                            })
+                            error_items.append(
+                                {
+                                    "title": title,
+                                    "type": "linkedin_post",
+                                    "error": str(exc),
+                                }
+                            )
                 elif not linkedin_channel and social_post_fields and article_markdown:
                     # LinkedIn not linked: just note it
-                    error_items.append({
-                        "title": title,
-                        "type": "linkedin_post",
-                        "error": "LinkedIn no está vinculado en Odoo Social. Vinculá LinkedIn desde la sección de conexión.",
-                    })
+                    error_items.append(
+                        {
+                            "title": title,
+                            "type": "linkedin_post",
+                            "error": "LinkedIn no está vinculado en Odoo Social. Vinculá LinkedIn desde la sección de conexión.",
+                        }
+                    )
 
         self.db.commit()
         return {"created": created_items, "errors": error_items}
-

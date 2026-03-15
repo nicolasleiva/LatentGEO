@@ -1186,7 +1186,7 @@ class AuditService:
             return value
 
         if isinstance(value, str):
-            return value.replace('\x00', '')
+            return value.replace("\x00", "")
 
         if isinstance(value, datetime):
             return value.isoformat()
@@ -1321,14 +1321,14 @@ class AuditService:
             normalized_target_audit
         )
         normalized_target_audit["geo_score"] = target_geo["score"]
-        normalized_target_audit["benchmark"] = (
-            CompetitorService._format_competitor_data(
-                normalized_target_audit,
-                target_geo["score"],
-                normalized_target_audit.get("url"),
-                score_meta=target_geo,
-                benchmark_available=True,
-            )
+        normalized_target_audit[
+            "benchmark"
+        ] = CompetitorService._format_competitor_data(
+            normalized_target_audit,
+            target_geo["score"],
+            normalized_target_audit.get("url"),
+            score_meta=target_geo,
+            benchmark_available=True,
         )
 
         normalized_competitor_audits: List[Dict[str, Any]] = []
@@ -1363,7 +1363,7 @@ class AuditService:
         audit.external_intelligence = safe_external_intelligence
         audit.search_results = safe_search_results
         audit.competitor_audits = normalized_competitor_audits
-        audit.report_markdown = (report_markdown or "").replace('\x00', '')
+        audit.report_markdown = (report_markdown or "").replace("\x00", "")
         audit.fix_plan = safe_fix_plan
         audit.pagespeed_data = safe_pagespeed_data
 
@@ -1449,7 +1449,11 @@ class AuditService:
         )
 
         # Improved fallback: calculate from fix_plan if all counts are 0 (Issue 8)
-        if audit.critical_issues == 0 and audit.high_issues == 0 and audit.medium_issues == 0:
+        if (
+            audit.critical_issues == 0
+            and audit.high_issues == 0
+            and audit.medium_issues == 0
+        ):
             fix_plan_list = fix_plan if isinstance(fix_plan, list) else []
             normalized_fix_plan = []
             for fix_item in fix_plan_list:
@@ -1794,35 +1798,44 @@ class AuditService:
                 schema_score = AuditService._extract_schema_score(safe_audit_data)
 
                 # Contar issues
-                critical, high, medium, low = AuditService._count_page_issues(safe_audit_data)
+                critical, high, medium, low = AuditService._count_page_issues(
+                    safe_audit_data
+                )
 
-                batch_items.append({
-                    "audit_id": audit_id,
-                    "url": page_url,
-                    "path": path,
-                    "audit_data": safe_audit_data,
-                    "overall_score": overall_score,
-                    "h1_score": h1_score,
-                    "structure_score": structure_score,
-                    "content_score": content_score,
-                    "eeat_score": eeat_score,
-                    "schema_score": schema_score,
-                    "critical_issues": critical,
-                    "high_issues": high,
-                    "medium_issues": medium,
-                    "low_issues": low,
-                })
+                batch_items.append(
+                    {
+                        "audit_id": audit_id,
+                        "url": page_url,
+                        "path": path,
+                        "audit_data": safe_audit_data,
+                        "overall_score": overall_score,
+                        "h1_score": h1_score,
+                        "structure_score": structure_score,
+                        "content_score": content_score,
+                        "eeat_score": eeat_score,
+                        "schema_score": schema_score,
+                        "critical_issues": critical,
+                        "high_issues": high,
+                        "medium_issues": medium,
+                        "low_issues": low,
+                    }
+                )
 
             if not batch_items:
                 return []
 
             # Bulk insert
             from sqlalchemy import insert
+
             db.execute(insert(AuditedPage), batch_items)
             db.commit()
 
-            logger.info(f"{len(batch_items)} páginas guardadas en batch para audit {audit_id}")
-            return []  # No devolvemos los objetos por performance, a menos que sea necesario
+            logger.info(
+                f"{len(batch_items)} páginas guardadas en batch para audit {audit_id}"
+            )
+            return (
+                []
+            )  # No devolvemos los objetos por performance, a menos que sea necesario
 
         except Exception as e:
             logger.error(f"Error guardando batch de paginas para audit {audit_id}: {e}")
@@ -2058,7 +2071,7 @@ class AuditService:
     @staticmethod
     def delete_audit(db: Session, audit_id: int) -> bool:
         """Eliminar una auditoría y sus datos asociados.
-        
+
         Delegates child-row cleanup to DB-level ON DELETE CASCADE
         and avoids ORM row-by-row cascade deletes.
         """

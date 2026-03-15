@@ -118,11 +118,16 @@ def sanitize_for_pdf(text: str) -> str:
     if not isinstance(text, str):
         text = str(text)
     replacements = {
-        '\u2019': "'", '\u2018': "'",
-        '\u201c': '"', '\u201d': '"',
-        '\u2013': '-', '\u2014': '-',
-        '\u2026': '...', '\u00b7': '·',
-        '\u2022': '-', '\u00a0': ' ',
+        "\u2019": "'",
+        "\u2018": "'",
+        "\u201c": '"',
+        "\u201d": '"',
+        "\u2013": "-",
+        "\u2014": "-",
+        "\u2026": "...",
+        "\u00b7": "·",
+        "\u2022": "-",
+        "\u00a0": " ",
     }
     for char, replacement in replacements.items():
         text = text.replace(char, replacement)
@@ -249,7 +254,7 @@ class PDFReport(FPDF):
         elif "txt" in kwargs and isinstance(kwargs["txt"], str):
             kwargs["txt"] = sanitize_for_pdf(kwargs["txt"])
         elif "text" in kwargs and isinstance(kwargs["text"], str):
-             kwargs["text"] = sanitize_for_pdf(kwargs["text"])
+            kwargs["text"] = sanitize_for_pdf(kwargs["text"])
         return super().multi_cell(*new_args, **kwargs)
 
     def cell(self, *args, **kwargs):
@@ -259,7 +264,7 @@ class PDFReport(FPDF):
         elif "txt" in kwargs and isinstance(kwargs["txt"], str):
             kwargs["txt"] = sanitize_for_pdf(kwargs["txt"])
         elif "text" in kwargs and isinstance(kwargs["text"], str):
-             kwargs["text"] = sanitize_for_pdf(kwargs["text"])
+            kwargs["text"] = sanitize_for_pdf(kwargs["text"])
         return super().cell(*new_args, **kwargs)
 
     def header(self):

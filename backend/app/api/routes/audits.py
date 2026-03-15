@@ -756,6 +756,7 @@ async def create_audit(
     audit_create.user_email = current_user.email
     return await _create_audit_internal(audit_create, response, background_tasks, db)
 
+
 @router.post("/performance-test", status_code=status.HTTP_202_ACCEPTED)
 async def performance_test_audit(
     response: Response,
@@ -772,10 +773,9 @@ async def performance_test_audit(
         market="global",
         language="en",
         user_id="perf-test-user",
-        user_email="perf@test.com"
+        user_email="perf@test.com",
     )
     return await _create_audit_internal(audit_create, response, background_tasks, db)
-
 
 
 @router.get("", response_model=List[AuditSummary], include_in_schema=False)
@@ -1433,8 +1433,9 @@ async def generate_audit_pdf(
         force_report_refresh=force_report_refresh,
         force_external_intel_refresh=force_external_intel_refresh,
         db=db,
-        current_user=current_user
+        current_user=current_user,
     )
+
 
 @router.post("/{audit_id}/performance-test-pdf", status_code=status.HTTP_202_ACCEPTED)
 async def performance_test_pdf(
@@ -1450,8 +1451,9 @@ async def performance_test_pdf(
         audit_id=audit_id,
         background_tasks=background_tasks,
         db=db,
-        current_user=mock_user
+        current_user=mock_user,
     )
+
 
 async def _generate_audit_pdf_internal(
     audit_id: int,
@@ -1467,7 +1469,7 @@ async def _generate_audit_pdf_internal(
     job_lookup_ms = 0
     dependency_ms = 0
     queue_ms = 0
-    
+
     try:
         precheck_started_at = perf_counter()
         audit = _get_owned_projected_audit(

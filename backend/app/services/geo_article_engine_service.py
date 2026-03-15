@@ -965,13 +965,14 @@ class GeoArticleEngineService:
             str(topic).strip() for topic in (target_topics or []) if str(topic).strip()
         ]
         if cleaned_topics:
-            strategy_run_id, items = (
-                await GeoArticleEngineService._generate_strategy_run(
-                    db,
-                    audit,
-                    article_count=normalized_count,
-                    topics=cleaned_topics,
-                )
+            (
+                strategy_run_id,
+                items,
+            ) = await GeoArticleEngineService._generate_strategy_run(
+                db,
+                audit,
+                article_count=normalized_count,
+                topics=cleaned_topics,
             )
             return strategy_run_id, items, "generated_from_topics"
 
@@ -1346,13 +1347,15 @@ class GeoArticleEngineService:
         target_topics: Optional[List[str]] = None,
         authority_urls: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
-        strategy_run_id, strategy_items, strategy_source = (
-            await GeoArticleEngineService.resolve_batch_strategy(
-                db,
-                audit,
-                article_count=article_count,
-                target_topics=target_topics,
-            )
+        (
+            strategy_run_id,
+            strategy_items,
+            strategy_source,
+        ) = await GeoArticleEngineService.resolve_batch_strategy(
+            db,
+            audit,
+            article_count=article_count,
+            target_topics=target_topics,
         )
 
         normalized_authority_urls = GeoArticleEngineService._normalize_authority_urls(
@@ -1379,12 +1382,13 @@ class GeoArticleEngineService:
             unmatched_authority_urls.extend(
                 [url for url in normalized_authority_urls if url not in fetched_urls]
             )
-            matched_assignments, topic_unmatched = (
-                GeoArticleEngineService._assign_user_authority_urls_to_articles(
-                    audit,
-                    strategy_items,
-                    authority_sources,
-                )
+            (
+                matched_assignments,
+                topic_unmatched,
+            ) = GeoArticleEngineService._assign_user_authority_urls_to_articles(
+                audit,
+                strategy_items,
+                authority_sources,
             )
             article_authority_assignments.update(matched_assignments)
             unmatched_authority_urls.extend(topic_unmatched)
@@ -2126,12 +2130,12 @@ class GeoArticleEngineService:
         )
         serp_results: List[Dict[str, Any]] = []
         external_from_serp: List[Dict[str, Any]] = []
-        top_competitors: List[Dict[str, Any]] = (
-            GeoArticleEngineService._extract_competitors_from_audit(
-                audit=audit,
-                audit_domain=audit_domain,
-                vertical_hint=vertical_hint,
-            )
+        top_competitors: List[
+            Dict[str, Any]
+        ] = GeoArticleEngineService._extract_competitors_from_audit(
+            audit=audit,
+            audit_domain=audit_domain,
+            vertical_hint=vertical_hint,
         )
         inferred_intent = ""
         secondary_keywords: List[str] = []
@@ -3601,13 +3605,13 @@ class GeoArticleEngineService:
                 user_authority_sources
             )
             existing_cache = summary.get("_authority_source_cache") or []
-            summary["_authority_source_cache"] = (
-                GeoArticleEngineService._serialize_authority_source_cache(
-                    [
-                        *(existing_cache if isinstance(existing_cache, list) else []),
-                        *cached_sources,
-                    ]
-                )
+            summary[
+                "_authority_source_cache"
+            ] = GeoArticleEngineService._serialize_authority_source_cache(
+                [
+                    *(existing_cache if isinstance(existing_cache, list) else []),
+                    *cached_sources,
+                ]
             )
         strategy_run_id = str(summary.get("strategy_run_id") or "").strip()
         strategy_items = GeoArticleEngineService._extract_ai_strategy_items(

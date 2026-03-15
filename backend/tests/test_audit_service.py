@@ -228,13 +228,21 @@ async def test_set_audit_results_with_null_bytes_succeeds(
     # Data that mimics the real error: \x00 embedded in strings
     contaminated_target = {
         "url": "https://example.com",
-        "content": {"title": "Réseau en tant que service / SD-WAN", "desc": "S\x00ome text"},
+        "content": {
+            "title": "Réseau en tant que service / SD-WAN",
+            "desc": "S\x00ome text",
+        },
         "site_metrics": {"structure_score_percent": 40},
     }
     contaminated_external = {"category": "Cloud\x00Infra"}
     contaminated_search = {"query\x00key": {"items": [{"title": "R\x00esult"}]}}
     contaminated_competitors = [
-        {"url": "https://comp.example.com", "domain": "comp.example.com", "status": 200, "note": "N\x00ote"}
+        {
+            "url": "https://comp.example.com",
+            "domain": "comp.example.com",
+            "status": 200,
+            "note": "N\x00ote",
+        }
     ]
 
     await AuditService.set_audit_results(
@@ -256,4 +264,3 @@ async def test_set_audit_results_with_null_bytes_succeeds(
     assert "\x00" not in json.dumps(audit.search_results)
     assert "\x00" not in json.dumps(audit.competitor_audits)
     assert "\x00" not in (audit.report_markdown or "")
-

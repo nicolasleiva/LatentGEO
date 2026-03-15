@@ -744,11 +744,12 @@ class PageSpeedJobService:
             if not isinstance(pagespeed_data, dict) or not pagespeed_data:
                 raise RuntimeError("PageSpeed analysis returned no data.")
 
-            warnings, successful_results = (
-                PageSpeedJobService.extract_provider_warnings(
-                    pagespeed_data,
-                    strategy=strategy,
-                )
+            (
+                warnings,
+                successful_results,
+            ) = PageSpeedJobService.extract_provider_warnings(
+                pagespeed_data,
+                strategy=strategy,
             )
 
             merged_pagespeed = dict(audit.pagespeed_data or {})

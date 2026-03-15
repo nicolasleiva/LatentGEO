@@ -154,12 +154,14 @@ async def test_resolve_batch_strategy_generates_run_when_missing(
         staticmethod(fake_generate_strategy_run),
     )
 
-    strategy_run_id, items, strategy_source = (
-        await GeoArticleEngineService.resolve_batch_strategy(
-            db_session,
-            audit,
-            article_count=1,
-        )
+    (
+        strategy_run_id,
+        items,
+        strategy_source,
+    ) = await GeoArticleEngineService.resolve_batch_strategy(
+        db_session,
+        audit,
+        article_count=1,
     )
 
     assert strategy_run_id == "strategy-run-auto"
@@ -197,12 +199,14 @@ async def test_resolve_batch_strategy_reuses_latest_strategy_run_only(
     )
     db_session.commit()
 
-    strategy_run_id, items, strategy_source = (
-        await GeoArticleEngineService.resolve_batch_strategy(
-            db_session,
-            audit,
-            article_count=1,
-        )
+    (
+        strategy_run_id,
+        items,
+        strategy_source,
+    ) = await GeoArticleEngineService.resolve_batch_strategy(
+        db_session,
+        audit,
+        article_count=1,
     )
 
     assert strategy_run_id == "strategy-run-latest"
@@ -247,12 +251,14 @@ async def test_resolve_batch_strategy_generates_new_run_when_latest_is_insuffici
         staticmethod(fake_generate_strategy_run),
     )
 
-    strategy_run_id, items, strategy_source = (
-        await GeoArticleEngineService.resolve_batch_strategy(
-            db_session,
-            audit,
-            article_count=2,
-        )
+    (
+        strategy_run_id,
+        items,
+        strategy_source,
+    ) = await GeoArticleEngineService.resolve_batch_strategy(
+        db_session,
+        audit,
+        article_count=2,
     )
 
     assert strategy_run_id == "strategy-run-auto-2"

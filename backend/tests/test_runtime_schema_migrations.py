@@ -33,18 +33,26 @@ def test_runtime_migration_upgrades_existing_odoo_draft_actions_table(
     engine = create_engine(database_url)
     try:
         with engine.begin() as connection:
-            connection.execute(sa.text("""
+            connection.execute(
+                sa.text(
+                    """
                     CREATE TABLE odoo_draft_actions (
                         id INTEGER PRIMARY KEY,
                         action_key VARCHAR(255) NOT NULL,
                         target_path VARCHAR(500)
                     )
-                    """))
-            connection.execute(sa.text("""
+                    """
+                )
+            )
+            connection.execute(
+                sa.text(
+                    """
                     CREATE TABLE alembic_version (
                         version_num VARCHAR(32) NOT NULL
                     )
-                    """))
+                    """
+                )
+            )
             connection.execute(
                 sa.text(
                     "INSERT INTO alembic_version (version_num) VALUES (:version_num)"

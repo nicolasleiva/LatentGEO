@@ -2007,7 +2007,9 @@ class PDFService:
                 volume_value = (
                     k.volume
                     if hasattr(k, "volume")
-                    else k.search_volume if hasattr(k, "search_volume") else 0
+                    else k.search_volume
+                    if hasattr(k, "search_volume")
+                    else 0
                 ) or 0
                 difficulty_value = (
                     k.difficulty if hasattr(k, "difficulty") else 0
@@ -2023,7 +2025,9 @@ class PDFService:
                         "keyword": (
                             k.term
                             if hasattr(k, "term")
-                            else k.keyword if hasattr(k, "keyword") else ""
+                            else k.keyword
+                            if hasattr(k, "keyword")
+                            else ""
                         ),
                         "search_volume": volume_value,
                         "difficulty": difficulty_value,
@@ -2322,14 +2326,20 @@ class PDFService:
         """
         Check if GEO data exists for the audit using lightweight COUNT queries.
         This avoids loading full context when we just need to know if data exists.
-        
+
         Returns:
             Dictionary with counts for each GEO dataset
         """
-        from ..models import Keyword, Backlink, RankTracking, LLMVisibility, AIContentSuggestion
-        
+        from ..models import (
+            Keyword,
+            Backlink,
+            RankTracking,
+            LLMVisibility,
+            AIContentSuggestion,
+        )
+
         logger.info(f"Checking cached GEO data counts for audit {audit_id}")
-        
+
         return {
             "keywords_count": PDFService._safe_int(
                 db.query(Keyword).filter(Keyword.audit_id == audit_id).count()
@@ -2341,10 +2351,14 @@ class PDFService:
                 db.query(RankTracking).filter(RankTracking.audit_id == audit_id).count()
             ),
             "llm_visibility_count": PDFService._safe_int(
-                db.query(LLMVisibility).filter(LLMVisibility.audit_id == audit_id).count()
+                db.query(LLMVisibility)
+                .filter(LLMVisibility.audit_id == audit_id)
+                .count()
             ),
             "ai_content_suggestions_count": PDFService._safe_int(
-                db.query(AIContentSuggestion).filter(AIContentSuggestion.audit_id == audit_id).count()
+                db.query(AIContentSuggestion)
+                .filter(AIContentSuggestion.audit_id == audit_id)
+                .count()
             ),
         }
 
@@ -2733,7 +2747,7 @@ class PDFService:
         }
         if always_full_mode:
             force_fresh_geo = True
-        
+
         complete_context = PDFService._load_complete_audit_context(db, audit_id)
         cached_keywords = complete_context.get("keywords", [])
         cached_backlinks = complete_context.get("backlinks", {})
@@ -2747,7 +2761,15 @@ class PDFService:
             keywords_data_list, total=len(cached_keywords)
         )
         backlinks_top = cached_backlinks.get("top_backlinks", [])
-        has_cached_backlinks = any(k in cached_backlinks for k in ("top_backlinks", "total_backlinks", "referring_domains", "summary"))
+        has_cached_backlinks = any(
+            k in cached_backlinks
+            for k in (
+                "top_backlinks",
+                "total_backlinks",
+                "referring_domains",
+                "summary",
+            )
+        )
         backlinks_data = (
             PDFService._build_backlinks_payload(
                 backlinks_top,
@@ -2758,13 +2780,17 @@ class PDFService:
             if has_cached_backlinks
             else PDFService._build_backlinks_payload([])
         )
-        
+
         rankings_list = cached_rankings[:100]
-        rank_tracking_data = PDFService._build_rankings_payload(rankings_list, total=len(cached_rankings))
+        rank_tracking_data = PDFService._build_rankings_payload(
+            rankings_list, total=len(cached_rankings)
+        )
         llm_visibility_data = cached_llm_visibility[:60]
         ai_content_suggestions_list = cached_ai_suggestions[:50]
 
-        async def _payload_has_observed_rows_async(dataset_name: str, payload: Any) -> bool:
+        async def _payload_has_observed_rows_async(
+            dataset_name: str, payload: Any
+        ) -> bool:
             if dataset_name in {"llm_visibility", "ai_content_suggestions"}:
                 return isinstance(payload, list) and len(payload) > 0
             if not isinstance(payload, dict):
@@ -2788,11 +2814,32 @@ class PDFService:
             except (TypeError, ValueError):
                 return False
 
-        should_refresh_keywords = force_fresh_geo or not await _payload_has_observed_rows_async("keywords", keywords_data)
-        should_refresh_backlinks = force_fresh_geo or not await _payload_has_observed_rows_async("backlinks", backlinks_data)
-        should_refresh_rankings = force_fresh_geo or not await _payload_has_observed_rows_async("rankings", rank_tracking_data)
-        should_refresh_llm_visibility = force_fresh_geo or not await _payload_has_observed_rows_async("llm_visibility", llm_visibility_data)
-        should_refresh_ai_suggestions = force_fresh_geo or not await _payload_has_observed_rows_async("ai_content_suggestions", ai_content_suggestions_list)
+        should_refresh_keywords = (
+            force_fresh_geo
+            or not await _payload_has_observed_rows_async("keywords", keywords_data)
+        )
+        should_refresh_backlinks = (
+            force_fresh_geo
+            or not await _payload_has_observed_rows_async("backlinks", backlinks_data)
+        )
+        should_refresh_rankings = (
+            force_fresh_geo
+            or not await _payload_has_observed_rows_async(
+                "rankings", rank_tracking_data
+            )
+        )
+        should_refresh_llm_visibility = (
+            force_fresh_geo
+            or not await _payload_has_observed_rows_async(
+                "llm_visibility", llm_visibility_data
+            )
+        )
+        should_refresh_ai_suggestions = (
+            force_fresh_geo
+            or not await _payload_has_observed_rows_async(
+                "ai_content_suggestions", ai_content_suggestions_list
+            )
+        )
 
         # 4. Prepare GEO Tools context for PDF (cached by default, optional fresh refresh)
         logger.info("Preparing GEO Tools (Keywords, Backlinks, Rankings) for PDF...")
@@ -2834,9 +2881,7 @@ class PDFService:
 
         # Keep cached context as initial state; refresh selectively when needed
         keywords_data_list = (
-            keywords_data_list
-            if isinstance(keywords_data_list, list)
-            else []
+            keywords_data_list if isinstance(keywords_data_list, list) else []
         )
         keywords_data = (
             keywords_data
@@ -2854,9 +2899,7 @@ class PDFService:
             else PDFService._build_rankings_payload([])
         )
         llm_visibility_data = (
-            llm_visibility_data
-            if isinstance(llm_visibility_data, list)
-            else []
+            llm_visibility_data if isinstance(llm_visibility_data, list) else []
         )
         ai_content_suggestions_list = (
             ai_content_suggestions_list
@@ -2965,7 +3008,9 @@ class PDFService:
             )
             should_refresh_llm_visibility = force_fresh_geo or (
                 geo_data_counts["llm_visibility_count"] == 0
-                and not _payload_has_observed_rows("llm_visibility", llm_visibility_data)
+                and not _payload_has_observed_rows(
+                    "llm_visibility", llm_visibility_data
+                )
             )
             should_refresh_ai_suggestions = force_fresh_geo or (
                 geo_data_counts["ai_content_suggestions_count"] == 0
@@ -2986,20 +3031,25 @@ class PDFService:
 
             async def _refresh_pagespeed() -> Dict[str, Any]:
                 nonlocal pagespeed_data
-                logger.info(f"Running PageSpeed analysis for audit {audit_id} before PDF generation")
+                logger.info(
+                    f"Running PageSpeed analysis for audit {audit_id} before PDF generation"
+                )
                 try:
                     refreshed = await PDFService._run_stage_with_timeout(
                         stage_name="PageSpeed analysis",
                         coroutine_factory=lambda: PageSpeedService.analyze_both_strategies(
-                            url=str(audit.url), api_key=settings.GOOGLE_PAGESPEED_API_KEY
+                            url=str(audit.url),
+                            api_key=settings.GOOGLE_PAGESPEED_API_KEY,
                         ),
                         stage_timeout_seconds=pagespeed_timeout_seconds,
                         started_at=started_at,
                         total_budget_seconds=total_budget_seconds,
                     )
                     if not refreshed:
-                        raise TimeoutError("PageSpeed analysis did not complete in time")
-                    
+                        raise TimeoutError(
+                            "PageSpeed analysis did not complete in time"
+                        )
+
                     # Guardar en DB de forma síncrona usando una sesión local separada para no interferir
                     # con la sesión principal de este hilo de ejecución
                     svc_db = SessionLocal()
@@ -3007,12 +3057,14 @@ class PDFService:
                         AuditService.set_pagespeed_data(svc_db, audit_id, refreshed)
                     finally:
                         svc_db.close()
-                    
+
                     return refreshed
                 except Exception as e:
                     logger.warning(f"PageSpeed collection failed: {e}")
-                    pagespeed_generation_warnings.append("PageSpeed data could not be refreshed in time.")
-                    return pagespeed_data # Devolver el cache
+                    pagespeed_generation_warnings.append(
+                        "PageSpeed data could not be refreshed in time."
+                    )
+                    return pagespeed_data  # Devolver el cache
 
             rankings_seed_terms = PDFService._collect_geo_query_terms(
                 audit=audit,
@@ -3153,8 +3205,12 @@ class PDFService:
                 tier1_refreshes.append(("rankings", _refresh_rankings_dataset()))
 
             if tier1_refreshes:
-                logger.info(f"Tier 1 parallel refresh: {[n for n, _ in tier1_refreshes]}")
-                tier1_results = await asyncio.gather(*(a for _, a in tier1_refreshes), return_exceptions=True)
+                logger.info(
+                    f"Tier 1 parallel refresh: {[n for n, _ in tier1_refreshes]}"
+                )
+                tier1_results = await asyncio.gather(
+                    *(a for _, a in tier1_refreshes), return_exceptions=True
+                )
                 for (name, _), result in zip(tier1_refreshes, tier1_results):
                     if isinstance(result, Exception):
                         logger.error(f"Error refreshing {name}: {result}")
@@ -3180,16 +3236,26 @@ class PDFService:
             # This is more efficient than the fallbacks below which do db.refresh(audit) multiple times
             if geo_data_counts["keywords_count"] > 0 and not should_refresh_keywords:
                 if not keywords_data or not keywords_data.get("items"):
-                    logger.info(f"Loading {geo_data_counts['keywords_count']} existing keywords from DB")
+                    logger.info(
+                        f"Loading {geo_data_counts['keywords_count']} existing keywords from DB"
+                    )
                     db.refresh(audit)
                     if audit.keywords:
-                        keywords_data_list = [_normalize_keyword_row(k) for k in audit.keywords]
-                        keywords_data_list = [k for k in keywords_data_list if k.get("keyword")]
-                        keywords_data = PDFService._build_keywords_payload(keywords_data_list)
-            
+                        keywords_data_list = [
+                            _normalize_keyword_row(k) for k in audit.keywords
+                        ]
+                        keywords_data_list = [
+                            k for k in keywords_data_list if k.get("keyword")
+                        ]
+                        keywords_data = PDFService._build_keywords_payload(
+                            keywords_data_list
+                        )
+
             if geo_data_counts["backlinks_count"] > 0 and not should_refresh_backlinks:
                 if not backlinks_data or not backlinks_data.get("items"):
-                    logger.info(f"Loading {geo_data_counts['backlinks_count']} existing backlinks from DB")
+                    logger.info(
+                        f"Loading {geo_data_counts['backlinks_count']} existing backlinks from DB"
+                    )
                     db.refresh(audit)
                     if audit.backlinks:
                         backlinks_list = [
@@ -3202,11 +3268,15 @@ class PDFService:
                             }
                             for b in audit.backlinks
                         ]
-                        backlinks_data = PDFService._build_backlinks_payload(backlinks_list)
-            
+                        backlinks_data = PDFService._build_backlinks_payload(
+                            backlinks_list
+                        )
+
             if geo_data_counts["rankings_count"] > 0 and not should_refresh_rankings:
                 if not rank_tracking_data or not rank_tracking_data.get("items"):
-                    logger.info(f"Loading {geo_data_counts['rankings_count']} existing rankings from DB")
+                    logger.info(
+                        f"Loading {geo_data_counts['rankings_count']} existing rankings from DB"
+                    )
                     db.refresh(audit)
                     if getattr(audit, "rank_trackings", None):
                         rankings_list = [
@@ -3218,7 +3288,9 @@ class PDFService:
                             }
                             for r in audit.rank_trackings
                         ]
-                        rank_tracking_data = PDFService._build_rankings_payload(rankings_list)
+                        rank_tracking_data = PDFService._build_rankings_payload(
+                            rankings_list
+                        )
 
             # Fallback to DB if empty (handles cases where refresh failed)
             if not keywords_data or not keywords_data.get("items"):
@@ -3308,7 +3380,7 @@ class PDFService:
                     )
                     if not llm_queries:
                         return []
-                    
+
                     visibility_svc = LLMVisibilityService(db)
                     refreshed = await PDFService._run_stage_with_timeout(
                         stage_name="LLM visibility analysis",
@@ -3339,7 +3411,7 @@ class PDFService:
                     )
                     if not ai_topics:
                         return []
-                    
+
                     ai_content_svc = AIContentService(db)
                     refreshed = await PDFService._run_stage_with_timeout(
                         stage_name="AI content suggestions",
@@ -3352,9 +3424,14 @@ class PDFService:
                     )
                     if refreshed is None:
                         raise TimeoutError("AI content suggestions timed out")
-                    return [PDFService._normalize_ai_suggestion_row(row) for row in (refreshed or [])]
+                    return [
+                        PDFService._normalize_ai_suggestion_row(row)
+                        for row in (refreshed or [])
+                    ]
                 except Exception as e:
-                    logger.error(f"Error generating AI Content Suggestions for PDF: {e}")
+                    logger.error(
+                        f"Error generating AI Content Suggestions for PDF: {e}"
+                    )
                     return []
 
             tier2_refreshes: List[tuple[str, Awaitable[Any]]] = []
@@ -3364,8 +3441,12 @@ class PDFService:
                 tier2_refreshes.append(("ai_suggestions", _refresh_ai_suggestions()))
 
             if tier2_refreshes:
-                logger.info(f"Tier 2 parallel refresh: {[n for n, _ in tier2_refreshes]}")
-                tier2_results = await asyncio.gather(*(a for _, a in tier2_refreshes), return_exceptions=True)
+                logger.info(
+                    f"Tier 2 parallel refresh: {[n for n, _ in tier2_refreshes]}"
+                )
+                tier2_results = await asyncio.gather(
+                    *(a for _, a in tier2_refreshes), return_exceptions=True
+                )
                 for (name, _), result in zip(tier2_refreshes, tier2_results):
                     if isinstance(result, Exception):
                         logger.error(f"Error refreshing {name}: {result}")

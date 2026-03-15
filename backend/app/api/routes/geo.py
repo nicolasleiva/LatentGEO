@@ -20,7 +20,13 @@ from app.core.llm_kimi import (
     get_llm_function,
 )
 from app.core.logger import get_logger
-from app.models import Audit, CitationTracking, Competitor, DiscoveredQuery, GeoArticleBatch
+from app.models import (
+    Audit,
+    CitationTracking,
+    Competitor,
+    DiscoveredQuery,
+    GeoArticleBatch,
+)
 from app.services.audit_service import AuditService
 from app.services.citation_tracker_service import CitationTrackerService
 from app.services.competitor_citation_service import CompetitorCitationService
@@ -87,7 +93,12 @@ def _build_dashboard_benchmark_fast(db: Session, audit_id: int) -> Dict[str, Any
         .first()
     )
     if not top_competitor:
-        return {"has_data": False, "your_mentions": 0, "competitors": [], "gap_analysis": {}}
+        return {
+            "has_data": False,
+            "your_mentions": 0,
+            "competitors": [],
+            "gap_analysis": {},
+        }
     return {
         "has_data": True,
         "your_mentions": 0,
@@ -245,9 +256,9 @@ def _reconcile_article_batch_runtime_state(
 
         if batch.status == "processing" and task_state in _FAILED_TASK_STATES:
             batch.status = "failed"
-            summary["failure_reason"] = (
-                f"BATCH_TASK_{task_state}: background task finished in {task_state}."
-            )
+            summary[
+                "failure_reason"
+            ] = f"BATCH_TASK_{task_state}: background task finished in {task_state}."
             summary["completed_at"] = now.isoformat()
             summary["last_progress_at"] = now.isoformat()
             changed = True
@@ -264,9 +275,9 @@ def _reconcile_article_batch_runtime_state(
             batch.status = "failed"
             if not task_state:
                 summary["task_state"] = "UNKNOWN"
-            summary["failure_reason"] = (
-                "BATCH_STALLED: processing exceeded stale timeout window."
-            )
+            summary[
+                "failure_reason"
+            ] = "BATCH_STALLED: processing exceeded stale timeout window."
             summary["completed_at"] = now.isoformat()
             summary["last_progress_at"] = now.isoformat()
             changed = True
@@ -1589,7 +1600,9 @@ async def regenerate_article(
         if not batch:
             raise HTTPException(status_code=404, detail="Article batch not found")
         _get_owned_audit(db, batch.audit_id, current_user)
-        normalized_article_index = article_index + 1 if article_index == 0 else article_index
+        normalized_article_index = (
+            article_index + 1 if article_index == 0 else article_index
+        )
         regenerated = await GeoArticleEngineService.regenerate_article(
             db,
             batch_id=batch_id,

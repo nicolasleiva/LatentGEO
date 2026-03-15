@@ -16,7 +16,9 @@ class BackendUser(HttpUser):
 
     @task(2)
     def audits_list(self):
-        self.client.get("/api/v1/audits/", headers=self.auth_headers, name="/api/v1/audits/")
+        self.client.get(
+            "/api/v1/audits/", headers=self.auth_headers, name="/api/v1/audits/"
+        )
 
     @task(1)
     def geo_dashboard(self):

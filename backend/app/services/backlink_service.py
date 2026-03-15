@@ -249,11 +249,11 @@ class BacklinkService:
         visited = {base_url}
         queue = asyncio.Queue()
         await queue.put(base_url)
-        
+
         # Optimization 2: Aggressive backlink crawling (20 concurrent)
         sem = asyncio.Semaphore(20)
         lock = asyncio.Lock()
-        
+
         # Risk 1: Adaptive Throttling
         is_throttled = False
         throttled_sem = asyncio.Semaphore(3)
@@ -267,6 +267,7 @@ class BacklinkService:
                     break
 
                 try:
+
                     async def perform_crawl():
                         nonlocal is_throttled
                         if is_throttled:
@@ -278,12 +279,12 @@ class BacklinkService:
                                 return await CrawlerService.get_page_content(url)
 
                     content = await perform_crawl()
-                    
+
                     # Si no hay contenido, podría ser por rate limit (aunque get_page_content no lo diga)
                     # En este caso, si falla varias veces seguidas, podríamos marcar is_throttled.
                     # Por simplicidad, si retorna None, asumiremos que podría haber congestión si ocurre repetidamente.
                     # Pero para ser precisos, idealmente CrawlerService debería reportar el error.
-                    
+
                     if not content:
                         continue
 
@@ -295,16 +296,21 @@ class BacklinkService:
                         href = a.get("href")
                         full_url = urljoin(url, href)
                         parsed = urlparse(full_url)
-                        
+
                         if parsed.netloc == domain or parsed.netloc == f"www.{domain}":
-                            clean_url = f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
+                            clean_url = (
+                                f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
+                            )
                             outgoing.add(clean_url)
-                            
+
                             async with lock:
-                                if clean_url not in visited and len(visited) < max_pages:
+                                if (
+                                    clean_url not in visited
+                                    and len(visited) < max_pages
+                                ):
                                     visited.add(clean_url)
                                     await queue.put(clean_url)
-                    
+
                     async with lock:
                         graph[url] = outgoing
                 except Exception as e:
@@ -315,11 +321,11 @@ class BacklinkService:
         # Lanzar workers paralelos
         num_workers = 15
         workers = [asyncio.create_task(worker()) for _ in range(num_workers)]
-        
+
         await queue.join()
         for w in workers:
             w.cancel()
-        
+
         return graph
 
     async def analyze_backlinks(self, audit_id: int, domain: str) -> List[Backlink]:

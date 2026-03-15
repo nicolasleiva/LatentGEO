@@ -89,9 +89,9 @@ class AuditLocalService:
 
         headers = HEADERS.copy()
         headers["User-Agent"] = random.choice(USER_AGENTS)  # nosec B311
-        headers["Accept"] = (
-            "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8"
-        )
+        headers[
+            "Accept"
+        ] = "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8"
         headers["Accept-Language"] = "es-ES,es;q=0.9,en;q=0.8"
 
         try:

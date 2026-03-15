@@ -2952,7 +2952,9 @@ class PipelineService:
         if domain:
             d_clean = domain.lower().replace("www.", "").split(".")[0]
             if cat.lower() == d_clean or cat.lower() == domain.lower():
-                logger.warning(f"Category matches domain too closely: '{cat}' vs '{domain}'")
+                logger.warning(
+                    f"Category matches domain too closely: '{cat}' vs '{domain}'"
+                )
                 return True
 
         if not raw_queries:
@@ -3026,7 +3028,9 @@ class PipelineService:
             effective_timeout = 5.0 if invalid_category else timeout_seconds
 
             if effective_timeout and effective_timeout > 0:
-                retry_text = await asyncio.wait_for(retry_call, timeout=effective_timeout)
+                retry_text = await asyncio.wait_for(
+                    retry_call, timeout=effective_timeout
+                )
             else:
                 retry_text = await retry_call
 
@@ -6619,8 +6623,7 @@ class PipelineService:
                     or (
                         category_value
                         and domain_value
-                        and str(category_value).lower()
-                        in str(domain_value).lower()
+                        and str(category_value).lower() in str(domain_value).lower()
                     )
                 )
 
@@ -8546,7 +8549,7 @@ async def run_initial_audit(
 
             async def audit_one(audit_url: str) -> Dict[str, Any]:
                 nonlocal is_throttled
-                
+
                 # Si estamos ralentizados, usamos el semáforo restrictivo
                 if is_throttled:
                     async with throttled_sem:
@@ -8555,12 +8558,14 @@ async def run_initial_audit(
                 else:
                     async with sem:
                         result = await audit_local_service(audit_url)
-                
+
                 # Evaluar si hubo un 429/503 en el resultado
                 if isinstance(result, dict) and result.get("status") in {429, 503}:
-                    logger.warning(f"Rate limit detectado en auditoría (status {result.get('status')}) para {audit_url}")
+                    logger.warning(
+                        f"Rate limit detectado en auditoría (status {result.get('status')}) para {audit_url}"
+                    )
                     is_throttled = True
-                
+
                 return result
 
             results = await asyncio.gather(
