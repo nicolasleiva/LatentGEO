@@ -782,9 +782,9 @@ class OdooDraftService:
         Calls KIMI to adapt the article markdown to LinkedIn format.
         """
         from ...core.llm_kimi import (
-            get_llm_function,
             KimiGenerationError,
             KimiUnavailableError,
+            get_llm_function,
         )
 
         plan = await OdooDeliveryService.build_plan(self.db, audit)

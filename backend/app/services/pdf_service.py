@@ -2327,11 +2327,11 @@ class PDFService:
             Dictionary with counts for each GEO dataset
         """
         from ..models import (
-            Keyword,
-            Backlink,
-            RankTracking,
-            LLMVisibility,
             AIContentSuggestion,
+            Backlink,
+            Keyword,
+            LLMVisibility,
+            RankTracking,
         )
 
         logger.info(f"Checking cached GEO data counts for audit {audit_id}")
