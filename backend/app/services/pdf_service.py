@@ -2945,11 +2945,29 @@ class PDFService:
                 except (TypeError, ValueError):
                     return False
 
-            should_refresh_keywords = force_fresh_geo or geo_data_counts["keywords_count"] == 0
-            should_refresh_backlinks = force_fresh_geo or geo_data_counts["backlinks_count"] == 0
-            should_refresh_rankings = force_fresh_geo or geo_data_counts["rankings_count"] == 0
-            should_refresh_llm_visibility = force_fresh_geo or geo_data_counts["llm_visibility_count"] == 0
-            should_refresh_ai_suggestions = force_fresh_geo or geo_data_counts["ai_content_suggestions_count"] == 0
+            should_refresh_keywords = force_fresh_geo or (
+                geo_data_counts["keywords_count"] == 0
+                and not _payload_has_observed_rows("keywords", keywords_data)
+            )
+            should_refresh_backlinks = force_fresh_geo or (
+                geo_data_counts["backlinks_count"] == 0
+                and not _payload_has_observed_rows("backlinks", backlinks_data)
+            )
+            should_refresh_rankings = force_fresh_geo or (
+                geo_data_counts["rankings_count"] == 0
+                and not _payload_has_observed_rows("rankings", rank_tracking_data)
+            )
+            should_refresh_llm_visibility = force_fresh_geo or (
+                geo_data_counts["llm_visibility_count"] == 0
+                and not _payload_has_observed_rows("llm_visibility", llm_visibility_data)
+            )
+            should_refresh_ai_suggestions = force_fresh_geo or (
+                geo_data_counts["ai_content_suggestions_count"] == 0
+                and not _payload_has_observed_rows(
+                    "ai_content_suggestions",
+                    ai_content_suggestions_list,
+                )
+            )
             refreshed_geo_context = any(
                 (
                     should_refresh_keywords,
