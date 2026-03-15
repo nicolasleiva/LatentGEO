@@ -66,7 +66,8 @@ from .api.routes import (  # noqa: E402
 
 try:
     from .routes import score_history
-except Exception:
+except ImportError as exc:
+    logger.warning("score_history route unavailable: %s", exc)
     score_history = None
 
 from contextlib import asynccontextmanager  # noqa: E402

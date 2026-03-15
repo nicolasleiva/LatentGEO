@@ -19,7 +19,7 @@ class AuditCreate(BaseModel):
     url: str  # We use str to apply custom validation
     max_pages: Optional[int] = 100
     language: Optional[str] = "en"  # "en", "es", "pt", "fr", "de"
-    competitors: Optional[List[str]] = None  # URLs de competidores
+    competitors: List[str] = Field(default_factory=list)  # URLs de competidores
     market: Optional[str] = None  # "us", "latam", "emea", "argentina", etc.
     source: Optional[str] = "web"  # "web", "hubspot"
     # User association (Auth0)
@@ -40,7 +40,7 @@ class AuditCreate(BaseModel):
     @classmethod
     def validate_competitors(cls, v):
         if v is None:
-            return v
+            return []
         normalized_competitors = []
         for url in v:
             if not validate_url(url):

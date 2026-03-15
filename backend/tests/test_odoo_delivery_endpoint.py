@@ -981,8 +981,18 @@ def test_odoo_social_channels_endpoint(client, db_session, monkeypatch):
 
     async def _fake_get_social_channels(self, *, connection):
         return [
-            {"id": 1, "name": "LinkedIn Page", "media_type": "linkedin", "is_linkedin": True},
-            {"id": 2, "name": "Facebook", "media_type": "facebook", "is_linkedin": False},
+            {
+                "id": 1,
+                "name": "LinkedIn Page",
+                "media_type": "linkedin",
+                "is_linkedin": True,
+            },
+            {
+                "id": 2,
+                "name": "Facebook",
+                "media_type": "facebook",
+                "is_linkedin": False,
+            },
         ]
 
     monkeypatch.setattr(
@@ -1030,13 +1040,15 @@ def test_odoo_create_linkedin_post_endpoint(client, db_session, monkeypatch):
     audit.odoo_connection_id = connection.id
     db_session.commit()
 
-    async def _fake_create_linkedin_and_blog_drafts(self, *, audit, connection, article_slugs):
+    async def _fake_create_linkedin_and_blog_drafts(
+        self, *, audit, connection, article_slugs
+    ):
         assert "test-slug" in article_slugs
         return {
             "created": [
                 {"title": "LinkedIn: Test", "type": "linkedin_post", "status": "draft"}
             ],
-            "errors": []
+            "errors": [],
         }
 
     monkeypatch.setattr(

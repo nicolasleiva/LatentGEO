@@ -11,11 +11,10 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 from urllib.parse import urlparse
 
-from sqlalchemy import desc, or_
+from sqlalchemy import delete, desc, or_
 from sqlalchemy.orm import Session, load_only
 
 from ..core.config import settings
-from ..core.database import Base
 from ..core.logger import get_logger
 from ..models import (
     Audit,
@@ -354,7 +353,7 @@ class AuditService:
             domain=domain,
             status=AuditStatus.PENDING,
             language=language,
-            competitors=audit_create.competitors,
+            competitors=list(audit_create.competitors or []),
             market=audit_create.market,
             source=audit_create.source,
             user_id=audit_create.user_id,
@@ -1060,6 +1059,8 @@ class AuditService:
                 or str(artifact_payload.get("pagespeed_status")).lower() == "idle"
             ):
                 artifact_payload["pagespeed_status"] = "completed"
+            # Expose pagespeed_data for frontend (Issue 9)
+            artifact_payload["pagespeed_data"] = pagespeed_data
 
         payload = AuditService.build_overview_payload(
             projected_audit,
@@ -1185,7 +1186,7 @@ class AuditService:
             return value
 
         if isinstance(value, str):
-            return value.replace('\x00', '')
+            return value.replace("\x00", "")
 
         if isinstance(value, datetime):
             return value.isoformat()
@@ -1342,13 +1343,34 @@ class AuditService:
             if not CompetitorService.is_benchmark_available_competitor(normalized_comp):
                 competitor_warning_entries.append(normalized_comp)
 
+        if not safe_fix_plan:
+            try:
+                safe_fix_plan = PipelineService._enrich_fix_plan_with_audit_issues(
+                    [],
+                    normalized_target_audit,
+                    pagespeed_data=safe_pagespeed_data,
+                    product_intelligence_data=normalized_target_audit.get(
+                        "product_intelligence"
+                    ),
+                )
+            except Exception as e:
+                logger.warning(
+                    f"No se pudo enriquecer fix_plan automáticamente para audit {audit_id}: {e}"
+                )
+                safe_fix_plan = []
+
         audit.target_audit = normalized_target_audit
         audit.external_intelligence = safe_external_intelligence
         audit.search_results = safe_search_results
         audit.competitor_audits = normalized_competitor_audits
-        audit.report_markdown = (report_markdown or "").replace('\x00', '')
+        audit.report_markdown = (report_markdown or "").replace("\x00", "")
         audit.fix_plan = safe_fix_plan
         audit.pagespeed_data = safe_pagespeed_data
+
+        # Log fix_plan persistence (Issue 7)
+        logger.info(
+            f"Persisting fix_plan with {len(safe_fix_plan) if isinstance(safe_fix_plan, list) else 0} items for audit {audit_id}"
+        )
 
         # Calcular y guardar GEO Score para el target audit
         try:
@@ -1403,34 +1425,50 @@ class AuditService:
         except Exception as e:
             logger.warning(f"No se pudo inferir mercado para audit {audit_id}: {e}")
 
-        # Contar issues reales desde las pÃ¡ginas auditadas (MÃ¡s preciso para el dashboard)
         saved_pages = (
             db.query(AuditedPage).filter(AuditedPage.audit_id == audit_id).all()
         )
-
         if saved_pages:
             audit.total_pages = len(saved_pages)
-            audit.critical_issues = sum(p.critical_issues for p in saved_pages)
-            audit.high_issues = sum(p.high_issues for p in saved_pages)
-            audit.medium_issues = sum(p.medium_issues for p in saved_pages)
-            audit.low_issues = sum(p.low_issues for p in saved_pages)
-            logger.info(
-                f"Issues calculados desde {len(saved_pages)} pÃ¡ginas: C={audit.critical_issues}, H={audit.high_issues}"
-            )
+            audit.critical_issues = sum((p.critical_issues or 0) for p in saved_pages)
+            audit.high_issues = sum((p.high_issues or 0) for p in saved_pages)
+            audit.medium_issues = sum((p.medium_issues or 0) for p in saved_pages)
+            audit.low_issues = sum((p.low_issues or 0) for p in saved_pages)
         else:
-            # Fallback a fix_plan si no hay pÃ¡ginas guardadas
+            audit.total_pages = target_audit.get("audited_pages_count", 0)
+            page_scores = target_audit.get("page_scores", {}) or {}
+            audit.critical_issues = page_scores.get("critical", 0)
+            audit.high_issues = page_scores.get("high", 0)
+            audit.medium_issues = page_scores.get("medium", 0)
+            audit.low_issues = page_scores.get("low", 0)
+
+        # Log page_scores for debugging (Issue 8)
+        logger.info(
+            f"Page scores for audit {audit_id}: critical={audit.critical_issues}, "
+            f"high={audit.high_issues}, medium={audit.medium_issues}, low={audit.low_issues}"
+        )
+
+        # Improved fallback: calculate from fix_plan if all counts are 0 (Issue 8)
+        if (
+            audit.critical_issues == 0
+            and audit.high_issues == 0
+            and audit.medium_issues == 0
+        ):
             fix_plan_list = fix_plan if isinstance(fix_plan, list) else []
-            audit.critical_issues = len(
-                [f for f in fix_plan_list if f.get("priority") == "CRITICAL"]
-            )
-            audit.high_issues = len(
-                [f for f in fix_plan_list if f.get("priority") == "HIGH"]
-            )
-            audit.medium_issues = len(
-                [f for f in fix_plan_list if f.get("priority") == "MEDIUM"]
-            )
-            audit.low_issues = len(
-                [f for f in fix_plan_list if f.get("priority") == "LOW"]
+            normalized_fix_plan = []
+            for fix_item in fix_plan_list:
+                if not isinstance(fix_item, dict):
+                    continue
+                normalized_fix_plan.append(
+                    str(fix_item.get("priority", "")).strip().upper()
+                )
+            audit.critical_issues = normalized_fix_plan.count("CRITICAL")
+            audit.high_issues = normalized_fix_plan.count("HIGH")
+            audit.medium_issues = normalized_fix_plan.count("MEDIUM")
+            audit.low_issues = normalized_fix_plan.count("LOW")
+            logger.info(
+                f"Calculated issues from fix_plan for audit {audit_id}: "
+                f"critical={audit.critical_issues}, high={audit.high_issues}, medium={audit.medium_issues}"
             )
 
         # Guardar competidores con GEO scores calculados
@@ -1730,6 +1768,81 @@ class AuditService:
             raise
 
     @staticmethod
+    def save_page_audits_batch(
+        db: Session,
+        audit_id: int,
+        pages_data: List[Dict[str, Any]],
+    ) -> List[AuditedPage]:
+        """Guarda un lote de páginas auditadas en DB para mayor rendimiento."""
+        if not pages_data:
+            return []
+        try:
+            batch_items = []
+            for item in pages_data:
+                page_url = item.get("url")
+                page_data = item.get("data", {})
+
+                if not page_url:
+                    continue
+
+                safe_audit_data = AuditService._sanitize_json_value(page_data or {})
+                parsed_url = urlparse(page_url)
+                path = parsed_url.path or "/"
+
+                # Calcular scores
+                overall_score = AuditService._calculate_overall_score(safe_audit_data)
+                h1_score = AuditService._extract_h1_score(safe_audit_data)
+                structure_score = AuditService._extract_structure_score(safe_audit_data)
+                content_score = AuditService._extract_content_score(safe_audit_data)
+                eeat_score = AuditService._extract_eeat_score(safe_audit_data)
+                schema_score = AuditService._extract_schema_score(safe_audit_data)
+
+                # Contar issues
+                critical, high, medium, low = AuditService._count_page_issues(
+                    safe_audit_data
+                )
+
+                batch_items.append(
+                    {
+                        "audit_id": audit_id,
+                        "url": page_url,
+                        "path": path,
+                        "audit_data": safe_audit_data,
+                        "overall_score": overall_score,
+                        "h1_score": h1_score,
+                        "structure_score": structure_score,
+                        "content_score": content_score,
+                        "eeat_score": eeat_score,
+                        "schema_score": schema_score,
+                        "critical_issues": critical,
+                        "high_issues": high,
+                        "medium_issues": medium,
+                        "low_issues": low,
+                    }
+                )
+
+            if not batch_items:
+                return []
+
+            # Bulk insert
+            from sqlalchemy import insert
+
+            db.execute(insert(AuditedPage), batch_items)
+            db.commit()
+
+            logger.info(
+                f"{len(batch_items)} páginas guardadas en batch para audit {audit_id}"
+            )
+            return (
+                []
+            )  # No devolvemos los objetos por performance, a menos que sea necesario
+
+        except Exception as e:
+            logger.error(f"Error guardando batch de paginas para audit {audit_id}: {e}")
+            db.rollback()
+            raise
+
+    @staticmethod
     def _calculate_overall_score(audit_data: Dict[str, Any]) -> float:
         """Calcular score general de la pÃ¡gina basado en los datos de auditorÃ­a"""
         try:
@@ -1957,14 +2070,22 @@ class AuditService:
 
     @staticmethod
     def delete_audit(db: Session, audit_id: int) -> bool:
-        """Eliminar una auditorÃ­a y sus datos asociados"""
-        audit = db.query(Audit).filter(Audit.id == audit_id).first()
+        """Eliminar una auditoría y sus datos asociados.
+
+        Delegates child-row cleanup to DB-level ON DELETE CASCADE
+        and avoids ORM row-by-row cascade deletes.
+        """
+        audit = (
+            db.query(Audit)
+            .options(load_only(Audit.id, Audit.task_id))
+            .filter(Audit.id == audit_id)
+            .first()
+        )
         if not audit:
             return False
 
-        deleted_rows = 0
-        nullified_rows = 0
         try:
+            # Revoke any running Celery task
             task_id = str(getattr(audit, "task_id", "") or "").strip()
             if task_id:
                 try:
@@ -1979,50 +2100,10 @@ class AuditService:
                         f"Could not revoke task {task_id} for audit {audit_id}: {revoke_err}"
                     )
 
-            # DB-level defensive cleanup: remove or nullify every FK that points to audits.id.
-            # This prevents FK violations for tables that do not have ORM cascade configured.
-            for table in reversed(Base.metadata.sorted_tables):
-                if table.name == Audit.__tablename__:
-                    continue
-
-                referencing_columns = []
-                for column in table.columns:
-                    for fk in column.foreign_keys:
-                        target_column = fk.column
-                        if (
-                            target_column.table.name == Audit.__tablename__
-                            and target_column.name == "id"
-                        ):
-                            referencing_columns.append(column)
-                            break
-
-                for column in referencing_columns:
-                    if column.nullable:
-                        result = db.execute(
-                            table.update()
-                            .where(column == audit_id)
-                            .values({column.name: None})
-                        )
-                        affected = (
-                            int(result.rowcount)
-                            if result.rowcount is not None and result.rowcount >= 0
-                            else 0
-                        )
-                        nullified_rows += affected
-                    else:
-                        result = db.execute(table.delete().where(column == audit_id))
-                        affected = (
-                            int(result.rowcount)
-                            if result.rowcount is not None and result.rowcount >= 0
-                            else 0
-                        )
-                        deleted_rows += affected
-
-            db.delete(audit)
+            db.execute(delete(Competitor).where(Competitor.audit_id == audit_id))
+            db.execute(delete(Audit).where(Audit.id == audit_id))
             db.commit()
-            logger.info(
-                f"AuditorÃ­a {audit_id} eliminada (child_deleted={deleted_rows}, child_nullified={nullified_rows})"
-            )
+            logger.info(f"Auditoría {audit_id} eliminada correctamente")
             return True
         except Exception:
             db.rollback()
@@ -3283,7 +3364,8 @@ class CompetitorService:
             )
             schema_status = schema_presence.get("status")
             schema_present = None
-            if not incomplete_signals and schema_status is not None:
+            # Allow schema_present even with incomplete_signals if we have actual data (Issue 10)
+            if schema_status is not None:
                 schema_present = schema_status == "present"
 
             # Extraer semantic HTML score
@@ -3345,12 +3427,14 @@ class CompetitorService:
                 eeat_data.get("author_presence")
             ).get("status")
             eeat_score = None
-            if not incomplete_signals and author_status is not None:
+            # Allow eeat_score even with incomplete_signals if we have actual data (Issue 10)
+            if author_status is not None:
                 eeat_score = 100.0 if author_status == "pass" else 0.0
 
             # Extraer H1
             h1_present = None
-            if not incomplete_signals and h1_status is not None:
+            # Allow h1_present even with incomplete_signals if we have actual data (Issue 10)
+            if h1_status is not None:
                 h1_present = h1_status == "pass"
 
             # Extraer conversational tone
@@ -3366,12 +3450,12 @@ class CompetitorService:
             if tone_score is not None:
                 tone_score = max(0.0, min(10.0, float(tone_score)))
 
-            if incomplete_signals:
-                schema_present = None
-                structure_score = None
-                eeat_score = None
-                h1_present = None
-                tone_score = None
+            # Log benchmark data for target site (Issue 10 debugging)
+            logger.info(
+                f"Benchmark data for {comp_url}: schema={schema_present}, "
+                f"structure_score={structure_score}, eeat={eeat_score}, "
+                f"h1={h1_present}, tone={tone_score}, incomplete_signals={incomplete_signals}"
+            )
 
             return {
                 "url": comp_url,

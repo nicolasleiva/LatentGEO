@@ -43,6 +43,7 @@ except ImportError as e:
     print(f"Failed to import from app.main: {e}")
     # Fallback for different environments if necessary
     try:
+        from backend.app.core.auth import AuthUser, get_current_user
         from backend.app.core.config import settings
         from backend.app.core.database import Base, get_db
         from backend.app.main import app

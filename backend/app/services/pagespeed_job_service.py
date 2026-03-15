@@ -430,7 +430,7 @@ class PageSpeedJobService:
         pdf_job: AuditPdfJob | None = None,
         pdf_report: Report | None = None,
     ) -> AuditPageSpeedJob:
-        job = PageSpeedJobService.get_job_reconciled(db, audit.id)
+        job = PageSpeedJobService.get_job(db, audit.id)
         if job is None:
             job = AuditPageSpeedJob(audit_id=audit.id)
             db.add(job)
@@ -449,8 +449,8 @@ class PageSpeedJobService:
         job.completed_at = None
         job.updated_at = datetime.now(UTC)
 
+        db.flush()
         db.commit()
-        db.refresh(job)
         if publish_event:
             PageSpeedJobService.publish_status_event(
                 db,
@@ -744,11 +744,12 @@ class PageSpeedJobService:
             if not isinstance(pagespeed_data, dict) or not pagespeed_data:
                 raise RuntimeError("PageSpeed analysis returned no data.")
 
-            warnings, successful_results = (
-                PageSpeedJobService.extract_provider_warnings(
-                    pagespeed_data,
-                    strategy=strategy,
-                )
+            (
+                warnings,
+                successful_results,
+            ) = PageSpeedJobService.extract_provider_warnings(
+                pagespeed_data,
+                strategy=strategy,
             )
 
             merged_pagespeed = dict(audit.pagespeed_data or {})

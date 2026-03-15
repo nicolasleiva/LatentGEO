@@ -57,9 +57,18 @@ class KeywordService:
         self, audit_id: int, domain: str, seeds: List[str]
     ) -> List[Keyword]:
         """Genera keywords usando Kimi (Moonshot AI vía NVIDIA)"""
+        import time
+
+        start_time = time.perf_counter()
+
         try:
             prompt = self._get_prompt(domain, seeds)
+            prompt_time = time.perf_counter()
+            logger.info(
+                f"Keyword research prompt prepared for {domain} in {(prompt_time - start_time)*1000:.1f}ms"
+            )
 
+            api_start = time.perf_counter()
             response = await run_external_call(
                 "nvidia-keyword-service",
                 lambda: self.client.chat.completions.create(
@@ -71,6 +80,11 @@ class KeywordService:
                 ),
                 timeout_seconds=float(settings.NVIDIA_TIMEOUT_SECONDS),
             )
+            api_end = time.perf_counter()
+            api_duration_ms = (api_end - api_start) * 1000
+            logger.info(
+                f"Kimi API call for {domain} completed in {api_duration_ms:.1f}ms"
+            )
 
             content = response.choices[0].message.content.strip()
 
@@ -79,11 +93,17 @@ class KeywordService:
                 content = content.replace("```json", "").replace("```", "")
 
             results = self._process_ai_response(audit_id, content)
-            logger.info(f"Kimi generó {len(results)} keywords para {domain}")
+            parse_end = time.perf_counter()
+
+            total_duration_ms = (parse_end - start_time) * 1000
+            logger.info(
+                f"Kimi generó {len(results)} keywords para {domain} en {total_duration_ms:.1f}ms (API: {api_duration_ms:.1f}ms)"
+            )
             return results
 
         except Exception as e:
-            logger.error(f"Kimi API error: {e}")
+            total_duration_ms = (time.perf_counter() - start_time) * 1000
+            logger.error(f"Kimi API error after {total_duration_ms:.1f}ms: {e}")
             raise KimiGenerationError(f"Keyword generation failed: {e}") from e
 
     def _get_prompt(self, domain: str, seeds: List[str]) -> str:

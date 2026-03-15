@@ -965,13 +965,14 @@ class GeoArticleEngineService:
             str(topic).strip() for topic in (target_topics or []) if str(topic).strip()
         ]
         if cleaned_topics:
-            strategy_run_id, items = (
-                await GeoArticleEngineService._generate_strategy_run(
-                    db,
-                    audit,
-                    article_count=normalized_count,
-                    topics=cleaned_topics,
-                )
+            (
+                strategy_run_id,
+                items,
+            ) = await GeoArticleEngineService._generate_strategy_run(
+                db,
+                audit,
+                article_count=normalized_count,
+                topics=cleaned_topics,
             )
             return strategy_run_id, items, "generated_from_topics"
 
@@ -1346,13 +1347,15 @@ class GeoArticleEngineService:
         target_topics: Optional[List[str]] = None,
         authority_urls: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
-        strategy_run_id, strategy_items, strategy_source = (
-            await GeoArticleEngineService.resolve_batch_strategy(
-                db,
-                audit,
-                article_count=article_count,
-                target_topics=target_topics,
-            )
+        (
+            strategy_run_id,
+            strategy_items,
+            strategy_source,
+        ) = await GeoArticleEngineService.resolve_batch_strategy(
+            db,
+            audit,
+            article_count=article_count,
+            target_topics=target_topics,
         )
 
         normalized_authority_urls = GeoArticleEngineService._normalize_authority_urls(
@@ -1379,12 +1382,13 @@ class GeoArticleEngineService:
             unmatched_authority_urls.extend(
                 [url for url in normalized_authority_urls if url not in fetched_urls]
             )
-            matched_assignments, topic_unmatched = (
-                GeoArticleEngineService._assign_user_authority_urls_to_articles(
-                    audit,
-                    strategy_items,
-                    authority_sources,
-                )
+            (
+                matched_assignments,
+                topic_unmatched,
+            ) = GeoArticleEngineService._assign_user_authority_urls_to_articles(
+                audit,
+                strategy_items,
+                authority_sources,
             )
             article_authority_assignments.update(matched_assignments)
             unmatched_authority_urls.extend(topic_unmatched)

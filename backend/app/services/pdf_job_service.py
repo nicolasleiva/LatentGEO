@@ -490,7 +490,7 @@ class PDFJobService:
         force_report_refresh: bool,
         force_external_intel_refresh: bool,
     ) -> AuditPdfJob:
-        job = PDFJobService.get_job_reconciled(db, audit_id)
+        job = PDFJobService.get_job(db, audit_id)
         if job is None:
             job = AuditPdfJob(audit_id=audit_id)
             db.add(job)
@@ -511,8 +511,8 @@ class PDFJobService:
         job.completed_at = None
         job.updated_at = datetime.now(UTC)
 
+        db.flush()
         db.commit()
-        db.refresh(job)
         return job
 
     @staticmethod
@@ -536,6 +536,7 @@ class PDFJobService:
         *,
         waiting_on: str,
         dependency_job_id: int | None,
+        commit: bool = True,
     ) -> AuditPdfJob:
         now = datetime.now(UTC)
         job.status = AuditPdfJobStatus.WAITING.value
@@ -545,8 +546,9 @@ class PDFJobService:
         job.completed_at = None
         job.updated_at = now
         db.add(job)
-        db.commit()
-        db.refresh(job)
+        db.flush()
+        if commit:
+            db.commit()
         return job
 
     @staticmethod

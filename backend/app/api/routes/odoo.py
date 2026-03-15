@@ -909,7 +909,9 @@ async def create_linkedin_post(
 
     connection = _resolve_connection(db, audit)
     if connection is None:
-        raise HTTPException(status_code=400, detail="No Odoo connection assigned to this audit")
+        raise HTTPException(
+            status_code=400, detail="No Odoo connection assigned to this audit"
+        )
 
     draft_service = OdooDraftService(db)
     result = await draft_service.create_linkedin_and_blog_drafts(
@@ -938,7 +940,9 @@ async def create_linkedin_post_all(
 
     connection = _resolve_connection(db, audit)
     if connection is None:
-        raise HTTPException(status_code=400, detail="No Odoo connection assigned to this audit")
+        raise HTTPException(
+            status_code=400, detail="No Odoo connection assigned to this audit"
+        )
 
     draft_service = OdooDraftService(db)
     result = await draft_service.create_linkedin_and_blog_drafts(
@@ -961,4 +965,3 @@ def _resolve_connection(db: Session, audit: Audit) -> Optional[OdooConnection]:
         )
         .first()
     )
-
