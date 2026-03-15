@@ -2089,6 +2089,7 @@ class AuditService:
                         f"Could not revoke task {task_id} for audit {audit_id}: {revoke_err}"
                     )
 
+            db.execute(delete(Competitor).where(Competitor.audit_id == audit_id))
             db.execute(delete(Audit).where(Audit.id == audit_id))
             db.commit()
             logger.info(f"Auditoría {audit_id} eliminada correctamente")

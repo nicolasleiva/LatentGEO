@@ -1579,7 +1579,7 @@ export default function OdooDeliveryPageClient({
                     </div>
                   </div>
                   <div className="flex flex-wrap gap-3 mt-4">
-                <Button variant="outline" onClick={copyConnection}>
+                <Button variant="outline" onClick={copyPacket}>
                   <Clipboard className="mr-2 h-4 w-4" />
                   Copy configuration
                 </Button>

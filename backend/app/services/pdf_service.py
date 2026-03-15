@@ -2331,19 +2331,42 @@ class PDFService:
         logger.info(f"Checking cached GEO data counts for audit {audit_id}")
         
         return {
-            "keywords_count": db.query(Keyword).filter(Keyword.audit_id == audit_id).count(),
-            "backlinks_count": db.query(Backlink).filter(Backlink.audit_id == audit_id).count(),
-            "rankings_count": db.query(RankTracking).filter(RankTracking.audit_id == audit_id).count(),
-            "llm_visibility_count": db.query(LLMVisibility).filter(LLMVisibility.audit_id == audit_id).count(),
-            "ai_content_suggestions_count": db.query(AIContentSuggestion).filter(AIContentSuggestion.audit_id == audit_id).count(),
+            "keywords_count": PDFService._safe_int(
+                db.query(Keyword).filter(Keyword.audit_id == audit_id).count()
+            ),
+            "backlinks_count": PDFService._safe_int(
+                db.query(Backlink).filter(Backlink.audit_id == audit_id).count()
+            ),
+            "rankings_count": PDFService._safe_int(
+                db.query(RankTracking).filter(RankTracking.audit_id == audit_id).count()
+            ),
+            "llm_visibility_count": PDFService._safe_int(
+                db.query(LLMVisibility).filter(LLMVisibility.audit_id == audit_id).count()
+            ),
+            "ai_content_suggestions_count": PDFService._safe_int(
+                db.query(AIContentSuggestion).filter(AIContentSuggestion.audit_id == audit_id).count()
+            ),
         }
 
     @staticmethod
     def _safe_int(value: Any, default: int = 0) -> int:
-        try:
-            return int(value)
-        except (TypeError, ValueError):
+        if value is None:
             return default
+        if isinstance(value, bool):
+            return int(value)
+        if isinstance(value, int):
+            return value
+        if isinstance(value, float):
+            return int(value)
+        if isinstance(value, str):
+            stripped = value.strip()
+            if not stripped:
+                return default
+            try:
+                return int(float(stripped))
+            except ValueError:
+                return default
+        return default
 
     @staticmethod
     def _safe_float(value: Any, default: float = 0.0) -> float:
@@ -2725,12 +2748,16 @@ class PDFService:
         )
         backlinks_top = cached_backlinks.get("top_backlinks", [])
         has_cached_backlinks = any(k in cached_backlinks for k in ("top_backlinks", "total_backlinks", "referring_domains", "summary"))
-        backlinks_data = PDFService._build_backlinks_payload(
+        backlinks_data = (
+            PDFService._build_backlinks_payload(
                 backlinks_top,
                 total=cached_backlinks.get("total_backlinks", len(backlinks_top)),
                 referring_domains=cached_backlinks.get("referring_domains", 0),
                 summary=cached_backlinks.get("summary", {}),
-            ) if has_cached_backlinks else {}
+            )
+            if has_cached_backlinks
+            else PDFService._build_backlinks_payload([])
+        )
         
         rankings_list = cached_rankings[:100]
         rank_tracking_data = PDFService._build_rankings_payload(rankings_list, total=len(cached_rankings))
@@ -2799,13 +2826,37 @@ class PDFService:
             f"ai_content_suggestions={geo_data_counts['ai_content_suggestions_count']}"
         )
 
-        # Initialize empty data structures (will be populated after refresh if needed)
-        keywords_data_list = []
-        keywords_data = {}
-        backlinks_data = {}
-        rank_tracking_data = {}
-        llm_visibility_data = []
-        ai_content_suggestions_list = []
+        # Keep cached context as initial state; refresh selectively when needed
+        keywords_data_list = (
+            keywords_data_list
+            if isinstance(keywords_data_list, list)
+            else []
+        )
+        keywords_data = (
+            keywords_data
+            if isinstance(keywords_data, dict)
+            else PDFService._build_keywords_payload([])
+        )
+        backlinks_data = (
+            backlinks_data
+            if isinstance(backlinks_data, dict)
+            else PDFService._build_backlinks_payload([])
+        )
+        rank_tracking_data = (
+            rank_tracking_data
+            if isinstance(rank_tracking_data, dict)
+            else PDFService._build_rankings_payload([])
+        )
+        llm_visibility_data = (
+            llm_visibility_data
+            if isinstance(llm_visibility_data, list)
+            else []
+        )
+        ai_content_suggestions_list = (
+            ai_content_suggestions_list
+            if isinstance(ai_content_suggestions_list, list)
+            else []
+        )
 
         # Import services here to avoid circular imports if any
         try:
@@ -3084,12 +3135,22 @@ class PDFService:
                     if isinstance(result, Exception):
                         logger.error(f"Error refreshing {name}: {result}")
                         continue
-                    if name == "pagespeed": pagespeed_data = result
+                    if name == "pagespeed":
+                        pagespeed_data = result
                     elif name == "keywords":
-                        keywords_data = result
-                        keywords_data_list = result.get("items", []) if isinstance(result, dict) else []
-                    elif name == "backlinks": backlinks_data = result
-                    elif name == "rankings": rank_tracking_data = result
+                        if _payload_has_observed_rows("keywords", result):
+                            keywords_data = result
+                            keywords_data_list = (
+                                result.get("items", [])
+                                if isinstance(result, dict)
+                                else []
+                            )
+                    elif name == "backlinks":
+                        if _payload_has_observed_rows("backlinks", result):
+                            backlinks_data = result
+                    elif name == "rankings":
+                        if _payload_has_observed_rows("rankings", result):
+                            rank_tracking_data = result
 
             # Load existing data from DB if we have cached data but didn't refresh
             # This is more efficient than the fallbacks below which do db.refresh(audit) multiple times
