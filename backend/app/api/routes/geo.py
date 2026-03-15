@@ -2,6 +2,7 @@
 GEO Features API Routes
 """
 
+import asyncio
 import json
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
@@ -10,7 +11,7 @@ from urllib.parse import urlparse
 from app.core.access_control import ensure_audit_access
 from app.core.auth import AuthUser, get_current_user
 from app.core.config import settings
-from app.core.database import get_db
+from app.core.database import SessionLocal, get_db
 from app.core.llm_kimi import (
     KimiGenerationError,
     KimiSearchError,
@@ -19,7 +20,7 @@ from app.core.llm_kimi import (
     get_llm_function,
 )
 from app.core.logger import get_logger
-from app.models import CitationTracking, DiscoveredQuery, GeoArticleBatch
+from app.models import Audit, CitationTracking, Competitor, DiscoveredQuery, GeoArticleBatch
 from app.services.audit_service import AuditService
 from app.services.citation_tracker_service import CitationTrackerService
 from app.services.competitor_citation_service import CompetitorCitationService
@@ -37,7 +38,7 @@ from app.services.schema_optimizer_service import SchemaOptimizerService
 from app.workers.celery_app import celery_app
 from fastapi import APIRouter, BackgroundTasks, Body, Depends, HTTPException
 from pydantic import BaseModel, Field, field_validator
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, load_only
 
 logger = get_logger(__name__)
 
@@ -53,10 +54,51 @@ def _get_owned_audit(db: Session, audit_id: int, current_user: AuthUser):
     return ensure_audit_access(audit, current_user)
 
 
+def _get_owned_audit_light(db: Session, audit_id: int, current_user: AuthUser):
+    audit = (
+        db.query(Audit)
+        .options(
+            load_only(
+                Audit.id,
+                Audit.user_id,
+                Audit.user_email,
+                Audit.url,
+            )
+        )
+        .filter(Audit.id == audit_id)
+        .first()
+    )
+    return ensure_audit_access(audit, current_user)
+
+
 def _extract_domain_brand(url: str) -> tuple[str, str]:
     domain = urlparse(url).netloc.replace("www.", "")
     brand_name = domain.split(".")[0].title() if domain else "Brand"
     return domain, brand_name
+
+
+def _build_dashboard_benchmark_fast(db: Session, audit_id: int) -> Dict[str, Any]:
+    from sqlalchemy import desc
+
+    top_competitor = (
+        db.query(Competitor.url, Competitor.geo_score)
+        .filter(Competitor.audit_id == audit_id)
+        .order_by(desc(Competitor.geo_score))
+        .first()
+    )
+    if not top_competitor:
+        return {"has_data": False, "your_mentions": 0, "competitors": [], "gap_analysis": {}}
+    return {
+        "has_data": True,
+        "your_mentions": 0,
+        "competitors": [
+            {
+                "name": top_competitor[0],
+                "geo_score": top_competitor[1] or 0,
+            }
+        ],
+        "gap_analysis": {},
+    }
 
 
 _ALLOWED_ERROR_CATEGORIES = {"internal_error", "invalid_input", "unauthorized"}
@@ -435,7 +477,7 @@ def get_citation_history(
 ):
     """Obtiene historial de citaciones."""
     try:
-        _get_owned_audit(db, audit_id, current_user)
+        _get_owned_audit_light(db, audit_id, current_user)
         history = CitationTrackerService.get_citation_history(db, audit_id, days)
         return history
     except Exception as e:
@@ -534,15 +576,20 @@ def get_citation_history_legacy(
 ):
     """Legacy monthly citation history endpoint used by current GEO UI."""
     try:
-        _get_owned_audit(db, audit_id, current_user)
+        _get_owned_audit_light(db, audit_id, current_user)
         from collections import defaultdict
 
         from sqlalchemy import desc
 
         rows = (
-            db.query(CitationTracking)
+            db.query(
+                CitationTracking.tracked_at,
+                CitationTracking.is_mentioned,
+                CitationTracking.query,
+            )
             .filter(CitationTracking.audit_id == audit_id)
             .order_by(desc(CitationTracking.tracked_at))
+            .limit(300)
             .all()
         )
 
@@ -555,12 +602,12 @@ def get_citation_history_legacy(
         )
 
         for row in rows:
-            key = (row.tracked_at.year, row.tracked_at.month)
+            key = (row[0].year, row[0].month)
             grouped[key]["total"] += 1
-            if row.is_mentioned:
+            if row[1]:
                 grouped[key]["mentions"] += 1
-                if row.query and row.query not in grouped[key]["queries"]:
-                    grouped[key]["queries"].append(row.query)
+                if row[2] and row[2] not in grouped[key]["queries"]:
+                    grouped[key]["queries"].append(row[2])
 
         history = []
         for (year, month), data in sorted(grouped.items(), reverse=True):
@@ -690,7 +737,7 @@ def get_query_opportunities(
 ):
     """Obtiene las mejores oportunidades de queries."""
     try:
-        _get_owned_audit(db, audit_id, current_user)
+        _get_owned_audit_light(db, audit_id, current_user)
         opportunities = QueryDiscoveryService.get_top_opportunities(db, audit_id, limit)
         return {
             "total_opportunities": len(opportunities),
@@ -1205,7 +1252,7 @@ def get_latest_commerce_query_analysis(
 ):
     """Fetch latest query-first ecommerce analysis for the audit."""
     try:
-        _get_owned_audit(db, audit_id, current_user)
+        _get_owned_audit_light(db, audit_id, current_user)
         analysis = GeoCommerceService.get_latest_query_analysis(db, audit_id)
         if not analysis:
             return {"has_data": False}
@@ -1542,10 +1589,11 @@ async def regenerate_article(
         if not batch:
             raise HTTPException(status_code=404, detail="Article batch not found")
         _get_owned_audit(db, batch.audit_id, current_user)
+        normalized_article_index = article_index + 1 if article_index == 0 else article_index
         regenerated = await GeoArticleEngineService.regenerate_article(
             db,
             batch_id=batch_id,
-            article_index=article_index,
+            article_index=normalized_article_index,
             authority_urls=request.authority_urls,
         )
         return GeoArticleEngineService.serialize_batch(regenerated)
@@ -1576,10 +1624,15 @@ async def regenerate_article(
             status_code=502,
             detail=_safe_http_error_detail("KIMI_GENERATION_FAILED"),
         )
-    except ValueError:
+    except ValueError as e:
+        logger.warning(
+            f"Invalid regenerate input batch={batch_id} idx={article_index}: {e}"
+        )
+        detail = _safe_http_error_detail("INVALID_INPUT")
+        detail["message"] = f"{detail['message']} {str(e)}".strip()
         raise HTTPException(
             status_code=400,
-            detail=_safe_http_error_detail("INVALID_INPUT"),
+            detail=detail,
         )
     except Exception as e:
         logger.error(
@@ -1599,7 +1652,7 @@ async def get_geo_dashboard(
 ):
     """Obtiene resumen completo de GEO para el dashboard."""
     try:
-        _get_owned_audit(db, audit_id, current_user)
+        _get_owned_audit_light(db, audit_id, current_user)
         citation_history: Dict[str, Any] = {}
         opportunities: List[Dict[str, Any]] = []
         benchmark: Dict[str, Any] = {}
@@ -1607,56 +1660,57 @@ async def get_geo_dashboard(
         latest_query_analysis = None
         latest_batch = None
 
-        try:
-            citation_history = (
-                CitationTrackerService.get_citation_history(db, audit_id, 30) or {}
-            )
-        except Exception as history_exc:
-            logger.warning(
-                f"Citation history failed for audit {audit_id}: {history_exc}"
-            )
+        def _load_with_session(loader):
+            local_db = SessionLocal()
+            try:
+                return loader(local_db)
+            finally:
+                local_db.close()
 
-        try:
-            opportunities = (
-                QueryDiscoveryService.get_top_opportunities(db, audit_id, 5) or []
-            )
-        except Exception as opportunities_exc:
-            logger.warning(
-                f"Query opportunities failed for audit {audit_id}: {opportunities_exc}"
-            )
+        async def _run_lookup(label: str, loader, fallback):
+            try:
+                result = await asyncio.wait_for(
+                    asyncio.to_thread(_load_with_session, loader),
+                    timeout=1.8,
+                )
+                return result if result is not None else fallback
+            except asyncio.TimeoutError:
+                logger.warning(f"{label} timed out for audit {audit_id}")
+                return fallback
+            except Exception as lookup_exc:
+                logger.warning(f"{label} failed for audit {audit_id}: {lookup_exc}")
+                return fallback
 
-        try:
-            benchmark = (
-                CompetitorCitationService.get_citation_benchmark(db, audit_id) or {}
-            )
-        except Exception as benchmark_exc:
-            logger.warning(
-                f"Competitor benchmark failed for audit {audit_id}: {benchmark_exc}"
-            )
+        (
+            citation_history,
+            opportunities,
+            benchmark,
+        ) = await asyncio.gather(
+            _run_lookup(
+                "Citation history",
+                lambda local_db: CitationTrackerService.get_citation_history(
+                    local_db, audit_id, 30
+                ),
+                {},
+            ),
+            _run_lookup(
+                "Query opportunities",
+                lambda local_db: QueryDiscoveryService.get_top_opportunities(
+                    local_db, audit_id, 5
+                ),
+                [],
+            ),
+            _run_lookup(
+                "Competitor benchmark",
+                lambda local_db: _build_dashboard_benchmark_fast(local_db, audit_id),
+                {},
+            ),
+        )
+        latest_campaign = None
+        latest_query_analysis = None
+        latest_batch = None
+
         benchmark = _sanitize_geo_benchmark_payload(benchmark)
-
-        try:
-            latest_campaign = GeoCommerceService.get_latest_campaign(db, audit_id)
-        except Exception as campaign_exc:
-            logger.warning(
-                f"Legacy commerce campaign lookup failed for audit {audit_id}: {campaign_exc}"
-            )
-
-        try:
-            latest_query_analysis = GeoCommerceService.get_latest_query_analysis(
-                db, audit_id
-            )
-        except Exception as query_exc:
-            logger.warning(
-                f"Commerce query analysis lookup failed for audit {audit_id}: {query_exc}"
-            )
-
-        try:
-            latest_batch = GeoArticleEngineService.get_latest_batch(db, audit_id)
-        except Exception as batch_exc:
-            logger.warning(
-                f"Article engine lookup failed for audit {audit_id}: {batch_exc}"
-            )
 
         benchmark_gap_payload = benchmark.get("gap_analysis")
         if benchmark_gap_payload is None and (

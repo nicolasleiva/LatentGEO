@@ -108,10 +108,10 @@ def run_audit_task(self, audit_id: int):
                     max_retries=5,
                 )
 
-            # 1. Marcar la auditoría como RUNNING
             AuditService.update_audit_progress(
                 db=db, audit_id=audit_id, progress=5, status=AuditStatus.RUNNING
             )
+            db.commit()  # Checkpoint: RUNNING status persisted
 
             # Guardamos la URL y el contexto para usarla fuera del bloque de sesión
             audit_url = str(audit.url)
@@ -193,19 +193,20 @@ def run_audit_task(self, audit_id: int):
 
         def update_progress(value: float):
             try:
-                with get_db_session() as db:
-                    audit = AuditService.get_audit(db, audit_id)
+                with get_db_session() as progress_db:
+                    audit = AuditService.get_audit(progress_db, audit_id)
                     if not audit:
                         return
                     current = audit.progress or 0
                     if value <= current:
                         return
                     AuditService.update_audit_progress(
-                        db=db,
+                        db=progress_db,
                         audit_id=audit_id,
                         progress=value,
                         status=AuditStatus.RUNNING,
                     )
+                    progress_db.commit()
             except Exception as progress_err:
                 logger.warning(
                     f"Could not update progress for audit {audit_id}: {progress_err}"
@@ -226,7 +227,7 @@ def run_audit_task(self, audit_id: int):
                 crawler_service=CrawlerService.crawl_site,
                 audit_local_service=audit_local_service_func,
                 progress_callback=update_progress,
-                generate_report=False,
+                generate_report=True,
                 enable_llm_external_intel=True,
                 external_intel_mode="full",
                 external_intel_timeout_seconds=(
@@ -238,38 +239,33 @@ def run_audit_task(self, audit_id: int):
             )
         )
 
-        # GEO Tools (Keywords, Backlinks, Rankings) will be generated on-demand when PDF is requested
-        # This avoids generating data that may not be used and keeps the audit pipeline fast
+        # Ensure target_audit is a dictionary (Checkpoint 3 path)
+        report_markdown = result.get("report_markdown", "")
+        raw_target_audit = result.get("target_audit", {})
+        if not isinstance(raw_target_audit, dict):
+            logger.warning(
+                f"PipelineService returned non-dict target_audit for audit {audit_id}: {type(raw_target_audit)}"
+            )
+            target_audit = (
+                raw_target_audit[0]
+                if isinstance(raw_target_audit, (tuple, list))
+                and len(raw_target_audit) > 0
+                and isinstance(raw_target_audit[0], dict)
+                else {}
+            )
+        else:
+            target_audit = raw_target_audit
 
-        # Guardar páginas auditadas individuales
+        fix_plan = result.get("fix_plan", [])
+        external_intelligence = result.get("external_intelligence", {})
+        search_results = result.get("search_results", {})
+        competitor_audits = result.get("competitor_audits", [])
+        pagespeed_data = result.get("pagespeed", {})
+
         with get_db_session() as db:
+            # Guardar páginas auditadas individuales
             _save_individual_pages(db, audit_id, result)
-
-        with get_db_session() as db:
-            # 3. Guardar resultados y marcar como COMPLETED
-            report_markdown = result.get("report_markdown", "")
-
-            # Ensure target_audit is a dictionary.
-            raw_target_audit = result.get("target_audit", {})
-            if not isinstance(raw_target_audit, dict):
-                logger.warning(
-                    f"PipelineService returned non-dict target_audit for audit {audit_id}: {type(raw_target_audit)}"
-                )
-                target_audit = (
-                    raw_target_audit[0]
-                    if isinstance(raw_target_audit, (tuple, list))
-                    and len(raw_target_audit) > 0
-                    and isinstance(raw_target_audit[0], dict)
-                    else {}
-                )
-            else:
-                target_audit = raw_target_audit
-
-            fix_plan = result.get("fix_plan", [])
-            external_intelligence = result.get("external_intelligence", {})
-            search_results = result.get("search_results", {})
-            competitor_audits = result.get("competitor_audits", [])
-            pagespeed_data = result.get("pagespeed", {})
+            db.commit()  # Checkpoint 2: Pages saved
 
             # Guardar PageSpeed en JSON y BD
             if pagespeed_data:
@@ -278,7 +274,6 @@ def run_audit_task(self, audit_id: int):
 
                 # Generar y guardar análisis ejecutivo de PageSpeed
                 try:
-                    # Como estamos en un contexto síncrono, usamos asyncio.run
                     ps_analysis = run_worker_coroutine(
                         PipelineService.generate_pagespeed_analysis(
                             pagespeed_data, llm_function
@@ -303,16 +298,19 @@ def run_audit_task(self, audit_id: int):
                     pagespeed_data=pagespeed_data,
                 )
             )
+            db.commit()  # Checkpoint: Result data saved
 
             AuditService.update_audit_progress(
                 db=db, audit_id=audit_id, progress=100, status=AuditStatus.COMPLETED
             )
+            db.commit()  # Checkpoint 4: Final completion
             logger.info(f"Audit {audit_id} completed successfully.")
             logger.info(
                 "Dashboard ready! PDF can be generated manually from the dashboard."
             )
 
             if settings.ENABLE_PAGESPEED and settings.GOOGLE_PAGESPEED_API_KEY:
+                pagespeed_queue_error = None
                 try:
                     db.expire_all()
                     persistent_audit = (
@@ -335,27 +333,32 @@ def run_audit_task(self, audit_id: int):
                             audit_id,
                             queued_pagespeed_job.id,
                         )
-                except Exception as pagespeed_queue_error:
+                except Exception as e:
+                    pagespeed_queue_error = e
                     logger.warning(
                         "Automatic PageSpeed queue failed for audit %s: %s",
                         audit_id,
                         pagespeed_queue_error,
                     )
+
+                if pagespeed_queue_error is not None:
                     try:
-                        AuditService.append_runtime_diagnostic(
-                            db,
-                            audit_id,
-                            source="pagespeed",
-                            stage="auto-queue",
-                            severity="warning",
-                            code="pagespeed_auto_queue_failed",
-                            message="Automatic PageSpeed queue failed after audit completion.",
-                            technical_detail=type(pagespeed_queue_error).__name__,
-                        )
-                    except Exception:
+                        with get_db_session() as diag_db:
+                            AuditService.append_runtime_diagnostic(
+                                diag_db,
+                                audit_id,
+                                source="pagespeed",
+                                stage="auto-queue",
+                                severity="warning",
+                                code="pagespeed_auto_queue_failed",
+                                message="Automatic PageSpeed queue failed after audit completion.",
+                                technical_detail=type(pagespeed_queue_error).__name__,
+                            )
+                    except Exception as diag_error:
                         logger.warning(
-                            "Could not persist automatic PageSpeed queue diagnostic for audit %s",
+                            "Could not persist automatic PageSpeed queue diagnostic for audit %s: %s",
                             audit_id,
+                            diag_error,
                         )
 
     except Exception as e:
@@ -593,7 +596,7 @@ def _save_pagespeed_analysis(audit_id: int, analysis_md: str):
 
 
 def _save_individual_pages(db: Session, audit_id: int, pipeline_result: dict):
-    """Guardar páginas auditadas individuales como en ag2_pipeline.py"""
+    """Guardar páginas auditadas individuales en batch para mayor rendimiento."""
     try:
         target_audit = pipeline_result.get("target_audit", {})
         if not isinstance(target_audit, dict):
@@ -601,101 +604,67 @@ def _save_individual_pages(db: Session, audit_id: int, pipeline_result: dict):
 
         # Obtener páginas auditadas del resultado agregado
         audited_page_paths = target_audit.get("audited_page_paths", [])
-        audited_pages_count = target_audit.get("audited_pages_count", 0)
-
+        
         # NUEVO: Verificar si hay datos individuales de páginas
         individual_page_audits = target_audit.get("_individual_page_audits", [])
 
-        if individual_page_audits:
-            # Usar datos individuales reales de cada página
-            logger.info(
-                f"Encontrados {len(individual_page_audits)} reportes individuales de páginas"
-            )
+        pages_to_save = []
 
+        if individual_page_audits:
+            logger.info(f"Encontrados {len(individual_page_audits)} reportes individuales de páginas")
             for page_audit in individual_page_audits:
-                page_index = page_audit.get("index", 0)
                 page_url = page_audit.get("url")
                 page_data = page_audit.get("data", {})
-
                 if page_url and page_data:
-                    try:
-                        AuditService.save_page_audit(
-                            db=db,
-                            audit_id=audit_id,
-                            page_url=page_url,
-                            audit_data=page_data,
-                            page_index=page_index,
-                        )
-                    except Exception as e:
-                        logger.error(f"Error guardando página {page_url}: {e}")
-
-            logger.info(
-                f"Guardadas {len(individual_page_audits)} páginas auditadas para audit {audit_id}"
-            )
-            return
-
-        # FALLBACK: Si no hay datos individuales, usar el método anterior
-        if not audited_page_paths or audited_pages_count == 0:
+                    pages_to_save.append({
+                        "url": page_url,
+                        "data": page_data,
+                        "index": page_audit.get("index", 0)
+                    })
+        elif audited_page_paths:
+            # FALLBACK: Usar el método anterior (datos agregados)
+            audit = AuditService.get_audit(db, audit_id)
+            if not audit:
+                return
+            base_url = str(audit.url).rstrip("/")
+            for i, page_path in enumerate(audited_page_paths):
+                if page_path.startswith("http"):
+                    page_url = page_path
+                else:
+                    page_url = f"{base_url}/{page_path.lstrip('/')}"
+                
+                pages_to_save.append({
+                    "url": page_url,
+                    "data": {
+                        "url": page_url,
+                        "path": page_path,
+                        "status": 200,
+                        "generated_at": target_audit.get("generated_at"),
+                        "structure": target_audit.get("structure", {}),
+                        "content": target_audit.get("content", {}),
+                        "eeat": target_audit.get("eeat", {}),
+                        "schema": target_audit.get("schema", {}),
+                    },
+                    "index": i
+                })
+        else:
             # Si no hay páginas múltiples, guardar solo la principal
             page_url = target_audit.get("url")
             if page_url and target_audit.get("status") == 200:
-                AuditService.save_page_audit(
-                    db=db,
-                    audit_id=audit_id,
-                    page_url=page_url,
-                    audit_data=target_audit,
-                    page_index=0,
-                )
-                logger.info(f"Guardada 1 página auditada para audit {audit_id}")
-            else:
-                logger.info(f"Guardadas 0 páginas auditadas para audit {audit_id}")
-            return
+                pages_to_save.append({
+                    "url": page_url,
+                    "data": target_audit,
+                    "index": 0
+                })
 
-        # Guardar cada página auditada (método anterior - datos agregados)
-        audit = AuditService.get_audit(db, audit_id)
-        if not audit:
-            return
+        if pages_to_save:
+            AuditService.save_page_audits_batch(db, audit_id, pages_to_save)
+            logger.info(f"Guardadas {len(pages_to_save)} páginas auditadas en batch para audit {audit_id}")
+        else:
+            logger.info(f"Guardadas 0 páginas auditadas para audit {audit_id}")
 
-        base_url = str(audit.url).rstrip("/")
-
-        for i, page_path in enumerate(audited_page_paths):
-            # Reconstruir URL completa
-            if page_path.startswith("http"):
-                page_url = page_path
-            elif page_path.startswith("/"):
-                page_url = f"{base_url}{page_path}"
-            else:
-                page_url = f"{base_url}/{page_path}"
-
-            # Crear datos de auditoría para la página
-            page_audit_data = {
-                "url": page_url,
-                "path": page_path,
-                "status": 200,
-                "generated_at": target_audit.get("generated_at"),
-                "structure": target_audit.get("structure", {}),
-                "content": target_audit.get("content", {}),
-                "eeat": target_audit.get("eeat", {}),
-                "schema": target_audit.get("schema", {}),
-            }
-
-            # Guardar página auditada
-            AuditService.save_page_audit(
-                db=db,
-                audit_id=audit_id,
-                page_url=page_url,
-                audit_data=page_audit_data,
-                page_index=i,
-            )
-
-        logger.info(
-            f"Guardadas {len(audited_page_paths)} páginas auditadas para audit {audit_id}"
-        )
     except Exception as e:
-        logger.error(
-            f"Error guardando páginas individuales para audit {audit_id}: {e}",
-            exc_info=True,
-        )
+        logger.error(f"Error guardando páginas individuales para audit {audit_id}: {e}", exc_info=True)
 
 
 @celery_app.task(name="generate_pdf_task")

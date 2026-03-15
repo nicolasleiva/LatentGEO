@@ -90,8 +90,13 @@ class CitationTrackerService:
 
         for query in queries:
             try:
-                # Consultar LLM
-                result = await visibility_service._query_llm(query, llm_name)
+                llm_response = visibility_service.llm(
+                    "You are a GEO citation tracking assistant.",
+                    query,
+                )
+                if hasattr(llm_response, "__await__"):
+                    llm_response = await llm_response
+                result = {"response": llm_response}
 
                 if not result:
                     continue
@@ -147,7 +152,18 @@ class CitationTrackerService:
 
             except Exception as e:
                 logger.error(f"Error en query '{query}': {e}")
-                continue
+                citations.append(
+                    {
+                        "query": query,
+                        "llm_name": llm_name,
+                        "is_mentioned": False,
+                        "citation_text": None,
+                        "sentiment": None,
+                        "position": None,
+                        "full_response": None,
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                    }
+                )
 
         # Guardar en base de datos
         CitationTrackerService._save_citations(db, audit_id, citations)
@@ -333,7 +349,13 @@ class CitationTrackerService:
             since_date = datetime.now(timezone.utc) - timedelta(days=days)
 
             citations = (
-                db.query(CitationTracking)
+                db.query(
+                    CitationTracking.query,
+                    CitationTracking.citation_text,
+                    CitationTracking.sentiment,
+                    CitationTracking.tracked_at,
+                    CitationTracking.is_mentioned,
+                )
                 .filter(
                     CitationTracking.audit_id == audit_id,
                     CitationTracking.tracked_at >= since_date,
@@ -352,13 +374,12 @@ class CitationTrackerService:
                 }
 
             total = len(citations)
-            mentioned = sum(1 for c in citations if c.is_mentioned)
+            mentioned = sum(1 for c in citations if c[4])
 
-            # Breakdown de sentimiento
             sentiments = {}
             for c in citations:
-                if c.is_mentioned and c.sentiment:
-                    sentiments[c.sentiment] = sentiments.get(c.sentiment, 0) + 1
+                if c[4] and c[2]:
+                    sentiments[c[2]] = sentiments.get(c[2], 0) + 1
 
             return {
                 "total_queries": total,
@@ -367,13 +388,13 @@ class CitationTrackerService:
                 "sentiment_breakdown": sentiments,
                 "recent_citations": [
                     {
-                        "query": c.query,
-                        "citation_text": c.citation_text,
-                        "sentiment": c.sentiment,
-                        "date": c.tracked_at.isoformat(),
+                        "query": c[0],
+                        "citation_text": c[1],
+                        "sentiment": c[2],
+                        "date": c[3].isoformat(),
                     }
                     for c in citations
-                    if c.is_mentioned
+                    if c[4]
                 ][:10],
             }
         except Exception as e:

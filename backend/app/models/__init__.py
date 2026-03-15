@@ -121,12 +121,14 @@ class Audit(Base):
         back_populates="audit",
         cascade="all, delete-orphan",
         uselist=False,
+        passive_deletes=True,
     )
     pagespeed_job = relationship(
         "AuditPageSpeedJob",
         back_populates="audit",
         cascade="all, delete-orphan",
         uselist=False,
+        passive_deletes=True,
     )
     pages = relationship(
         "AuditedPage", back_populates="audit", cascade="all, delete-orphan"
@@ -161,6 +163,12 @@ class Audit(Base):
     )
     odoo_draft_actions = relationship(
         "OdooDraftAction", back_populates="audit", cascade="all, delete-orphan"
+    )
+    competitor_rows = relationship(
+        "Competitor", back_populates="audit", cascade="all, delete-orphan"
+    )
+    score_history_entries = relationship(
+        "ScoreHistory", back_populates="audit", cascade="all, delete-orphan"
     )
 
     # Task ID de Celery
@@ -253,6 +261,10 @@ class AuditPdfJob(Base):
     """Persistent PDF generation job per audit."""
 
     __tablename__ = "audit_pdf_jobs"
+    __table_args__ = (
+        Index("idx_audit_pdf_jobs_audit_status", "audit_id", "status"),
+    )
+    __mapper_args__ = {"confirm_deleted_rows": False}
 
     id = Column(Integer, primary_key=True, index=True)
     audit_id = Column(
@@ -299,6 +311,7 @@ class AuditPageSpeedJob(Base):
     """Persistent PageSpeed generation job per audit."""
 
     __tablename__ = "audit_pagespeed_jobs"
+    __mapper_args__ = {"confirm_deleted_rows": False}
 
     id = Column(Integer, primary_key=True, index=True)
     audit_id = Column(
@@ -400,6 +413,8 @@ class Competitor(Base):
     audit_data = Column(JSON, nullable=True)
 
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+    audit = relationship("Audit", back_populates="competitor_rows")
 
 
 class Backlink(Base):
@@ -644,6 +659,8 @@ class ScoreHistory(Base):
     recorded_at = Column(
         DateTime, default=lambda: datetime.now(timezone.utc), index=True
     )
+
+    audit = relationship("Audit", back_populates="score_history_entries")
 
 
 # Importar modelos de GitHub

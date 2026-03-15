@@ -464,8 +464,10 @@ class PageSpeedService:
             return {}
 
         import asyncio
-
-        mobile = await PageSpeedService.analyze_url(url, api_key, "mobile")
-        await asyncio.sleep(3)
-        desktop = await PageSpeedService.analyze_url(url, api_key, "desktop")
+        mobile_task = PageSpeedService.analyze_url(url, api_key, "mobile")
+        desktop_task = PageSpeedService.analyze_url(url, api_key, "desktop")
+        
+        # Run both in parallel
+        mobile, desktop = await asyncio.gather(mobile_task, desktop_task)
+        
         return {"mobile": mobile, "desktop": desktop}

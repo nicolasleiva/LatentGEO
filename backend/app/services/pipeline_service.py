@@ -2937,9 +2937,24 @@ class PipelineService:
         category_value: Optional[str],
         raw_queries: List[Dict[str, str]],
         pruned_queries: List[Dict[str, str]],
+        domain: Optional[str] = None,
     ) -> bool:
         if PipelineService._is_unknown_category(category_value):
             return True
+
+        # Validation: Avoid garbage/extremely short categories
+        cat = str(category_value or "").strip()
+        if len(cat) < 5:
+            logger.warning(f"Category too short: '{cat}'")
+            return True
+
+        # Validation: Avoid categories that just repeat the domain (e.g. 'Robot' for 'robot.com')
+        if domain:
+            d_clean = domain.lower().replace("www.", "").split(".")[0]
+            if cat.lower() == d_clean or cat.lower() == domain.lower():
+                logger.warning(f"Category matches domain too closely: '{cat}' vs '{domain}'")
+                return True
+
         if not raw_queries:
             return True
         if raw_queries and not pruned_queries:
@@ -2956,33 +2971,65 @@ class PipelineService:
         system_prompt: str,
         llm_function: callable,
         timeout_seconds: Optional[float] = None,
+        invalid_category: Optional[str] = None,
+        existing_payload: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
-        retry_input = self._build_agent_retry_input(
-            target_audit, market_hint, language_hint
-        )
-        retry_system_prompt = (
-            system_prompt
-            + "\n\nRETRY RULES: The previous output was invalid or missing required fields."
-            " Return ONLY valid JSON matching the schema, including 2-5 queries in the site's language."
-            " Avoid 'alternative(s)' and avoid generic 'tienda online' without category context."
-        )
-        retry_user_prompt = (
-            "RETRY: Return ONLY valid JSON matching the schema keys.\n"
-            "Required keys: is_ymyl, ymyl_confidence_score, business_type, business_model, "
-            "category, subcategory, market, market_maturity, queries_to_run, strategic_insights.\n"
-            "Ensure queries_to_run has 2-5 items with query + purpose, includes the market, "
-            "and uses category + market phrasing (e.g., 'online {core_business} {market}').\n"
-            "Avoid policy/support terms and avoid 'alternatives'.\n\n"
-            f"Signals:\n```json\n{json.dumps(retry_input, ensure_ascii=True)}\n```"
-        )
+        """
+        Retries Agent 1 analysis.
+        If invalid_category is provided, uses a minimal correction prompt (<5s target).
+        """
+        if invalid_category:
+            # Minimal prompt for speed (< 5s target)
+            business_model = (existing_payload or {}).get("business_model", {})
+            subcategory = (existing_payload or {}).get("subcategory", "")
+
+            retry_system_prompt = (
+                "You are a Market Intelligence Director. Your previous categorization was invalid "
+                "(too short, generic, or repeated the domain). Provide a PRECISE INDUSTRY CATEGORY."
+                "\nReturn ONLY valid JSON with all schema keys."
+            )
+            retry_user_prompt = (
+                f"CORRECTION REQUIRED for categorization.\n"
+                f"Domain: {target_audit.get('domain')}\n"
+                f"Invalid Category received: '{invalid_category}'\n"
+                f"Existing Subcategory: '{subcategory}'\n"
+                f"Business Model context: {json.dumps(business_model)}\n\n"
+                "Return the full valid JSON. Focus on fixing 'category' to be an industry-standard term "
+                "(e.g., 'Industrial Automation', 'Logistics Robotics', 'Fintech Services')."
+            )
+        else:
+            # Full context retry
+            retry_input = self._build_agent_retry_input(
+                target_audit, market_hint, language_hint
+            )
+            retry_system_prompt = (
+                system_prompt
+                + "\n\nRETRY RULES: The previous output was invalid or missing required fields."
+                " Return ONLY valid JSON matching the schema, including 2-5 queries in the site's language."
+                " Avoid 'alternative(s)' and avoid generic 'tienda online' without category context."
+            )
+            retry_user_prompt = (
+                "RETRY: Return ONLY valid JSON matching the schema keys.\n"
+                "Required keys: is_ymyl, ymyl_confidence_score, business_type, business_model, "
+                "category, subcategory, market, market_maturity, queries_to_run, strategic_insights.\n"
+                "Ensure queries_to_run has 2-5 items with query + purpose, includes the market, "
+                "and uses category + market phrasing (e.g., 'online {core_business} {market}').\n"
+                "Avoid policy/support terms and avoid 'alternatives'.\n\n"
+                f"Signals:\n```json\n{json.dumps(retry_input, ensure_ascii=True)}\n```"
+            )
+
         try:
             retry_call = llm_function(
                 system_prompt=retry_system_prompt, user_prompt=retry_user_prompt
             )
-            if timeout_seconds is not None and timeout_seconds > 0:
-                retry_text = await asyncio.wait_for(retry_call, timeout=timeout_seconds)
+            # Use shorter timeout for minimal correction if requested
+            effective_timeout = 5.0 if invalid_category else timeout_seconds
+
+            if effective_timeout and effective_timeout > 0:
+                retry_text = await asyncio.wait_for(retry_call, timeout=effective_timeout)
             else:
                 retry_text = await retry_call
+
             logger.info(
                 f"Respuesta recibida del Agente 1 (retry). Tamaño: {len(retry_text)} caracteres."
             )
@@ -6559,18 +6606,31 @@ class PipelineService:
 
             # Verificar si necesitamos reintento
             needs_retry = self._needs_agent_retry(
-                category_value, raw_queries_norm, search_queries
+                category_value, raw_queries_norm, search_queries, domain=domain_value
             )
             retries_done = 0
             while needs_retry and retries_done < max_retries:
                 retries_done += 1
-                logger.warning(
-                    "[AGENTE 1] Se detectó salida incompleta. Detalles:\n"
-                    f"  - Categoría: '{category_value}' (is_unknown: {self._is_unknown_category(category_value)})\n"
-                    f"  - Queries raw: {len(raw_queries_norm)}\n"
-                    f"  - Queries válidas después de filtrado: {len(search_queries)}\n"
-                    f"Reintentando extracción de queries... ({retries_done}/{max_retries})"
+
+                # Determinar si es una falla de categorización para retry minimal
+                is_cat_fail = (
+                    self._is_unknown_category(category_value)
+                    or (category_value and len(str(category_value)) < 5)
+                    or (
+                        category_value
+                        and domain_value
+                        and str(category_value).lower()
+                        in str(domain_value).lower()
+                    )
                 )
+
+                invalid_cat = category_value if is_cat_fail else None
+                if invalid_cat:
+                    logger.warning(
+                        f"[AGENTE 1] Falla de categorización detectada ('{invalid_cat}'). "
+                        "Usando retry minimal (< 5s target)."
+                    )
+
                 retry_payload = await self._retry_external_intelligence(
                     target_audit,
                     market_hint,
@@ -6578,6 +6638,8 @@ class PipelineService:
                     system_prompt,
                     llm_function,
                     timeout_seconds=retry_timeout_seconds,
+                    invalid_category=invalid_cat,
+                    existing_payload=payload,
                 )
                 if retry_payload:
                     logger.info("[AGENTE 1] Retry exitoso. Reprocesando...")
@@ -8477,11 +8539,29 @@ async def run_initial_audit(
             logger.info(
                 f"run_initial_audit: auditando {len(deduped_urls)} páginas (excluyendo base_url)."
             )
-            sem = asyncio.Semaphore(5)
+            sem = asyncio.Semaphore(20)
+            # Risk 1: Adaptive Throttling
+            is_throttled = False
+            throttled_sem = asyncio.Semaphore(3)
 
             async def audit_one(audit_url: str) -> Dict[str, Any]:
-                async with sem:
-                    return await audit_local_service(audit_url)
+                nonlocal is_throttled
+                
+                # Si estamos ralentizados, usamos el semáforo restrictivo
+                if is_throttled:
+                    async with throttled_sem:
+                        await asyncio.sleep(1.0)
+                        result = await audit_local_service(audit_url)
+                else:
+                    async with sem:
+                        result = await audit_local_service(audit_url)
+                
+                # Evaluar si hubo un 429/503 en el resultado
+                if isinstance(result, dict) and result.get("status") in {429, 503}:
+                    logger.warning(f"Rate limit detectado en auditoría (status {result.get('status')}) para {audit_url}")
+                    is_throttled = True
+                
+                return result
 
             results = await asyncio.gather(
                 *[audit_one(u) for u in deduped_urls],

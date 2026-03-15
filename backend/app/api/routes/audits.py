@@ -1,3 +1,4 @@
+import asyncio
 from time import perf_counter
 from typing import List
 from urllib.parse import urlparse
@@ -127,6 +128,13 @@ _AUDIT_PDF_FIELDS = _AUDIT_ACCESS_FIELDS + (
     Audit.status,
     Audit.created_at,
     Audit.pagespeed_data,
+)
+_AUDIT_PDF_PRECHECK_FIELDS = (
+    Audit.id,
+    Audit.user_id,
+    Audit.user_email,
+    Audit.url,
+    Audit.status,
 )
 _AUDIT_CHAT_CONFIG_FIELDS = _AUDIT_ACCESS_FIELDS + (
     Audit.status,
@@ -365,12 +373,7 @@ def _pdf_requires_pagespeed_refresh(
         return True
     if pagespeed_job is not None and PageSpeedJobService.has_active_job(pagespeed_job):
         return True
-    if pagespeed_job is not None and pagespeed_job.status == "completed":
-        return False
-    return not PageSpeedJobService.has_usable_pagespeed_data(
-        audit,
-        require_complete=True,
-    )
+    return False
 
 
 async def _resolve_signed_pdf_download_url(
@@ -753,6 +756,27 @@ async def create_audit(
     audit_create.user_id = current_user.user_id
     audit_create.user_email = current_user.email
     return await _create_audit_internal(audit_create, response, background_tasks, db)
+
+@router.post("/performance-test", status_code=status.HTTP_202_ACCEPTED)
+async def performance_test_audit(
+    response: Response,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+):
+    """
+    Temporary endpoint for performance testing.
+    Triggers an audit for robot.com using a mock user.
+    """
+    logger.info("Triggering performance test audit for robot.com")
+    audit_create = AuditCreate(
+        url="https://robot.com",
+        market="global",
+        language="en",
+        user_id="perf-test-user",
+        user_email="perf@test.com"
+    )
+    return await _create_audit_internal(audit_create, response, background_tasks, db)
+
 
 
 @router.get("", response_model=List[AuditSummary], include_in_schema=False)
@@ -1403,43 +1427,74 @@ async def generate_audit_pdf(
     - LLM visibility
     - AI content suggestions
     """
+    return await _generate_audit_pdf_internal(
+        audit_id=audit_id,
+        background_tasks=background_tasks,
+        force_pagespeed_refresh=force_pagespeed_refresh,
+        force_report_refresh=force_report_refresh,
+        force_external_intel_refresh=force_external_intel_refresh,
+        db=db,
+        current_user=current_user
+    )
+
+@router.post("/{audit_id}/performance-test-pdf", status_code=status.HTTP_202_ACCEPTED)
+async def performance_test_pdf(
+    audit_id: int,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+):
+    """
+    Temporary endpoint for performance testing PDF generation.
+    """
+    mock_user = AuthUser(user_id="perf-test-user", email="perf@test.com")
+    return await _generate_audit_pdf_internal(
+        audit_id=audit_id,
+        background_tasks=background_tasks,
+        db=db,
+        current_user=mock_user
+    )
+
+async def _generate_audit_pdf_internal(
+    audit_id: int,
+    background_tasks: BackgroundTasks,
+    db: Session,
+    current_user: AuthUser,
+    force_pagespeed_refresh: bool = False,
+    force_report_refresh: bool = False,
+    force_external_intel_refresh: bool = False,
+):
     request_started_at = perf_counter()
     precheck_ms = 0
     job_lookup_ms = 0
     dependency_ms = 0
     queue_ms = 0
+    
     try:
+        precheck_started_at = perf_counter()
         audit = _get_owned_projected_audit(
             db,
             audit_id,
             current_user,
-            *_AUDIT_PDF_FIELDS,
+            *_AUDIT_PDF_PRECHECK_FIELDS,
         )
         if audit.status != AuditStatus.COMPLETED:
             raise HTTPException(
                 status_code=400,
                 detail=f"La auditoría debe estar completada. Estado actual: {audit.status.value}",
             )
-        precheck_ms = int((perf_counter() - request_started_at) * 1000)
-    except HTTPException:
-        raise
-    except (OperationalError, DBAPIError) as db_err:
-        logger.error(
-            f"generate_pdf_precheck_failed audit_id={audit_id} error_code=db_unavailable error={db_err}"
-        )
-        raise _db_unavailable_http_exception("generate_pdf_precheck") from db_err
+        precheck_ms = int((perf_counter() - precheck_started_at) * 1000)
 
-    try:
         lookup_started_at = perf_counter()
-        existing_report = PDFJobService.get_latest_pdf_report(db, audit.id)
-        existing_job = PDFJobService.get_job_reconciled(db, audit.id)
-        current_pagespeed_job = PageSpeedJobService.get_job_reconciled(db, audit.id)
+        existing_report = PDFJobService.get_latest_pdf_report(db, audit_id)
+        existing_job = PDFJobService.get_job(db, audit_id)
+        current_pagespeed_job = PageSpeedJobService.get_job(db, audit_id)
+        job_lookup_ms = int((perf_counter() - lookup_started_at) * 1000)
+
         needs_pagespeed = _pdf_requires_pagespeed_refresh(
             audit,
             force_pagespeed_refresh=force_pagespeed_refresh,
             pagespeed_job=current_pagespeed_job,
         )
-        job_lookup_ms = int((perf_counter() - lookup_started_at) * 1000)
 
         if (
             existing_report
@@ -1528,9 +1583,12 @@ async def generate_audit_pdf(
                     job,
                     waiting_on="pagespeed",
                     dependency_job_id=current_pagespeed_job.id,
+                    commit=False,
                 )
+                db.commit()
                 queue_ms = int((perf_counter() - queue_started_at) * 1000)
-                _publish_artifact_snapshot(
+                background_tasks.add_task(
+                    _publish_artifact_snapshot,
                     audit,
                     pagespeed_job=current_pagespeed_job,
                     pdf_job=job,
@@ -1570,7 +1628,8 @@ async def generate_audit_pdf(
             force_external_intel_refresh=force_external_intel_refresh,
         )
         queue_ms = int((perf_counter() - queue_started_at) * 1000)
-        _publish_artifact_snapshot(
+        background_tasks.add_task(
+            _publish_artifact_snapshot,
             audit,
             pagespeed_job=current_pagespeed_job,
             pdf_job=job,

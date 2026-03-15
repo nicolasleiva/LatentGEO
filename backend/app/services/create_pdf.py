@@ -114,6 +114,21 @@ FONT_MONO_PATH = os.path.join(FONT_DIR, "RobotoMono-VariableFont_wght.ttf")
 # ---------------------------------------------------------------------------
 
 
+def sanitize_for_pdf(text: str) -> str:
+    if not isinstance(text, str):
+        text = str(text)
+    replacements = {
+        '\u2019': "'", '\u2018': "'",
+        '\u201c': '"', '\u201d': '"',
+        '\u2013': '-', '\u2014': '-',
+        '\u2026': '...', '\u00b7': '·',
+        '\u2022': '-', '\u00a0': ' ',
+    }
+    for char, replacement in replacements.items():
+        text = text.replace(char, replacement)
+    return text
+
+
 def clean_string_for_pdf(text):
     """Asegura que el string esté en formato amigable para PDF."""
     if not isinstance(text, str):
@@ -226,6 +241,26 @@ class PDFReport(FPDF):
         """Usa fuentes core de FPDF para evitar fugas de archivo en subsetting TTF."""
         self._fonts_added.clear()
         self.set_font("helvetica", "", BASE_FONT_SIZE)
+
+    def multi_cell(self, *args, **kwargs):
+        new_args = list(args)
+        if len(new_args) >= 3 and isinstance(new_args[2], str):
+            new_args[2] = sanitize_for_pdf(new_args[2])
+        elif "txt" in kwargs and isinstance(kwargs["txt"], str):
+            kwargs["txt"] = sanitize_for_pdf(kwargs["txt"])
+        elif "text" in kwargs and isinstance(kwargs["text"], str):
+             kwargs["text"] = sanitize_for_pdf(kwargs["text"])
+        return super().multi_cell(*new_args, **kwargs)
+
+    def cell(self, *args, **kwargs):
+        new_args = list(args)
+        if len(new_args) >= 3 and isinstance(new_args[2], str):
+            new_args[2] = sanitize_for_pdf(new_args[2])
+        elif "txt" in kwargs and isinstance(kwargs["txt"], str):
+            kwargs["txt"] = sanitize_for_pdf(kwargs["txt"])
+        elif "text" in kwargs and isinstance(kwargs["text"], str):
+             kwargs["text"] = sanitize_for_pdf(kwargs["text"])
+        return super().cell(*new_args, **kwargs)
 
     def header(self):
         """Encabezado sobrio: título corto en una línea y una regla."""

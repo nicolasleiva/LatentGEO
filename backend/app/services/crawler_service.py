@@ -538,8 +538,8 @@ class CrawlerService:
             raise
 
         # Configurar sesión con limites de concurrencia
-        timeout = aiohttp.ClientTimeout(total=10)
-        connector = aiohttp.TCPConnector(limit=10)
+        timeout = aiohttp.ClientTimeout(total=15)
+        connector = aiohttp.TCPConnector(limit=20)
         headers = HEADERS_MOBILE if mobile_first else HEADERS_DESKTOP
 
         async with aiohttp.ClientSession(
@@ -548,9 +548,13 @@ class CrawlerService:
             tasks = []
             pages_count = 0
             lock = asyncio.Lock()
+            
+            # Risk 1: Adaptive Throttling
+            is_throttled = False
+            throttled_sem = asyncio.Semaphore(3)
 
             async def worker():
-                nonlocal pages_count
+                nonlocal pages_count, is_throttled
                 while True:
                     try:
                         url = await queue.get()
@@ -565,9 +569,24 @@ class CrawlerService:
                                             callback(url, "blocked")
                                         continue
 
-                                async with session.get(
-                                    url, allow_redirects=True
-                                ) as resp:
+                                async def perform_request(current_url):
+                                    nonlocal is_throttled
+                                    # Si estamos ralentizados, usamos el semáforo restrictivo
+                                    if is_throttled:
+                                        async with throttled_sem:
+                                            await asyncio.sleep(1.0) # Delay extra
+                                            return await session.get(current_url, allow_redirects=True)
+                                    else:
+                                        return await session.get(current_url, allow_redirects=True)
+
+                                async with await perform_request(url) as resp:
+                                    if resp.status in {429, 503}:
+                                        logger.warning(f"Rate limit detectado (status {resp.status}) para {url}. Reduciendo concurrencia.")
+                                        is_throttled = True
+                                        if callback:
+                                            callback(url, "throttled")
+                                        continue
+
                                     if (
                                         resp.status == 200
                                         and "text/html"
@@ -646,7 +665,7 @@ class CrawlerService:
                         break
 
             # Crear workers
-            num_workers = 5
+            num_workers = 15
             for _ in range(num_workers):
                 tasks.append(asyncio.create_task(worker()))
 

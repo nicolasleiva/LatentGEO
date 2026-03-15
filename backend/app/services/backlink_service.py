@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 import re
@@ -240,43 +241,87 @@ class BacklinkService:
         self, domain: str, max_pages: int = 50
     ) -> Dict[str, Set[str]]:
         """
-        Crawls the site to build an internal link graph.
+        Crawls the site concurrently to build an internal link graph.
         Returns: {url: {set of outgoing links}}
         """
+        from urllib.parse import urljoin, urlparse
+        from bs4 import BeautifulSoup
+        
         base_url = f"https://{domain}"
-        queue = [base_url]
-        visited = set()
         graph = {}  # url -> set(outgoing_links)
+        visited = {base_url}
+        queue = asyncio.Queue()
+        await queue.put(base_url)
+        
+        # Optimization 2: Aggressive backlink crawling (20 concurrent)
+        sem = asyncio.Semaphore(20)
+        lock = asyncio.Lock()
+        
+        # Risk 1: Adaptive Throttling
+        is_throttled = False
+        throttled_sem = asyncio.Semaphore(3)
 
-        # Simple BFS crawl
-        while queue and len(visited) < max_pages:
-            url = queue.pop(0)
-            if url in visited:
-                continue
+        async def worker():
+            while True:
+                try:
+                    # Usamos timeout para evitar bloqueo infinito si la cola se vacía
+                    url = await asyncio.wait_for(queue.get(), timeout=2.0)
+                except asyncio.TimeoutError:
+                    break
 
-            visited.add(url)
-            content = await CrawlerService.get_page_content(url)
-            if not content:
-                continue
+                try:
+                    async def perform_crawl():
+                        nonlocal is_throttled
+                        if is_throttled:
+                            async with throttled_sem:
+                                await asyncio.sleep(1.0)
+                                return await CrawlerService.get_page_content(url)
+                        else:
+                            async with sem:
+                                return await CrawlerService.get_page_content(url)
 
-            soup = BeautifulSoup(content, "html.parser")
-            outgoing = set()
+                    content = await perform_crawl()
+                    
+                    # Si no hay contenido, podría ser por rate limit (aunque get_page_content no lo diga)
+                    # En este caso, si falla varias veces seguidas, podríamos marcar is_throttled.
+                    # Por simplicidad, si retorna None, asumiremos que podría haber congestión si ocurre repetidamente.
+                    # Pero para ser precisos, idealmente CrawlerService debería reportar el error.
+                    
+                    if not content:
+                        continue
 
-            for a in soup.find_all("a", href=True):
-                href = a.get("href")
-                full_url = urljoin(url, href)
+                    # Parsing liviano con BeautifulSoup
+                    soup = BeautifulSoup(content, "html.parser")
+                    outgoing = set()
 
-                # Normalize
-                parsed = urlparse(full_url)
-                if parsed.netloc == domain or parsed.netloc == f"www.{domain}":
-                    # Internal link
-                    clean_url = f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
-                    outgoing.add(clean_url)
-                    if clean_url not in visited and clean_url not in queue:
-                        queue.append(clean_url)
+                    for a in soup.find_all("a", href=True):
+                        href = a.get("href")
+                        full_url = urljoin(url, href)
+                        parsed = urlparse(full_url)
+                        
+                        if parsed.netloc == domain or parsed.netloc == f"www.{domain}":
+                            clean_url = f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
+                            outgoing.add(clean_url)
+                            
+                            async with lock:
+                                if clean_url not in visited and len(visited) < max_pages:
+                                    visited.add(clean_url)
+                                    await queue.put(clean_url)
+                    
+                    async with lock:
+                        graph[url] = outgoing
+                except Exception as e:
+                    logger.debug(f"Error crawling {url} in graph builder: {e}")
+                finally:
+                    queue.task_done()
 
-            graph[url] = outgoing
-
+        # Lanzar workers paralelos
+        num_workers = 15
+        workers = [asyncio.create_task(worker()) for _ in range(num_workers)]
+        
+        await queue.join()
+        for w in workers: w.cancel()
+        
         return graph
 
     async def analyze_backlinks(self, audit_id: int, domain: str) -> List[Backlink]:

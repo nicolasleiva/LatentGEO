@@ -224,7 +224,7 @@ class AuditRequestInput(BaseModel):
     url: str = Field(..., min_length=10, max_length=2048)
     max_pages: int = Field(default=100, ge=1, le=500)
     language: str = Field(default="en", pattern=r"^(es|en|pt|fr|de)$")
-    competitors: Optional[List[str]] = Field(default=None, max_length=10)
+    competitors: List[str] = Field(default_factory=list, max_length=10)
     market: Optional[str] = Field(default=None, max_length=50)
 
     @field_validator("url")
@@ -238,7 +238,7 @@ class AuditRequestInput(BaseModel):
     @classmethod
     def validate_competitors(cls, v):
         if v is None:
-            return v
+            return []
 
         validated = []
         for url in v:

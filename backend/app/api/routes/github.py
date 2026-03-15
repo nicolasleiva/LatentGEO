@@ -1156,6 +1156,8 @@ async def github_webhook(
 
         return {"status": "success", "event": x_github_event}
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.exception("Error processing webhook")
         if "event" in locals():
@@ -1189,7 +1191,12 @@ def _verify_webhook_signature(
 
 async def _handle_push_event(payload: Dict, db: Session):
     """Maneja evento push - potencialmente auto-auditar"""
-    repo_full_name = payload["repository"]["full_name"]
+    repository = payload.get("repository")
+    if not isinstance(repository, dict):
+        raise HTTPException(status_code=400, detail="Missing repository payload")
+    repo_full_name = repository.get("full_name")
+    if not repo_full_name:
+        raise HTTPException(status_code=400, detail="Missing repository.full_name")
 
     # Buscar repo en BD
     repo = (
@@ -1207,8 +1214,15 @@ async def _handle_push_event(payload: Dict, db: Session):
 
 async def _handle_pr_event(payload: Dict, db: Session):
     """Maneja evento pull_request - actualizar estado"""
-    pr_number = payload["pull_request"]["number"]
-    action = payload["action"]  # opened, closed, merged, etc.
+    pull_request = payload.get("pull_request")
+    if not isinstance(pull_request, dict):
+        raise HTTPException(status_code=400, detail="Missing pull_request payload")
+    pr_number = pull_request.get("number")
+    if pr_number is None:
+        raise HTTPException(status_code=400, detail="Missing pull_request.number")
+    action = payload.get("action")
+    if not action:
+        raise HTTPException(status_code=400, detail="Missing action")
 
     # Buscar PR en BD
     pr = (
@@ -1219,7 +1233,7 @@ async def _handle_pr_event(payload: Dict, db: Session):
 
     if pr:
         if action == "closed":
-            if payload["pull_request"].get("merged"):
+            if pull_request.get("merged"):
                 pr.status = PRStatus.MERGED
                 pr.merged_at = datetime.utcnow()
             else:
@@ -1232,8 +1246,15 @@ async def _handle_pr_event(payload: Dict, db: Session):
 
 async def _handle_installation_event(payload: Dict, db: Session):
     """Maneja evento installation"""
-    action = payload["action"]
-    installation_id = payload["installation"]["id"]
+    action = payload.get("action")
+    if not action:
+        raise HTTPException(status_code=400, detail="Missing action")
+    installation = payload.get("installation")
+    if not isinstance(installation, dict):
+        raise HTTPException(status_code=400, detail="Missing installation payload")
+    installation_id = installation.get("id")
+    if installation_id is None:
+        raise HTTPException(status_code=400, detail="Missing installation.id")
 
     if action == "created":
         # Nueva instalación de la app
