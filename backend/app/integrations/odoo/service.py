@@ -325,12 +325,12 @@ class OdooConnectionService:
 
             capabilities: Dict[str, Any] = {"models": {}}
             for model_name, config in self.MODEL_CAPABILITY_MAP.items():
-                capabilities["models"][
-                    model_name
-                ] = await self._detect_model_capability(
-                    client,
-                    model=model_name,
-                    sample_fields=list(config["sample_fields"]),
+                capabilities["models"][model_name] = (
+                    await self._detect_model_capability(
+                        client,
+                        model=model_name,
+                        sample_fields=list(config["sample_fields"]),
+                    )
                 )
 
             model_state = capabilities["models"]

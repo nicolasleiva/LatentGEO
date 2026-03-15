@@ -46,9 +46,9 @@ async def get_audit_analytics(
             avg_schema = sum(p.schema_score for p in pages) / len(pages)
             avg_overall = sum(p.overall_score for p in pages) / len(pages)
         else:
-            avg_h1 = (
-                avg_structure
-            ) = avg_content = avg_eeat = avg_schema = avg_overall = 0
+            avg_h1 = avg_structure = avg_content = avg_eeat = avg_schema = (
+                avg_overall
+            ) = 0
 
         return {
             "audit_id": audit_id,

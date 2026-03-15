@@ -2007,9 +2007,7 @@ class PDFService:
                 volume_value = (
                     k.volume
                     if hasattr(k, "volume")
-                    else k.search_volume
-                    if hasattr(k, "search_volume")
-                    else 0
+                    else k.search_volume if hasattr(k, "search_volume") else 0
                 ) or 0
                 difficulty_value = (
                     k.difficulty if hasattr(k, "difficulty") else 0
@@ -2025,9 +2023,7 @@ class PDFService:
                         "keyword": (
                             k.term
                             if hasattr(k, "term")
-                            else k.keyword
-                            if hasattr(k, "keyword")
-                            else ""
+                            else k.keyword if hasattr(k, "keyword") else ""
                         ),
                         "search_volume": volume_value,
                         "difficulty": difficulty_value,

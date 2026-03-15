@@ -2130,12 +2130,12 @@ class GeoArticleEngineService:
         )
         serp_results: List[Dict[str, Any]] = []
         external_from_serp: List[Dict[str, Any]] = []
-        top_competitors: List[
-            Dict[str, Any]
-        ] = GeoArticleEngineService._extract_competitors_from_audit(
-            audit=audit,
-            audit_domain=audit_domain,
-            vertical_hint=vertical_hint,
+        top_competitors: List[Dict[str, Any]] = (
+            GeoArticleEngineService._extract_competitors_from_audit(
+                audit=audit,
+                audit_domain=audit_domain,
+                vertical_hint=vertical_hint,
+            )
         )
         inferred_intent = ""
         secondary_keywords: List[str] = []
@@ -3605,13 +3605,13 @@ class GeoArticleEngineService:
                 user_authority_sources
             )
             existing_cache = summary.get("_authority_source_cache") or []
-            summary[
-                "_authority_source_cache"
-            ] = GeoArticleEngineService._serialize_authority_source_cache(
-                [
-                    *(existing_cache if isinstance(existing_cache, list) else []),
-                    *cached_sources,
-                ]
+            summary["_authority_source_cache"] = (
+                GeoArticleEngineService._serialize_authority_source_cache(
+                    [
+                        *(existing_cache if isinstance(existing_cache, list) else []),
+                        *cached_sources,
+                    ]
+                )
             )
         strategy_run_id = str(summary.get("strategy_run_id") or "").strip()
         strategy_items = GeoArticleEngineService._extract_ai_strategy_items(

@@ -1321,14 +1321,14 @@ class AuditService:
             normalized_target_audit
         )
         normalized_target_audit["geo_score"] = target_geo["score"]
-        normalized_target_audit[
-            "benchmark"
-        ] = CompetitorService._format_competitor_data(
-            normalized_target_audit,
-            target_geo["score"],
-            normalized_target_audit.get("url"),
-            score_meta=target_geo,
-            benchmark_available=True,
+        normalized_target_audit["benchmark"] = (
+            CompetitorService._format_competitor_data(
+                normalized_target_audit,
+                target_geo["score"],
+                normalized_target_audit.get("url"),
+                score_meta=target_geo,
+                benchmark_available=True,
+            )
         )
 
         normalized_competitor_audits: List[Dict[str, Any]] = []
